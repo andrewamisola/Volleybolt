@@ -3290,18 +3290,38 @@
             window.setPlayerFlashMeshes = (meshes) => { playerFlashMeshes = meshes; };
             window.setAIFlashMeshes = (meshes) => { aiFlashMeshes = meshes; };
 
+            // Store true original colors (captured once when meshes are set)
+            let playerOriginalColors = [];
+            let aiOriginalColors = [];
+            let playerFlashActive = false;
+            let aiFlashActive = false;
+
+            // Capture original colors when meshes are first assigned
+            const captureOriginalColors = (meshes, isPlayer) => {
+                const colors = meshes.map(m => m.material ? m.material.emissiveColor.clone() : new BABYLON.Color3(0, 0, 0));
+                if (isPlayer) playerOriginalColors = colors;
+                else aiOriginalColors = colors;
+            };
+
             // Flash character with chromatic/white effect on block/parry
             window.flashCharacter = (isPlayer, isParry = false) => {
                 const meshes = isPlayer ? playerFlashMeshes : aiFlashMeshes;
                 if (meshes.length === 0) return;
+
+                // Capture original colors on first flash if not yet captured
+                const originalColors = isPlayer ? playerOriginalColors : aiOriginalColors;
+                if (originalColors.length === 0) {
+                    captureOriginalColors(meshes, isPlayer);
+                }
 
                 const flashColor = isParry
                     ? (isPlayer ? new BABYLON.Color3(0.5, 0.8, 1) : new BABYLON.Color3(1, 0.6, 0.8))
                     : (isPlayer ? new BABYLON.Color3(0.3, 0.5, 0.8) : new BABYLON.Color3(0.8, 0.4, 0.4));
                 const flashIntensity = isParry ? 0.5 : 0.1;
 
-                // Store original emissive colors
-                const originalColors = meshes.map(m => m.material ? m.material.emissiveColor.clone() : null);
+                // Mark flash as active
+                if (isPlayer) playerFlashActive = true;
+                else aiFlashActive = true;
 
                 // Apply flash
                 meshes.forEach(m => {
@@ -3312,21 +3332,24 @@
 
                 // Fade back to original
                 let fadeProgress = 0;
+                const storedOriginals = isPlayer ? playerOriginalColors : aiOriginalColors;
                 const fadeStep = () => {
-                    fadeProgress += 0.1;
+                    fadeProgress += 0.15;
                     if (fadeProgress >= 1) {
                         meshes.forEach((m, i) => {
-                            if (m.material && originalColors[i]) {
-                                m.material.emissiveColor = originalColors[i];
+                            if (m.material && storedOriginals[i]) {
+                                m.material.emissiveColor = storedOriginals[i].clone();
                             }
                         });
+                        if (isPlayer) playerFlashActive = false;
+                        else aiFlashActive = false;
                         return;
                     }
                     meshes.forEach((m, i) => {
-                        if (m.material && originalColors[i]) {
+                        if (m.material && storedOriginals[i]) {
                             m.material.emissiveColor = BABYLON.Color3.Lerp(
                                 flashColor.scale(flashIntensity),
-                                originalColors[i],
+                                storedOriginals[i],
                                 fadeProgress
                             );
                         }

@@ -21,7 +21,9 @@
       "Bash(\"C:/Program Files/Blender Foundation/Blender 5.0/blender.exe\" --background --python \"C:/Users/andre/BabylonPong/models/merge_animations.py\")",
       "Bash(\"C:/Program Files/Blender Foundation/Blender 5.0/blender.exe\" --background --python \"C:/Users/andre/BabylonPong/models/add_animations.py\")",
       "Skill(handoff)",
-      "Bash(gh auth status:*)"
+      "Bash(gh auth status:*)",
+      "Bash(gh repo edit:*)",
+      "Bash(gh api:*)"
     ]
   }
 }
