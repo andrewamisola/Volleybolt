@@ -1595,6 +1595,7 @@
         let playerTowerHealth = maxTowerHealth;
         let aiTowerHealth = maxTowerHealth;
         let roundActive = false;
+        let roundTransitioning = false;  // Block actions during round end transition
 
         // Physics constants
         const gravity = -30;            // Tuned for arc over midline
@@ -2961,13 +2962,13 @@
 
             // Any action starts the round when waiting
             const talentVisible = document.getElementById('talentScreen').classList.contains('visible');
-            if (waitingToServe && !gameOver && !talentVisible) {
+            if (waitingToServe && !gameOver && !talentVisible && !roundTransitioning) {
                 startRound();
                 return;  // Don't process other actions on the start frame
             }
 
             if (e.code === 'Space') {
-                if (!waitingToServe && !gameOver && canParry && parryCallback) {
+                if (!waitingToServe && !gameOver && !roundTransitioning && canParry && parryCallback) {
                     // Play parry animation on any attempt (3x speed, start at frame 20, lock for 500ms)
                     if (window.playPlayerAnim) {
                         playPlayerAnim('parry', false, 500, 3.0, 20);
@@ -2997,11 +2998,11 @@
             showKeyPressedFeedback('Space');
             // Any click starts the round when waiting
             const talentVisible = document.getElementById('talentScreen').classList.contains('visible');
-            if (waitingToServe && !gameOver && !talentVisible) {
+            if (waitingToServe && !gameOver && !talentVisible && !roundTransitioning) {
                 startRound();
                 return;
             }
-            if (!waitingToServe && !gameOver && canParry && parryCallback) {
+            if (!waitingToServe && !gameOver && !roundTransitioning && canParry && parryCallback) {
                 if (window.playPlayerAnim) {
                     playPlayerAnim('parry', false, 500, 3.0, 20);
                     setTimeout(() => playPlayerAnim('idle', true), 500);
@@ -3394,9 +3395,13 @@
             // lockDuration: ms to prevent interruption (for one-shot anims)
             // speed: playback speed multiplier (default 1.0)
             // startFrame: frame to start from (default 0, use to skip beginning)
+            const warnedMissingAnims = { player: new Set(), ai: new Set() };
             window.playPlayerAnim = (name, loop = true, lockDuration = 0, speed = 1.0, startFrame = 0) => {
                 if (!playerAnimations[name.toLowerCase()]) {
-                    console.warn(`Player animation '${name}' not found. Available:`, Object.keys(playerAnimations));
+                    if (!warnedMissingAnims.player.has(name)) {
+                        console.warn(`Player animation '${name}' not found. Available:`, Object.keys(playerAnimations));
+                        warnedMissingAnims.player.add(name);
+                    }
                     return;
                 }
                 const anim = playerAnimations[name.toLowerCase()];
@@ -3409,7 +3414,10 @@
             };
             window.playAIAnim = (name, loop = true, lockDuration = 0, speed = 1.0, startFrame = 0) => {
                 if (!aiAnimations[name.toLowerCase()]) {
-                    console.warn(`AI animation '${name}' not found. Available:`, Object.keys(aiAnimations));
+                    if (!warnedMissingAnims.ai.has(name)) {
+                        console.warn(`AI animation '${name}' not found. Available:`, Object.keys(aiAnimations));
+                        warnedMissingAnims.ai.add(name);
+                    }
                     return;
                 }
                 const anim = aiAnimations[name.toLowerCase()];
@@ -4243,6 +4251,7 @@
                 BABYLON.SceneLoader.ImportMesh("", "models/", meshyFile, scene,
                     (meshes, particleSystems, skeletons, animationGroups) => {
                         console.log("Player Meshy pickle loaded!", meshes.length, "meshes");
+                        console.log("Mesh names:", meshes.map(m => m.name));
                         console.log("Animation groups:", animationGroups.map(a => a.name));
                         console.log("Skeletons:", skeletons.length);
 
@@ -6745,6 +6754,7 @@
         }
 
         function checkWin() {
+            if (gameOver) return;  // Already ended - prevent multiple triggers
             if (playerScore >= winningScore) {
                 showMessage("Champion");
                 gameOver = true;
@@ -6780,6 +6790,7 @@
             aiTowerHealth = maxTowerHealth;
             roundActive = false;
             waitingToServe = true;
+            roundTransitioning = false;  // Allow actions again
 
             // Clear projectiles
             if (window.clearAllProjectiles) {
@@ -7008,7 +7019,10 @@
                 const castProgressOverlay = document.getElementById(abilityId + 'CastProgress');
                 if (castProgressOverlay) castProgressOverlay.style.setProperty('--cast-progress', '360deg');
 
-                // Start mid-cast looping sound
+                // Start mid-cast looping sound (stop any existing first)
+                if (playerCastingLoopSource && playerCastingLoopSource.source) {
+                    try { playerCastingLoopSource.source.stop(); } catch(e) {}
+                }
                 playerCastingLoopSource = createLoopingSound('castingLoop', -8, 0.15);
             } else {
                 aiCasting = abilityId;
@@ -7018,7 +7032,10 @@
                 showAICastBar(true);
                 if (window.playAIAnim) playAIAnim('charging', true); // Play charging animation
 
-                // Start mid-cast looping sound for AI
+                // Start mid-cast looping sound for AI (stop any existing first)
+                if (aiCastingLoopSource && aiCastingLoopSource.source) {
+                    try { aiCastingLoopSource.source.stop(); } catch(e) {}
+                }
                 aiCastingLoopSource = createLoopingSound('castingLoop', 8, 0.1);
             }
 
@@ -7337,6 +7354,19 @@ function isAIRooted() {
 
             roundActive = false;
             waitingToServe = true;
+            roundTransitioning = true;  // Block actions until reset
+
+            // Stop any casting sounds
+            if (playerCastingLoopSource && playerCastingLoopSource.source) {
+                try { playerCastingLoopSource.source.stop(); } catch(e) {}
+                playerCastingLoopSource = null;
+            }
+            if (aiCastingLoopSource && aiCastingLoopSource.source) {
+                try { aiCastingLoopSource.source.stop(); } catch(e) {}
+                aiCastingLoopSource = null;
+            }
+            playerCasting = null;
+            aiCasting = null;
 
             // Clear all projectiles
             if (window.clearAllProjectiles) {
