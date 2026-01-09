@@ -1,4 +1,4 @@
-# Tasks - Wizard Duel Arena (formerly BabylonPong)
+# Tasks - Volleybolt (formerly Wizard Duel Arena / BabylonPong)
 
 ## Status Legend
 - `[ ]` - Not Started
@@ -118,6 +118,22 @@
 ---
 
 ## Completed Tasks
+
+### 2026-01-09 Session 12
+- [x] Victory/defeat sounds (sfx/victory.wav, sfx/defeat.wav)
+- [x] Parry button UI underneath ability bar
+- [x] Input visual feedback on key presses
+- [x] Cast progress shown on skill icons (radial overlay)
+- [x] Mid-cast looping audio during spell casting
+- [x] Ice shatter effect with physics shards
+- [x] Ice shatter sound (sfx/ice-shatter.wav)
+- [x] Sound pitch parameter added to playSound()
+- [x] Frozen sound plays at 2x speed
+- [x] Block/parry flash intensity tuned (0.1/0.5)
+- [x] Flash effect color persistence bug fixed
+- [x] Game renamed to "Volleybolt"
+- [x] GitHub deployment (https://andrewamisola.github.io/Volleybolt/)
+- [x] UI simplified ("W/S to move" only)
 
 ### 2026-01-09 Session 11
 - [x] Character ground level fix (no longer floating)

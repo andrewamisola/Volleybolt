@@ -1,12 +1,14 @@
-# AI Context - Wizard Duel Arena
+# AI Context - Volleybolt
 
 > **READ THIS FIRST** at the start of every session.
 
 ## Project Overview
-- **Name**: Wizard Duel Arena (formerly BabylonPong)
+- **Name**: Volleybolt (formerly Wizard Duel Arena / BabylonPong)
 - **Concept**: 1v1 spell-casting arena game with Pong DNA
 - **Tech Stack**: Babylon.js (CDN), vanilla HTML/JS, no build step
 - **Main File**: `index.html` (single file contains everything)
+- **Live Game**: https://andrewamisola.github.io/Volleybolt/
+- **Repository**: https://github.com/andrewamisola/Volleybolt
 
 ## Quick Links
 | Document | Purpose |
@@ -17,23 +19,28 @@
 | [Debug.md](./docs/Debug.md) | Test scenarios |
 
 ## Current State
-- **Last Updated**: 2026-01-09 (Session 11)
-- **Game Status**: 2 active spells, character models working, loading screen, polish effects
-- **Active Branch**: main
+- **Last Updated**: 2026-01-09 (Session 12)
+- **Game Status**: 2 active spells, full polish pass, deployed to GitHub Pages
+- **Active Branch**: gh-pages
 
 ### What's Working
 - **Character Models**: GLB wizard models with animations (idle, strafe, cast, parry)
 - **Animation System**: 0.2s crossfade blending, freeze on frostbolt hit
 - **Loading Screen**: Shows while models load, fades when ready
 - **Cast Time System**: 1s cast for fireball, 5s cooldown after
+- **Cast Progress on Icons**: Radial overlay reveals icon as cast completes
+- **Mid-Cast Audio**: Looping sound during spell casting
 - **Movement cancels cast**: W/S during cast = cancel + mana refund
 - **AI Cast Bar**: Shows enemy casting progress
 - **AI Mana Bar**: 3 segments matching player style
 - **Symmetrical UI**: Player left, AI right
+- **Parry Button**: Underneath ability bar with SPACE keybind
+- **Input Feedback**: Key presses flash corresponding UI buttons
 - **Textures**: Gate stone texture loading (tints by team)
-- **Sound Pitch**: Projectile loop sounds pitch up/down based on velocity
+- **Sound System**: Stereo panning, pitch control, victory/defeat sounds
 - **Explosive Bricks**: Gate bricks explode outward on hit
-- **Character Flash**: Emissive glow on block/parry
+- **Ice Shatter**: Ice block breaks into physics shards when freeze ends
+- **Character Flash**: Emissive glow on block/parry (tuned intensity)
 - **Gravity Sphere**: Commented out for rework
 
 ### Character Model Files (models/ folder)

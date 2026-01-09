@@ -1,6 +1,70 @@
-# Development Log - Wizard Duel Arena
+# Development Log - Volleybolt (formerly Wizard Duel Arena)
 
 ## 2026-01-09
+
+### Session 12 (UI Polish, Audio, Ice Shatter, GitHub Deployment)
+**Time**: Night
+
+#### Summary
+Final polish session - added parry button UI, input feedback, cast progress on icons, mid-cast audio, ice shatter effect, sound tuning, and deployed game to GitHub Pages. Renamed game to "Volleybolt".
+
+#### Implemented
+- [x] **Victory/Defeat Sounds**
+  - Added sfx/victory.wav and sfx/defeat.wav
+  - Play when game ends (tower destroyed)
+
+- [x] **Parry Button UI**
+  - Added button underneath ability bar
+  - Shows 🛡️ icon, "Parry" label, SPACE keybind badge
+  - Understated styling (70% opacity, muted colors)
+
+- [x] **Input Visual Feedback**
+  - Key presses (1, 2, 3, SPACE) show "pressed" state on UI buttons
+  - Brief scale + brightness flash (120ms)
+  - Works for both keyboard and click
+
+- [x] **Cast Progress on Skill Icons**
+  - Radial darkening overlay during cast
+  - Uses conic-gradient from top, reveals icon as cast completes
+  - Works alongside existing cast bar
+
+- [x] **Mid-Cast Audio**
+  - Looping sound plays during spell casting
+  - Stops on cast complete or cancel
+  - Separate tracking for player/AI
+
+- [x] **Ice Shatter Effect**
+  - Ice block breaks into 6 physics shards when freeze ends
+  - Shards explode outward with gravity (600ms duration)
+  - Added sfx/ice-shatter.wav sound
+
+- [x] **Sound Tuning**
+  - Added pitch parameter to playSound() function
+  - Frozen sound plays at 2x speed
+  - Block flash reduced (0.1 intensity)
+  - Parry flash reduced (0.5 intensity)
+
+- [x] **Flash Effect Bug Fix**
+  - Original emissive colors now stored once on first flash
+  - Prevents color drift when multiple flashes overlap
+
+- [x] **Game Renamed to Volleybolt**
+  - Updated title tag and loading screen
+
+- [x] **GitHub Deployment**
+  - Repository: https://github.com/andrewamisola/Volleybolt
+  - Live game: https://andrewamisola.github.io/Volleybolt/
+  - Uses GitHub Actions workflow for deployment
+
+- [x] **UI Cleanup**
+  - Simplified instructions to just "W/S to move"
+
+#### Technical Notes
+- playSound() now accepts pitch parameter (default 1.0)
+- Ice shatter creates temporary meshes with requestAnimationFrame physics
+- GitHub Pages deployed via Actions workflow (handles large model files better)
+
+---
 
 ### Session 11 (Character Polish, Animation Fixes, Audio & Visual Effects)
 **Time**: Night

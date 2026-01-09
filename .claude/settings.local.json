@@ -23,7 +23,8 @@
       "Skill(handoff)",
       "Bash(gh auth status:*)",
       "Bash(gh repo edit:*)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(gh run list:*)"
     ]
   }
 }
