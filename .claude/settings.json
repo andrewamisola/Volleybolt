@@ -1,0 +1,8 @@
+{
+  "projectName": "BabylonPong",
+  "description": "2.5D Pong game with Babylon.js",
+  "contextFiles": [
+    "ai.context.md",
+    "docs/Tasks.md"
+  ]
+}

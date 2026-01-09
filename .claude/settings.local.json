@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__ide__getDiagnostics",
+      "Bash(python -m http.server:*)",
+      "Bash(curl:*)",
+      "Bash(netstat:*)",
+      "Bash(taskkill //F //PID 39300)",
+      "Bash(dir \"C:\\\\Users\\\\andre\\\\BabylonPong\\\\models\" /b)",
+      "Bash(xxd:*)",
+      "Bash(npm install:*)",
+      "Bash(fbx2gltf:*)",
+      "Bash(npx fbx2gltf:*)",
+      "Bash(\"C:\\\\Users\\\\andre\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\fbx2gltf\\\\bin\\\\Windows_NT\\\\FBX2glTF.exe\" --input \"C:\\\\Users\\\\andre\\\\BabylonPong\\\\models\\\\idle.fbx\" --output \"C:\\\\Users\\\\andre\\\\BabylonPong\\\\models\\\\idle.glb\")",
+      "Bash(\"C:\\\\Users\\\\andre\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\fbx2gltf\\\\bin\\\\Windows_NT\\\\FBX2glTF.exe\" --input \"C:\\\\Users\\\\andre\\\\BabylonPong\\\\models\\\\left_strafe.fbx\" --output \"C:\\\\Users\\\\andre\\\\BabylonPong\\\\models\\\\left_strafe.glb\")",
+      "Bash(\"C:\\\\Users\\\\andre\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\fbx2gltf\\\\bin\\\\Windows_NT\\\\FBX2glTF.exe\" --input \"C:\\\\Users\\\\andre\\\\BabylonPong\\\\models\\\\right_strafe.fbx\" --output \"C:\\\\Users\\\\andre\\\\BabylonPong\\\\models\\\\right_strafe.glb\")",
+      "Bash(\"C:\\\\Users\\\\andre\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\fbx2gltf\\\\bin\\\\Windows_NT\\\\FBX2glTF.exe\" --input \"C:\\\\Users\\\\andre\\\\BabylonPong\\\\models\\\\wizard_cast.fbx\" --output \"C:\\\\Users\\\\andre\\\\BabylonPong\\\\models\\\\wizard_cast.glb\")",
+      "Bash(ls:*)",
+      "Bash(\"C:/Program Files/Blender Foundation/Blender 5.0/blender.exe\":*)",
+      "Bash(\"C:/Program Files/Blender Foundation/Blender 5.0/blender.exe\" --background --python \"C:/Users/andre/BabylonPong/models/convert_fbx.py\" -- \"C:/Users/andre/BabylonPong/models/left_strafe.fbx\" \"C:/Users/andre/BabylonPong/models/left_strafe.glb\")",
+      "Bash(\"C:/Program Files/Blender Foundation/Blender 5.0/blender.exe\" --background --python \"C:/Users/andre/BabylonPong/models/merge_animations.py\")",
+      "Bash(\"C:/Program Files/Blender Foundation/Blender 5.0/blender.exe\" --background --python \"C:/Users/andre/BabylonPong/models/add_animations.py\")",
+      "Skill(handoff)",
+      "Bash(gh auth status:*)"
+    ]
+  }
+}
