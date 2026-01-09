@@ -19,14 +19,15 @@
 | [Debug.md](./docs/Debug.md) | Test scenarios |
 
 ## Current State
-- **Last Updated**: 2026-01-09 (Session 13)
-- **Game Status**: 2 active spells + upgrade system, talent selection UI, deployed to GitHub Pages
+- **Last Updated**: 2026-01-09 (Session 14)
+- **Game Status**: 2 active spells + upgrade system, Magma Lob fully working with bouncing bombs
 - **Active Branch**: gh-pages
 
 ### What's Working
 - **Talent Selection Screen**: Shows before game, select upgrade then "Start Battle"
 - **UpgradeRegistry**: Modular system for defining spell upgrades with hooks
-- **Magma Lob Upgrade**: Fireball arcs, splits into 2 at midline
+- **Magma Lob Upgrade**: 45-degree arc peaks at midline, splits into 2 bouncing bombs
+- **Bouncing Bombs**: Real floor physics (Y=0.22), darker visuals, 1 fixed damage, varied velocities
 - **Character Models**: GLB wizard models with animations (idle, strafe, cast, parry)
 - **Animation System**: 0.2s crossfade blending, freeze on frostbolt hit
 - **Loading Screen**: Shows while models load, fades when ready
@@ -53,10 +54,10 @@ UpgradeRegistry = {
   magma_lob: {
     id, name, baseAbility: 'fireball', tier: 1,
     icon: '🌋', description, effects[],
-    onSpawn(proj),       // Add arc velocity
-    onUpdate(proj, dt),  // Apply gravity
-    shouldSplit(proj),   // Check if crossing midline
-    onSplit(proj, spawnFunc) // Create 2 split fireballs
+    onSpawn(proj),       // Calculate arc for apex at midline
+    onUpdate(proj, dt),  // Custom gravity, bomb bouncing
+    shouldSplit(proj),   // Check if crossing midline (x=0)
+    onSplit(proj, spawnFunc) // Create 2 bouncing magma bombs
   }
 }
 
@@ -65,10 +66,18 @@ playerUpgrades = ['magma_lob'];
 hasUpgrade('magma_lob'); // Check if player has upgrade
 ```
 
+### Magma Lob Details
+- **Lob**: Arc calculated so apex is exactly at midline (x=0)
+- **Split**: Triggers at midline with explosion particles + sound
+- **Bombs**: Bounce on real floor (Y=0.22), darker visuals, no light
+- **Damage**: Fixed at 1 (no volley scaling)
+- **Velocity**: Varied per bomb (60-140%), minimum 5 to prevent stuck
+- **Physics**: Skips main game loop Y-axis, uses own gravity
+
 ### Defined Upgrades (only Magma Lob active for testing)
 | Upgrade | Spell | Effect |
 |---------|-------|--------|
-| Magma Lob | Fireball | Arc + split at midline |
+| Magma Lob | Fireball | 45° arc, splits at midline into 2 bouncing bombs |
 | Pyroblast | Fireball | 3s cast, 5 damage |
 | Frostbite | Frost Bolt | +0.3s freeze on frozen targets |
 | Glacial Cascade | Frost Bolt | Leaves slowing trail |

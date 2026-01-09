@@ -119,6 +119,16 @@
 
 ## Completed Tasks
 
+### 2026-01-09 Session 14
+- [x] Magma Lob rework: arc peaks exactly at midline
+- [x] Magma bombs bounce on actual floor (not floating tableY)
+- [x] Bomb visual distinction (darker, no light, fewer particles)
+- [x] Bomb fixed damage (1, no volley scaling)
+- [x] Varied bomb velocities (arrive at different times)
+- [x] Minimum bomb velocity (5) to prevent stuck projectiles
+- [x] Explosion particle burst and sound on split
+- [x] Main physics loop skips Y-axis for lobs and bombs
+
 ### 2026-01-09 Session 13
 - [x] UpgradeRegistry modular system for spell upgrades
 - [x] Talent selection UI (shows before game starts)

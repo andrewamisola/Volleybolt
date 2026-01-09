@@ -2,6 +2,70 @@
 
 ## 2026-01-09
 
+### Session 14 (Magma Lob Rework - Bouncing Bombs)
+**Time**: Night
+
+#### Summary
+Major rework of the Magma Lob upgrade. Changed from simple split-at-midline to a full grenade launcher experience with physics-based bouncing bombs that roll on the actual floor.
+
+#### Implemented
+- [x] **Lob Arc Physics**
+  - Calculated velY dynamically so apex is exactly at midline (x=0)
+  - Formula: `velY = gravity * (distanceToMid / velX)`
+  - Consistent, predictable arc every time
+  - Lob has its own physics (skips main game loop Y-axis)
+
+- [x] **Midline Split Trigger**
+  - Changed from apex-based to position-based
+  - Splits when crossing x=0 (center/net)
+  - Explosion particle burst (60 particles) on split
+  - Plays fireball_cast.wav at lower pitch (0.7) for boom
+
+- [x] **Real Floor Physics for Bombs**
+  - Bombs bounce off actual ground (Y=0.22, ball radius)
+  - Skips main game loop's tableY (0.6) floating
+  - Bounce coefficient 0.65 with velocity threshold
+  - Minimum velocity enforced (5) to prevent stuck bombs
+
+- [x] **Bomb Visual Distinction**
+  - Darker magma material (0.6, 0.2, 0.05 emissive)
+  - No point light (removed for bombs)
+  - Dimmer glow sphere, shorter trail
+  - Fewer, darker particles (30 core, 15 outer vs 80/50)
+
+- [x] **Bomb Damage**
+  - Fixed at 1 damage (no volley scaling)
+  - Uses `proj.damage` property checked at gate hit
+
+- [x] **Varied Bomb Velocities**
+  - Bomb 1: 60-110% speed, lower pop (1-5)
+  - Bomb 2: 90-140% speed, higher pop (3-7)
+  - Different Z spread angles
+  - Bombs arrive at different times for counterplay
+
+#### Technical Notes
+- Main physics loop now skips Y-axis for `proj.isLob` and `proj.isMagmaBomb`
+- Parry code also skips Y reset for these projectile types
+- `window.flareTexture` made global for upgrade registry access
+- spawnFireball() accepts options object: `{ isMagmaBomb, startY, velY }`
+
+#### Architecture
+```javascript
+// Lob physics calculation
+const distanceToMid = Math.abs(proj.mesh.position.x);
+const timeToMid = distanceToMid / Math.abs(proj.velX);
+proj.velY = proj.lobGravity * timeToMid;  // Apex at midline
+
+// Bomb ground physics (separate from tableY)
+const groundLevel = 0.22;  // Ball radius, sits ON floor
+proj.velY -= 12 * dt;  // Gravity
+if (proj.mesh.position.y <= groundLevel) {
+    proj.velY = Math.abs(proj.velY) * 0.65;  // Bounce
+}
+```
+
+---
+
 ### Session 13 (Upgrade System & Talent Selection)
 **Time**: Night
 

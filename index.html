@@ -907,6 +907,284 @@
             opacity: 1;
         }
 
+        /* ==========================================
+           TALENT SYSTEM UI - HotS-style
+           ========================================== */
+
+        /* Upgrade Indicator Badge */
+        .upgrade-indicator {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            width: 24px;
+            height: 24px;
+            background: linear-gradient(135deg, #ffd700 0%, #ffaa00 100%);
+            border-radius: 50%;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 15;
+            animation: upgradeIndicatorPulse 1.5s ease-in-out infinite;
+            box-shadow: 0 0 10px rgba(255, 215, 0, 0.8);
+        }
+        .upgrade-indicator-icon {
+            font-size: 14px;
+            color: #1a1a2a;
+            font-weight: bold;
+        }
+        @keyframes upgradeIndicatorPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.15); }
+        }
+
+        /* Ability slot glow when upgradeable */
+        .ability-slot.upgradeable .ability-hex::before {
+            background: linear-gradient(135deg, #ffd700, #ffaa00, #ffd700) !important;
+            animation: upgradeableGlow 2s ease-in-out infinite;
+        }
+        .ability-slot.upgradeable .upgrade-indicator {
+            display: flex;
+        }
+        @keyframes upgradeableGlow {
+            0%, 100% { box-shadow: 0 0 15px rgba(255, 215, 0, 0.5); }
+            50% { box-shadow: 0 0 30px rgba(255, 215, 0, 0.9), 0 0 50px rgba(255, 170, 0, 0.4); }
+        }
+
+        /* Upgrade Points HUD */
+        #upgradePointsHUD {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, rgba(40, 30, 10, 0.9), rgba(30, 25, 15, 0.9));
+            border: 2px solid rgba(255, 215, 0, 0.5);
+            border-radius: 20px;
+            padding: 6px 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 100;
+            opacity: 0;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        #upgradePointsHUD.visible {
+            opacity: 1;
+        }
+        #upgradePointsHUD.has-points {
+            animation: upgradeHUDPulse 2s ease-in-out infinite;
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
+        }
+        .upgrade-points-icon {
+            font-size: 20px;
+        }
+        .upgrade-points-value {
+            font-family: 'Cinzel', serif;
+            font-size: 20px;
+            font-weight: 700;
+            color: #ffd700;
+        }
+        @keyframes upgradeHUDPulse {
+            0%, 100% { box-shadow: 0 0 15px rgba(255, 215, 0, 0.4); }
+            50% { box-shadow: 0 0 30px rgba(255, 215, 0, 0.8); }
+        }
+
+        /* Talent Selection Panel */
+        .talent-panel {
+            position: fixed;
+            bottom: 240px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 400px;
+            background: linear-gradient(180deg, rgba(15, 20, 35, 0.98) 0%, rgba(10, 12, 25, 0.98) 100%);
+            border: 2px solid rgba(100, 150, 255, 0.4);
+            border-radius: 12px;
+            padding: 16px;
+            z-index: 9999;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 40px rgba(50, 100, 200, 0.15);
+        }
+        .talent-panel.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        .talent-panel-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(100, 150, 255, 0.3);
+        }
+        .talent-panel-icon {
+            font-size: 28px;
+        }
+        .talent-panel-title {
+            font-family: 'Cinzel', serif;
+            font-size: 18px;
+            font-weight: 700;
+            color: #ffd866;
+            flex: 1;
+        }
+        .talent-panel-tier {
+            font-family: 'Cinzel', serif;
+            font-size: 12px;
+            padding: 4px 10px;
+            background: rgba(100, 150, 255, 0.2);
+            border: 1px solid rgba(100, 150, 255, 0.4);
+            border-radius: 4px;
+            color: #88ccff;
+        }
+
+        /* Tier Progression Display */
+        .talent-panel-progression {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0;
+            margin-bottom: 16px;
+        }
+        .tier-node {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Cinzel', serif;
+            font-size: 14px;
+            font-weight: 700;
+            transition: all 0.3s ease;
+        }
+        .tier-node.completed {
+            background: linear-gradient(135deg, #4caf50, #2e7d32);
+            color: white;
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+        }
+        .tier-node.active {
+            background: linear-gradient(135deg, #ffd700, #ffaa00);
+            color: #1a1a2a;
+            box-shadow: 0 0 15px rgba(255, 215, 0, 0.6);
+            animation: activeTierPulse 1.5s ease-in-out infinite;
+        }
+        .tier-node.locked {
+            background: rgba(50, 60, 80, 0.6);
+            color: rgba(255, 255, 255, 0.3);
+            border: 1px solid rgba(100, 120, 150, 0.3);
+        }
+        .tier-connector {
+            width: 40px;
+            height: 3px;
+            background: rgba(100, 120, 150, 0.3);
+        }
+        .tier-connector.completed {
+            background: linear-gradient(90deg, #4caf50, #2e7d32);
+        }
+        @keyframes activeTierPulse {
+            0%, 100% { box-shadow: 0 0 15px rgba(255, 215, 0, 0.6); }
+            50% { box-shadow: 0 0 25px rgba(255, 215, 0, 0.9); }
+        }
+
+        /* Talent Choices Container */
+        .talent-choices {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+
+        /* Individual Talent Choice Card */
+        .talent-choice {
+            width: 120px;
+            background: rgba(30, 40, 60, 0.8);
+            border: 2px solid rgba(100, 120, 150, 0.4);
+            border-radius: 10px;
+            padding: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+        .talent-choice:hover {
+            border-color: rgba(150, 180, 220, 0.8);
+            transform: translateY(-4px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+        }
+        .talent-choice.selected {
+            border-color: #ffd700;
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
+            background: rgba(60, 50, 30, 0.8);
+        }
+        .talent-choice-icon {
+            font-size: 36px;
+            margin-bottom: 8px;
+            display: block;
+        }
+        .talent-choice-name {
+            font-family: 'Cinzel', serif;
+            font-size: 13px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 6px;
+            line-height: 1.2;
+        }
+        .talent-choice-desc {
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.7);
+            line-height: 1.3;
+        }
+
+        /* Panel Footer */
+        .talent-panel-footer {
+            margin-top: 12px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(100, 150, 255, 0.2);
+            text-align: center;
+        }
+        .talent-points-display {
+            font-family: 'Cinzel', serif;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+        .points-icon {
+            font-size: 14px;
+            margin-right: 4px;
+        }
+        .points-value {
+            color: #ffd700;
+            font-weight: 700;
+            font-size: 16px;
+        }
+
+        /* Panel arrow pointing to ability */
+        .talent-panel::after {
+            content: '';
+            position: absolute;
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 10px solid transparent;
+            border-top-color: rgba(10, 12, 25, 0.98);
+        }
+
+        /* Floating notification text */
+        .floating-notification {
+            position: fixed;
+            font-family: 'Cinzel', serif;
+            font-size: 24px;
+            font-weight: 700;
+            color: #ffd700;
+            text-shadow: 0 0 20px rgba(255, 215, 0, 0.8), 0 2px 4px rgba(0, 0, 0, 0.8);
+            pointer-events: none;
+            z-index: 10000;
+            animation: floatUp 2s ease-out forwards;
+            transform: translate(-50%, -50%);
+        }
+        @keyframes floatUp {
+            0% { opacity: 1; transform: translate(-50%, -50%) scale(0.8); }
+            20% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+            100% { opacity: 0; transform: translate(-50%, -150%) scale(1); }
+        }
+
         /* Loading Screen */
         #loadingScreen {
             position: fixed;
@@ -1185,6 +1463,9 @@
                 <div class="cooldown-sweep" id="fireballSweep"></div>
                 <div class="cast-progress-overlay" id="fireballCastProgress"></div>
             </div>
+            <div class="upgrade-indicator">
+                <span class="upgrade-indicator-icon">⬆</span>
+            </div>
             <div class="cooldown-overlay">
                 <span class="cooldown-text" id="fireballCDText">0</span>
             </div>
@@ -1239,6 +1520,9 @@
                 <div class="shine-effect"></div>
                 <span class="ability-icon">❄️</span>
                 <div class="cooldown-sweep" id="frostboltSweep"></div>
+            </div>
+            <div class="upgrade-indicator">
+                <span class="upgrade-indicator-icon">⬆</span>
             </div>
             <div class="cooldown-overlay">
                 <span class="cooldown-text" id="frostboltCDText">0</span>
@@ -1360,6 +1644,37 @@
         <span class="parry-icon">🛡️</span>
         <span class="parry-label">Parry</span>
         <span class="parry-key">SPACE</span>
+    </div>
+
+    <!-- Upgrade Points HUD -->
+    <div id="upgradePointsHUD">
+        <span class="upgrade-points-icon">⭐</span>
+        <span class="upgrade-points-value" id="upgradePointsValue">0</span>
+    </div>
+
+    <!-- Talent Selection Panel -->
+    <div id="talentPanel" class="talent-panel">
+        <div class="talent-panel-header">
+            <span class="talent-panel-icon">🔥</span>
+            <span class="talent-panel-title">Fireball Upgrades</span>
+            <span class="talent-panel-tier">Tier 1</span>
+        </div>
+        <div class="talent-panel-progression">
+            <div class="tier-node tier-1 active">1</div>
+            <div class="tier-connector"></div>
+            <div class="tier-node tier-2 locked">2</div>
+            <div class="tier-connector"></div>
+            <div class="tier-node tier-3 locked">3</div>
+        </div>
+        <div class="talent-choices">
+            <!-- Populated by JavaScript -->
+        </div>
+        <div class="talent-panel-footer">
+            <span class="talent-points-display">
+                <span class="points-icon">⭐</span>
+                <span class="points-value">1</span> Upgrade Point Available
+            </span>
+        </div>
     </div>
 
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
@@ -1895,50 +2210,159 @@
                 baseAbility: 'fireball',
                 tier: 1,
                 icon: '🌋',
-                description: 'Fireball arcs through the air. At midline, splits into 2 rolling fireballs.',
+                description: 'Fireball soars high, then explodes into 2 slow-rolling magma bombs.',
                 effects: [
-                    'Fireball travels in an arc',
-                    'Splits into 2 at midline',
-                    'Split fireballs roll low along ground'
+                    'Fireball arcs high into the sky',
+                    'Explodes at apex into 2 magma bombs',
+                    'Bombs roll slowly like grenades'
                 ],
                 // Modifier function applied to projectile on spawn
                 onSpawn: (proj) => {
                     proj.isLob = true;
                     proj.hasSplit = false;
-                    // Add upward arc velocity
-                    proj.velY = 6;  // Initial upward velocity for arc
+
+                    // Calculate arc so apex is exactly at midline (x=0)
+                    proj.velX *= 0.8;  // Forward speed
+                    proj.lobGravity = 8;  // Fixed gravity
+
+                    // Physics: time to midline = distance / velX
+                    // At apex, velY = 0, so: time to apex = initial_velY / gravity
+                    // For apex at midline: initial_velY = gravity * (distance / velX)
+                    const distanceToMid = Math.abs(proj.mesh.position.x);
+                    const timeToMid = distanceToMid / Math.abs(proj.velX);
+                    proj.velY = proj.lobGravity * timeToMid;
+
+                    // No curve - clean arc
+                    proj.lobCurve = 0;
                 },
                 // Called every frame for this projectile
                 onUpdate: (proj, dt) => {
                     // Gravity pulls the lob down
                     if (proj.isLob && !proj.hasSplit) {
-                        proj.velY -= 12 * dt;  // Gravity
+                        proj.velY -= proj.lobGravity * dt;
                         proj.mesh.position.y += proj.velY * dt;
-                        // Keep above ground
+
+                        // Apply random curve drift
+                        if (proj.lobCurve) {
+                            proj.velZ += proj.lobCurve * dt;
+                        }
+
+                        // Keep above ground (shouldn't hit before split)
                         if (proj.mesh.position.y < 0.3) {
                             proj.mesh.position.y = 0.3;
                             proj.velY = 0;
                         }
                     }
+
+                    // Bouncing magma bombs - real physics on the FLOOR!
+                    if (proj.isMagmaBomb) {
+                        const groundLevel = 0.22;  // Ball radius - sits on floor, not through it
+
+                        // Always apply gravity
+                        proj.velY -= 12 * dt;
+                        proj.mesh.position.y += proj.velY * dt;
+
+                        // Bounce off ground!
+                        if (proj.mesh.position.y <= groundLevel) {
+                            proj.mesh.position.y = groundLevel;
+                            proj.velY = Math.abs(proj.velY) * 0.65;  // Bounce with energy loss
+
+                            // Stop bouncing when too slow
+                            if (proj.velY < 0.5) {
+                                proj.velY = 0;
+                            }
+                        }
+
+                        // Slight air friction
+                        proj.velX *= 0.998;
+                        proj.velZ *= 0.998;
+
+                        // Minimum velocity - don't let bombs get stuck!
+                        const minVelX = 5;
+                        if (Math.abs(proj.velX) < minVelX) {
+                            proj.velX = Math.sign(proj.velX) * minVelX || minVelX;  // Keep moving forward
+                        }
+
+                        // Spin based on movement
+                        if (proj.mesh.rotationQuaternion) {
+                            const speed = Math.sqrt(proj.velX * proj.velX + proj.velZ * proj.velZ);
+                            const rollSpeed = speed * 5;
+                            const rollAxis = new BABYLON.Vector3(-proj.velZ, 0, proj.velX).normalize();
+                            if (rollAxis.length() > 0.01) {
+                                const rollQuat = BABYLON.Quaternion.RotationAxis(rollAxis, rollSpeed * dt);
+                                proj.mesh.rotationQuaternion = rollQuat.multiply(proj.mesh.rotationQuaternion);
+                            }
+                        }
+                    }
                 },
-                // Check if should split
+                // Check if should split - at the midline (center/net)
                 shouldSplit: (proj) => {
+                    if (!proj.isLob || proj.hasSplit) return false;
                     // Split when crossing midline (x=0)
                     const crossingMid = (proj.owner === 'player' && proj.mesh.position.x >= 0) ||
                                        (proj.owner === 'ai' && proj.mesh.position.x <= 0);
-                    return proj.isLob && !proj.hasSplit && crossingMid;
+                    return crossingMid;
                 },
-                // Create split projectiles
+                // Create split projectiles with explosion effect
                 onSplit: (proj, spawnFunc) => {
                     proj.hasSplit = true;
                     const baseX = proj.mesh.position.x;
+                    const baseY = proj.mesh.position.y;
                     const baseZ = proj.mesh.position.z;
-                    const speed = Math.abs(proj.velX) * 0.8;  // Slightly slower
-                    const dir = proj.owner === 'player' ? 1 : -1;
 
-                    // Spawn two split fireballs with spread
-                    spawnFunc(proj.owner, baseX, baseZ + 1.5, dir * speed, 2, true);   // Upper split
-                    spawnFunc(proj.owner, baseX, baseZ - 1.5, dir * speed, -2, true);  // Lower split
+                    // === EXPLOSION EFFECT ===
+                    // Play explosion sound
+                    playSound('fireballCast', baseX, 1.0, 0.7);  // Lower pitch for boom
+
+                    // Create burst particles at split point
+                    const burstParticles = new BABYLON.ParticleSystem("magmaBurst", 100, scene);
+                    burstParticles.particleTexture = window.flareTexture;
+                    burstParticles.emitter = new BABYLON.Vector3(baseX, baseY, baseZ);
+                    burstParticles.minEmitBox = BABYLON.Vector3.Zero();
+                    burstParticles.maxEmitBox = BABYLON.Vector3.Zero();
+                    burstParticles.color1 = new BABYLON.Color4(1, 0.6, 0.1, 1);
+                    burstParticles.color2 = new BABYLON.Color4(1, 0.3, 0, 1);
+                    burstParticles.colorDead = new BABYLON.Color4(0.5, 0.1, 0, 0);
+                    burstParticles.minSize = 0.4;
+                    burstParticles.maxSize = 1.0;
+                    burstParticles.minLifeTime = 0.3;
+                    burstParticles.maxLifeTime = 0.6;
+                    burstParticles.emitRate = 0;  // Manual burst
+                    burstParticles.manualEmitCount = 60;
+                    burstParticles.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
+                    burstParticles.direction1 = new BABYLON.Vector3(-4, -2, -4);
+                    burstParticles.direction2 = new BABYLON.Vector3(4, 4, 4);
+                    burstParticles.minEmitPower = 5;
+                    burstParticles.maxEmitPower = 10;
+                    burstParticles.gravity = new BABYLON.Vector3(0, -8, 0);
+                    burstParticles.start();
+
+                    // Clean up burst after animation
+                    setTimeout(() => {
+                        burstParticles.stop();
+                        burstParticles.dispose();
+                    }, 800);
+
+                    // Spawn two magma bombs - MORE variation so they don't hit at same time
+                    const baseVelX = proj.velX * 0.5;
+
+                    // Each bomb gets noticeably different speed
+                    const velX1 = baseVelX * (0.6 + Math.random() * 0.5);  // 60-110% - one slower
+                    const velX2 = baseVelX * (0.9 + Math.random() * 0.5);  // 90-140% - one faster
+
+                    // Different upward pops - more variation
+                    const popUp1 = 1 + Math.random() * 4;
+                    const popUp2 = 3 + Math.random() * 4;  // Higher range
+
+                    // Different spread angles
+                    const zVel1 = 1.5 + Math.random() * 3;
+                    const zVel2 = -(2 + Math.random() * 3);
+
+                    // Spawn at apex height with varied velocities
+                    const bombOptions1 = { isMagmaBomb: true, startY: baseY, velY: popUp1 };
+                    const bombOptions2 = { isMagmaBomb: true, startY: baseY, velY: popUp2 };
+                    spawnFunc(proj.owner, baseX, baseZ + 0.3, velX1, zVel1, true, bombOptions1);
+                    spawnFunc(proj.owner, baseX, baseZ - 0.3, velX2, zVel2, true, bombOptions2);
 
                     return true;  // Signal to destroy original
                 }
@@ -2019,12 +2443,129 @@
             }
         };
 
-        // Player's chosen upgrades (array of upgrade IDs)
-        let playerUpgrades = [];
+        // ==========================================
+        // TALENT TREE - HotS-style progression
+        // ==========================================
+        const TalentTree = {
+            fireball: {
+                abilityId: 'fireball',
+                abilityName: 'Fireball',
+                icon: '🔥',
+                tiers: {
+                    1: { choices: ['magma_lob', 'pyroblast'] },
+                    2: { choices: ['inferno_trail', 'blazing_speed'] },
+                    3: { choices: ['phoenix_fire', 'hellfire_barrage'] }
+                }
+            },
+            frostbolt: {
+                abilityId: 'frostbolt',
+                abilityName: 'Frost Bolt',
+                icon: '❄️',
+                tiers: {
+                    1: { choices: ['frostbite', 'glacial_cascade'] },
+                    2: { choices: ['frozen_orb', 'permafrost'] },
+                    3: { choices: ['absolute_zero', 'ice_age'] }
+                }
+            }
+        };
 
-        // Check if player has an upgrade
+        // ==========================================
+        // TALENT STATE - Player progression tracking
+        // ==========================================
+        const TalentState = {
+            upgradePoints: 0,
+            totalPointsEarned: 0,
+            abilities: {
+                fireball: { currentTier: 0, selectedTalents: [] },
+                frostbolt: { currentTier: 0, selectedTalents: [] }
+            },
+            isSelectingTalent: false,
+            activeAbility: null
+        };
+
+        // Check if an ability can be upgraded
+        function canUpgradeAbility(abilityId) {
+            const state = TalentState.abilities[abilityId];
+            if (!state) return false;
+            if (state.currentTier >= 3) return false;
+            if (TalentState.upgradePoints < 1) return false;
+            return true;
+        }
+
+        // Get available talent choices for an ability
+        function getAvailableChoices(abilityId) {
+            const state = TalentState.abilities[abilityId];
+            const tree = TalentTree[abilityId];
+            if (!state || !tree) return [];
+
+            const nextTier = state.currentTier + 1;
+            if (nextTier > 3) return [];
+
+            return tree.tiers[nextTier].choices.map(id => UpgradeRegistry[id]).filter(Boolean);
+        }
+
+        // Select a talent upgrade
+        function selectTalent(abilityId, upgradeId) {
+            if (!canUpgradeAbility(abilityId)) return false;
+
+            const upgrade = UpgradeRegistry[upgradeId];
+            if (!upgrade || upgrade.baseAbility !== abilityId) return false;
+
+            const state = TalentState.abilities[abilityId];
+            state.selectedTalents.push(upgradeId);
+            state.currentTier++;
+            TalentState.upgradePoints--;
+
+            console.log(`Selected talent: ${upgrade.name} for ${abilityId} (Tier ${state.currentTier})`);
+
+            // Update UI
+            updateUpgradePointsHUD();
+            updateAbilityUpgradeIndicators();
+            hideTalentPanel();
+
+            // Play selection sound
+            playSound('spell_ready', 0, 0.6);
+
+            return true;
+        }
+
+        // Get all active upgrades for an ability
+        function getActiveUpgrades(abilityId) {
+            const state = TalentState.abilities[abilityId];
+            if (!state) return [];
+            return state.selectedTalents.map(id => UpgradeRegistry[id]).filter(Boolean);
+        }
+
+        // Award upgrade points (called on round win)
+        function awardUpgradePoint(count = 1) {
+            TalentState.upgradePoints += count;
+            TalentState.totalPointsEarned += count;
+
+            updateUpgradePointsHUD();
+            updateAbilityUpgradeIndicators();
+
+            // Show notification
+            showUpgradeNotification();
+        }
+
+        // Reset talent state for new match
+        function resetTalentState() {
+            TalentState.upgradePoints = 0;
+            TalentState.totalPointsEarned = 0;
+            for (const state of Object.values(TalentState.abilities)) {
+                state.currentTier = 0;
+                state.selectedTalents = [];
+            }
+            updateUpgradePointsHUD();
+            updateAbilityUpgradeIndicators();
+        }
+
+        // Check if player has an upgrade (compatibility wrapper)
         function hasUpgrade(upgradeId) {
-            return playerUpgrades.includes(upgradeId);
+            for (const state of Object.values(TalentState.abilities)) {
+                if (state.selectedTalents.includes(upgradeId)) return true;
+            }
+            return false;
         }
 
         // Get upgrade definition
@@ -2041,9 +2582,11 @@
         function applyUpgradesToProjectile(proj, abilityId, owner) {
             if (owner !== 'player') return;  // Only player has upgrades for now
 
-            for (const upgradeId of playerUpgrades) {
-                const upgrade = getUpgrade(upgradeId);
-                if (upgrade && upgrade.baseAbility === abilityId && upgrade.onSpawn) {
+            // Get active upgrades for this ability from TalentState
+            const activeUpgrades = getActiveUpgrades(abilityId);
+
+            for (const upgrade of activeUpgrades) {
+                if (upgrade.onSpawn) {
                     upgrade.onSpawn(proj);
                 }
             }
@@ -2053,13 +2596,16 @@
         function updateProjectileUpgrades(proj, dt) {
             if (proj.owner !== 'player') return;
 
-            for (const upgradeId of playerUpgrades) {
-                const upgrade = getUpgrade(upgradeId);
-                if (upgrade && upgrade.onUpdate) {
+            // Get ability ID from projectile type
+            const abilityId = proj.type || 'fireball';
+            const activeUpgrades = getActiveUpgrades(abilityId);
+
+            for (const upgrade of activeUpgrades) {
+                if (upgrade.onUpdate) {
                     upgrade.onUpdate(proj, dt);
                 }
                 // Check for split
-                if (upgrade && upgrade.shouldSplit && upgrade.shouldSplit(proj)) {
+                if (upgrade.shouldSplit && upgrade.shouldSplit(proj)) {
                     if (upgrade.onSplit) {
                         const shouldDestroy = upgrade.onSplit(proj, window.spawnFireball);
                         if (shouldDestroy) {
@@ -2068,6 +2614,207 @@
                     }
                 }
             }
+        }
+
+        // ==========================================
+        // TALENT SYSTEM UI FUNCTIONS
+        // ==========================================
+
+        // Update the upgrade points HUD display
+        function updateUpgradePointsHUD() {
+            const hud = document.getElementById('upgradePointsHUD');
+            const value = document.getElementById('upgradePointsValue');
+
+            if (hud && value) {
+                value.textContent = TalentState.upgradePoints;
+
+                if (TalentState.totalPointsEarned > 0) {
+                    hud.classList.add('visible');
+                }
+
+                if (TalentState.upgradePoints > 0) {
+                    hud.classList.add('has-points');
+                } else {
+                    hud.classList.remove('has-points');
+                }
+            }
+        }
+
+        // Update ability slot indicators
+        function updateAbilityUpgradeIndicators() {
+            const abilitySlots = {
+                fireball: document.getElementById('fireballSlot'),
+                frostbolt: document.getElementById('frostboltSlot')
+            };
+
+            for (const [abilityId, slot] of Object.entries(abilitySlots)) {
+                if (!slot) continue;
+
+                const canUpgrade = canUpgradeAbility(abilityId);
+
+                if (canUpgrade) {
+                    slot.classList.add('upgradeable');
+                } else {
+                    slot.classList.remove('upgradeable');
+                }
+            }
+        }
+
+        // Show the talent panel for an ability
+        function showTalentPanel(abilityId) {
+            if (!canUpgradeAbility(abilityId)) return;
+
+            const panel = document.getElementById('talentPanel');
+            if (!panel) return;
+
+            const tree = TalentTree[abilityId];
+            const state = TalentState.abilities[abilityId];
+            const choices = getAvailableChoices(abilityId);
+            const nextTier = state.currentTier + 1;
+
+            // Update header
+            panel.querySelector('.talent-panel-icon').textContent = tree.icon;
+            panel.querySelector('.talent-panel-title').textContent = `${tree.abilityName} Upgrades`;
+            panel.querySelector('.talent-panel-tier').textContent = `Tier ${nextTier}`;
+
+            // Update progression nodes
+            updateTierProgression(panel, state.currentTier);
+
+            // Populate choices
+            const choicesContainer = panel.querySelector('.talent-choices');
+            choicesContainer.innerHTML = '';
+
+            for (const upgrade of choices) {
+                const choiceEl = document.createElement('div');
+                choiceEl.className = 'talent-choice';
+                choiceEl.dataset.upgradeId = upgrade.id;
+
+                choiceEl.innerHTML = `
+                    <span class="talent-choice-icon">${upgrade.icon}</span>
+                    <div class="talent-choice-name">${upgrade.name}</div>
+                    <div class="talent-choice-desc">${upgrade.description}</div>
+                `;
+
+                choiceEl.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    selectTalent(abilityId, upgrade.id);
+                });
+
+                choicesContainer.appendChild(choiceEl);
+            }
+
+            // Update points display
+            panel.querySelector('.points-value').textContent = TalentState.upgradePoints;
+
+            // Show panel
+            panel.classList.add('visible');
+            TalentState.isSelectingTalent = true;
+            TalentState.activeAbility = abilityId;
+        }
+
+        // Update tier progression display
+        function updateTierProgression(panel, currentTier) {
+            const nodes = panel.querySelectorAll('.tier-node');
+            const connectors = panel.querySelectorAll('.tier-connector');
+
+            nodes.forEach((node, index) => {
+                const tier = index + 1;
+                node.classList.remove('completed', 'active', 'locked');
+
+                if (tier <= currentTier) {
+                    node.classList.add('completed');
+                } else if (tier === currentTier + 1) {
+                    node.classList.add('active');
+                } else {
+                    node.classList.add('locked');
+                }
+            });
+
+            connectors.forEach((conn, index) => {
+                const tier = index + 1;
+                conn.classList.remove('completed');
+                if (tier <= currentTier) {
+                    conn.classList.add('completed');
+                }
+            });
+        }
+
+        // Hide the talent panel
+        function hideTalentPanel() {
+            const panel = document.getElementById('talentPanel');
+            if (panel) {
+                panel.classList.remove('visible');
+            }
+            TalentState.isSelectingTalent = false;
+            TalentState.activeAbility = null;
+        }
+
+        // Show upgrade notification
+        function showUpgradeNotification() {
+            // Create floating notification
+            const el = document.createElement('div');
+            el.className = 'floating-notification';
+            el.textContent = '+1 Upgrade Point!';
+            el.style.left = `${window.innerWidth / 2}px`;
+            el.style.top = `${window.innerHeight / 2 - 100}px`;
+            document.body.appendChild(el);
+
+            setTimeout(() => el.remove(), 2000);
+        }
+
+        // Setup talent panel click handlers on ability slots
+        function setupTalentInteraction() {
+            const abilitySlots = ['fireballSlot', 'frostboltSlot'];
+
+            for (const slotId of abilitySlots) {
+                const slot = document.getElementById(slotId);
+                if (!slot) continue;
+
+                const abilityId = slot.dataset.ability;
+
+                // Click on upgrade indicator to open talent panel
+                slot.addEventListener('click', (e) => {
+                    // Check if clicking on upgrade indicator area
+                    if (!canUpgradeAbility(abilityId)) return;
+
+                    // If panel is already open for this ability, close it
+                    if (TalentState.isSelectingTalent && TalentState.activeAbility === abilityId) {
+                        hideTalentPanel();
+                        return;
+                    }
+
+                    // Open panel
+                    showTalentPanel(abilityId);
+                    e.stopPropagation();
+                });
+            }
+
+            // Click outside to close panel
+            document.addEventListener('click', (e) => {
+                if (TalentState.isSelectingTalent) {
+                    const panel = document.getElementById('talentPanel');
+                    if (panel && !panel.contains(e.target)) {
+                        const clickedSlot = e.target.closest('.ability-slot');
+                        if (!clickedSlot || !canUpgradeAbility(clickedSlot.dataset.ability)) {
+                            hideTalentPanel();
+                        }
+                    }
+                }
+            });
+
+            // ESC to close panel
+            document.addEventListener('keydown', (e) => {
+                if (e.code === 'Escape' && TalentState.isSelectingTalent) {
+                    hideTalentPanel();
+                }
+            });
+        }
+
+        // Initialize talent system on game load
+        function initTalentSystem() {
+            setupTalentInteraction();
+            updateUpgradePointsHUD();
+            updateAbilityUpgradeIndicators();
         }
 
         let playerFireballCooldown = 0;
@@ -2449,8 +3196,9 @@
                     }
                     console.log("All models loaded!");
 
-                    // Show talent selection screen
-                    setTimeout(() => showTalentScreen(), 500);
+                    // Initialize talent system and start game immediately
+                    initTalentSystem();
+                    setTimeout(() => startRound(), 500);
                 }
             };
 
@@ -3099,8 +3847,8 @@
             const glow = new BABYLON.GlowLayer("glow", scene);
             glow.intensity = 0.8;
 
-            // Preload particle texture
-            const flareTexture = new BABYLON.Texture("https://assets.babylonjs.com/textures/flare.png", scene);
+            // Preload particle texture (global for upgrades to access)
+            const flareTexture = window.flareTexture = new BABYLON.Texture("https://assets.babylonjs.com/textures/flare.png", scene);
 
             // Fireball material - glowing hot core
             const fireballCoreMat = new BABYLON.StandardMaterial("fireballCoreMat", scene);
@@ -3109,73 +3857,108 @@
             fireballCoreMat.specularColor = new BABYLON.Color3(0, 0, 0);
 
             // Fireball spawner function
-            window.spawnFireball = (owner, startX, startZ, velX, velZ, isSplitProjectile = false) => {
+            // options: { isMagmaBomb, startY } for magma lob bombs
+            window.spawnFireball = (owner, startX, startZ, velX, velZ, isSplitProjectile = false, options = {}) => {
                 const proj = {
                     owner: owner,  // 'player' or 'ai'
                     velX: velX,
                     velZ: velZ,
-                    velY: 0,
+                    velY: options.velY || 0,
                     speed: abilities.fireball.speed,
                     isParried: false,
                     parriedBy: null,
                     volleyCount: 0,  // Track volleys for damage scaling
                     time: 0,  // For animation
                     type: 'fireball',
-                    isSplitProjectile: isSplitProjectile
+                    isSplitProjectile: isSplitProjectile,
+                    isMagmaBomb: options.isMagmaBomb || false
                 };
 
                 // Create glowing core mesh
                 proj.mesh = BABYLON.MeshBuilder.CreateSphere("fireball_" + Date.now(), { diameter: 0.45 }, scene);
-                // Split projectiles start lower (rolling along ground)
-                const startY = isSplitProjectile ? 0.35 : 0.7;
+                // Use provided startY, or default based on type
+                const startY = options.startY !== undefined ? options.startY : (isSplitProjectile ? 0.35 : 0.7);
                 proj.mesh.position.set(startX, startY, startZ);
-                proj.mesh.material = fireballCoreMat;
                 proj.mesh.rotationQuaternion = BABYLON.Quaternion.Identity();
                 shadowGenerator.addShadowCaster(proj.mesh);
 
-                // Outer glow sphere (larger, transparent)
+                // Magma bombs get darker, cooler look
+                if (proj.isMagmaBomb) {
+                    const magmaMat = new BABYLON.StandardMaterial("magmaMat_" + Date.now(), scene);
+                    magmaMat.emissiveColor = new BABYLON.Color3(0.6, 0.2, 0.05);  // Dark red-orange
+                    magmaMat.diffuseColor = new BABYLON.Color3(0.4, 0.1, 0.05);
+                    magmaMat.specularColor = new BABYLON.Color3(0, 0, 0);
+                    proj.mesh.material = magmaMat;
+                    proj.damage = 1;  // Fixed damage, no volley scaling
+                } else {
+                    proj.mesh.material = fireballCoreMat;
+                }
+
+                // Outer glow sphere (larger, transparent) - dimmer for bombs
                 proj.glow = BABYLON.MeshBuilder.CreateSphere("fireGlow_" + Date.now(), { diameter: 0.8 }, scene);
                 const glowMat = new BABYLON.StandardMaterial("glowMat_" + Date.now(), scene);
-                glowMat.emissiveColor = new BABYLON.Color3(1, 0.4, 0.05);
-                glowMat.alpha = 0.3;
+                if (proj.isMagmaBomb) {
+                    glowMat.emissiveColor = new BABYLON.Color3(0.5, 0.15, 0.02);  // Darker glow
+                    glowMat.alpha = 0.2;
+                } else {
+                    glowMat.emissiveColor = new BABYLON.Color3(1, 0.4, 0.05);
+                    glowMat.alpha = 0.3;
+                }
                 glowMat.backFaceCulling = false;
                 proj.glow.material = glowMat;
                 proj.glow.parent = proj.mesh;
                 proj.glow.position = BABYLON.Vector3.Zero();
                 proj.glowMat = glowMat;
 
-                // Fire trail mesh
-                proj.trail = new BABYLON.TrailMesh("fireTrail_" + Date.now(), proj.mesh, scene, 0.25, 30, true);
+                // Fire trail mesh - shorter for bombs
+                const trailLength = proj.isMagmaBomb ? 15 : 30;
+                proj.trail = new BABYLON.TrailMesh("fireTrail_" + Date.now(), proj.mesh, scene, 0.25, trailLength, true);
                 const trailMat = new BABYLON.StandardMaterial("trailMat_" + Date.now(), scene);
-                trailMat.emissiveColor = new BABYLON.Color3(1, 0.3, 0.05);
+                if (proj.isMagmaBomb) {
+                    trailMat.emissiveColor = new BABYLON.Color3(0.5, 0.1, 0.02);  // Darker trail
+                    trailMat.alpha = 0.4;
+                } else {
+                    trailMat.emissiveColor = new BABYLON.Color3(1, 0.3, 0.05);
+                    trailMat.alpha = 0.6;
+                }
                 trailMat.diffuseColor = new BABYLON.Color3(0, 0, 0);
-                trailMat.alpha = 0.6;
                 trailMat.backFaceCulling = false;
                 proj.trail.material = trailMat;
                 proj.trailMat = trailMat;
 
-                // Fire light with flicker
-                proj.light = new BABYLON.PointLight("fireLight_" + Date.now(), new BABYLON.Vector3(0, 0.3, 0), scene);
-                proj.light.diffuse = new BABYLON.Color3(1, 0.6, 0.2);
-                proj.light.intensity = 0.8;
-                proj.light.range = 8;
-                proj.light.parent = proj.mesh;
-                proj.baseIntensity = 0.8;
+                // Fire light - none for bombs
+                if (!proj.isMagmaBomb) {
+                    proj.light = new BABYLON.PointLight("fireLight_" + Date.now(), new BABYLON.Vector3(0, 0.3, 0), scene);
+                    proj.light.diffuse = new BABYLON.Color3(1, 0.6, 0.2);
+                    proj.light.intensity = 0.8;
+                    proj.light.range = 8;
+                    proj.light.parent = proj.mesh;
+                    proj.baseIntensity = 0.8;
+                }
 
-                // Core fire particles (bright, fast)
-                proj.particles = new BABYLON.ParticleSystem("fireCore_" + Date.now(), 80, scene);
+                // Core fire particles - subdued for bombs
+                const particleCount = proj.isMagmaBomb ? 30 : 80;
+                proj.particles = new BABYLON.ParticleSystem("fireCore_" + Date.now(), particleCount, scene);
                 proj.particles.particleTexture = flareTexture;
                 proj.particles.emitter = proj.mesh;
                 proj.particles.minEmitBox = new BABYLON.Vector3(-0.05, -0.05, -0.05);
                 proj.particles.maxEmitBox = new BABYLON.Vector3(0.05, 0.05, 0.05);
-                proj.particles.color1 = new BABYLON.Color4(1, 0.9, 0.5, 1);
-                proj.particles.color2 = new BABYLON.Color4(1, 0.5, 0.1, 1);
-                proj.particles.colorDead = new BABYLON.Color4(1, 0.2, 0, 0);
-                proj.particles.minSize = 0.2;
-                proj.particles.maxSize = 0.5;
+                if (proj.isMagmaBomb) {
+                    proj.particles.color1 = new BABYLON.Color4(0.7, 0.3, 0.1, 0.8);
+                    proj.particles.color2 = new BABYLON.Color4(0.5, 0.15, 0.05, 0.6);
+                    proj.particles.colorDead = new BABYLON.Color4(0.3, 0.05, 0, 0);
+                    proj.particles.minSize = 0.1;
+                    proj.particles.maxSize = 0.25;
+                } else {
+                    proj.particles.color1 = new BABYLON.Color4(1, 0.9, 0.5, 1);
+                    proj.particles.color2 = new BABYLON.Color4(1, 0.5, 0.1, 1);
+                    proj.particles.colorDead = new BABYLON.Color4(1, 0.2, 0, 0);
+                    proj.particles.minSize = 0.2;
+                    proj.particles.maxSize = 0.5;
+                }
                 proj.particles.minLifeTime = 0.05;
                 proj.particles.maxLifeTime = 0.15;
-                proj.particles.emitRate = 80;
+                proj.particles.emitRate = particleCount;
                 proj.particles.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
                 proj.particles.direction1 = new BABYLON.Vector3(-1, -0.5, -1);
                 proj.particles.direction2 = new BABYLON.Vector3(1, 1, 1);
@@ -3184,20 +3967,29 @@
                 proj.particles.maxEmitPower = 2;
                 proj.particles.start();
 
-                // Outer flame particles (trail behind)
-                proj.outerFlames = new BABYLON.ParticleSystem("fireOuter_" + Date.now(), 50, scene);
+                // Outer flame particles - minimal for bombs
+                const outerCount = proj.isMagmaBomb ? 15 : 50;
+                proj.outerFlames = new BABYLON.ParticleSystem("fireOuter_" + Date.now(), outerCount, scene);
                 proj.outerFlames.particleTexture = flareTexture;
                 proj.outerFlames.emitter = proj.mesh;
                 proj.outerFlames.minEmitBox = new BABYLON.Vector3(-0.15, -0.1, -0.15);
                 proj.outerFlames.maxEmitBox = new BABYLON.Vector3(0.15, 0.1, 0.15);
-                proj.outerFlames.color1 = new BABYLON.Color4(1, 0.4, 0.1, 0.8);
-                proj.outerFlames.color2 = new BABYLON.Color4(0.8, 0.2, 0.05, 0.6);
-                proj.outerFlames.colorDead = new BABYLON.Color4(0.3, 0.1, 0, 0);
-                proj.outerFlames.minSize = 0.3;
-                proj.outerFlames.maxSize = 0.6;
+                if (proj.isMagmaBomb) {
+                    proj.outerFlames.color1 = new BABYLON.Color4(0.5, 0.2, 0.05, 0.5);
+                    proj.outerFlames.color2 = new BABYLON.Color4(0.4, 0.1, 0.02, 0.3);
+                    proj.outerFlames.colorDead = new BABYLON.Color4(0.2, 0.05, 0, 0);
+                    proj.outerFlames.minSize = 0.15;
+                    proj.outerFlames.maxSize = 0.3;
+                } else {
+                    proj.outerFlames.color1 = new BABYLON.Color4(1, 0.4, 0.1, 0.8);
+                    proj.outerFlames.color2 = new BABYLON.Color4(0.8, 0.2, 0.05, 0.6);
+                    proj.outerFlames.colorDead = new BABYLON.Color4(0.3, 0.1, 0, 0);
+                    proj.outerFlames.minSize = 0.3;
+                    proj.outerFlames.maxSize = 0.6;
+                }
                 proj.outerFlames.minLifeTime = 0.15;
                 proj.outerFlames.maxLifeTime = 0.35;
-                proj.outerFlames.emitRate = 50;
+                proj.outerFlames.emitRate = outerCount;
                 proj.outerFlames.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
                 // Emit backwards based on velocity direction
                 const vDir = Math.sign(velX);
@@ -3777,8 +4569,11 @@
                     proj.velZ = aimDir * proj.speed * 0.45;
                 }
 
-                proj.velY = 0;
-                proj.mesh.position.y = tableY;
+                // Reset Y for normal projectiles (not magma bombs)
+                if (!proj.isMagmaBomb) {
+                    proj.velY = 0;
+                    proj.mesh.position.y = tableY;
+                }
 
                 // Flash effect on projectile
                 proj.flashMat.alpha = 0.8;
@@ -4183,13 +4978,15 @@
                             proj.approachSoundPlayed = false;
                         }
 
-                        // Y-axis physics
-                        proj.velY += gravity * dt;
-                        proj.mesh.position.y += proj.velY * dt;
-                        if (proj.mesh.position.y < tableY) {
-                            proj.mesh.position.y = tableY;
-                            proj.velY = -proj.velY * bounceRetention;
-                            if (Math.abs(proj.velY) < 0.5) proj.velY = 0;
+                        // Y-axis physics (skip for lobs and magma bombs - they have their own physics)
+                        if (!proj.isMagmaBomb && !proj.isLob) {
+                            proj.velY += gravity * dt;
+                            proj.mesh.position.y += proj.velY * dt;
+                            if (proj.mesh.position.y < tableY) {
+                                proj.mesh.position.y = tableY;
+                                proj.velY = -proj.velY * bounceRetention;
+                                if (Math.abs(proj.velY) < 0.5) proj.velY = 0;
+                            }
                         }
 
                         // Visual stretch disabled - was causing particle issues
@@ -4397,7 +5194,8 @@
                                 }
                                 dealDamageToTower(true, damage, proj.mesh.position.z);
                             } else {
-                                const damage = proj.volleyCount >= 3 ? 3 : (proj.volleyCount >= 1 ? 2 : 1);
+                                // Use fixed damage if set (magma bombs), otherwise scale with volleys
+                                const damage = proj.damage !== undefined ? proj.damage : (proj.volleyCount >= 3 ? 3 : (proj.volleyCount >= 1 ? 2 : 1));
                                 if (window.createImpactFlash) {
                                     createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(1, 0.7, 0.2), 1.5 + damage * 0.5);
                                 }
@@ -4418,7 +5216,8 @@
                                 }
                                 dealDamageToTower(false, damage, proj.mesh.position.z);
                             } else {
-                                const damage = proj.volleyCount >= 3 ? 3 : (proj.volleyCount >= 1 ? 2 : 1);
+                                // Use fixed damage if set (magma bombs), otherwise scale with volleys
+                                const damage = proj.damage !== undefined ? proj.damage : (proj.volleyCount >= 3 ? 3 : (proj.volleyCount >= 1 ? 2 : 1));
                                 if (window.createImpactFlash) {
                                     createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(1, 0.7, 0.2), 1.5 + damage * 0.5);
                                 }
@@ -4847,6 +5646,7 @@
             aiScore = 0;
             gameOver = false;
             updateScore();
+            resetTalentState();  // Reset talents for new match
             resetRound();
         }
 
@@ -5402,6 +6202,9 @@ function isAIRooted() {
                 showMessage("Defeat");
                 playSound('defeat', 0, 0.8);
             }
+
+            // Award upgrade point after every round (win or lose)
+            awardUpgradePoint(1);
 
             updateScore();
             checkWin();
