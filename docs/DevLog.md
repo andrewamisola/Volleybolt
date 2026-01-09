@@ -2,6 +2,61 @@
 
 ## 2026-01-09
 
+### Session 13 (Upgrade System & Talent Selection)
+**Time**: Night
+
+#### Summary
+Built modular upgrade/talent system foundation. Added talent selection screen that shows before game starts, UpgradeRegistry for defining spell upgrades, and implemented first upgrade "Magma Lob" for testing.
+
+#### Implemented
+- [x] **UpgradeRegistry System**
+  - Modular registry for defining upgrades with hooks: `onSpawn`, `onUpdate`, `shouldSplit`, `onSplit`, `onHit`
+  - Helper functions: `hasUpgrade()`, `getUpgrade()`, `getUpgradesForAbility()`
+  - `applyUpgradesToProjectile()` and `updateProjectileUpgrades()` for runtime behavior
+
+- [x] **Talent Selection UI**
+  - Full-screen overlay after loading, before game starts
+  - Shows upgrade cards with icon, name, description, effects list
+  - Click to select, "Start Battle" button to begin
+  - CSS: Dark theme, golden selection border, hover effects
+
+- [x] **Magma Lob Upgrade (Fireball)**
+  - Fireball arcs through the air (velY=6, gravity pulls down)
+  - Splits into 2 fireballs when crossing midline (x=0)
+  - Split projectiles travel at angles with Z spread
+  - Split projectiles roll low along ground (Y=0.35)
+
+- [x] **Defined Future Upgrades (not active)**
+  - Pyroblast: 3s cast, 5 damage, unblockable
+  - Frostbite: +0.3s freeze on frozen targets
+  - Glacial Cascade: Frost bolt leaves slowing trail
+
+- [x] **Minor Fixes**
+  - Cast progress indicator now starts from top (from 0deg not -90deg)
+  - Fireball approaching sound: 0.15 volume, 3x pitch
+
+#### Technical Notes
+- UpgradeRegistry uses callback pattern for flexible behavior modification
+- Projectiles now have `type: 'fireball'` for proper identification
+- `markedForSplit` flag triggers destruction after split spawns children
+- Talent screen shows after `checkAllLoaded()` completes
+
+#### Architecture
+```javascript
+UpgradeRegistry = {
+  upgrade_id: {
+    id, name, baseAbility, tier, icon, description, effects[],
+    onSpawn(proj),      // Called when projectile created
+    onUpdate(proj, dt), // Called every frame
+    shouldSplit(proj),  // Returns true when split should occur
+    onSplit(proj, spawnFunc), // Creates split projectiles
+    onHit(target, freezeTime) // For effects on impact
+  }
+}
+```
+
+---
+
 ### Session 12 (UI Polish, Audio, Ice Shatter, GitHub Deployment)
 **Time**: Night
 

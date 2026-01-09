@@ -826,7 +826,7 @@
             height: 100%;
             clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
             background: conic-gradient(
-                from -90deg,
+                from 0deg,
                 rgba(0, 0, 0, 0.75) var(--cast-progress, 0deg),
                 transparent var(--cast-progress, 0deg)
             );
@@ -954,6 +954,144 @@
             margin-top: 20px;
             letter-spacing: 2px;
         }
+
+        /* Talent Selection Screen */
+        #talentScreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(180deg, #0a0a15 0%, #1a1a30 100%);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9998;
+        }
+
+        #talentScreen.visible {
+            display: flex;
+        }
+
+        #talentTitle {
+            font-family: 'Cinzel', serif;
+            font-size: 36px;
+            font-weight: 900;
+            color: #fff;
+            text-shadow: 0 0 20px rgba(100,150,255,0.6);
+            margin-bottom: 10px;
+            letter-spacing: 3px;
+        }
+
+        #talentSubtitle {
+            font-family: 'Cinzel', serif;
+            font-size: 16px;
+            color: rgba(255,255,255,0.5);
+            margin-bottom: 40px;
+        }
+
+        #upgradeContainer {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+            max-width: 900px;
+        }
+
+        .upgrade-card {
+            width: 200px;
+            background: rgba(30, 35, 50, 0.9);
+            border: 2px solid rgba(100, 120, 150, 0.5);
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+
+        .upgrade-card:hover {
+            border-color: rgba(150, 180, 220, 0.8);
+            transform: translateY(-4px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+        }
+
+        .upgrade-card.selected {
+            border-color: #ffd700;
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
+        }
+
+        .upgrade-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        .upgrade-name {
+            font-family: 'Cinzel', serif;
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+
+        .upgrade-base {
+            font-family: 'Cinzel', serif;
+            font-size: 11px;
+            color: rgba(255, 150, 100, 0.8);
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .upgrade-desc {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.7);
+            line-height: 1.4;
+            margin-bottom: 12px;
+        }
+
+        .upgrade-effects {
+            text-align: left;
+            padding-left: 10px;
+        }
+
+        .upgrade-effect {
+            font-size: 11px;
+            color: rgba(100, 255, 150, 0.8);
+            margin: 4px 0;
+        }
+
+        .upgrade-effect::before {
+            content: '• ';
+            color: rgba(100, 255, 150, 0.6);
+        }
+
+        #startBattleBtn {
+            margin-top: 40px;
+            padding: 15px 50px;
+            font-family: 'Cinzel', serif;
+            font-size: 20px;
+            font-weight: 700;
+            color: #fff;
+            background: linear-gradient(135deg, #4a6fa5 0%, #2d4a6f 100%);
+            border: 2px solid rgba(150, 180, 220, 0.6);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            letter-spacing: 2px;
+        }
+
+        #startBattleBtn:hover {
+            background: linear-gradient(135deg, #5a8fc5 0%, #3d6a8f 100%);
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(100, 150, 220, 0.5);
+        }
+
+        #startBattleBtn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
     </style>
 </head>
 <body>
@@ -962,6 +1100,17 @@
         <div id="loadingSpinner"></div>
         <div id="loadingText">Loading...</div>
     </div>
+
+    <!-- Talent Selection Screen -->
+    <div id="talentScreen">
+        <div id="talentTitle">Choose Your Upgrade</div>
+        <div id="talentSubtitle">Select a talent to enhance your abilities</div>
+        <div id="upgradeContainer">
+            <!-- Upgrade cards will be populated by JS -->
+        </div>
+        <button id="startBattleBtn" disabled>Start Battle</button>
+    </div>
+
     <canvas id="canvas"></canvas>
     <div id="towerHealth">
         <div>
@@ -1734,6 +1883,193 @@
                 console.log(`${ability.icon} ${ability.name} (${id}) - ${ability.element} - ${ability.manaCost} mana`);
             }
         }
+
+        // ==========================================
+        // UPGRADE REGISTRY - Talent/Upgrade System
+        // ==========================================
+        const UpgradeRegistry = {
+            // === FIREBALL UPGRADES ===
+            magma_lob: {
+                id: 'magma_lob',
+                name: 'Magma Lob',
+                baseAbility: 'fireball',
+                tier: 1,
+                icon: '🌋',
+                description: 'Fireball arcs through the air. At midline, splits into 2 rolling fireballs.',
+                effects: [
+                    'Fireball travels in an arc',
+                    'Splits into 2 at midline',
+                    'Split fireballs roll low along ground'
+                ],
+                // Modifier function applied to projectile on spawn
+                onSpawn: (proj) => {
+                    proj.isLob = true;
+                    proj.hasSplit = false;
+                    // Add upward arc velocity
+                    proj.velY = 6;  // Initial upward velocity for arc
+                },
+                // Called every frame for this projectile
+                onUpdate: (proj, dt) => {
+                    // Gravity pulls the lob down
+                    if (proj.isLob && !proj.hasSplit) {
+                        proj.velY -= 12 * dt;  // Gravity
+                        proj.mesh.position.y += proj.velY * dt;
+                        // Keep above ground
+                        if (proj.mesh.position.y < 0.3) {
+                            proj.mesh.position.y = 0.3;
+                            proj.velY = 0;
+                        }
+                    }
+                },
+                // Check if should split
+                shouldSplit: (proj) => {
+                    // Split when crossing midline (x=0)
+                    const crossingMid = (proj.owner === 'player' && proj.mesh.position.x >= 0) ||
+                                       (proj.owner === 'ai' && proj.mesh.position.x <= 0);
+                    return proj.isLob && !proj.hasSplit && crossingMid;
+                },
+                // Create split projectiles
+                onSplit: (proj, spawnFunc) => {
+                    proj.hasSplit = true;
+                    const baseX = proj.mesh.position.x;
+                    const baseZ = proj.mesh.position.z;
+                    const speed = Math.abs(proj.velX) * 0.8;  // Slightly slower
+                    const dir = proj.owner === 'player' ? 1 : -1;
+
+                    // Spawn two split fireballs with spread
+                    spawnFunc(proj.owner, baseX, baseZ + 1.5, dir * speed, 2, true);   // Upper split
+                    spawnFunc(proj.owner, baseX, baseZ - 1.5, dir * speed, -2, true);  // Lower split
+
+                    return true;  // Signal to destroy original
+                }
+            },
+
+            pyroblast: {
+                id: 'pyroblast',
+                name: 'Pyroblast',
+                baseAbility: 'fireball',
+                tier: 1,
+                icon: '☄️',
+                description: 'A devastating 3-second cast that deals massive damage.',
+                effects: [
+                    '3 second cast time',
+                    'Deals 5 damage on hit',
+                    'Cannot be blocked, only parried'
+                ],
+                // This upgrade changes the base ability stats
+                modifyAbility: {
+                    castTime: 3.0,
+                    baseDamage: 5
+                },
+                onSpawn: (proj) => {
+                    proj.isPyroblast = true;
+                    proj.damage = 5;
+                    // Make it bigger and more dramatic
+                    if (proj.mesh) proj.mesh.scaling.setAll(1.5);
+                }
+            },
+
+            // === FROST BOLT UPGRADES ===
+            frostbite: {
+                id: 'frostbite',
+                name: 'Frostbite',
+                baseAbility: 'frostbolt',
+                tier: 1,
+                icon: '🥶',
+                description: 'Hitting a frozen target extends the freeze duration.',
+                effects: [
+                    '+0.3s freeze duration on frozen targets',
+                    'Encourages combo plays'
+                ],
+                // Applied when frostbolt hits
+                onHit: (target, currentFreezeTime) => {
+                    // If target already frozen, extend duration
+                    if (currentFreezeTime > 0) {
+                        return currentFreezeTime + 0.3;  // Extend by 0.3s
+                    }
+                    return 1.0;  // Normal freeze duration
+                }
+            },
+
+            glacial_cascade: {
+                id: 'glacial_cascade',
+                name: 'Glacial Cascade',
+                baseAbility: 'frostbolt',
+                tier: 1,
+                icon: '❄️',
+                description: 'Frost bolt leaves a chilling trail that slows projectiles.',
+                effects: [
+                    'Leaves icy trail behind',
+                    'Enemy projectiles passing through are slowed 30%'
+                ],
+                onSpawn: (proj) => {
+                    proj.leavesTrail = true;
+                    proj.trailPositions = [];
+                },
+                onUpdate: (proj, dt) => {
+                    // Record trail positions
+                    if (proj.leavesTrail && proj.mesh) {
+                        proj.trailPositions.push({
+                            x: proj.mesh.position.x,
+                            z: proj.mesh.position.z,
+                            time: 2.0  // Trail lasts 2 seconds
+                        });
+                    }
+                }
+            }
+        };
+
+        // Player's chosen upgrades (array of upgrade IDs)
+        let playerUpgrades = [];
+
+        // Check if player has an upgrade
+        function hasUpgrade(upgradeId) {
+            return playerUpgrades.includes(upgradeId);
+        }
+
+        // Get upgrade definition
+        function getUpgrade(upgradeId) {
+            return UpgradeRegistry[upgradeId] || null;
+        }
+
+        // Get all upgrades for a base ability
+        function getUpgradesForAbility(abilityId) {
+            return Object.values(UpgradeRegistry).filter(u => u.baseAbility === abilityId);
+        }
+
+        // Apply upgrade to a newly spawned projectile
+        function applyUpgradesToProjectile(proj, abilityId, owner) {
+            if (owner !== 'player') return;  // Only player has upgrades for now
+
+            for (const upgradeId of playerUpgrades) {
+                const upgrade = getUpgrade(upgradeId);
+                if (upgrade && upgrade.baseAbility === abilityId && upgrade.onSpawn) {
+                    upgrade.onSpawn(proj);
+                }
+            }
+        }
+
+        // Update projectile with upgrade effects (called each frame)
+        function updateProjectileUpgrades(proj, dt) {
+            if (proj.owner !== 'player') return;
+
+            for (const upgradeId of playerUpgrades) {
+                const upgrade = getUpgrade(upgradeId);
+                if (upgrade && upgrade.onUpdate) {
+                    upgrade.onUpdate(proj, dt);
+                }
+                // Check for split
+                if (upgrade && upgrade.shouldSplit && upgrade.shouldSplit(proj)) {
+                    if (upgrade.onSplit) {
+                        const shouldDestroy = upgrade.onSplit(proj, window.spawnFireball);
+                        if (shouldDestroy) {
+                            proj.markedForSplit = true;
+                        }
+                    }
+                }
+            }
+        }
+
         let playerFireballCooldown = 0;
         let aiFireballCooldown = 0;
         let playerFrostboltCooldown = 0;
@@ -2112,6 +2448,9 @@
                         setTimeout(() => loadingScreen.style.display = 'none', 500);
                     }
                     console.log("All models loaded!");
+
+                    // Show talent selection screen
+                    setTimeout(() => showTalentScreen(), 500);
                 }
             };
 
@@ -2770,7 +3109,7 @@
             fireballCoreMat.specularColor = new BABYLON.Color3(0, 0, 0);
 
             // Fireball spawner function
-            window.spawnFireball = (owner, startX, startZ, velX, velZ) => {
+            window.spawnFireball = (owner, startX, startZ, velX, velZ, isSplitProjectile = false) => {
                 const proj = {
                     owner: owner,  // 'player' or 'ai'
                     velX: velX,
@@ -2780,12 +3119,16 @@
                     isParried: false,
                     parriedBy: null,
                     volleyCount: 0,  // Track volleys for damage scaling
-                    time: 0  // For animation
+                    time: 0,  // For animation
+                    type: 'fireball',
+                    isSplitProjectile: isSplitProjectile
                 };
 
                 // Create glowing core mesh
                 proj.mesh = BABYLON.MeshBuilder.CreateSphere("fireball_" + Date.now(), { diameter: 0.45 }, scene);
-                proj.mesh.position.set(startX, 0.7, startZ);
+                // Split projectiles start lower (rolling along ground)
+                const startY = isSplitProjectile ? 0.35 : 0.7;
+                proj.mesh.position.set(startX, startY, startZ);
                 proj.mesh.material = fireballCoreMat;
                 proj.mesh.rotationQuaternion = BABYLON.Quaternion.Identity();
                 shadowGenerator.addShadowCaster(proj.mesh);
@@ -2876,6 +3219,11 @@
 
                 // Attach looping sound (low volume)
                 proj.loopSound = createLoopingSound('fireballLoop', startX, 0.12);
+
+                // Apply player upgrades to this projectile (if player owns it and not a split)
+                if (!isSplitProjectile) {
+                    applyUpgradesToProjectile(proj, 'fireball', owner);
+                }
 
                 projectiles.push(proj);
                 return proj;
@@ -3771,8 +4119,19 @@
                         proj.mesh.position.x += proj.velX * dt;
                         proj.mesh.position.z += proj.velZ * dt;
 
+                        // Apply upgrade effects (arc, split, etc.)
+                        if (proj.type === 'fireball' || !proj.type) {
+                            updateProjectileUpgrades(proj, dt);
+
+                            // Check if projectile should be destroyed (split happened)
+                            if (proj.markedForSplit) {
+                                toDestroy.push(proj);
+                                continue;
+                            }
+                        }
+
                         // Fireball flickering animation
-                        if (proj.time !== undefined && !proj.type) {
+                        if (proj.time !== undefined && (proj.type === 'fireball' || !proj.type)) {
                             proj.time += dt;
                             // Flicker light intensity
                             if (proj.light && proj.baseIntensity) {
@@ -3817,7 +4176,7 @@
                         const approachThreshold = -4;  // X position where warning triggers
                         if (proj.velX < 0 && proj.mesh.position.x < approachThreshold && !proj.approachSoundPlayed) {
                             proj.approachSoundPlayed = true;
-                            playSound('fireballApproaching', proj.mesh.position.x, 0.5);
+                            playSound('fireballApproaching', proj.mesh.position.x, 0.15, 3.0);
                         }
                         // Reset if projectile gets deflected back
                         if (proj.velX > 0) {
@@ -4358,6 +4717,79 @@
                 sweep.style.setProperty('--sweep-angle', '0deg');
             }
         }
+
+        // ==========================================
+        // TALENT SELECTION SCREEN
+        // ==========================================
+        let selectedUpgrade = null;
+
+        function showTalentScreen() {
+            const talentScreen = document.getElementById('talentScreen');
+            const container = document.getElementById('upgradeContainer');
+            const startBtn = document.getElementById('startBattleBtn');
+
+            // Clear previous cards
+            container.innerHTML = '';
+            selectedUpgrade = null;
+            startBtn.disabled = true;
+
+            // For now, only show Magma Lob (testing one at a time)
+            const availableUpgrades = ['magma_lob'];
+
+            // Create upgrade cards
+            for (const upgradeId of availableUpgrades) {
+                const upgrade = UpgradeRegistry[upgradeId];
+                if (!upgrade) continue;
+
+                const card = document.createElement('div');
+                card.className = 'upgrade-card';
+                card.dataset.upgradeId = upgradeId;
+
+                // Get base ability name
+                const baseAbility = AbilityRegistry[upgrade.baseAbility];
+                const baseName = baseAbility ? baseAbility.name : upgrade.baseAbility;
+
+                card.innerHTML = `
+                    <div class="upgrade-icon">${upgrade.icon}</div>
+                    <div class="upgrade-name">${upgrade.name}</div>
+                    <div class="upgrade-base">Upgrades: ${baseName}</div>
+                    <div class="upgrade-desc">${upgrade.description}</div>
+                    <div class="upgrade-effects">
+                        ${upgrade.effects.map(e => `<div class="upgrade-effect">${e}</div>`).join('')}
+                    </div>
+                `;
+
+                card.addEventListener('click', () => {
+                    // Deselect all
+                    container.querySelectorAll('.upgrade-card').forEach(c => c.classList.remove('selected'));
+                    // Select this one
+                    card.classList.add('selected');
+                    selectedUpgrade = upgradeId;
+                    startBtn.disabled = false;
+                });
+
+                container.appendChild(card);
+            }
+
+            // Show the screen
+            talentScreen.classList.add('visible');
+        }
+
+        function hideTalentScreen() {
+            const talentScreen = document.getElementById('talentScreen');
+            talentScreen.classList.remove('visible');
+        }
+
+        // Start battle button handler
+        document.getElementById('startBattleBtn').addEventListener('click', () => {
+            if (selectedUpgrade) {
+                playerUpgrades.push(selectedUpgrade);
+                console.log("Selected upgrade:", selectedUpgrade);
+                console.log("Player upgrades:", playerUpgrades);
+            }
+            hideTalentScreen();
+            startRound();
+        });
 
         // Start a new round
         function startRound() {

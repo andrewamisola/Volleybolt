@@ -19,11 +19,14 @@
 | [Debug.md](./docs/Debug.md) | Test scenarios |
 
 ## Current State
-- **Last Updated**: 2026-01-09 (Session 12)
-- **Game Status**: 2 active spells, full polish pass, deployed to GitHub Pages
+- **Last Updated**: 2026-01-09 (Session 13)
+- **Game Status**: 2 active spells + upgrade system, talent selection UI, deployed to GitHub Pages
 - **Active Branch**: gh-pages
 
 ### What's Working
+- **Talent Selection Screen**: Shows before game, select upgrade then "Start Battle"
+- **UpgradeRegistry**: Modular system for defining spell upgrades with hooks
+- **Magma Lob Upgrade**: Fireball arcs, splits into 2 at midline
 - **Character Models**: GLB wizard models with animations (idle, strafe, cast, parry)
 - **Animation System**: 0.2s crossfade blending, freeze on frostbolt hit
 - **Loading Screen**: Shows while models load, fades when ready
@@ -42,6 +45,33 @@
 - **Ice Shatter**: Ice block breaks into physics shards when freeze ends
 - **Character Flash**: Emissive glow on block/parry (tuned intensity)
 - **Gravity Sphere**: Commented out for rework
+
+### Upgrade System
+```javascript
+// UpgradeRegistry structure
+UpgradeRegistry = {
+  magma_lob: {
+    id, name, baseAbility: 'fireball', tier: 1,
+    icon: '🌋', description, effects[],
+    onSpawn(proj),       // Add arc velocity
+    onUpdate(proj, dt),  // Apply gravity
+    shouldSplit(proj),   // Check if crossing midline
+    onSplit(proj, spawnFunc) // Create 2 split fireballs
+  }
+}
+
+// Player upgrades tracked in array
+playerUpgrades = ['magma_lob'];
+hasUpgrade('magma_lob'); // Check if player has upgrade
+```
+
+### Defined Upgrades (only Magma Lob active for testing)
+| Upgrade | Spell | Effect |
+|---------|-------|--------|
+| Magma Lob | Fireball | Arc + split at midline |
+| Pyroblast | Fireball | 3s cast, 5 damage |
+| Frostbite | Frost Bolt | +0.3s freeze on frozen targets |
+| Glacial Cascade | Frost Bolt | Leaves slowing trail |
 
 ### Character Model Files (models/ folder)
 - `wizard_combined.glb` - Combined model with all animations

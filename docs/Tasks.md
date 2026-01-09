@@ -119,6 +119,15 @@
 
 ## Completed Tasks
 
+### 2026-01-09 Session 13
+- [x] UpgradeRegistry modular system for spell upgrades
+- [x] Talent selection UI (shows before game starts)
+- [x] playerUpgrades array and helper functions
+- [x] Magma Lob upgrade: arc + split at midline
+- [x] Defined Pyroblast, Frostbite, Glacial Cascade (not active yet)
+- [x] Cast progress indicator fixed to start from top
+- [x] Fireball approaching sound tuned (0.15 vol, 3x pitch)
+
 ### 2026-01-09 Session 12
 - [x] Victory/defeat sounds (sfx/victory.wav, sfx/defeat.wav)
 - [x] Parry button UI underneath ability bar
