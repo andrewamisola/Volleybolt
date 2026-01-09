@@ -2928,7 +2928,7 @@
                 loadSound('gravityLoop', 'sfx/gravitysphere_flyby.wav'),
                 loadSound('victory', 'sfx/victory.wav'),
                 loadSound('defeat', 'sfx/defeat.wav'),
-                loadSound('castingLoop', 'sfx/fireball_loop.wav'), // Mid-cast charging sound
+                loadSound('castingLoop', 'sfx/mid-cast.wav'), // Mid-cast charging sound
                 loadSound('iceShatter', 'sfx/ice-shatter.wav')
             ]);
             console.log("All sounds loaded!");
@@ -4877,16 +4877,19 @@
                 proj.mesh.rotationQuaternion = BABYLON.Quaternion.Identity();
                 shadowGenerator.addShadowCaster(proj.mesh);
 
-                // Magma bombs get darker, cooler look
+                // Magma bombs get darker, cooler look and are smaller
                 if (proj.isMagmaBomb) {
                     const magmaMat = new BABYLON.StandardMaterial("magmaMat_" + Date.now(), scene);
                     magmaMat.emissiveColor = new BABYLON.Color3(0.6, 0.2, 0.05);  // Dark red-orange
                     magmaMat.diffuseColor = new BABYLON.Color3(0.4, 0.1, 0.05);
                     magmaMat.specularColor = new BABYLON.Color3(0, 0, 0);
                     proj.mesh.material = magmaMat;
+                    proj.mesh.scaling = new BABYLON.Vector3(0.67, 0.67, 0.67);  // 67% size visually
+                    proj.hitboxRadius = 0.4;  // Larger hitbox for easier hits
                     proj.damage = 1;  // Fixed damage, no volley scaling
                 } else {
                     proj.mesh.material = fireballCoreMat;
+                    proj.hitboxRadius = 0.25;  // Normal hitbox
                 }
 
                 // Outer glow sphere (larger, transparent) - dimmer for bombs
@@ -5652,7 +5655,7 @@
             // Character is ~1.8m tall, projectiles at ~0.5m, so offset = (1.8-0.5)*0.577 ≈ 0.75
             const perspectiveZOffset = 0.75;
             const ballRadius = 0.25;
-            const maxHitHeight = 0.8;
+            const maxHitHeight = 1.3;  // Taller hitbox to hit bouncing balls
 
             // Game loop
             scene.onBeforeRenderObservable.add(() => {
@@ -6132,9 +6135,10 @@
 
                         // Player paddle collision (with perspective correction for isometric view)
                         const playerHitDepth = paddleHalfDepth + perspectiveZOffset;
+                        const projRadius = proj.hitboxRadius || ballRadius;
                         if (proj.velX < 0 &&
                             proj.mesh.position.y < maxHitHeight &&
-                            proj.mesh.position.x - ballRadius < playerPaddle.position.x + paddleHalfWidth &&
+                            proj.mesh.position.x - projRadius < playerPaddle.position.x + paddleHalfWidth &&
                             proj.mesh.position.x > playerPaddle.position.x - paddleHalfWidth &&
                             proj.mesh.position.z > playerPaddle.position.z - playerHitDepth &&
                             proj.mesh.position.z < playerPaddle.position.z + playerHitDepth) {
@@ -6154,7 +6158,7 @@
                                 toDestroy.push(proj);
                             } else {
                                 // Normal fireball behavior
-                                proj.mesh.position.x = playerPaddle.position.x + paddleHalfWidth + ballRadius;
+                                proj.mesh.position.x = playerPaddle.position.x + paddleHalfWidth + projRadius;
                                 if (proj.isParried && proj.parriedBy === 'ai') {
                                     resetProjParryState(proj);
                                 }
@@ -6175,9 +6179,10 @@
 
                         // AI paddle collision (with perspective correction for isometric view)
                         const aiHitDepth = paddleHalfDepth + perspectiveZOffset;
+                        const aiProjRadius = proj.hitboxRadius || ballRadius;
                         if (proj.velX > 0 &&
                             proj.mesh.position.y < maxHitHeight &&
-                            proj.mesh.position.x + ballRadius > aiPaddle.position.x - paddleHalfWidth &&
+                            proj.mesh.position.x + aiProjRadius > aiPaddle.position.x - paddleHalfWidth &&
                             proj.mesh.position.x < aiPaddle.position.x + paddleHalfWidth &&
                             proj.mesh.position.z > aiPaddle.position.z - aiHitDepth &&
                             proj.mesh.position.z < aiPaddle.position.z + aiHitDepth) {
@@ -6196,7 +6201,7 @@
                                 toDestroy.push(proj);
                             } else {
                                 // Normal fireball behavior
-                                proj.mesh.position.x = aiPaddle.position.x - paddleHalfWidth - ballRadius;
+                                proj.mesh.position.x = aiPaddle.position.x - paddleHalfWidth - aiProjRadius;
                                 if (proj.isParried && proj.parriedBy === 'player') {
                                     resetProjParryState(proj);
                                 }
