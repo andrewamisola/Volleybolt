@@ -117,7 +117,29 @@
 
 ---
 
+## Pending Work (Talent System)
+
+| Status | Task | Notes |
+|--------|------|-------|
+| `[~]` | Wire up Pyroblast cast time | `modifyAbility.castTime` not read by casting system |
+| `[~]` | Wire up Frostbite onHit | Frostbolt collision doesn't call `onHit` hook |
+| `[~]` | Implement Glacial Cascade | Trail positions recorded but no visual/slow effect |
+| `[ ]` | Add Tier 2-3 upgrades to UpgradeRegistry | TalentTree references them but definitions missing |
+
+---
+
 ## Completed Tasks
+
+### 2026-01-09 Session 15
+- [x] HotS-style in-game talent system (replaces pre-game selection)
+- [x] TalentTree data structure (tiers 1-3, branching choices per ability)
+- [x] TalentState tracking (upgrade points, selected talents per ability)
+- [x] Upgrade indicator badges on ability slots (golden pulsing ⬆)
+- [x] Upgrade points HUD (⭐ X at top center)
+- [x] Talent panel UI (click ability to expand, tier progression, choice cards)
+- [x] Award 1 upgrade point after every round (win or lose)
+- [x] Game starts immediately (no pre-game talent screen)
+- [x] resetTalentState() on match reset
 
 ### 2026-01-09 Session 14
 - [x] Magma Lob rework: arc peaks exactly at midline

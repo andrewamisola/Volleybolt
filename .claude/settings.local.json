@@ -24,7 +24,8 @@
       "Bash(gh auth status:*)",
       "Bash(gh repo edit:*)",
       "Bash(gh api:*)",
-      "Bash(gh run list:*)"
+      "Bash(gh run list:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd HotS-style in-game talent system\n\n- Replace pre-game talent selection with in-game progression\n- Add TalentTree and TalentState for tracking upgrades per ability\n- Add upgrade indicator badges \\(golden glow\\) on ability slots\n- Add talent panel UI that expands on click with tier choices\n- Add upgrade points HUD showing available points\n- Award 1 upgrade point after every round \\(win or lose\\)\n- Click ability with upgrade available to open talent panel\n- ESC or click outside closes panel\n- Tier progression display \\(1-2-3\\) shows completed/active/locked\n\nOnly Magma Lob fully functional; other tier 1 talents need hooks wired.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }

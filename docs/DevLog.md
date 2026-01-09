@@ -2,6 +2,69 @@
 
 ## 2026-01-09
 
+### Session 15 (HotS-Style In-Game Talent System)
+**Time**: Night
+
+#### Summary
+Major UX overhaul replacing pre-game talent selection with Heroes of the Storm-style in-game progression. Players now earn upgrade points after every round and can select talents by clicking glowing ability icons during gameplay.
+
+#### Implemented
+- [x] **TalentTree Data Structure**
+  - Defines tiers 1-3 for each ability (Fireball, Frostbolt)
+  - Each tier has branching choices (2-3 options)
+  - Structure: `TalentTree.fireball.tiers[1].choices = ['magma_lob', 'pyroblast']`
+
+- [x] **TalentState Tracking**
+  - `upgradePoints` - Available points to spend
+  - `abilities[abilityId].currentTier` - Current upgrade level (0-3)
+  - `abilities[abilityId].selectedTalents` - Array of chosen upgrade IDs
+
+- [x] **Upgrade Indicator UI**
+  - Golden pulsing badge (⬆) on ability slots when upgradeable
+  - `.upgradeable` class adds golden glow to ability hex
+  - CSS animations: pulse and glow effects
+
+- [x] **Upgrade Points HUD**
+  - Shows `⭐ X` at top center when points available
+  - Appears after first point earned
+  - Pulses when points available to spend
+
+- [x] **Talent Panel UI**
+  - Click ability with upgrade available → panel expands
+  - Shows tier progression (1-2-3) with completed/active/locked states
+  - Displays 2-3 talent choice cards with icon, name, description
+  - Click card to select talent → panel closes
+
+- [x] **Progression System**
+  - Award 1 upgrade point after EVERY round (win or lose)
+  - Points persist across rounds until spent
+  - Match reset clears all talents (`resetTalentState()`)
+
+- [x] **Game Flow Change**
+  - Removed pre-game talent selection screen
+  - Game starts immediately after loading
+  - Talents selected during gameplay between rounds
+
+#### Technical Notes
+- `TalentTree` defines structure, `UpgradeRegistry` defines behavior
+- `getActiveUpgrades(abilityId)` returns all selected talents for ability
+- `applyUpgradesToProjectile()` now uses `TalentState` instead of old `playerUpgrades` array
+- Click handlers on ability slots toggle talent panel
+- ESC or click outside closes panel
+
+#### Known Issues
+- Only Magma Lob fully functional
+- Pyroblast: `modifyAbility.castTime` not wired to casting system
+- Frostbite: `onHit` hook not called from frostbolt collision
+- Glacial Cascade: Trail positions recorded but no visual/slow effect
+
+#### Next Session
+- Wire up Pyroblast cast time modification
+- Wire up Frostbite onHit hook
+- Implement Glacial Cascade trail visuals and slow effect
+
+---
+
 ### Session 14 (Magma Lob Rework - Bouncing Bombs)
 **Time**: Night
 

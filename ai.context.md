@@ -19,12 +19,16 @@
 | [Debug.md](./docs/Debug.md) | Test scenarios |
 
 ## Current State
-- **Last Updated**: 2026-01-09 (Session 14)
-- **Game Status**: 2 active spells + upgrade system, Magma Lob fully working with bouncing bombs
+- **Last Updated**: 2026-01-09 (Session 15)
+- **Game Status**: HotS-style in-game talent system, game starts immediately
 - **Active Branch**: gh-pages
 
 ### What's Working
-- **Talent Selection Screen**: Shows before game, select upgrade then "Start Battle"
+- **In-Game Talent System**: HotS-style - earn upgrade points after rounds, click abilities to upgrade
+- **TalentTree + TalentState**: Tier 1-3 progression per ability with branching choices
+- **Upgrade Indicators**: Golden pulsing badges on ability slots when upgrades available
+- **Talent Panel UI**: Click ability → expand panel with tier choices → select to apply
+- **Upgrade Points HUD**: Shows available points at top center
 - **UpgradeRegistry**: Modular system for defining spell upgrades with hooks
 - **Magma Lob Upgrade**: 45-degree arc peaks at midline, splits into 2 bouncing bombs
 - **Bouncing Bombs**: Real floor physics (Y=0.22), darker visuals, 1 fixed damage, varied velocities
@@ -47,9 +51,38 @@
 - **Character Flash**: Emissive glow on block/parry (tuned intensity)
 - **Gravity Sphere**: Commented out for rework
 
-### Upgrade System
+### Talent System (HotS-Style)
 ```javascript
-// UpgradeRegistry structure
+// TalentTree defines tier structure with branching choices
+TalentTree = {
+  fireball: {
+    tiers: {
+      1: { choices: ['magma_lob', 'pyroblast'] },
+      2: { choices: ['inferno_trail', 'blazing_speed'] },
+      3: { choices: ['phoenix_fire', 'hellfire_barrage'] }
+    }
+  },
+  frostbolt: { /* similar structure */ }
+}
+
+// TalentState tracks player progression
+TalentState = {
+  upgradePoints: 0,        // Available to spend
+  abilities: {
+    fireball: { currentTier: 0, selectedTalents: [] },
+    frostbolt: { currentTier: 0, selectedTalents: [] }
+  }
+}
+
+// Key functions
+canUpgradeAbility(abilityId)    // Check if can upgrade
+getAvailableChoices(abilityId)  // Get tier choices
+selectTalent(abilityId, upgradeId) // Apply upgrade
+awardUpgradePoint(1)            // Called after each round
+```
+
+### UpgradeRegistry (Behavior Definitions)
+```javascript
 UpgradeRegistry = {
   magma_lob: {
     id, name, baseAbility: 'fireball', tier: 1,
@@ -60,10 +93,6 @@ UpgradeRegistry = {
     onSplit(proj, spawnFunc) // Create 2 bouncing magma bombs
   }
 }
-
-// Player upgrades tracked in array
-playerUpgrades = ['magma_lob'];
-hasUpgrade('magma_lob'); // Check if player has upgrade
 ```
 
 ### Magma Lob Details
@@ -74,13 +103,15 @@ hasUpgrade('magma_lob'); // Check if player has upgrade
 - **Velocity**: Varied per bomb (60-140%), minimum 5 to prevent stuck
 - **Physics**: Skips main game loop Y-axis, uses own gravity
 
-### Defined Upgrades (only Magma Lob active for testing)
-| Upgrade | Spell | Effect |
-|---------|-------|--------|
-| Magma Lob | Fireball | 45° arc, splits at midline into 2 bouncing bombs |
-| Pyroblast | Fireball | 3s cast, 5 damage |
-| Frostbite | Frost Bolt | +0.3s freeze on frozen targets |
-| Glacial Cascade | Frost Bolt | Leaves slowing trail |
+### Tier 1 Upgrades (Status)
+| Upgrade | Spell | Effect | Status |
+|---------|-------|--------|--------|
+| Magma Lob | Fireball | 45° arc, splits at midline into 2 bouncing bombs | ✅ Working |
+| Pyroblast | Fireball | 3s cast, 5 damage | ⚠️ Partial (cast time not wired) |
+| Frostbite | Frost Bolt | +0.3s freeze on frozen targets | ❌ onHit not wired |
+| Glacial Cascade | Frost Bolt | Leaves slowing trail | ❌ No visual/effect |
+
+**Next session**: Wire up Pyroblast cast time, Frostbite onHit, and Glacial Cascade trail.
 
 ### Character Model Files (models/ folder)
 - `wizard_combined.glb` - Combined model with all animations
