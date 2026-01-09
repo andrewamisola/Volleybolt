@@ -2111,8 +2111,11 @@
                 effects: [
                     'Fireball arcs high into the sky',
                     'Explodes at apex into 2 magma bombs',
-                    'Bombs roll slowly like grenades'
+                    'Bombs bounce once then roll'
                 ],
+                // Override base ability stats
+                castTime: 1.5,   // 1.5 second cast (longer than base fireball)
+                cooldown: 6,     // 6 second cooldown
                 // Modifier function applied to projectile on spawn
                 onSpawn: (proj) => {
                     proj.isLob = true;
@@ -2159,13 +2162,16 @@
                         proj.velY -= 12 * dt;
                         proj.mesh.position.y += proj.velY * dt;
 
-                        // Bounce off ground!
+                        // Bounce off ground! (limited to 1 bounce)
                         if (proj.mesh.position.y <= groundLevel) {
                             proj.mesh.position.y = groundLevel;
-                            proj.velY = Math.abs(proj.velY) * 0.65;  // Bounce with energy loss
 
-                            // Stop bouncing when too slow
-                            if (proj.velY < 0.5) {
+                            // Only bounce if we haven't used our one bounce yet
+                            if (proj.bounceCount < 1) {
+                                proj.velY = Math.abs(proj.velY) * 0.65;  // Bounce with energy loss
+                                proj.bounceCount++;
+                            } else {
+                                // After 1 bounce, roll along ground
                                 proj.velY = 0;
                             }
                         }
@@ -2192,12 +2198,12 @@
                         }
                     }
                 },
-                // Check if should split - at the midline (center/net)
+                // Check if should split - slightly before midline for easier hits
                 shouldSplit: (proj) => {
                     if (!proj.isLob || proj.hasSplit) return false;
-                    // Split when crossing midline (x=0)
-                    const crossingMid = (proj.owner === 'player' && proj.mesh.position.x >= 0) ||
-                                       (proj.owner === 'ai' && proj.mesh.position.x <= 0);
+                    // Split a bit before midline (x=-2 for player, x=2 for AI)
+                    const crossingMid = (proj.owner === 'player' && proj.mesh.position.x >= -2) ||
+                                       (proj.owner === 'ai' && proj.mesh.position.x <= 2);
                     return crossingMid;
                 },
                 // Create split projectiles with explosion effect
@@ -2255,9 +2261,9 @@
                     const zVel1 = 1.5 + Math.random() * 3;
                     const zVel2 = -(2 + Math.random() * 3);
 
-                    // Spawn at apex height with varied velocities
-                    const bombOptions1 = { isMagmaBomb: true, startY: baseY, velY: popUp1 };
-                    const bombOptions2 = { isMagmaBomb: true, startY: baseY, velY: popUp2 };
+                    // Spawn at apex height with varied velocities (bounceCount limits to 1 bounce)
+                    const bombOptions1 = { isMagmaBomb: true, startY: baseY, velY: popUp1, bounceCount: 0 };
+                    const bombOptions2 = { isMagmaBomb: true, startY: baseY, velY: popUp2, bounceCount: 0 };
                     spawnFunc(proj.owner, baseX, baseZ + 0.3, velX1, zVel1, true, bombOptions1);
                     spawnFunc(proj.owner, baseX, baseZ - 0.3, velX2, zVel2, true, bombOptions2);
 
@@ -4761,7 +4767,8 @@
                     time: 0,  // For animation
                     type: 'fireball',
                     isSplitProjectile: isSplitProjectile,
-                    isMagmaBomb: options.isMagmaBomb || false
+                    isMagmaBomb: options.isMagmaBomb || false,
+                    bounceCount: options.bounceCount || 0
                 };
 
                 // Create glowing core mesh
@@ -6866,14 +6873,18 @@
             // Spend mana upfront
             if (!spendMana(caster, ability.manaCost)) return false;
 
-            // Get display name (check for upgrades)
+            // Get display name and check for stat overrides (from upgrades)
             const activeUpgrades = getActiveUpgrades(abilityId, caster);
             const displayName = activeUpgrades.length > 0 ? activeUpgrades[0].name : ability.name;
+            // Use upgrade's castTime if it has one, otherwise use base ability
+            const effectiveCastTime = (activeUpgrades.length > 0 && activeUpgrades[0].castTime)
+                ? activeUpgrades[0].castTime
+                : ability.castTime;
 
             if (caster === 'player') {
                 playerCasting = abilityId;
                 playerCastProgress = 0;
-                playerCastTime = ability.castTime;
+                playerCastTime = effectiveCastTime;
                 updateCastBarUI(displayName, ability.element, 0);
                 showCastBar(true);
                 if (window.playPlayerAnim) playPlayerAnim('charging', true); // Play charging animation
@@ -6889,7 +6900,7 @@
             } else {
                 aiCasting = abilityId;
                 aiCastProgress = 0;
-                aiCastTime = ability.castTime;
+                aiCastTime = effectiveCastTime;
                 updateAICastBarUI(displayName, ability.element, 0);
                 showAICastBar(true);
                 if (window.playAIAnim) playAIAnim('charging', true); // Play charging animation
@@ -7078,14 +7089,20 @@
             const speed = abilities.fireball.speed;
             let startX, velX;
 
+            // Check for upgrade cooldown override
+            const activeUpgrades = getActiveUpgrades('fireball', caster);
+            const effectiveCooldown = (activeUpgrades.length > 0 && activeUpgrades[0].cooldown)
+                ? activeUpgrades[0].cooldown
+                : abilities.fireball.cooldown;
+
             if (caster === 'player') {
                 startX = playerPaddle.position.x + 1;
                 velX = speed;
-                playerFireballCooldown = abilities.fireball.cooldown;
+                playerFireballCooldown = effectiveCooldown;
             } else {
                 startX = aiPaddle.position.x - 1;
                 velX = -speed;
-                aiFireballCooldown = abilities.fireball.cooldown;
+                aiFireballCooldown = effectiveCooldown;
             }
 
             const startZ = caster === 'player' ? playerPaddle.position.z : aiPaddle.position.z;
