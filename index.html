@@ -1633,8 +1633,8 @@
                 manaCost: 1           // mana cost
             },
             frostbolt: {
-                cooldown: 14,         // seconds - longer cooldown
-                speed: 22,            // much faster than fireball
+                cooldown: 12,         // seconds - longer cooldown
+                speed: 24,            // 10% faster than before (was 22)
                 freezeDuration: 1.0,  // seconds
                 manaCost: 2           // mana cost
             },
@@ -2115,8 +2115,9 @@
                     'Bombs bounce once then roll'
                 ],
                 // Override base ability stats
-                castTime: 1.5,   // 1.5 second cast (longer than base fireball)
-                cooldown: 6,     // 6 second cooldown
+                castTime: 1.0,   // 1 second cast (same as base fireball)
+                cooldown: 8,     // 8 second cooldown
+                manaCost: 2,     // Costs 2 mana (more than base fireball)
                 // Modifier function applied to projectile on spawn
                 onSpawn: (proj) => {
                     proj.isLob = true;
@@ -6986,19 +6987,24 @@
             const ability = getAbility(abilityId);
             if (!ability || !ability.castTime) return false;
 
-            // Check mana
+            // Get upgrades early for stat overrides
+            const activeUpgrades = getActiveUpgrades(abilityId, caster);
+            const effectiveManaCost = (activeUpgrades.length > 0 && activeUpgrades[0].manaCost)
+                ? activeUpgrades[0].manaCost
+                : ability.manaCost;
+
+            // Check mana (using effective cost from upgrade if present)
             const mana = caster === 'player' ? playerMana : aiMana;
-            if (mana < ability.manaCost) return false;
+            if (mana < effectiveManaCost) return false;
 
             // Already casting?
             if (caster === 'player' && playerCasting) return false;
             if (caster === 'ai' && aiCasting) return false;
 
-            // Spend mana upfront
-            if (!spendMana(caster, ability.manaCost)) return false;
+            // Spend mana upfront (using effective cost)
+            if (!spendMana(caster, effectiveManaCost)) return false;
 
             // Get display name and check for stat overrides (from upgrades)
-            const activeUpgrades = getActiveUpgrades(abilityId, caster);
             const displayName = activeUpgrades.length > 0 ? activeUpgrades[0].name : ability.name;
             // Use upgrade's castTime if it has one, otherwise use base ability
             const effectiveCastTime = (activeUpgrades.length > 0 && activeUpgrades[0].castTime)
