@@ -3121,6 +3121,104 @@
             playerPaddle.visibility = 0;
             aiPaddle.visibility = 0;
 
+            // === 3D CAST BARS (over characters for positioning awareness) ===
+            let player3DCastBar = null;
+            let player3DCastFill = null;
+            let ai3DCastBar = null;
+            let ai3DCastFill = null;
+
+            const create3DCastBars = () => {
+                const barWidth = 1.6;
+                const barHeight = 0.1;
+                const barDepth = 0.05;
+
+                // Shared background material (dark)
+                const bgMat = new BABYLON.StandardMaterial("castBarBgMat", scene);
+                bgMat.diffuseColor = new BABYLON.Color3(0.15, 0.15, 0.2);
+                bgMat.emissiveColor = new BABYLON.Color3(0.05, 0.05, 0.08);
+                bgMat.specularColor = BABYLON.Color3.Black();
+
+                // Player fill (orange/fire)
+                const playerFillMat = new BABYLON.StandardMaterial("playerCastFillMat", scene);
+                playerFillMat.diffuseColor = new BABYLON.Color3(0.3, 0.6, 1);
+                playerFillMat.emissiveColor = new BABYLON.Color3(0.2, 0.4, 0.8);
+                playerFillMat.specularColor = BABYLON.Color3.Black();
+
+                // AI fill (red)
+                const aiFillMat = new BABYLON.StandardMaterial("aiCastFillMat", scene);
+                aiFillMat.diffuseColor = new BABYLON.Color3(1, 0.3, 0.2);
+                aiFillMat.emissiveColor = new BABYLON.Color3(0.8, 0.2, 0.1);
+                aiFillMat.specularColor = BABYLON.Color3.Black();
+
+                // === PLAYER CAST BAR ===
+                player3DCastBar = BABYLON.MeshBuilder.CreateBox("player3DCastBar", {
+                    width: barWidth, height: barHeight, depth: barDepth
+                }, scene);
+                player3DCastBar.material = bgMat;
+                player3DCastBar.parent = playerPaddle;
+                player3DCastBar.position.set(0, 1.6, 0);  // Above the character
+                player3DCastBar.visibility = 0;
+
+                player3DCastFill = BABYLON.MeshBuilder.CreateBox("player3DCastFill", {
+                    width: barWidth * 0.98, height: barHeight * 0.7, depth: barDepth + 0.01
+                }, scene);
+                player3DCastFill.material = playerFillMat;
+                player3DCastFill.parent = player3DCastBar;
+                player3DCastFill.position.set(0, 0, 0);
+                player3DCastFill.scaling.x = 0;
+                player3DCastFill.visibility = 0;
+                player3DCastFill.setPivotPoint(new BABYLON.Vector3(-barWidth * 0.49, 0, 0));
+
+                // === AI CAST BAR ===
+                ai3DCastBar = BABYLON.MeshBuilder.CreateBox("ai3DCastBar", {
+                    width: barWidth, height: barHeight, depth: barDepth
+                }, scene);
+                ai3DCastBar.material = bgMat;
+                ai3DCastBar.parent = aiPaddle;
+                ai3DCastBar.position.set(0, 1.6, 0);  // Above the character
+                ai3DCastBar.visibility = 0;
+
+                ai3DCastFill = BABYLON.MeshBuilder.CreateBox("ai3DCastFill", {
+                    width: barWidth * 0.98, height: barHeight * 0.7, depth: barDepth + 0.01
+                }, scene);
+                ai3DCastFill.material = aiFillMat;
+                ai3DCastFill.parent = ai3DCastBar;
+                ai3DCastFill.position.set(0, 0, 0);
+                ai3DCastFill.scaling.x = 0;
+                ai3DCastFill.visibility = 0;
+                ai3DCastFill.setPivotPoint(new BABYLON.Vector3(-barWidth * 0.49, 0, 0));
+            };
+
+            // Update player 3D cast bar
+            window.update3DCastBar = (progress, visible) => {
+                if (!player3DCastBar || !player3DCastFill) return;
+                if (visible) {
+                    player3DCastBar.visibility = 1;
+                    player3DCastFill.visibility = 1;
+                    player3DCastFill.scaling.x = Math.max(0, Math.min(1, progress));
+                } else {
+                    player3DCastBar.visibility = 0;
+                    player3DCastFill.visibility = 0;
+                    player3DCastFill.scaling.x = 0;
+                }
+            };
+
+            // Update AI 3D cast bar
+            window.updateAI3DCastBar = (progress, visible) => {
+                if (!ai3DCastBar || !ai3DCastFill) return;
+                if (visible) {
+                    ai3DCastBar.visibility = 1;
+                    ai3DCastFill.visibility = 1;
+                    ai3DCastFill.scaling.x = Math.max(0, Math.min(1, progress));
+                } else {
+                    ai3DCastBar.visibility = 0;
+                    ai3DCastFill.visibility = 0;
+                    ai3DCastFill.scaling.x = 0;
+                }
+            };
+
+            create3DCastBars();
+
             // Loading state tracking
             let playerModelLoaded = false;
             let aiModelLoaded = false;
@@ -5692,9 +5790,14 @@
                     const playerUpgrades = getActiveUpgrades(playerCasting, 'player');
                     const playerSpellName = playerUpgrades.length > 0 ? playerUpgrades[0].name : getAbility(playerCasting).name;
                     updateCastBarUI(playerSpellName, getAbility(playerCasting).element, playerCastProgress / playerCastTime);
+                    // Update 3D cast bar under player
+                    if (window.update3DCastBar) window.update3DCastBar(playerCastProgress / playerCastTime, true);
                     if (playerCastProgress >= playerCastTime) {
                         completeCasting('player');
                     }
+                } else {
+                    // Hide 3D cast bar when not casting
+                    if (window.update3DCastBar) window.update3DCastBar(0, false);
                 }
                 if (aiCasting && roundActive) {
                     aiCastProgress += dt;
@@ -5702,9 +5805,14 @@
                     const aiUpgrades = getActiveUpgrades(aiCasting, 'ai');
                     const aiSpellName = aiUpgrades.length > 0 ? aiUpgrades[0].name : getAbility(aiCasting).name;
                     updateAICastBarUI(aiSpellName, getAbility(aiCasting).element, aiCastProgress / aiCastTime);
+                    // Update AI 3D cast bar
+                    if (window.updateAI3DCastBar) window.updateAI3DCastBar(aiCastProgress / aiCastTime, true);
                     if (aiCastProgress >= aiCastTime) {
                         completeCasting('ai');
                     }
+                } else {
+                    // Hide AI 3D cast bar when not casting
+                    if (window.updateAI3DCastBar) window.updateAI3DCastBar(0, false);
                 }
 
                 // Player movement (W/S or Arrow keys) - blocked if frozen
@@ -7185,6 +7293,10 @@ function isAIRooted() {
             setTimeout(() => frozenEl.remove(), 1000);
         }
 
+        // Sound cooldown to prevent double-plays on rapid hits
+        let lastGateSoundTime = { player: 0, ai: 0 };
+        const gateSoundCooldown = 0.25;  // 250ms between gate sounds
+
         function dealDamageToTower(isPlayerTower, damage, hitZ) {
             if (isPlayerTower) {
                 playerTowerHealth = Math.max(0, playerTowerHealth - damage);
@@ -7194,9 +7306,14 @@ function isAIRooted() {
             updateHealthBars();
             showDamageNumber(damage, isPlayerTower, hitZ);
 
-            // Play damage sound panned to the gate that was hit
+            // Play damage sound panned to the gate that was hit (with cooldown)
             const gateX = isPlayerTower ? -10 : 10;
-            playSound('gateDamage', gateX, 0.6 + damage * 0.15);  // Louder for more damage
+            const now = performance.now() / 1000;
+            const gateKey = isPlayerTower ? 'player' : 'ai';
+            if (now - lastGateSoundTime[gateKey] >= gateSoundCooldown) {
+                playSound('gateDamage', gateX, 0.6 + damage * 0.15);  // Louder for more damage
+                lastGateSoundTime[gateKey] = now;
+            }
 
             // Destroy bricks based on damage amount
             if (window.destroyBrickAt) {
@@ -7210,6 +7327,9 @@ function isAIRooted() {
         }
 
         function endRound(winner) {
+            // Guard against double-calls (e.g., two projectiles hitting same frame)
+            if (!roundActive) return;
+
             roundActive = false;
             waitingToServe = true;
 
