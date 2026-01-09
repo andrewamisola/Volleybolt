@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <title>Volleybolt</title>
-    <!-- Fantasy Font -->
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&display=swap" rel="stylesheet">
+    <!-- Fun Fantasy Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; }
         html, body { width: 100%; height: 100%; overflow: hidden; }
@@ -15,7 +15,7 @@
             left: 50%;
             transform: translateX(-50%);
             color: white;
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 52px;
             font-weight: 900;
             text-shadow: 0 0 20px rgba(0,150,255,0.8), 0 4px 8px rgba(0,0,0,0.5);
@@ -29,7 +29,7 @@
             left: 50%;
             transform: translate(-50%, -50%);
             color: white;
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 72px;
             font-weight: 900;
             text-shadow: 0 0 40px rgba(255,200,100,0.9), 0 4px 12px rgba(0,0,0,0.7);
@@ -43,7 +43,7 @@
             left: 50%;
             transform: translateX(-50%);
             color: rgba(255,255,255,0.5);
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 14px;
             font-weight: 700;
             letter-spacing: 2px;
@@ -60,29 +60,36 @@
             pointer-events: none;
         }
         .health-bar {
-            width: 200px;
-            height: 20px;
-            background: rgba(0,0,0,0.5);
-            border: 2px solid rgba(255,255,255,0.3);
-            border-radius: 10px;
+            width: 220px;
+            height: 26px;
+            background: rgba(20, 25, 40, 0.9);
+            border: 3px solid rgba(255, 255, 255, 0.5);
+            border-radius: 4px;
+            transform: skewX(-10deg);
+            position: relative;
             overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
         }
         .health-fill {
             height: 100%;
             transition: width 0.3s ease;
+            position: relative;
+            border-radius: 2px;
         }
         #playerHealthFill {
-            background: linear-gradient(90deg, #2060ff, #40a0ff);
+            background: linear-gradient(180deg, #60b0ff 0%, #2080ff 50%, #1060cc 100%);
             width: 100%;
+            box-shadow: 0 0 12px rgba(80, 160, 255, 0.5);
         }
         #aiHealthFill {
-            background: linear-gradient(90deg, #ff4040, #ff8060);
+            background: linear-gradient(180deg, #ff8080 0%, #ff4050 50%, #cc2030 100%);
             width: 100%;
             float: right;
+            box-shadow: 0 0 12px rgba(255, 80, 100, 0.5);
         }
         .health-label {
             color: white;
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 12px;
             font-weight: 700;
             letter-spacing: 1px;
@@ -92,7 +99,7 @@
         .damage-number {
             position: absolute;
             color: #ff4444;
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 36px;
             font-weight: 900;
             text-shadow: 0 0 10px rgba(255,0,0,0.8), 2px 2px 0 #000;
@@ -106,7 +113,7 @@
         .frozen-text {
             position: absolute;
             color: #88ddff;
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 28px;
             font-weight: 900;
             text-shadow: 0 0 15px rgba(100,200,255,0.9), 2px 2px 0 #004466;
@@ -118,18 +125,20 @@
             100% { opacity: 0; transform: translateY(-40px) scale(1); }
         }
 
-        /* Volume Control */
+        /* Volume Control - Slanted */
         #volumeControl {
             position: absolute;
             bottom: 20px;
             right: 20px;
             display: flex;
             align-items: center;
-            gap: 8px;
-            background: rgba(0, 0, 0, 0.5);
-            padding: 8px 12px;
-            border-radius: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            gap: 10px;
+            background: rgba(20, 25, 40, 0.85);
+            padding: 10px 16px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            transform: skewX(-5deg);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
         }
         #volumeIcon {
             font-size: 18px;
@@ -137,11 +146,11 @@
         }
         #volumeSlider {
             width: 80px;
-            height: 4px;
+            height: 6px;
             -webkit-appearance: none;
             appearance: none;
             background: rgba(255, 255, 255, 0.3);
-            border-radius: 2px;
+            border-radius: 3px;
             outline: none;
             cursor: pointer;
         }
@@ -150,14 +159,16 @@
             appearance: none;
             width: 14px;
             height: 14px;
-            background: #ffaa00;
+            background: linear-gradient(180deg, #ffcc44 0%, #ffaa00 100%);
             border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.5);
             cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
         }
         #volumeSlider::-moz-range-thumb {
             width: 14px;
             height: 14px;
-            background: #ffaa00;
+            background: linear-gradient(180deg, #ffcc44 0%, #ffaa00 100%);
             border-radius: 50%;
             cursor: pointer;
             border: none;
@@ -246,7 +257,7 @@
         }
 
         .cooldown-text {
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 26px;
             font-weight: 900;
             color: white;
@@ -260,7 +271,7 @@
             transform: translateX(-50%);
             background: #222;
             color: #ccc;
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 11px;
             font-weight: 700;
             padding: 2px 8px;
@@ -381,7 +392,7 @@
             right: 5px;
             background: rgba(0, 0, 0, 0.8);
             color: #d4a5ff;
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 12px;
             font-weight: 700;
             padding: 2px 6px;
@@ -396,24 +407,26 @@
             display: block;
         }
 
-        /* Mana Bar - Holy Power style (3 segments) - Player left side */
+        /* Mana Bar - Slanted style (3 segments) - Player left side */
         #manaBar {
             position: absolute;
             bottom: 320px;
             left: 120px;
             display: flex;
-            gap: 8px;
-            padding: 8px 16px;
-            background: rgba(0, 0, 0, 0.4);
-            border-radius: 20px;
-            border: 1px solid rgba(100, 150, 255, 0.3);
+            gap: 6px;
+            padding: 10px 16px;
+            background: rgba(20, 25, 40, 0.85);
+            border: 3px solid rgba(100, 150, 255, 0.5);
+            border-radius: 8px;
+            transform: skewX(-8deg);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
         }
 
         .mana-segment {
-            width: 50px;
-            height: 16px;
-            background: rgba(20, 30, 50, 0.8);
-            border: 2px solid rgba(60, 100, 180, 0.5);
+            width: 40px;
+            height: 18px;
+            background: rgba(30, 40, 60, 0.9);
+            border: 2px solid rgba(80, 120, 200, 0.4);
             border-radius: 4px;
             position: relative;
             overflow: hidden;
@@ -438,8 +451,8 @@
         }
 
         .mana-segment.filled {
-            border-color: rgba(100, 160, 255, 0.8);
-            box-shadow: 0 0 15px rgba(80, 140, 255, 0.4);
+            border-color: rgba(100, 180, 255, 0.8);
+            box-shadow: 0 0 10px rgba(80, 140, 255, 0.5);
         }
 
         .mana-segment-shine {
@@ -471,7 +484,7 @@
             transform: translateX(-50%);
             background: rgba(30, 50, 100, 0.9);
             color: #80b0ff;
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 11px;
             font-weight: 700;
             padding: 2px 6px;
@@ -495,24 +508,24 @@
             border-color: rgba(255, 100, 100, 0.5);
         }
 
-        /* Ability Tooltip System */
+        /* Ability Tooltip System - Clean & Readable */
         .ability-tooltip {
             position: absolute;
             bottom: 100%;
             left: 50%;
             transform: translateX(-50%);
             margin-bottom: 15px;
-            width: 240px;
-            background: linear-gradient(180deg, rgba(20, 25, 40, 0.98) 0%, rgba(10, 12, 20, 0.98) 100%);
-            border: 1px solid rgba(100, 150, 255, 0.3);
-            border-radius: 8px;
-            padding: 12px;
+            width: 260px;
+            background: linear-gradient(180deg, rgba(25, 30, 45, 0.98) 0%, rgba(15, 18, 28, 0.98) 100%);
+            border: 2px solid rgba(80, 120, 180, 0.4);
+            border-radius: 10px;
+            padding: 14px 16px;
             pointer-events: none;
             opacity: 0;
             transition: opacity 0.15s ease, transform 0.15s ease;
             transform: translateX(-50%) translateY(5px);
             z-index: 1000;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 30px rgba(50, 100, 200, 0.1);
+            box-shadow: 0 6px 25px rgba(0, 0, 0, 0.6), 0 0 40px rgba(50, 100, 200, 0.15);
         }
 
         .ability-slot:hover .ability-tooltip {
@@ -520,117 +533,57 @@
             transform: translateX(-50%) translateY(0);
         }
 
-        .tooltip-header {
+        /* Title row */
+        .tooltip-title {
+            font-family: 'Baloo 2', cursive;
+            font-size: 20px;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 6px;
+        }
+
+        /* Stats row - mana/cast left, cooldown right */
+        .tooltip-stats-row {
             display: flex;
+            justify-content: space-between;
             align-items: center;
-            gap: 10px;
-            margin-bottom: 8px;
-            padding-bottom: 8px;
+            font-family: 'Nunito', sans-serif;
+            font-size: 13px;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
             border-bottom: 1px solid rgba(100, 150, 255, 0.2);
         }
 
-        .tooltip-icon {
-            font-size: 24px;
-            filter: drop-shadow(0 0 5px rgba(255, 200, 100, 0.5));
+        .tooltip-stats-left {
+            display: flex;
+            gap: 12px;
+            color: rgba(255, 255, 255, 0.8);
         }
 
-        .tooltip-title {
-            font-family: 'Cinzel', serif;
-            font-size: 16px;
-            font-weight: 700;
-            color: #ffd866;
-            text-shadow: 0 0 10px rgba(255, 200, 100, 0.3);
-        }
-
-        .tooltip-element {
-            font-family: 'Cinzel', serif;
-            font-size: 10px;
-            font-weight: 700;
-            padding: 2px 6px;
-            border-radius: 3px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .tooltip-element.fire { background: rgba(255, 100, 50, 0.3); color: #ff8844; border: 1px solid rgba(255, 100, 50, 0.5); }
-        .tooltip-element.ice { background: rgba(100, 180, 255, 0.3); color: #88ccff; border: 1px solid rgba(100, 180, 255, 0.5); }
-        .tooltip-element.arcane { background: rgba(180, 100, 255, 0.3); color: #cc88ff; border: 1px solid rgba(180, 100, 255, 0.5); }
-        .tooltip-element.lightning { background: rgba(255, 255, 100, 0.3); color: #ffff88; border: 1px solid rgba(255, 255, 100, 0.5); }
-        .tooltip-element.nature { background: rgba(100, 255, 100, 0.3); color: #88ff88; border: 1px solid rgba(100, 255, 100, 0.5); }
-        .tooltip-element.shadow { background: rgba(100, 50, 150, 0.3); color: #aa77cc; border: 1px solid rgba(100, 50, 150, 0.5); }
-
-        .tooltip-description {
-            font-family: 'Cinzel', serif;
-            font-size: 12px;
-            color: rgba(255, 255, 255, 0.85);
-            line-height: 1.4;
-            margin-bottom: 10px;
-        }
-
-        .tooltip-stats {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 6px;
-            margin-bottom: 10px;
-        }
-
-        .tooltip-stat {
+        .tooltip-stat-item {
             display: flex;
             align-items: center;
-            gap: 5px;
-            font-family: 'Cinzel', serif;
-            font-size: 11px;
+            gap: 4px;
         }
 
-        .tooltip-stat-icon {
-            font-size: 12px;
-            width: 16px;
-            text-align: center;
+        .tooltip-stat-item .icon {
+            font-size: 14px;
         }
 
-        .tooltip-stat-label {
-            color: rgba(255, 255, 255, 0.5);
+        .tooltip-stat-item .value {
+            font-weight: 600;
         }
 
-        .tooltip-stat-value {
-            color: #88ccff;
-            font-weight: 700;
-        }
+        .tooltip-stat-item.mana .value { color: #88aaff; }
+        .tooltip-stat-item.cast .value { color: #ffcc66; }
+        .tooltip-stat-item.cooldown .value { color: #ff9966; }
 
-        .tooltip-stat-value.damage { color: #ff6666; }
-        .tooltip-stat-value.mana { color: #6688ff; }
-        .tooltip-stat-value.cooldown { color: #ffcc44; }
-        .tooltip-stat-value.speed { color: #66ff88; }
-        .tooltip-stat-value.duration { color: #cc88ff; }
-
-        .tooltip-effects {
-            border-top: 1px solid rgba(100, 150, 255, 0.2);
-            padding-top: 8px;
-        }
-
-        .tooltip-effect {
-            display: flex;
-            align-items: flex-start;
-            gap: 6px;
-            font-family: 'Cinzel', serif;
-            font-size: 11px;
-            margin-bottom: 4px;
-        }
-
-        .tooltip-effect-icon {
-            color: #88ff88;
-            font-size: 10px;
-            margin-top: 2px;
-        }
-
-        .tooltip-effect-text {
-            color: rgba(200, 255, 200, 0.9);
-            line-height: 1.3;
-        }
-
-        .tooltip-effect-text .highlight {
-            color: #ffcc44;
-            font-weight: 700;
+        /* Description */
+        .tooltip-description {
+            font-family: 'Nunito', sans-serif;
+            font-size: 14px;
+            color: #ffdd77;
+            line-height: 1.5;
         }
 
         /* Tooltip arrow */
@@ -641,10 +594,10 @@
             left: 50%;
             transform: translateX(-50%);
             border: 8px solid transparent;
-            border-top-color: rgba(10, 12, 20, 0.98);
+            border-top-color: rgba(15, 18, 28, 0.98);
         }
 
-        /* Cast Bar - Player left side */
+        /* Cast Bar - Player left side - Hexagonal */
         #castBarContainer {
             position: absolute;
             bottom: 370px;
@@ -660,7 +613,7 @@
         }
 
         #castBarLabel {
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 12px;
             color: #ffd866;
             text-align: left;
@@ -669,20 +622,21 @@
         }
 
         #castBarWrapper {
-            background: rgba(0, 0, 0, 0.6);
-            border: 2px solid rgba(100, 150, 255, 0.4);
-            border-radius: 4px;
-            padding: 3px;
-            box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+            background: rgba(20, 25, 40, 0.9);
+            border: 3px solid rgba(255, 180, 100, 0.5);
+            border-radius: 6px;
+            padding: 4px;
+            transform: skewX(-8deg);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
         }
 
         #castBarFill {
-            height: 12px;
-            background: linear-gradient(180deg, #ff9944 0%, #ff6600 50%, #cc4400 100%);
-            border-radius: 2px;
+            height: 14px;
+            background: linear-gradient(180deg, #ffaa55 0%, #ff7722 50%, #dd5500 100%);
+            border-radius: 3px;
             width: 0%;
             transition: width 0.05s linear;
-            box-shadow: 0 0 10px rgba(255, 100, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+            box-shadow: 0 0 10px rgba(255, 120, 50, 0.5);
         }
 
         #castBarFill.ice {
@@ -711,7 +665,7 @@
             100% { filter: brightness(1); }
         }
 
-        /* AI Cast Bar - right side, bottom */
+        /* AI Cast Bar - right side, bottom - Hexagonal */
         #aiCastBarContainer {
             position: absolute;
             bottom: 370px;
@@ -727,7 +681,7 @@
         }
 
         #aiCastBarLabel {
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 12px;
             color: #ff6666;
             text-align: right;
@@ -736,20 +690,21 @@
         }
 
         #aiCastBarWrapper {
-            background: rgba(0, 0, 0, 0.6);
-            border: 2px solid rgba(255, 100, 100, 0.4);
-            border-radius: 4px;
-            padding: 3px;
-            box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+            background: rgba(20, 25, 40, 0.9);
+            border: 3px solid rgba(255, 120, 120, 0.5);
+            border-radius: 6px;
+            padding: 4px;
+            transform: skewX(8deg);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
         }
 
         #aiCastBarFill {
-            height: 12px;
-            background: linear-gradient(180deg, #ff9944 0%, #ff6600 50%, #cc4400 100%);
-            border-radius: 2px;
+            height: 14px;
+            background: linear-gradient(180deg, #ffaa55 0%, #ff7722 50%, #dd5500 100%);
+            border-radius: 3px;
             width: 0%;
             transition: width 0.05s linear;
-            box-shadow: 0 0 10px rgba(255, 100, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+            box-shadow: 0 0 10px rgba(255, 120, 50, 0.5);
         }
 
         #aiCastBarFill.ice {
@@ -757,24 +712,26 @@
             box-shadow: 0 0 10px rgba(100, 150, 255, 0.5);
         }
 
-        /* AI Mana Bar - matching player style */
+        /* AI Mana Bar - Slanted style matching player */
         #aiManaBar {
             position: absolute;
             bottom: 320px;
             right: 120px;
             display: flex;
-            gap: 8px;
-            padding: 8px 16px;
-            background: rgba(0, 0, 0, 0.4);
-            border-radius: 20px;
-            border: 1px solid rgba(255, 100, 100, 0.3);
+            gap: 6px;
+            padding: 10px 16px;
+            background: rgba(20, 25, 40, 0.85);
+            border: 3px solid rgba(255, 100, 120, 0.5);
+            border-radius: 8px;
+            transform: skewX(8deg);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
         }
 
         .ai-mana-segment {
-            width: 50px;
-            height: 16px;
-            background: rgba(20, 30, 50, 0.8);
-            border: 2px solid rgba(60, 100, 180, 0.5);
+            width: 40px;
+            height: 18px;
+            background: rgba(30, 40, 60, 0.9);
+            border: 2px solid rgba(80, 120, 200, 0.4);
             border-radius: 4px;
             position: relative;
             overflow: hidden;
@@ -799,8 +756,8 @@
         }
 
         .ai-mana-segment.filled {
-            border-color: rgba(100, 160, 255, 0.8);
-            box-shadow: 0 0 15px rgba(80, 140, 255, 0.4);
+            border-color: rgba(100, 180, 255, 0.8);
+            box-shadow: 0 0 10px rgba(80, 140, 255, 0.5);
         }
 
         /* Casting indicator on ability slot */
@@ -869,7 +826,7 @@
         }
 
         #parryButton .parry-label {
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 12px;
             font-weight: 600;
             color: rgba(180, 200, 220, 0.8);
@@ -878,7 +835,7 @@
         #parryButton .parry-key {
             background: rgba(0, 0, 0, 0.3);
             color: rgba(150, 180, 200, 0.8);
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 10px;
             font-weight: 600;
             padding: 2px 6px;
@@ -978,7 +935,7 @@
             font-size: 20px;
         }
         .upgrade-points-value {
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 20px;
             font-weight: 700;
             color: #ffd700;
@@ -1021,14 +978,14 @@
             font-size: 28px;
         }
         .talent-panel-title {
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 18px;
             font-weight: 700;
             color: #ffd866;
             flex: 1;
         }
         .talent-panel-tier {
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 12px;
             padding: 4px 10px;
             background: rgba(100, 150, 255, 0.2);
@@ -1052,7 +1009,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 14px;
             font-weight: 700;
             transition: all 0.3s ease;
@@ -1120,7 +1077,7 @@
             display: block;
         }
         .talent-choice-name {
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 13px;
             font-weight: 700;
             color: #fff;
@@ -1141,7 +1098,7 @@
             text-align: center;
         }
         .talent-points-display {
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 12px;
             color: rgba(255, 255, 255, 0.7);
         }
@@ -1169,7 +1126,7 @@
         /* Floating notification text */
         .floating-notification {
             position: fixed;
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 24px;
             font-weight: 700;
             color: #ffd700;
@@ -1205,7 +1162,7 @@
             pointer-events: none;
         }
         #loadingTitle {
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 48px;
             font-weight: 900;
             color: #fff;
@@ -1226,7 +1183,7 @@
             100% { transform: rotate(360deg); }
         }
         #loadingText {
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 16px;
             color: rgba(255,255,255,0.6);
             margin-top: 20px;
@@ -1253,7 +1210,7 @@
         }
 
         #talentTitle {
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 36px;
             font-weight: 900;
             color: #fff;
@@ -1263,9 +1220,9 @@
         }
 
         #talentSubtitle {
-            font-family: 'Cinzel', serif;
+            font-family: 'Nunito', sans-serif;
             font-size: 16px;
-            color: rgba(255,255,255,0.5);
+            color: rgba(255,255,255,0.6);
             margin-bottom: 40px;
         }
 
@@ -1305,7 +1262,7 @@
         }
 
         .upgrade-name {
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 18px;
             font-weight: 700;
             color: #fff;
@@ -1313,7 +1270,7 @@
         }
 
         .upgrade-base {
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 11px;
             color: rgba(255, 150, 100, 0.8);
             margin-bottom: 10px;
@@ -1322,9 +1279,10 @@
         }
 
         .upgrade-desc {
+            font-family: 'Nunito', sans-serif;
             font-size: 13px;
-            color: rgba(255, 255, 255, 0.7);
-            line-height: 1.4;
+            color: #ffdd77;
+            line-height: 1.5;
             margin-bottom: 12px;
         }
 
@@ -1334,8 +1292,9 @@
         }
 
         .upgrade-effect {
-            font-size: 11px;
-            color: rgba(100, 255, 150, 0.8);
+            font-family: 'Nunito', sans-serif;
+            font-size: 12px;
+            color: rgba(150, 255, 180, 0.9);
             margin: 4px 0;
         }
 
@@ -1347,7 +1306,7 @@
         #startBattleBtn {
             margin-top: 40px;
             padding: 15px 50px;
-            font-family: 'Cinzel', serif;
+            font-family: 'Baloo 2', cursive;
             font-size: 20px;
             font-weight: 700;
             color: #fff;
@@ -1381,8 +1340,8 @@
 
     <!-- Talent Selection Screen -->
     <div id="talentScreen">
-        <div id="talentTitle">Choose Your Upgrade</div>
-        <div id="talentSubtitle">Select a talent to enhance your abilities</div>
+        <div id="talentTitle">Choose An Upgrade</div>
+        <div id="talentSubtitle">Select your fireball style for this match</div>
         <div id="upgradeContainer">
             <!-- Upgrade cards will be populated by JS -->
         </div>
@@ -1472,45 +1431,16 @@
             <div class="ability-key">1</div>
             <!-- Tooltip -->
             <div class="ability-tooltip" id="fireballTooltip">
-                <div class="tooltip-header">
-                    <span class="tooltip-icon">🔥</span>
-                    <span class="tooltip-title">Fireball</span>
-                    <span class="tooltip-element fire">Fire</span>
+                <div class="tooltip-title">Fireball</div>
+                <div class="tooltip-stats-row">
+                    <div class="tooltip-stats-left">
+                        <span class="tooltip-stat-item mana"><span class="icon">💧</span><span class="value">1 Mana</span></span>
+                        <span class="tooltip-stat-item cast"><span class="icon">⏳</span><span class="value">1s Cast</span></span>
+                    </div>
+                    <span class="tooltip-stat-item cooldown"><span class="icon">⏱️</span><span class="value">5s</span></span>
                 </div>
                 <div class="tooltip-description">
-                    Hurl a blazing fireball that damages the enemy tower. Damage increases with volleys.
-                </div>
-                <div class="tooltip-stats">
-                    <div class="tooltip-stat">
-                        <span class="tooltip-stat-icon">💥</span>
-                        <span class="tooltip-stat-label">Damage:</span>
-                        <span class="tooltip-stat-value damage">1-3</span>
-                    </div>
-                    <div class="tooltip-stat">
-                        <span class="tooltip-stat-icon">💧</span>
-                        <span class="tooltip-stat-label">Mana:</span>
-                        <span class="tooltip-stat-value mana">1</span>
-                    </div>
-                    <div class="tooltip-stat">
-                        <span class="tooltip-stat-icon">⏱️</span>
-                        <span class="tooltip-stat-label">Cooldown:</span>
-                        <span class="tooltip-stat-value cooldown">6s</span>
-                    </div>
-                    <div class="tooltip-stat">
-                        <span class="tooltip-stat-icon">💨</span>
-                        <span class="tooltip-stat-label">Speed:</span>
-                        <span class="tooltip-stat-value speed">Medium</span>
-                    </div>
-                </div>
-                <div class="tooltip-effects">
-                    <div class="tooltip-effect">
-                        <span class="tooltip-effect-icon">▸</span>
-                        <span class="tooltip-effect-text">Volley bonus: <span class="highlight">+1 damage</span> per 1-2 volleys</span>
-                    </div>
-                    <div class="tooltip-effect">
-                        <span class="tooltip-effect-icon">▸</span>
-                        <span class="tooltip-effect-text">Can be parried and blocked</span>
-                    </div>
+                    Throw a fireball directly at your target, doing 1 Fire damage and scaling up to 3 per volley.
                 </div>
             </div>
         </div>
@@ -1530,49 +1460,16 @@
             <div class="ability-key">2</div>
             <!-- Tooltip -->
             <div class="ability-tooltip" id="frostboltTooltip">
-                <div class="tooltip-header">
-                    <span class="tooltip-icon">❄️</span>
-                    <span class="tooltip-title">Frost Bolt</span>
-                    <span class="tooltip-element ice">Ice</span>
+                <div class="tooltip-title">Frost Bolt</div>
+                <div class="tooltip-stats-row">
+                    <div class="tooltip-stats-left">
+                        <span class="tooltip-stat-item mana"><span class="icon">💧</span><span class="value">2 Mana</span></span>
+                        <span class="tooltip-stat-item cast"><span class="icon">⚡</span><span class="value">Instant</span></span>
+                    </div>
+                    <span class="tooltip-stat-item cooldown"><span class="icon">⏱️</span><span class="value">14s</span></span>
                 </div>
                 <div class="tooltip-description">
-                    Launch a piercing shard of ice. Freezes the enemy on contact, trapping them in a block of ice.
-                </div>
-                <div class="tooltip-stats">
-                    <div class="tooltip-stat">
-                        <span class="tooltip-stat-icon">💥</span>
-                        <span class="tooltip-stat-label">Damage:</span>
-                        <span class="tooltip-stat-value damage">0</span>
-                    </div>
-                    <div class="tooltip-stat">
-                        <span class="tooltip-stat-icon">💧</span>
-                        <span class="tooltip-stat-label">Mana:</span>
-                        <span class="tooltip-stat-value mana">2</span>
-                    </div>
-                    <div class="tooltip-stat">
-                        <span class="tooltip-stat-icon">⏱️</span>
-                        <span class="tooltip-stat-label">Cooldown:</span>
-                        <span class="tooltip-stat-value cooldown">14s</span>
-                    </div>
-                    <div class="tooltip-stat">
-                        <span class="tooltip-stat-icon">💨</span>
-                        <span class="tooltip-stat-label">Speed:</span>
-                        <span class="tooltip-stat-value speed">Fast</span>
-                    </div>
-                </div>
-                <div class="tooltip-effects">
-                    <div class="tooltip-effect">
-                        <span class="tooltip-effect-icon">▸</span>
-                        <span class="tooltip-effect-text">Freezes enemy for <span class="highlight">1 second</span></span>
-                    </div>
-                    <div class="tooltip-effect">
-                        <span class="tooltip-effect-icon">▸</span>
-                        <span class="tooltip-effect-text">Destroyed on paddle contact</span>
-                    </div>
-                    <div class="tooltip-effect">
-                        <span class="tooltip-effect-icon">▸</span>
-                        <span class="tooltip-effect-text">Does not damage towers</span>
-                    </div>
+                    Launch a piercing shard of ice that freezes the enemy wizard for 1 second. Does no damage but creates an opening.
                 </div>
             </div>
         </div>
@@ -2472,6 +2369,10 @@
         // ==========================================
         // TALENT STATE - Player progression tracking
         // ==========================================
+        // Active upgrades selected by player/AI (used for projectile behavior)
+        let playerUpgrades = [];
+        let aiUpgrades = [];
+
         const TalentState = {
             upgradePoints: 0,
             totalPointsEarned: 0,
@@ -2529,11 +2430,33 @@
             return true;
         }
 
-        // Get all active upgrades for an ability
-        function getActiveUpgrades(abilityId) {
-            const state = TalentState.abilities[abilityId];
-            if (!state) return [];
-            return state.selectedTalents.map(id => UpgradeRegistry[id]).filter(Boolean);
+        // Get all active upgrades for an ability (owner: 'player' or 'ai')
+        function getActiveUpgrades(abilityId, owner = 'player') {
+            const upgrades = [];
+            const sourceUpgrades = owner === 'player' ? playerUpgrades : aiUpgrades;
+
+            // Check initial game selection
+            for (const id of sourceUpgrades) {
+                const upgrade = UpgradeRegistry[id];
+                if (upgrade && upgrade.baseAbility === abilityId) {
+                    upgrades.push(upgrade);
+                }
+            }
+
+            // Check in-game talent selections (player only for now)
+            if (owner === 'player') {
+                const state = TalentState.abilities[abilityId];
+                if (state) {
+                    for (const id of state.selectedTalents) {
+                        const upgrade = UpgradeRegistry[id];
+                        if (upgrade && !upgrades.includes(upgrade)) {
+                            upgrades.push(upgrade);
+                        }
+                    }
+                }
+            }
+
+            return upgrades;
         }
 
         // Award upgrade points (called on round win)
@@ -2550,6 +2473,8 @@
 
         // Reset talent state for new match
         function resetTalentState() {
+            playerUpgrades = [];  // Clear selected upgrades
+            aiUpgrades = [];      // Clear AI upgrades
             TalentState.upgradePoints = 0;
             TalentState.totalPointsEarned = 0;
             for (const state of Object.values(TalentState.abilities)) {
@@ -2560,8 +2485,11 @@
             updateAbilityUpgradeIndicators();
         }
 
-        // Check if player has an upgrade (compatibility wrapper)
+        // Check if player has an upgrade (checks both initial selection and in-game talents)
         function hasUpgrade(upgradeId) {
+            // Check initial game selection
+            if (playerUpgrades.includes(upgradeId)) return true;
+            // Check in-game talent selections
             for (const state of Object.values(TalentState.abilities)) {
                 if (state.selectedTalents.includes(upgradeId)) return true;
             }
@@ -2580,10 +2508,8 @@
 
         // Apply upgrade to a newly spawned projectile
         function applyUpgradesToProjectile(proj, abilityId, owner) {
-            if (owner !== 'player') return;  // Only player has upgrades for now
-
-            // Get active upgrades for this ability from TalentState
-            const activeUpgrades = getActiveUpgrades(abilityId);
+            // Get active upgrades for this ability
+            const activeUpgrades = getActiveUpgrades(abilityId, owner);
 
             for (const upgrade of activeUpgrades) {
                 if (upgrade.onSpawn) {
@@ -2594,11 +2520,9 @@
 
         // Update projectile with upgrade effects (called each frame)
         function updateProjectileUpgrades(proj, dt) {
-            if (proj.owner !== 'player') return;
-
             // Get ability ID from projectile type
             const abilityId = proj.type || 'fireball';
-            const activeUpgrades = getActiveUpgrades(abilityId);
+            const activeUpgrades = getActiveUpgrades(abilityId, proj.owner);
 
             for (const upgrade of activeUpgrades) {
                 if (upgrade.onUpdate) {
@@ -3029,10 +2953,15 @@
             // Initialize audio context on first interaction
             initAudioContext();
 
+            // Any action starts the round when waiting
+            const talentVisible = document.getElementById('talentScreen').classList.contains('visible');
+            if (waitingToServe && !gameOver && !talentVisible) {
+                startRound();
+                return;  // Don't process other actions on the start frame
+            }
+
             if (e.code === 'Space') {
-                if (waitingToServe && !gameOver) {
-                    startRound();
-                } else if (!waitingToServe && !gameOver && canParry && parryCallback) {
+                if (!waitingToServe && !gameOver && canParry && parryCallback) {
                     // Play parry animation on any attempt (3x speed, start at frame 20, lock for 500ms)
                     if (window.playPlayerAnim) {
                         playPlayerAnim('parry', false, 500, 3.0, 20);
@@ -3060,9 +2989,13 @@
         document.getElementById('parryButton').addEventListener('click', () => {
             initAudioContext();
             showKeyPressedFeedback('Space');
-            if (waitingToServe && !gameOver) {
+            // Any click starts the round when waiting
+            const talentVisible = document.getElementById('talentScreen').classList.contains('visible');
+            if (waitingToServe && !gameOver && !talentVisible) {
                 startRound();
-            } else if (!waitingToServe && !gameOver && canParry && parryCallback) {
+                return;
+            }
+            if (!waitingToServe && !gameOver && canParry && parryCallback) {
                 if (window.playPlayerAnim) {
                     playPlayerAnim('parry', false, 500, 3.0, 20);
                     setTimeout(() => playPlayerAnim('idle', true), 500);
@@ -3196,9 +3129,9 @@
                     }
                     console.log("All models loaded!");
 
-                    // Initialize talent system and start game immediately
+                    // Initialize talent system and show upgrade selection
                     initTalentSystem();
-                    setTimeout(() => startRound(), 500);
+                    setTimeout(() => showTalentScreen(), 500);
                 }
             };
 
@@ -3307,7 +3240,8 @@
                     }
                 );
             };
-            loadCharacterModels();
+            // Load characters based on mode toggle
+            // loadCharacterModels(); // Original GLB loader - called conditionally below
 
             // Animation state tracking
             let playerCurrentAnim = 'idle';
@@ -3431,6 +3365,962 @@
             };
             // Uncomment to load separate animation files:
             // loadSeparateAnimations();
+
+            // ========================================
+            // PROCEDURAL PICKLE CHARACTER BUILDER
+            // ========================================
+            // Creates a cute cartoon pickle wizard with procedural animations
+            // Textures can be applied to: body, eyes, hat, arms
+
+            const createPickleCharacter = (name, scene) => {
+                const root = new BABYLON.TransformNode(name + "Root", scene);
+                const parts = {}; // Store references to all parts for texturing
+
+                // === MATERIALS (placeholder - user will add textures) ===
+
+                // Body material - pickle green, slightly glossy
+                const bodyMat = new BABYLON.StandardMaterial(name + "BodyMat", scene);
+                bodyMat.diffuseColor = new BABYLON.Color3(0.4, 0.6, 0.2); // Pickle green
+                bodyMat.specularColor = new BABYLON.Color3(0.3, 0.3, 0.3);
+                bodyMat.specularPower = 32;
+
+                // Eye white material
+                const eyeWhiteMat = new BABYLON.StandardMaterial(name + "EyeWhiteMat", scene);
+                eyeWhiteMat.diffuseColor = new BABYLON.Color3(1, 1, 1);
+                eyeWhiteMat.specularColor = new BABYLON.Color3(0.5, 0.5, 0.5);
+                eyeWhiteMat.specularPower = 64;
+
+                // Pupil material
+                const pupilMat = new BABYLON.StandardMaterial(name + "PupilMat", scene);
+                pupilMat.diffuseColor = new BABYLON.Color3(0.05, 0.05, 0.05);
+                pupilMat.specularColor = new BABYLON.Color3(0.8, 0.8, 0.8);
+                pupilMat.specularPower = 128;
+
+                // Hat material - wizard purple
+                const hatMat = new BABYLON.StandardMaterial(name + "HatMat", scene);
+                hatMat.diffuseColor = new BABYLON.Color3(0.3, 0.1, 0.5); // Purple
+                hatMat.specularColor = new BABYLON.Color3(0.2, 0.2, 0.2);
+
+                // Arm material - same as body but slightly different
+                const armMat = new BABYLON.StandardMaterial(name + "ArmMat", scene);
+                armMat.diffuseColor = new BABYLON.Color3(0.35, 0.55, 0.18);
+                armMat.specularColor = new BABYLON.Color3(0.2, 0.2, 0.2);
+
+                // === BODY - Organic curved pickle shape ===
+                // Bean-shaped: curved path, tapered ends, chunky middle, oval cross-section
+                const bodyLength = 1.3;
+                const maxRadius = 0.32;
+                const segments = 24;
+
+                // Create curved path (gentle arc like a bean/banana)
+                const path = [];
+                for (let i = 0; i <= segments; i++) {
+                    const t = i / segments; // 0 to 1
+                    const y = t * bodyLength; // Height along pickle
+
+                    // Gentle curve - slight S-bend for organic feel
+                    const curveX = Math.sin(t * Math.PI) * 0.12; // Main arc
+                    const curveZ = Math.sin(t * Math.PI * 2) * 0.03; // Subtle wobble
+
+                    path.push(new BABYLON.Vector3(curveX, y, curveZ));
+                }
+
+                // Radius function - tapered ends, chunky middle
+                const radiusFunction = (i, distance) => {
+                    const t = i / segments;
+                    // Smooth taper: thin at ends, fat in middle
+                    // Using sine curve for natural bulge
+                    const taper = Math.sin(t * Math.PI); // 0 -> 1 -> 0
+                    // Add slight asymmetry - bottom slightly thicker
+                    const asymmetry = 1 + (1 - t) * 0.15;
+                    return maxRadius * (0.3 + 0.7 * taper) * asymmetry;
+                };
+
+                // Create tube along curved path
+                const bodyTube = BABYLON.MeshBuilder.CreateTube(name + "Body", {
+                    path: path,
+                    radiusFunction: radiusFunction,
+                    tessellation: 16,
+                    cap: BABYLON.Mesh.CAP_ALL,
+                    sideOrientation: BABYLON.Mesh.DOUBLESIDE
+                }, scene);
+
+                // Make cross-section oval (stretch X, compress Z)
+                bodyTube.scaling.x = 1.0;
+                bodyTube.scaling.z = 0.85; // Slightly oval
+
+                bodyTube.material = bodyMat;
+                bodyTube.parent = root;
+                parts.body = bodyTube;
+
+                // Pickle bumps/warts - scattered organically on surface
+                const bumpCount = 8;
+                parts.bumps = [];
+                for (let i = 0; i < bumpCount; i++) {
+                    const t = 0.15 + Math.random() * 0.7; // Avoid very ends
+                    const angle = Math.random() * Math.PI * 2;
+                    const pathIndex = Math.floor(t * segments);
+                    const pathPoint = path[Math.min(pathIndex, path.length - 1)];
+                    const r = radiusFunction(pathIndex) * 0.95;
+
+                    const bumpX = pathPoint.x + Math.cos(angle) * r;
+                    const bumpY = pathPoint.y;
+                    const bumpZ = pathPoint.z + Math.sin(angle) * r * 0.85; // Match oval
+
+                    const bump = BABYLON.MeshBuilder.CreateSphere(name + "Bump" + i, {
+                        diameter: 0.06 + Math.random() * 0.05,
+                        segments: 6
+                    }, scene);
+                    bump.material = bodyMat;
+                    bump.parent = root;
+                    bump.position.set(bumpX, bumpY, bumpZ);
+                    parts.bumps.push(bump);
+                }
+
+                // === EYES - Big cartoon eyes ===
+                // Position eyes on the curved body (use path for accurate placement)
+                const eyeRadius = 0.14;
+                const eyePathT = 0.72; // 72% up the body
+                const eyePathIndex = Math.floor(eyePathT * segments);
+                const eyePathPoint = path[eyePathIndex];
+                const eyeBodyRadius = radiusFunction(eyePathIndex);
+                const eyeHeight = eyePathPoint.y;
+                const eyeSpacing = 0.16;
+                const eyeForward = eyePathPoint.x + eyeBodyRadius * 0.75;
+
+                // Left eye white
+                const leftEye = BABYLON.MeshBuilder.CreateSphere(name + "LeftEye", {
+                    diameter: eyeRadius * 2,
+                    segments: 12
+                }, scene);
+                leftEye.material = eyeWhiteMat;
+                leftEye.parent = root;
+                leftEye.position.set(eyeForward, eyeHeight, eyeSpacing);
+                parts.leftEye = leftEye;
+
+                // Right eye white
+                const rightEye = BABYLON.MeshBuilder.CreateSphere(name + "RightEye", {
+                    diameter: eyeRadius * 2,
+                    segments: 12
+                }, scene);
+                rightEye.material = eyeWhiteMat;
+                rightEye.parent = root;
+                rightEye.position.set(eyeForward, eyeHeight, -eyeSpacing);
+                parts.rightEye = rightEye;
+
+                // Left pupil
+                const leftPupil = BABYLON.MeshBuilder.CreateSphere(name + "LeftPupil", {
+                    diameter: eyeRadius * 0.9,
+                    segments: 8
+                }, scene);
+                leftPupil.material = pupilMat;
+                leftPupil.parent = root;
+                leftPupil.position.set(eyeForward + eyeRadius * 0.5, eyeHeight, eyeSpacing);
+                parts.leftPupil = leftPupil;
+
+                // Right pupil
+                const rightPupil = BABYLON.MeshBuilder.CreateSphere(name + "RightPupil", {
+                    diameter: eyeRadius * 0.9,
+                    segments: 8
+                }, scene);
+                rightPupil.material = pupilMat;
+                rightPupil.parent = root;
+                rightPupil.position.set(eyeForward + eyeRadius * 0.5, eyeHeight, -eyeSpacing);
+                parts.rightPupil = rightPupil;
+
+                // Eye shine (specular highlight)
+                const shineMat = new BABYLON.StandardMaterial(name + "ShineMat", scene);
+                shineMat.diffuseColor = new BABYLON.Color3(1, 1, 1);
+                shineMat.emissiveColor = new BABYLON.Color3(0.8, 0.8, 0.8);
+
+                const leftShine = BABYLON.MeshBuilder.CreateSphere(name + "LeftShine", {
+                    diameter: eyeRadius * 0.35,
+                    segments: 6
+                }, scene);
+                leftShine.material = shineMat;
+                leftShine.parent = root;
+                leftShine.position.set(eyeForward + eyeRadius * 0.6, eyeHeight + eyeRadius * 0.3, eyeSpacing - eyeRadius * 0.2);
+                parts.leftShine = leftShine;
+
+                const rightShine = BABYLON.MeshBuilder.CreateSphere(name + "RightShine", {
+                    diameter: eyeRadius * 0.35,
+                    segments: 6
+                }, scene);
+                rightShine.material = shineMat;
+                rightShine.parent = root;
+                rightShine.position.set(eyeForward + eyeRadius * 0.6, eyeHeight + eyeRadius * 0.3, -eyeSpacing - eyeRadius * 0.2);
+                parts.rightShine = rightShine;
+
+                // === WIZARD HAT ===
+                // Position hat at top of curved body
+                const topPathPoint = path[path.length - 1];
+                const hatBase = topPathPoint.y + 0.08;
+
+                // Hat brim (flattened torus)
+                const brim = BABYLON.MeshBuilder.CreateTorus(name + "HatBrim", {
+                    diameter: 0.6,
+                    thickness: 0.07,
+                    tessellation: 24
+                }, scene);
+                brim.material = hatMat;
+                brim.parent = root;
+                brim.position.set(topPathPoint.x, hatBase, topPathPoint.z);
+                brim.scaling.y = 0.3; // Flatten it
+                parts.hatBrim = brim;
+
+                // Hat cone
+                const hatCone = BABYLON.MeshBuilder.CreateCylinder(name + "HatCone", {
+                    height: 0.5,
+                    diameterTop: 0.04,
+                    diameterBottom: 0.38,
+                    tessellation: 16
+                }, scene);
+                hatCone.material = hatMat;
+                hatCone.parent = root;
+                hatCone.position.set(topPathPoint.x, hatBase + 0.27, topPathPoint.z);
+                hatCone.rotation.z = 0.12; // Slight tilt for character
+                parts.hatCone = hatCone;
+
+                // Hat band (gold trim)
+                const bandMat = new BABYLON.StandardMaterial(name + "BandMat", scene);
+                bandMat.diffuseColor = new BABYLON.Color3(0.9, 0.75, 0.2); // Gold
+                bandMat.specularColor = new BABYLON.Color3(1, 0.9, 0.5);
+                bandMat.specularPower = 64;
+
+                const hatBand = BABYLON.MeshBuilder.CreateTorus(name + "HatBand", {
+                    diameter: 0.40,
+                    thickness: 0.035,
+                    tessellation: 24
+                }, scene);
+                hatBand.material = bandMat;
+                hatBand.parent = root;
+                hatBand.position.set(topPathPoint.x, hatBase + 0.06, topPathPoint.z);
+                hatBand.rotation.x = Math.PI / 2;
+                parts.hatBand = hatBand;
+
+                // === ARMS ===
+                // Position arms at chunky middle of pickle
+                const armPathT = 0.45; // 45% up body (in the chunky middle)
+                const armPathIndex = Math.floor(armPathT * segments);
+                const armPathPoint = path[armPathIndex];
+                const armBodyRadius = radiusFunction(armPathIndex);
+                const armLength = 0.3;
+                const armThickness = 0.07;
+                const armHeight = armPathPoint.y;
+
+                // Arm pivots (for animation)
+                const leftArmPivot = new BABYLON.TransformNode(name + "LeftArmPivot", scene);
+                leftArmPivot.parent = root;
+                leftArmPivot.position.set(armPathPoint.x, armHeight, armBodyRadius * 0.85 + 0.02);
+                parts.leftArmPivot = leftArmPivot;
+
+                const rightArmPivot = new BABYLON.TransformNode(name + "RightArmPivot", scene);
+                rightArmPivot.parent = root;
+                rightArmPivot.position.set(armPathPoint.x, armHeight, -armBodyRadius * 0.85 - 0.02);
+                parts.rightArmPivot = rightArmPivot;
+
+                // Left arm
+                const leftArm = BABYLON.MeshBuilder.CreateCapsule(name + "LeftArm", {
+                    height: armLength,
+                    radius: armThickness,
+                    tessellation: 8,
+                    subdivisions: 2
+                }, scene);
+                leftArm.material = armMat;
+                leftArm.parent = leftArmPivot;
+                leftArm.position.set(0, 0, armLength * 0.4);
+                leftArm.rotation.x = Math.PI / 2;
+                parts.leftArm = leftArm;
+
+                // Right arm
+                const rightArm = BABYLON.MeshBuilder.CreateCapsule(name + "RightArm", {
+                    height: armLength,
+                    radius: armThickness,
+                    tessellation: 8,
+                    subdivisions: 2
+                }, scene);
+                rightArm.material = armMat;
+                rightArm.parent = rightArmPivot;
+                rightArm.position.set(0, 0, -armLength * 0.4);
+                rightArm.rotation.x = -Math.PI / 2;
+                parts.rightArm = rightArm;
+
+                // Little hands (spheres at end of arms)
+                const leftHand = BABYLON.MeshBuilder.CreateSphere(name + "LeftHand", {
+                    diameter: armThickness * 2.2,
+                    segments: 8
+                }, scene);
+                leftHand.material = armMat;
+                leftHand.parent = leftArmPivot;
+                leftHand.position.set(0, 0, armLength * 0.75);
+                parts.leftHand = leftHand;
+
+                const rightHand = BABYLON.MeshBuilder.CreateSphere(name + "RightHand", {
+                    diameter: armThickness * 2.2,
+                    segments: 8
+                }, scene);
+                rightHand.material = armMat;
+                rightHand.parent = rightArmPivot;
+                rightHand.position.set(0, 0, -armLength * 0.75);
+                parts.rightHand = rightHand;
+
+                // === MOUTH - Simple curved smile ===
+                // Position mouth below eyes on the curved body
+                const mouthPathT = 0.58; // Just below eyes
+                const mouthPathIndex = Math.floor(mouthPathT * segments);
+                const mouthPathPoint = path[mouthPathIndex];
+                const mouthBodyRadius = radiusFunction(mouthPathIndex);
+                const mouthY = mouthPathPoint.y;
+                const mouthForward = mouthPathPoint.x + mouthBodyRadius * 0.78;
+
+                const mouthPoints = [];
+                for (let i = 0; i <= 8; i++) {
+                    const t = (i / 8) * Math.PI;
+                    mouthPoints.push(new BABYLON.Vector3(
+                        mouthForward,
+                        mouthY - Math.sin(t) * 0.04, // Smile curve
+                        (i / 8 - 0.5) * 0.16
+                    ));
+                }
+                const mouth = BABYLON.MeshBuilder.CreateTube(name + "Mouth", {
+                    path: mouthPoints,
+                    radius: 0.012,
+                    tessellation: 6,
+                    cap: BABYLON.Mesh.CAP_ALL
+                }, scene);
+                mouth.material = pupilMat; // Black
+                mouth.parent = root;
+                parts.mouth = mouth;
+
+                // Store all materials for easy texture application
+                parts.materials = {
+                    body: bodyMat,
+                    eyeWhite: eyeWhiteMat,
+                    pupil: pupilMat,
+                    hat: hatMat,
+                    hatBand: bandMat,
+                    arm: armMat,
+                    shine: shineMat
+                };
+
+                // Store root reference
+                parts.root = root;
+
+                return parts;
+            };
+
+            // ========================================
+            // PICKLE PROCEDURAL ANIMATIONS
+            // ========================================
+
+            const createPickleAnimations = (parts, name, scene) => {
+                const animations = {};
+                const frameRate = 30;
+
+                // === IDLE ANIMATION - Gentle bob and sway ===
+                const idleGroup = new BABYLON.AnimationGroup(name + "_idle", scene);
+
+                // Body bob
+                const idleBob = new BABYLON.Animation(
+                    name + "_idleBob", "position.y", frameRate,
+                    BABYLON.Animation.ANIMATIONTYPE_FLOAT,
+                    BABYLON.Animation.ANIMATIONLOOPMODE_CYCLE
+                );
+                idleBob.setKeys([
+                    { frame: 0, value: 0 },
+                    { frame: 30, value: 0.05 },
+                    { frame: 60, value: 0 }
+                ]);
+                idleBob.setEasingFunction(new BABYLON.SineEase());
+                idleGroup.addTargetedAnimation(idleBob, parts.root);
+
+                // Gentle sway
+                const idleSway = new BABYLON.Animation(
+                    name + "_idleSway", "rotation.z", frameRate,
+                    BABYLON.Animation.ANIMATIONTYPE_FLOAT,
+                    BABYLON.Animation.ANIMATIONLOOPMODE_CYCLE
+                );
+                idleSway.setKeys([
+                    { frame: 0, value: 0 },
+                    { frame: 45, value: 0.03 },
+                    { frame: 90, value: 0 },
+                    { frame: 135, value: -0.03 },
+                    { frame: 180, value: 0 }
+                ]);
+                idleGroup.addTargetedAnimation(idleSway, parts.root);
+
+                // Arm subtle movement
+                const leftArmIdle = new BABYLON.Animation(
+                    name + "_leftArmIdle", "rotation.x", frameRate,
+                    BABYLON.Animation.ANIMATIONTYPE_FLOAT,
+                    BABYLON.Animation.ANIMATIONLOOPMODE_CYCLE
+                );
+                leftArmIdle.setKeys([
+                    { frame: 0, value: 0 },
+                    { frame: 40, value: 0.1 },
+                    { frame: 80, value: 0 }
+                ]);
+                idleGroup.addTargetedAnimation(leftArmIdle, parts.leftArmPivot);
+
+                const rightArmIdle = new BABYLON.Animation(
+                    name + "_rightArmIdle", "rotation.x", frameRate,
+                    BABYLON.Animation.ANIMATIONTYPE_FLOAT,
+                    BABYLON.Animation.ANIMATIONLOOPMODE_CYCLE
+                );
+                rightArmIdle.setKeys([
+                    { frame: 0, value: 0 },
+                    { frame: 50, value: -0.1 },
+                    { frame: 100, value: 0 }
+                ]);
+                idleGroup.addTargetedAnimation(rightArmIdle, parts.rightArmPivot);
+
+                animations['idle'] = idleGroup;
+
+                // === CAST ANIMATION - Arms raise forward ===
+                const castGroup = new BABYLON.AnimationGroup(name + "_cast", scene);
+
+                // Both arms raise and point forward
+                const leftArmCast = new BABYLON.Animation(
+                    name + "_leftArmCast", "rotation.x", frameRate,
+                    BABYLON.Animation.ANIMATIONTYPE_FLOAT,
+                    BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+                );
+                leftArmCast.setKeys([
+                    { frame: 0, value: 0 },
+                    { frame: 10, value: -0.8 },
+                    { frame: 25, value: -1.2 },
+                    { frame: 30, value: -0.3 }
+                ]);
+                castGroup.addTargetedAnimation(leftArmCast, parts.leftArmPivot);
+
+                const rightArmCast = new BABYLON.Animation(
+                    name + "_rightArmCast", "rotation.x", frameRate,
+                    BABYLON.Animation.ANIMATIONTYPE_FLOAT,
+                    BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+                );
+                rightArmCast.setKeys([
+                    { frame: 0, value: 0 },
+                    { frame: 10, value: 0.8 },
+                    { frame: 25, value: 1.2 },
+                    { frame: 30, value: 0.3 }
+                ]);
+                castGroup.addTargetedAnimation(rightArmCast, parts.rightArmPivot);
+
+                // Lean forward slightly
+                const castLean = new BABYLON.Animation(
+                    name + "_castLean", "rotation.x", frameRate,
+                    BABYLON.Animation.ANIMATIONTYPE_FLOAT,
+                    BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+                );
+                castLean.setKeys([
+                    { frame: 0, value: 0 },
+                    { frame: 15, value: 0.15 },
+                    { frame: 30, value: 0 }
+                ]);
+                castGroup.addTargetedAnimation(castLean, parts.root);
+
+                animations['cast'] = castGroup;
+
+                // === PARRY ANIMATION - Quick defensive pose ===
+                const parryGroup = new BABYLON.AnimationGroup(name + "_parry", scene);
+
+                // Arms cross in front
+                const leftArmParry = new BABYLON.Animation(
+                    name + "_leftArmParry", "rotation", frameRate,
+                    BABYLON.Animation.ANIMATIONTYPE_VECTOR3,
+                    BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+                );
+                leftArmParry.setKeys([
+                    { frame: 0, value: new BABYLON.Vector3(0, 0, 0) },
+                    { frame: 5, value: new BABYLON.Vector3(-0.5, 0.8, 0) },
+                    { frame: 20, value: new BABYLON.Vector3(-0.5, 0.8, 0) },
+                    { frame: 30, value: new BABYLON.Vector3(0, 0, 0) }
+                ]);
+                parryGroup.addTargetedAnimation(leftArmParry, parts.leftArmPivot);
+
+                const rightArmParry = new BABYLON.Animation(
+                    name + "_rightArmParry", "rotation", frameRate,
+                    BABYLON.Animation.ANIMATIONTYPE_VECTOR3,
+                    BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+                );
+                rightArmParry.setKeys([
+                    { frame: 0, value: new BABYLON.Vector3(0, 0, 0) },
+                    { frame: 5, value: new BABYLON.Vector3(0.5, -0.8, 0) },
+                    { frame: 20, value: new BABYLON.Vector3(0.5, -0.8, 0) },
+                    { frame: 30, value: new BABYLON.Vector3(0, 0, 0) }
+                ]);
+                parryGroup.addTargetedAnimation(rightArmParry, parts.rightArmPivot);
+
+                // Slight crouch
+                const parryCrouch = new BABYLON.Animation(
+                    name + "_parryCrouch", "position.y", frameRate,
+                    BABYLON.Animation.ANIMATIONTYPE_FLOAT,
+                    BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+                );
+                parryCrouch.setKeys([
+                    { frame: 0, value: 0 },
+                    { frame: 5, value: -0.1 },
+                    { frame: 20, value: -0.1 },
+                    { frame: 30, value: 0 }
+                ]);
+                parryGroup.addTargetedAnimation(parryCrouch, parts.root);
+
+                animations['parry'] = parryGroup;
+
+                // === LEFT STRAFE - Lean left ===
+                const leftGroup = new BABYLON.AnimationGroup(name + "_left", scene);
+
+                const leftLean = new BABYLON.Animation(
+                    name + "_leftLean", "rotation.z", frameRate,
+                    BABYLON.Animation.ANIMATIONTYPE_FLOAT,
+                    BABYLON.Animation.ANIMATIONLOOPMODE_CYCLE
+                );
+                leftLean.setKeys([
+                    { frame: 0, value: 0.15 },
+                    { frame: 15, value: 0.2 },
+                    { frame: 30, value: 0.15 }
+                ]);
+                leftGroup.addTargetedAnimation(leftLean, parts.root);
+
+                animations['left'] = leftGroup;
+
+                // === RIGHT STRAFE - Lean right ===
+                const rightGroup = new BABYLON.AnimationGroup(name + "_right", scene);
+
+                const rightLean = new BABYLON.Animation(
+                    name + "_rightLean", "rotation.z", frameRate,
+                    BABYLON.Animation.ANIMATIONTYPE_FLOAT,
+                    BABYLON.Animation.ANIMATIONLOOPMODE_CYCLE
+                );
+                rightLean.setKeys([
+                    { frame: 0, value: -0.15 },
+                    { frame: 15, value: -0.2 },
+                    { frame: 30, value: -0.15 }
+                ]);
+                rightGroup.addTargetedAnimation(rightLean, parts.root);
+
+                animations['right'] = rightGroup;
+
+                return animations;
+            };
+
+            // ========================================
+            // CHARACTER MODE SELECTION
+            // ========================================
+            // Options: 'wizard' (original GLB), 'procedural_pickle', 'meshy_pickle'
+            const CHARACTER_MODE = 'meshy_pickle'; // <-- CHANGE THIS TO SWITCH!
+
+            let playerPickleParts = null;
+            let aiPickleParts = null;
+
+            const loadPickleCharacters = () => {
+                // Create player pickle
+                playerPickleParts = createPickleCharacter("player", scene);
+                const playerPickle = playerPickleParts.root;
+                playerPickle.parent = playerPaddle;
+                playerPickle.position.set(0, 0, 0);
+                playerPickle.rotation.y = Math.PI / 2; // Face right (toward opponent)
+                playerPaddle.visibility = 0;
+
+                // Create and store animations
+                const playerPickleAnims = createPickleAnimations(playerPickleParts, "player", scene);
+                Object.keys(playerPickleAnims).forEach(key => {
+                    playerAnimations[key] = playerPickleAnims[key];
+                    playerPickleAnims[key].stop();
+                });
+                if (playerAnimations['idle']) playerAnimations['idle'].play(true);
+
+                // Add shadow casters
+                Object.values(playerPickleParts).forEach(part => {
+                    if (part && part.getClassName && part.getClassName() === "Mesh") {
+                        shadowGenerator.addShadowCaster(part);
+                    }
+                });
+
+                console.log("Player pickle loaded! Animations:", Object.keys(playerAnimations));
+                playerModelLoaded = true;
+
+                // Create AI pickle
+                aiPickleParts = createPickleCharacter("ai", scene);
+                const aiPickle = aiPickleParts.root;
+                aiPickle.parent = aiPaddle;
+                aiPickle.position.set(0, 0, 0);
+                aiPickle.rotation.y = -Math.PI / 2; // Face left (toward player)
+                aiPaddle.visibility = 0;
+
+                // Create and store animations
+                const aiPickleAnims = createPickleAnimations(aiPickleParts, "ai", scene);
+                Object.keys(aiPickleAnims).forEach(key => {
+                    aiAnimations[key] = aiPickleAnims[key];
+                    aiPickleAnims[key].stop();
+                });
+                if (aiAnimations['idle']) aiAnimations['idle'].play(true);
+
+                // Add shadow casters
+                Object.values(aiPickleParts).forEach(part => {
+                    if (part && part.getClassName && part.getClassName() === "Mesh") {
+                        shadowGenerator.addShadowCaster(part);
+                    }
+                });
+
+                console.log("AI pickle loaded! Animations:", Object.keys(aiAnimations));
+                aiModelLoaded = true;
+
+                checkAllLoaded();
+            };
+
+            // ========================================
+            // CARTOON PICKLE MATERIAL (matches reference image)
+            // ========================================
+            // Glossy vinyl toy look - bright lime green, very shiny
+            const createPickleMaterial = (name, scene) => {
+                const mat = new BABYLON.PBRMaterial(name, scene);
+
+                // Bright lime green like the reference
+                mat.albedoColor = new BABYLON.Color3(0.65, 0.82, 0.2); // #A6D133 ish
+
+                // Glossy plastic/vinyl look
+                mat.metallic = 0;
+                mat.roughness = 0.15; // Very shiny
+
+                // Subtle subsurface feel (light passes through slightly)
+                // Note: subSurface properties may need Babylon.js 5.0+
+                // mat.subSurface.isTranslucencyEnabled = true;
+                // mat.subSurface.translucencyIntensity = 0.3;
+                // mat.subSurface.tintColor = new BABYLON.Color3(0.5, 0.7, 0.1);
+
+                // Environment reflection for that glossy pop
+                mat.environmentIntensity = 0.8;
+
+                return mat;
+            };
+
+            // Create eye materials (white sclera, black pupil)
+            const createEyeWhiteMaterial = (name, scene) => {
+                const mat = new BABYLON.PBRMaterial(name, scene);
+                mat.albedoColor = new BABYLON.Color3(1, 1, 1); // Pure white
+                mat.metallic = 0;
+                mat.roughness = 0.1; // Very glossy
+                mat.environmentIntensity = 0.6;
+                return mat;
+            };
+
+            const createEyeBlackMaterial = (name, scene) => {
+                const mat = new BABYLON.PBRMaterial(name, scene);
+                mat.albedoColor = new BABYLON.Color3(0.05, 0.05, 0.05); // Near black
+                mat.metallic = 0;
+                mat.roughness = 0.2;
+                mat.environmentIntensity = 0.4;
+                return mat;
+            };
+
+            // ========================================
+            // ACCESSORY SYSTEM (Character Creator style)
+            // ========================================
+            // Attachable items: hats, glasses, weapons, etc.
+
+            const createWizardHat = (name, scene) => {
+                const hatRoot = new BABYLON.TransformNode(name + "HatRoot", scene);
+
+                // Hat material - purple wizard style
+                const hatMat = new BABYLON.PBRMaterial(name + "HatMat", scene);
+                hatMat.albedoColor = new BABYLON.Color3(0.35, 0.15, 0.55); // Purple
+                hatMat.metallic = 0;
+                hatMat.roughness = 0.4;
+
+                // Gold band material
+                const bandMat = new BABYLON.PBRMaterial(name + "BandMat", scene);
+                bandMat.albedoColor = new BABYLON.Color3(0.95, 0.8, 0.2); // Gold
+                bandMat.metallic = 0.6;
+                bandMat.roughness = 0.3;
+
+                // Hat brim (flattened torus)
+                const brim = BABYLON.MeshBuilder.CreateTorus(name + "Brim", {
+                    diameter: 0.55,
+                    thickness: 0.06,
+                    tessellation: 24
+                }, scene);
+                brim.material = hatMat;
+                brim.parent = hatRoot;
+                brim.position.y = 0;
+                brim.scaling.y = 0.3;
+
+                // Hat cone
+                const cone = BABYLON.MeshBuilder.CreateCylinder(name + "Cone", {
+                    height: 0.45,
+                    diameterTop: 0.04,
+                    diameterBottom: 0.35,
+                    tessellation: 16
+                }, scene);
+                cone.material = hatMat;
+                cone.parent = hatRoot;
+                cone.position.y = 0.24;
+                cone.rotation.z = 0.1; // Jaunty tilt
+
+                // Gold band
+                const band = BABYLON.MeshBuilder.CreateTorus(name + "Band", {
+                    diameter: 0.36,
+                    thickness: 0.03,
+                    tessellation: 24
+                }, scene);
+                band.material = bandMat;
+                band.parent = hatRoot;
+                band.position.y = 0.05;
+                band.rotation.x = Math.PI / 2;
+
+                // Optional: star or buckle on the band
+                const star = BABYLON.MeshBuilder.CreateSphere(name + "Star", {
+                    diameter: 0.06,
+                    segments: 8
+                }, scene);
+                star.material = bandMat;
+                star.parent = hatRoot;
+                star.position.set(0.18, 0.05, 0);
+
+                return hatRoot;
+            };
+
+            // Attach accessory to a character
+            const attachAccessory = (accessory, parentRoot, offsetY, offsetX = 0, offsetZ = 0) => {
+                accessory.parent = parentRoot;
+                accessory.position.set(offsetX, offsetY, offsetZ);
+            };
+
+            // Store player/AI accessories for easy access
+            let playerAccessories = {};
+            let aiAccessories = {};
+
+            // Store model roots for orientation changes
+            let playerModelRoot = null;
+            let aiModelRoot = null;
+
+            // Base orientations and target Y rotations (smoothly interpolated)
+            const playerBaseRotY = Math.PI / 2;  // Facing right toward opponent
+            const aiBaseRotY = -Math.PI / 2;     // Facing left toward player
+            let playerTargetRotY = playerBaseRotY;
+            let aiTargetRotY = aiBaseRotY;
+
+            // Apply cartoon material to Meshy pickle meshes
+            const applyPickleMaterials = (meshes, prefix, scene) => {
+                const pickleMat = createPickleMaterial(prefix + "PickleMat", scene);
+                const eyeWhiteMat = createEyeWhiteMaterial(prefix + "EyeWhiteMat", scene);
+                const eyeBlackMat = createEyeBlackMaterial(prefix + "EyeBlackMat", scene);
+
+                meshes.forEach(m => {
+                    if (m.material) {
+                        const meshName = m.name.toLowerCase();
+                        const matName = m.material.name.toLowerCase();
+                        console.log(`${prefix} mesh: ${m.name}, material: ${m.material.name}`);
+
+                        // Check for eye-related names
+                        if (meshName.includes('eye') || matName.includes('eye') ||
+                            meshName.includes('sclera') || matName.includes('sclera') ||
+                            matName.includes('white')) {
+                            m.material = eyeWhiteMat;
+                        } else if (meshName.includes('pupil') || matName.includes('pupil') ||
+                                   meshName.includes('iris') || matName.includes('iris') ||
+                                   matName.includes('black')) {
+                            m.material = eyeBlackMat;
+                        } else {
+                            // Default to pickle body material
+                            m.material = pickleMat;
+                        }
+                    }
+                });
+            };
+
+            // ========================================
+            // MESHY PICKLE GLB LOADER
+            // ========================================
+            const loadMeshyPickle = () => {
+                const meshyFile = "Meshy_AI_Animation_Idle_5_withSkin.glb";
+
+                // Load player Meshy pickle
+                BABYLON.SceneLoader.ImportMesh("", "models/", meshyFile, scene,
+                    (meshes, particleSystems, skeletons, animationGroups) => {
+                        console.log("Player Meshy pickle loaded!", meshes.length, "meshes");
+                        console.log("Animation groups:", animationGroups.map(a => a.name));
+                        console.log("Skeletons:", skeletons.length);
+
+                        playerModelRoot = new BABYLON.TransformNode("playerMeshyRoot", scene);
+                        const playerMeshyRoot = playerModelRoot; // Local alias
+                        meshes.forEach(m => {
+                            if (!m.parent || m.parent === scene) {
+                                m.parent = playerMeshyRoot;
+                            }
+                            shadowGenerator.addShadowCaster(m);
+                            // Stylized cozy look: matte with rim lighting
+                            if (m.material) {
+                                m.material.roughness = 0.85;
+                                m.material.metallic = 0;
+                                if (m.material.environmentIntensity !== undefined) {
+                                    m.material.environmentIntensity = 0.3;
+                                }
+                                // Kill harsh emissive
+                                if (m.material.emissiveIntensity !== undefined) {
+                                    m.material.emissiveIntensity = 0;
+                                }
+                                if (m.material.emissiveColor) {
+                                    m.material.emissiveColor = new BABYLON.Color3(0, 0, 0);
+                                }
+                                // Add rim/fresnel effect for that stylized pop
+                                if (m.material.useRadianceOverAlpha !== undefined) {
+                                    m.material.useRadianceOverAlpha = false;
+                                }
+                                // Enable fresnel for stylized rim light
+                                m.material.emissiveFresnelParameters = new BABYLON.FresnelParameters();
+                                m.material.emissiveFresnelParameters.bias = 0.6;
+                                m.material.emissiveFresnelParameters.power = 2;
+                                m.material.emissiveFresnelParameters.leftColor = new BABYLON.Color3(0.8, 0.9, 1.0); // Soft white-blue rim
+                                m.material.emissiveFresnelParameters.rightColor = new BABYLON.Color3(0, 0, 0);
+                            }
+                            // Cel-shaded outline effect - PLAYER BLUE
+                            if (m.getTotalVertices && m.getTotalVertices() > 0) {
+                                m.renderOutline = true;
+                                m.outlineWidth = 0.035;
+                                m.outlineColor = new BABYLON.Color3(0.1, 0.3, 0.6); // Blue outline
+                            }
+                        });
+
+                        // Apply cartoon pickle material (comment out if using Meshy textures)
+                        // applyPickleMaterials(meshes, "player", scene);
+
+                        // Hat removed - just the pickle character now
+
+                        playerMeshyRoot.parent = playerPaddle;
+                        playerMeshyRoot.position.set(0, 0, 0);
+                        // Adjust these as needed after seeing the model:
+                        playerMeshyRoot.scaling = new BABYLON.Vector3(1, 1, 1);
+                        playerMeshyRoot.rotation.y = Math.PI / 2; // Face right
+                        playerPaddle.visibility = 0;
+
+                        // Store animations
+                        animationGroups.forEach(anim => {
+                            const name = anim.name.toLowerCase();
+                            playerAnimations[name] = anim;
+                            anim.stop();
+                        });
+
+                        // Play idle by default (try various common names)
+                        const idleAnim = playerAnimations['_idle_5'] ||
+                                        playerAnimations['idle_5'] ||
+                                        playerAnimations['idle'] ||
+                                        Object.values(playerAnimations)[0];
+                        if (idleAnim) {
+                            idleAnim.play(true);
+                            playerAnimations['idle'] = idleAnim; // Ensure 'idle' key exists
+                        }
+
+                        console.log("Player Meshy animations:", Object.keys(playerAnimations));
+                        if (window.setPlayerFlashMeshes) setPlayerFlashMeshes(meshes.filter(m => m.material));
+                        playerModelLoaded = true;
+                        checkAllLoaded();
+                    },
+                    null,
+                    (scene, msg, err) => {
+                        console.error("Failed to load player Meshy pickle:", msg, err);
+                        playerModelLoaded = true;
+                        playerPaddle.visibility = 1;
+                        checkAllLoaded();
+                    }
+                );
+
+                // Load AI Meshy pickle (same model, different instance)
+                BABYLON.SceneLoader.ImportMesh("", "models/", meshyFile, scene,
+                    (meshes, particleSystems, skeletons, animationGroups) => {
+                        console.log("AI Meshy pickle loaded!", meshes.length, "meshes");
+
+                        aiModelRoot = new BABYLON.TransformNode("aiMeshyRoot", scene);
+                        const aiMeshyRoot = aiModelRoot; // Local alias
+                        meshes.forEach(m => {
+                            if (!m.parent || m.parent === scene) {
+                                m.parent = aiMeshyRoot;
+                            }
+                            shadowGenerator.addShadowCaster(m);
+                            // Stylized cozy look: matte with rim lighting
+                            if (m.material) {
+                                m.material.roughness = 0.85;
+                                m.material.metallic = 0;
+                                if (m.material.environmentIntensity !== undefined) {
+                                    m.material.environmentIntensity = 0.3;
+                                }
+                                // Kill harsh emissive
+                                if (m.material.emissiveIntensity !== undefined) {
+                                    m.material.emissiveIntensity = 0;
+                                }
+                                if (m.material.emissiveColor) {
+                                    m.material.emissiveColor = new BABYLON.Color3(0, 0, 0);
+                                }
+                                // Add rim/fresnel effect for that stylized pop
+                                if (m.material.useRadianceOverAlpha !== undefined) {
+                                    m.material.useRadianceOverAlpha = false;
+                                }
+                                // Enable fresnel for stylized rim light
+                                m.material.emissiveFresnelParameters = new BABYLON.FresnelParameters();
+                                m.material.emissiveFresnelParameters.bias = 0.6;
+                                m.material.emissiveFresnelParameters.power = 2;
+                                m.material.emissiveFresnelParameters.leftColor = new BABYLON.Color3(0.8, 0.9, 1.0); // Soft white-blue rim
+                                m.material.emissiveFresnelParameters.rightColor = new BABYLON.Color3(0, 0, 0);
+                            }
+                            // Cel-shaded outline effect - AI RED
+                            if (m.getTotalVertices && m.getTotalVertices() > 0) {
+                                m.renderOutline = true;
+                                m.outlineWidth = 0.035;
+                                m.outlineColor = new BABYLON.Color3(0.6, 0.15, 0.1); // Red outline
+                            }
+                        });
+
+                        // Apply cartoon pickle material (comment out if using Meshy textures)
+                        // applyPickleMaterials(meshes, "ai", scene);
+
+                        // Hat removed - just the pickle character now
+
+                        aiMeshyRoot.parent = aiPaddle;
+                        aiMeshyRoot.position.set(0, 0, 0);
+                        aiMeshyRoot.scaling = new BABYLON.Vector3(1, 1, 1);
+                        aiMeshyRoot.rotation.y = -Math.PI / 2; // Face left
+                        aiPaddle.visibility = 0;
+
+                        // Store animations
+                        animationGroups.forEach(anim => {
+                            const name = anim.name.toLowerCase();
+                            aiAnimations[name] = anim;
+                            anim.stop();
+                        });
+
+                        // Play idle by default
+                        const idleAnim = aiAnimations['_idle_5'] ||
+                                        aiAnimations['idle_5'] ||
+                                        aiAnimations['idle'] ||
+                                        Object.values(aiAnimations)[0];
+                        if (idleAnim) {
+                            idleAnim.play(true);
+                            aiAnimations['idle'] = idleAnim;
+                        }
+
+                        console.log("AI Meshy animations:", Object.keys(aiAnimations));
+                        if (window.setAIFlashMeshes) setAIFlashMeshes(meshes.filter(m => m.material));
+                        aiModelLoaded = true;
+                        checkAllLoaded();
+                    },
+                    null,
+                    (scene, msg, err) => {
+                        console.error("Failed to load AI Meshy pickle:", msg, err);
+                        aiModelLoaded = true;
+                        aiPaddle.visibility = 1;
+                        checkAllLoaded();
+                    }
+                );
+            };
+
+            // === LOAD CHARACTERS BASED ON MODE ===
+            if (CHARACTER_MODE === 'meshy_pickle') {
+                loadMeshyPickle();
+            } else if (CHARACTER_MODE === 'procedural_pickle') {
+                loadPickleCharacters();
+            } else {
+                loadCharacterModels(); // Original wizard
+            }
 
             // Ice block material - transparent frozen effect
             const iceMat = new BABYLON.StandardMaterial("iceMat", scene);
@@ -3617,12 +4507,12 @@
 
             // Gate/Wall materials with optional texture support
             const playerGateMat = new BABYLON.StandardMaterial("playerGateMat", scene);
-            playerGateMat.diffuseColor = new BABYLON.Color3(0.35, 0.38, 0.5);
-            playerGateMat.emissiveColor = new BABYLON.Color3(0.05, 0.08, 0.15);
+            playerGateMat.diffuseColor = new BABYLON.Color3(0.5, 0.55, 0.75);  // Brighter blue
+            playerGateMat.emissiveColor = new BABYLON.Color3(0.03, 0.04, 0.08);  // Very subtle glow
 
             const aiGateMat = new BABYLON.StandardMaterial("aiGateMat", scene);
-            aiGateMat.diffuseColor = new BABYLON.Color3(0.5, 0.32, 0.32);
-            aiGateMat.emissiveColor = new BABYLON.Color3(0.15, 0.05, 0.05);
+            aiGateMat.diffuseColor = new BABYLON.Color3(0.7, 0.45, 0.45);  // Brighter red
+            aiGateMat.emissiveColor = new BABYLON.Color3(0.08, 0.03, 0.03);  // Very subtle glow
 
             // Arch keystone material (slightly different)
             const keystoneMat = new BABYLON.StandardMaterial("keystoneMat", scene);
@@ -3843,9 +4733,9 @@
                 });
             };
 
-            // Glow effect (global)
+            // Subtle glow effect (global) - affects all emissive materials
             const glow = new BABYLON.GlowLayer("glow", scene);
-            glow.intensity = 0.8;
+            glow.intensity = 0.6;
 
             // Preload particle texture (global for upgrades to access)
             const flareTexture = window.flareTexture = new BABYLON.Texture("https://assets.babylonjs.com/textures/flare.png", scene);
@@ -4791,14 +5681,20 @@
                 // Update casting progress
                 if (playerCasting && roundActive) {
                     playerCastProgress += dt;
-                    updateCastBarUI(getAbility(playerCasting).name, getAbility(playerCasting).element, playerCastProgress / playerCastTime);
+                    // Show upgrade name if active (e.g., "Magma Lob" instead of "Fireball")
+                    const playerUpgrades = getActiveUpgrades(playerCasting, 'player');
+                    const playerSpellName = playerUpgrades.length > 0 ? playerUpgrades[0].name : getAbility(playerCasting).name;
+                    updateCastBarUI(playerSpellName, getAbility(playerCasting).element, playerCastProgress / playerCastTime);
                     if (playerCastProgress >= playerCastTime) {
                         completeCasting('player');
                     }
                 }
                 if (aiCasting && roundActive) {
                     aiCastProgress += dt;
-                    updateAICastBarUI(getAbility(aiCasting).name, getAbility(aiCasting).element, aiCastProgress / aiCastTime);
+                    // Show upgrade name if active
+                    const aiUpgrades = getActiveUpgrades(aiCasting, 'ai');
+                    const aiSpellName = aiUpgrades.length > 0 ? aiUpgrades[0].name : getAbility(aiCasting).name;
+                    updateAICastBarUI(aiSpellName, getAbility(aiCasting).element, aiCastProgress / aiCastTime);
                     if (aiCastProgress >= aiCastTime) {
                         completeCasting('ai');
                     }
@@ -4833,6 +5729,21 @@
 
                     playerPaddle.position.z += moveDir * paddleSpeed * dt;
                     playerPaddle.position.z = Math.max(-paddleBoundary, Math.min(paddleBoundary, playerPaddle.position.z));
+
+                    // Set target orientation based on movement direction
+                    if (moveDir > 0) {
+                        playerTargetRotY = playerBaseRotY + 0.6;  // Turn to face up
+                    } else if (moveDir < 0) {
+                        playerTargetRotY = playerBaseRotY - 0.6;  // Turn to face down
+                    } else {
+                        playerTargetRotY = playerBaseRotY;        // Face forward
+                    }
+                }
+
+                // Smooth orientation interpolation for player model
+                if (playerModelRoot) {
+                    const lerpSpeed = 8 * dt;
+                    playerModelRoot.rotation.y += (playerTargetRotY - playerModelRoot.rotation.y) * lerpSpeed;
                 }
 
                 if (roundActive) {
@@ -4873,39 +5784,54 @@
                             }
                         }
 
-                        // AI casting - cast fireball when off cooldown and has mana
-                        // Only cast if: not already casting, off cooldown, has mana, and no dangerous projectiles nearby
-                        if (!aiCasting && aiFireballCooldown <= 0 && aiMana >= abilities.fireball.manaCost && projectiles.length < 10) {
-                            // Check if there's a dangerous projectile coming - don't cast if we need to dodge
-                            let dangerousIncoming = false;
-                            for (const p of projectiles) {
-                                if (p.velX > 0 && p.mesh.position.x > 0 && p.mesh.position.x < 8) {
-                                    dangerousIncoming = true;
-                                    break;
-                                }
-                            }
-                            // Only cast if safe to do so (no imminent threats)
-                            if (!dangerousIncoming && Math.random() < 0.015) {
-                                startCasting('ai', 'fireball');
-                            }
+                        // Set target orientation for AI based on movement direction
+                        if (aiMoveDir > 0) {
+                            aiTargetRotY = aiBaseRotY - 0.6;  // Turn to face up (reversed for facing)
+                        } else if (aiMoveDir < 0) {
+                            aiTargetRotY = aiBaseRotY + 0.6;  // Turn to face down
+                        } else {
+                            aiTargetRotY = aiBaseRotY;        // Face forward
                         }
-                        // AI casting - cast frostbolt occasionally (requires more mana)
-                        if (aiFrostboltCooldown <= 0 && aiMana >= abilities.frostbolt.manaCost && projectiles.length < 10) {
-                            if (Math.random() < 0.01) {  // Less frequent than fireball
-                                castFrostbolt('ai');
-                            }
-                        }
-                        // AI casting - use gravity barrier (COMMENTED OUT FOR REWORK)
-                        // if (aiGravityPhase === 'ready' && aiGravityCooldown <= 0 && aiMana >= abilities.gravity.manaCost) {
-                        //     let incomingCount = 0;
-                        //     for (const p of projectiles) {
-                        //         if (p.velX > 0 && p.type !== 'gravitySphere') incomingCount++;
-                        //     }
-                        //     if (incomingCount >= 2 && Math.random() < 0.03) {
-                        //         handleGravityInput('ai');
-                        //     }
-                        // }
                     }
+
+                    // Smooth orientation interpolation for AI model
+                    if (aiModelRoot) {
+                        const lerpSpeed = 8 * dt;
+                        aiModelRoot.rotation.y += (aiTargetRotY - aiModelRoot.rotation.y) * lerpSpeed;
+                    }
+
+                    // AI casting - cast fireball when off cooldown and has mana
+                    // Only cast if: not already casting, off cooldown, has mana, and no dangerous projectiles nearby
+                    if (!aiCasting && aiFireballCooldown <= 0 && aiMana >= abilities.fireball.manaCost && projectiles.length < 10) {
+                        // Check if there's a dangerous projectile coming - don't cast if we need to dodge
+                        let dangerousIncoming = false;
+                        for (const p of projectiles) {
+                            if (p.velX > 0 && p.mesh.position.x > 0 && p.mesh.position.x < 8) {
+                                dangerousIncoming = true;
+                                break;
+                            }
+                        }
+                        // Only cast if safe to do so (no imminent threats)
+                        if (!dangerousIncoming && Math.random() < 0.015) {
+                            startCasting('ai', 'fireball');
+                        }
+                    }
+                    // AI casting - cast frostbolt occasionally (requires more mana)
+                    if (aiFrostboltCooldown <= 0 && aiMana >= abilities.frostbolt.manaCost && projectiles.length < 10) {
+                        if (Math.random() < 0.01) {  // Less frequent than fireball
+                            castFrostbolt('ai');
+                        }
+                    }
+                    // AI casting - use gravity barrier (COMMENTED OUT FOR REWORK)
+                    // if (aiGravityPhase === 'ready' && aiGravityCooldown <= 0 && aiMana >= abilities.gravity.manaCost) {
+                    //     let incomingCount = 0;
+                    //     for (const p of projectiles) {
+                    //         if (p.velX > 0 && p.type !== 'gravitySphere') incomingCount++;
+                    //     }
+                    //     if (incomingCount >= 2 && Math.random() < 0.03) {
+                    //         handleGravityInput('ai');
+                    //     }
+                    // }
 
                     // Process all projectiles
                     const toDestroy = [];
@@ -5268,13 +6194,25 @@
             //     }
             // });
 
-            // Volume slider
+            // Volume slider with localStorage persistence
             const volumeSlider = document.getElementById('volumeSlider');
             const volumeIcon = document.getElementById('volumeIcon');
+
+            // Load saved volume from localStorage
+            const savedVolume = localStorage.getItem('volleybolt_volume');
+            if (savedVolume !== null) {
+                volumeSlider.value = savedVolume;
+                const vol = savedVolume / 100;
+                setMasterVolume(vol);
+                volumeIcon.textContent = vol === 0 ? '🔇' : vol < 0.5 ? '🔉' : '🔊';
+            }
+
             volumeSlider.addEventListener('input', (e) => {
                 const vol = e.target.value / 100;
                 setMasterVolume(vol);
                 volumeIcon.textContent = vol === 0 ? '🔇' : vol < 0.5 ? '🔉' : '🔊';
+                // Save to localStorage
+                localStorage.setItem('volleybolt_volume', e.target.value);
             });
             volumeIcon.addEventListener('click', () => {
                 if (volumeSlider.value > 0) {
@@ -5282,10 +6220,12 @@
                     volumeSlider.value = 0;
                     setMasterVolume(0);
                     volumeIcon.textContent = '🔇';
+                    localStorage.setItem('volleybolt_volume', '0');
                 } else {
                     volumeSlider.value = volumeSlider.dataset.prevValue || 50;
                     setMasterVolume(volumeSlider.value / 100);
                     volumeIcon.textContent = volumeSlider.value < 50 ? '🔉' : '🔊';
+                    localStorage.setItem('volleybolt_volume', volumeSlider.value);
                 }
             });
         }
@@ -5527,34 +6467,44 @@
             const container = document.getElementById('upgradeContainer');
             const startBtn = document.getElementById('startBattleBtn');
 
+            // Hide any game messages while talent screen is showing
+            hideMessage();
+
             // Clear previous cards
             container.innerHTML = '';
             selectedUpgrade = null;
             startBtn.disabled = true;
 
-            // For now, only show Magma Lob (testing one at a time)
-            const availableUpgrades = ['magma_lob'];
+            // Define choices: Default Fireball (no upgrade) and Magma Lob
+            const choices = [
+                {
+                    id: 'default',
+                    icon: '🔥',
+                    name: 'Standard Fireball',
+                    description: 'A classic fireball that travels straight and gains power with each volley.',
+                    effects: ['Direct hit damage', 'Scales with volleys']
+                },
+                {
+                    id: 'magma_lob',
+                    icon: '🌋',
+                    name: 'Magma Lob',
+                    description: 'Lob a magma bomb that splits into bouncing projectiles at the midline.',
+                    effects: ['45° arc trajectory', 'Splits into 2 bombs', 'Bombs bounce on floor']
+                }
+            ];
 
             // Create upgrade cards
-            for (const upgradeId of availableUpgrades) {
-                const upgrade = UpgradeRegistry[upgradeId];
-                if (!upgrade) continue;
-
+            for (const choice of choices) {
                 const card = document.createElement('div');
                 card.className = 'upgrade-card';
-                card.dataset.upgradeId = upgradeId;
-
-                // Get base ability name
-                const baseAbility = AbilityRegistry[upgrade.baseAbility];
-                const baseName = baseAbility ? baseAbility.name : upgrade.baseAbility;
+                card.dataset.upgradeId = choice.id;
 
                 card.innerHTML = `
-                    <div class="upgrade-icon">${upgrade.icon}</div>
-                    <div class="upgrade-name">${upgrade.name}</div>
-                    <div class="upgrade-base">Upgrades: ${baseName}</div>
-                    <div class="upgrade-desc">${upgrade.description}</div>
+                    <div class="upgrade-icon">${choice.icon}</div>
+                    <div class="upgrade-name">${choice.name}</div>
+                    <div class="upgrade-desc">${choice.description}</div>
                     <div class="upgrade-effects">
-                        ${upgrade.effects.map(e => `<div class="upgrade-effect">${e}</div>`).join('')}
+                        ${choice.effects.map(e => `<div class="upgrade-effect">${e}</div>`).join('')}
                     </div>
                 `;
 
@@ -5563,7 +6513,7 @@
                     container.querySelectorAll('.upgrade-card').forEach(c => c.classList.remove('selected'));
                     // Select this one
                     card.classList.add('selected');
-                    selectedUpgrade = upgradeId;
+                    selectedUpgrade = choice.id;
                     startBtn.disabled = false;
                 });
 
@@ -5579,13 +6529,68 @@
             talentScreen.classList.remove('visible');
         }
 
+        // Update ability UI based on selected upgrade
+        function updateAbilityUI() {
+            const fireballSlot = document.getElementById('fireballSlot');
+            const fireballIcon = fireballSlot.querySelector('.ability-icon');
+            const fireballTooltip = document.getElementById('fireballTooltip');
+
+            // Check if player has magma lob
+            if (playerUpgrades.includes('magma_lob')) {
+                fireballIcon.textContent = '🌋';
+                fireballTooltip.innerHTML = `
+                    <div class="tooltip-title">Magma Lob</div>
+                    <div class="tooltip-stats-row">
+                        <div class="tooltip-stats-left">
+                            <span class="tooltip-stat-item mana"><span class="icon">💧</span><span class="value">1 Mana</span></span>
+                            <span class="tooltip-stat-item cast"><span class="icon">⏳</span><span class="value">1s Cast</span></span>
+                        </div>
+                        <span class="tooltip-stat-item cooldown"><span class="icon">⏱️</span><span class="value">5s</span></span>
+                    </div>
+                    <div class="tooltip-description">
+                        Lob a magma bomb in an arc. At the midline, it explodes into 2 bouncing bombs that deal 1 damage each.
+                    </div>
+                `;
+            } else {
+                fireballIcon.textContent = '🔥';
+                fireballTooltip.innerHTML = `
+                    <div class="tooltip-title">Fireball</div>
+                    <div class="tooltip-stats-row">
+                        <div class="tooltip-stats-left">
+                            <span class="tooltip-stat-item mana"><span class="icon">💧</span><span class="value">1 Mana</span></span>
+                            <span class="tooltip-stat-item cast"><span class="icon">⏳</span><span class="value">1s Cast</span></span>
+                        </div>
+                        <span class="tooltip-stat-item cooldown"><span class="icon">⏱️</span><span class="value">5s</span></span>
+                    </div>
+                    <div class="tooltip-description">
+                        Throw a fireball directly at your target, doing 1 Fire damage and scaling up to 3 per volley.
+                    </div>
+                `;
+            }
+        }
+
         // Start battle button handler
         document.getElementById('startBattleBtn').addEventListener('click', () => {
-            if (selectedUpgrade) {
+            // Only add upgrade if not default
+            if (selectedUpgrade && selectedUpgrade !== 'default') {
                 playerUpgrades.push(selectedUpgrade);
-                console.log("Selected upgrade:", selectedUpgrade);
-                console.log("Player upgrades:", playerUpgrades);
+                console.log("Player selected:", selectedUpgrade);
+            } else {
+                console.log("Player using default fireball");
             }
+
+            // AI randomly picks between default and magma_lob
+            const aiChoice = Math.random() < 0.5 ? 'default' : 'magma_lob';
+            if (aiChoice !== 'default') {
+                aiUpgrades.push(aiChoice);
+                console.log("AI selected:", aiChoice);
+            } else {
+                console.log("AI using default fireball");
+            }
+
+            // Update ability UI to reflect selected upgrade
+            updateAbilityUI();
+
             hideTalentScreen();
             startRound();
         });
@@ -5861,11 +6866,15 @@
             // Spend mana upfront
             if (!spendMana(caster, ability.manaCost)) return false;
 
+            // Get display name (check for upgrades)
+            const activeUpgrades = getActiveUpgrades(abilityId, caster);
+            const displayName = activeUpgrades.length > 0 ? activeUpgrades[0].name : ability.name;
+
             if (caster === 'player') {
                 playerCasting = abilityId;
                 playerCastProgress = 0;
                 playerCastTime = ability.castTime;
-                updateCastBarUI(ability.name, ability.element, 0);
+                updateCastBarUI(displayName, ability.element, 0);
                 showCastBar(true);
                 if (window.playPlayerAnim) playPlayerAnim('charging', true); // Play charging animation
 
@@ -5881,7 +6890,7 @@
                 aiCasting = abilityId;
                 aiCastProgress = 0;
                 aiCastTime = ability.castTime;
-                updateAICastBarUI(ability.name, ability.element, 0);
+                updateAICastBarUI(displayName, ability.element, 0);
                 showAICastBar(true);
                 if (window.playAIAnim) playAIAnim('charging', true); // Play charging animation
 
@@ -6202,9 +7211,6 @@ function isAIRooted() {
                 showMessage("Defeat");
                 playSound('defeat', 0, 0.8);
             }
-
-            // Award upgrade point after every round (win or lose)
-            awardUpgradePoint(1);
 
             updateScore();
             checkWin();
