@@ -1484,57 +1484,61 @@
             100% { opacity: 0; transform: translate(-50%, -150%) scale(1); }
         }
 
-        /* Loading Screen - CRT Style (4:3 centered) */
+        /* Loading Screen - Full Retro NES/D2 Style */
         #loadingScreen {
             position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            /* Same 4:3 sizing as game - will be adjusted by JS */
-            width: min(100vw, 133.33vh);
-            height: min(75vw, 100vh);
-            max-width: 100vw;
-            max-height: 100vh;
-            background: linear-gradient(180deg, #0a0808 0%, #1a1210 50%, #0a0808 100%);
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #0a0a0a;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
             z-index: 10000;
-            transition: opacity 0.5s ease;
+            transition: opacity 0.3s ease;
         }
         #loadingScreen.hidden {
             opacity: 0;
             pointer-events: none;
         }
         #loadingTitle {
-            font-family: 'Esthetique', 'Cinzel', serif;
-            font-size: 60px;
-            font-weight: 400;
-            color: var(--gold-light);
-            text-shadow: 4px 4px 0px #000, -1px -1px 0px var(--gold-dark);
-            margin-bottom: 40px;
-            letter-spacing: 8px;
+            font-family: 'Press Start 2P', monospace;
+            font-size: 20px;
+            color: #c9a44a;
+            text-shadow: 2px 2px 0px #000;
+            margin-bottom: 50px;
+            letter-spacing: 3px;
         }
-        #loadingSpinner {
-            width: 60px;
-            height: 60px;
-            border: 4px solid rgba(212, 168, 73, 0.2);
-            border-top: 4px solid var(--gold);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
+        #loadingBarContainer {
+            width: 260px;
+            height: 20px;
+            background: #1a1a1a;
+            border: 3px solid #333;
+            position: relative;
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        #loadingBar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(180deg, #d4a849 0%, #a67c00 50%, #c9a44a 100%);
+            transition: width 0.15s steps(8);
         }
         #loadingText {
-            font-family: 'Crimson Text', serif;
-            font-size: 16px;
-            color: var(--parchment-dark);
-            margin-top: 20px;
-            letter-spacing: 3px;
-            text-shadow: 1px 1px 0px #000;
+            font-family: 'Press Start 2P', monospace;
+            font-size: 8px;
+            color: #555;
+            margin-top: 16px;
+            letter-spacing: 1px;
+        }
+        #loadingTip {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 7px;
+            color: #333;
+            margin-top: 50px;
+            max-width: 350px;
+            text-align: center;
+            line-height: 2;
         }
 
         /* Talent Selection Screen - Overlay on 3D scene (gets CRT shader) */
@@ -1840,10 +1844,13 @@
     <!-- Hidden font loader - ensures Esthetique is loaded -->
     <div style="font-family: 'Esthetique'; position: absolute; left: -9999px;">.</div>
 
-    <div id="loadingScreen" class="crt-screen">
+    <div id="loadingScreen">
         <div id="loadingTitle">VOLLEYBOLT</div>
-        <div id="loadingSpinner"></div>
-        <div id="loadingText">Loading...</div>
+        <div id="loadingBarContainer">
+            <div id="loadingBar"></div>
+        </div>
+        <div id="loadingText">LOADING...</div>
+        <div id="loadingTip">BLOCK SPELLS WITH YOUR PADDLE<br>PARRY TO SEND THEM BACK FASTER</div>
     </div>
 
     <!-- Multiplayer Lobby Overlay -->
@@ -6225,6 +6232,17 @@
             let playerModelLoaded = false;
             let aiModelLoaded = false;
 
+            // Loading progress bar update
+            const updateLoadingProgress = (percent, text = null) => {
+                const bar = document.getElementById('loadingBar');
+                const textEl = document.getElementById('loadingText');
+                if (bar) bar.style.width = percent + '%';
+                if (textEl && text) textEl.textContent = text;
+            };
+
+            // Initial progress - scene created
+            updateLoadingProgress(15, 'LOADING SCENE...');
+
             const checkAllLoaded = () => {
                 if (playerModelLoaded && aiModelLoaded) {
                     // Hide loading screen (HTML)
@@ -6336,6 +6354,7 @@
                         playerFlashMeshes = combatants.left.flashMeshes;
                         combatants.left.modelLoaded = true;
                         playerModelLoaded = true;
+                        updateLoadingProgress(55, 'PLAYER READY...');
                         checkAllLoaded();
                     },
                     null,
@@ -6344,6 +6363,7 @@
                         combatants.left.modelLoaded = true;
                         playerModelLoaded = true; // Still mark as loaded so game can proceed
                         playerPaddle.visibility = 1; // Show paddle if no model
+                        updateLoadingProgress(55, 'PLAYER READY...');
                         checkAllLoaded();
                     }
                 );
@@ -6402,6 +6422,7 @@
                         aiFlashMeshes = combatants.right.flashMeshes;
                         combatants.right.modelLoaded = true;
                         aiModelLoaded = true;
+                        updateLoadingProgress(100, 'READY!');
                         checkAllLoaded();
                     },
                     null,
@@ -6410,6 +6431,7 @@
                         combatants.right.modelLoaded = true;
                         aiModelLoaded = true; // Still mark as loaded so game can proceed
                         aiPaddle.visibility = 1; // Show paddle if no model
+                        updateLoadingProgress(100, 'READY!');
                         checkAllLoaded();
                     }
                 );
@@ -7609,6 +7631,7 @@
             };
 
             // === LOAD CHARACTERS BASED ON MODE ===
+            updateLoadingProgress(30, 'LOADING WIZARDS...');
             if (CHARACTER_MODE === 'meshy_pickle') {
                 loadMeshyPickle();
             } else if (CHARACTER_MODE === 'procedural_pickle') {
@@ -8246,6 +8269,7 @@
                 } else {
                     proj.mesh.material = fireballCoreMat;
                     proj.hitboxRadius = 0.25;
+                    proj.mesh.scaling.setAll(0.85);  // Initial scale for damage 2
                 }
 
                 // Add to glow layer for D2-style aura
@@ -8379,6 +8403,16 @@
                 projectiles.push(proj);
                 return proj;
             };
+
+            // Update fireball scale based on damage (2-5 range maps to 0.85-1.25 scale)
+            const updateFireballScale = (proj) => {
+                if (!proj || !proj.mesh || proj.type !== 'fireball' || proj.isMagmaBomb) return;
+                const damage = Math.min(2 + proj.volleyCount, 5);  // 2-5
+                // Map damage 2-5 to scale 0.85-1.25
+                const scale = 0.85 + (damage - 2) * 0.133;  // ~0.133 per damage point
+                proj.mesh.scaling.setAll(scale);
+            };
+            window.updateFireballScale = updateFireballScale;
 
             // Frostbolt material - icy crystalline core (D2 style)
             const frostCoreMat = new BABYLON.StandardMaterial("frostCoreMat", scene);
@@ -9946,6 +9980,7 @@
                                 // Apply paddle momentum to ball trajectory
                                 if (window.playerPaddleVelZ) proj.velZ += window.playerPaddleVelZ * momentumFactor;
                                 proj.volleyCount++;
+                                if (window.updateFireballScale) window.updateFireballScale(proj);  // Scale up with damage
                                 updateProjectileTier(proj);
                                 playSound('block', playerPaddle.position.x, 0.7);
                                 // Flash force field shield
@@ -9990,6 +10025,7 @@
                                     resetProjParryState(proj);
                                 }
                                 proj.volleyCount++;
+                                if (window.updateFireballScale) window.updateFireballScale(proj);  // Scale up with damage
                                 if (tryAIParry(proj)) {
                                     parryProjectile(proj, 'ai');
                                     playAIAnim('parry', false, 400, 1.5);
@@ -10431,8 +10467,8 @@
 
                 // Overpower: thin pointed oval streak in the direction of the winning projectile
                 if (type === 'overpower' && direction) {
-                    const streakLength = 1.0 + Math.random() * 0.3;
-                    const streakWidth = 0.12 + Math.random() * 0.05;
+                    const streakLength = 1.8 + Math.random() * 0.5;  // Long scratch
+                    const streakWidth = 0.01;  // Hair-thin scratch
                     // Use disc scaled to create pointed oval shape
                     decal = BABYLON.MeshBuilder.CreateDisc("streakDecal", {
                         radius: 0.5,
@@ -12220,7 +12256,9 @@
                             const hitOffset = (proj.mesh.position.z - pz) / paddleHalfDepth;
                             proj.velZ += hitOffset * 5;
                             proj.volleyCount++;
-                            if (combatants.left) combatants.left.mana = Math.min(maxMana, combatants.left.mana + 0.5);
+                            if (window.updateFireballScale) window.updateFireballScale(proj);  // Scale up with damage
+                            // Only give block mana if not parried (parry already gives mana)
+                            if (combatants.left && !proj.isParried) combatants.left.mana = Math.min(maxMana, combatants.left.mana + 0.5);
                             if (!isResimulating) playSound('block', px, 0.6);
                         }
                     }
@@ -12250,7 +12288,9 @@
                             const hitOffset = (proj.mesh.position.z - pz) / paddleHalfDepth;
                             proj.velZ += hitOffset * 5;
                             proj.volleyCount++;
-                            if (combatants.right) combatants.right.mana = Math.min(maxMana, combatants.right.mana + 0.5);
+                            if (window.updateFireballScale) window.updateFireballScale(proj);  // Scale up with damage
+                            // Only give block mana if not parried (parry already gives mana)
+                            if (combatants.right && !proj.isParried) combatants.right.mana = Math.min(maxMana, combatants.right.mana + 0.5);
                             if (!isResimulating) playSound('block', px, 0.6);
                         }
                     }
