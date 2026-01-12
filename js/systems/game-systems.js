@@ -522,32 +522,24 @@ export function isAIRooted() {
 // ============================================================
 // BACKWARD COMPATIBILITY - Expose on window
 // ============================================================
+// NOTE: Functions still defined in index.html are NOT exposed here
+// to avoid overwriting them. Only expose helper functions that
+// don't exist in the inline code.
 
 if (typeof window !== 'undefined') {
-    // Combatant system
-    window.createCombatant = createCombatant;
-    window.getCombatant = getCombatant;
+    // Combatant helpers (these are used by inline code)
+    // Don't expose: createCombatant, getCombatant, getCombatantLegacy, combatantReset
+    // These are still defined in index.html and work with local scope
+
+    // Export only utility functions not in inline code
     window.getOpponent = getOpponent;
-    window.getCombatantLegacy = getCombatantLegacy;
     window.getCombatantUIElements = getCombatantUIElements;
-    window.combatantIsRooted = combatantIsRooted;
-    window.combatantReset = combatantReset;
-    window.updateCombatantManaUI = updateCombatantManaUI;
-    window.updateCombatantCastBarUI = updateCombatantCastBarUI;
 
-    // Mana system
-    window.gainMana = gainMana;
-    window.spendMana = spendMana;
-
-    // Casting system
-    window.startCasting = startCasting;
-    window.cancelCasting = cancelCasting;
-    window.applyCastPushback = applyCastPushback;
-
-    // Legacy abilities
-    window.abilities = abilities;
-
-    // Player state helpers
-    window.isPlayerRooted = isPlayerRooted;
-    window.isAIRooted = isAIRooted;
+    // NOTE: The following are STILL DEFINED in index.html and should NOT be overwritten:
+    // - startCasting, cancelCasting, applyCastPushback (casting system)
+    // - gainMana, spendMana (mana system)
+    // - abilities (ability definitions)
+    // - createCombatant, getCombatant, getCombatantLegacy, combatantReset
+    // - combatantIsRooted, isPlayerRooted, isAIRooted
+    // - updateCombatantManaUI, updateCombatantCastBarUI
 }
