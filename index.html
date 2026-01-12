@@ -73,35 +73,7 @@
             );
         }
 
-        /* CRT glass reflection + scanlines */
-        .crt-screen::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            border-radius: 20px;
-            pointer-events: none;
-            z-index: 9999;
-            background:
-                /* Glass reflection */
-                linear-gradient(
-                    135deg,
-                    rgba(255, 255, 255, 0.03) 0%,
-                    transparent 40%,
-                    transparent 60%,
-                    rgba(255, 255, 255, 0.01) 100%
-                ),
-                /* Scanlines */
-                repeating-linear-gradient(
-                    0deg,
-                    rgba(0, 0, 0, 0.1) 0px,
-                    rgba(0, 0, 0, 0.1) 1px,
-                    transparent 1px,
-                    transparent 3px
-                );
-        }
+        /* CRT effects handled by #gameContainer::before/after - no duplicate here */
 
         * { margin: 0; padding: 0; }
         html, body {
@@ -489,7 +461,7 @@
             bottom: 100px;
             left: 50%;
             transform: translateX(-50%);
-            display: flex;
+            display: none;  /* Hidden until game starts - shown via JS */
             flex-direction: row;
             gap: 12px;
             padding: 12px 18px;
@@ -1083,6 +1055,7 @@
             bottom: 230px;
             left: 50%;
             transform: translateX(-50%);
+            display: none;  /* Hidden until game starts */
             width: 70px;
             height: 70px;
             z-index: 199;
@@ -1564,19 +1537,19 @@
             text-shadow: 1px 1px 0px #000;
         }
 
-        /* Talent Selection Screen - Full screen overlay */
+        /* Talent Selection Screen - Overlay on 3D scene (gets CRT shader) */
         #talentScreen {
-            position: fixed;
+            position: absolute;
             top: 0;
             left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: linear-gradient(180deg, #0a0808 0%, #1a1210 50%, #0a0808 100%);
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
             display: none;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            z-index: 9998;
+            z-index: 100;
         }
 
         #talentScreen.visible {
@@ -1684,12 +1657,7 @@
         }
 
         #talentTitle {
-            font-family: 'Esthetique', 'Cinzel', serif;
-            font-size: 32px;
-            color: var(--gold-light);
-            text-shadow: 3px 3px 0px #000, -1px -1px 0px var(--gold-dark);
-            margin-bottom: 8px;
-            letter-spacing: 3px;
+            display: none;  /* Using GUI title instead for CRT effects */
         }
 
         #talentSubtitle {
@@ -1919,6 +1887,10 @@
         </div>
     </div>
 
+    <div id="gameContainer">
+    <canvas id="canvas"></canvas>
+
+    <!-- Main Menu - overlays 3D scene -->
     <div id="talentScreen" class="crt-screen">
         <div id="talentTitle">VOLLEYBOLT</div>
         <div id="talentButtons">
@@ -1926,9 +1898,6 @@
             <button id="multiplayerBtn" class="nes-btn">Multiplayer</button>
         </div>
     </div>
-
-    <div id="gameContainer">
-    <canvas id="canvas"></canvas>
 
     <!-- HTML Text Overlay - HIDDEN: Now using Babylon.js GUI for CRT effects -->
     <div id="htmlOverlay" style="display: none;">
@@ -4440,6 +4409,21 @@
         // Expose ToneSFX globally for direct calls
         window.ToneSFX = ToneSFX;
 
+        // Pause/resume audio when tab visibility changes
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                // Tab hidden - suspend audio context to stop all sounds
+                if (Tone.context && Tone.context.state === 'running') {
+                    Tone.context.suspend();
+                }
+            } else {
+                // Tab visible - resume audio context
+                if (Tone.context && Tone.context.state === 'suspended') {
+                    Tone.context.resume();
+                }
+            }
+        });
+
         // Initialize Tone.js on first user interaction
         document.addEventListener('click', () => initToneJS(), { once: true });
         document.addEventListener('keydown', () => initToneJS(), { once: true });
@@ -4591,6 +4575,29 @@
             const engine = new BABYLON.Engine(canvas, true);
             window.gameEngine = engine;  // Store globally for menu control
 
+            // ============================================================
+            // D2-STYLE RETRO RESOLUTION - Fixed internal res, upscaled crisp
+            // ============================================================
+            const BASE_W = 800, BASE_H = 600;  // Authentic D2 base resolution
+
+            function applyRetroResolution() {
+                const cw = canvas.clientWidth;
+                const ch = canvas.clientHeight;
+
+                // Choose limiting scale to preserve 4:3 and not exceed either axis
+                const scaleW = cw / BASE_W;
+                const scaleH = ch / BASE_H;
+                const scale = Math.max(1, Math.floor(Math.min(scaleW, scaleH)));  // Integer upscale
+
+                // renderWidth = cw / hardwareScalingLevel
+                const targetW = BASE_W * scale;
+                const targetH = BASE_H * scale;
+
+                const hsl = Math.max(cw / targetW, ch / targetH);
+                engine.setHardwareScalingLevel(hsl);
+            }
+            applyRetroResolution();
+
             // Retro visual style - skip rendering some frames for choppy look
             // Game logic still runs full speed
             let renderFrame = true;
@@ -4729,7 +4736,7 @@
 
             // Store globally for update functions
             window.guiTexture = guiTexture;
-            window.guiElements = {};
+            window.guiElements = { guiTexture: guiTexture };
 
             // --- HEALTH BARS ---
             // Player health bar (top-left corner)
@@ -4881,6 +4888,24 @@
             messageText.alpha = 0;  // Hidden - using HTML overlay for crisp text
             guiTexture.addControl(messageText);
             window.guiElements.messageText = messageText;
+
+            // --- MAIN MENU TITLE (GUI for CRT effects) ---
+            const menuTitle = new BABYLON.GUI.TextBlock();
+            menuTitle.text = "VOLLEYBOLT";
+            menuTitle.color = "#c9a44a";
+            menuTitle.fontSize = 64;
+            menuTitle.fontFamily = "'Esthetique', 'Cinzel', serif";
+            menuTitle.fontWeight = "700";
+            menuTitle.shadowColor = "#000";
+            menuTitle.shadowBlur = 0;
+            menuTitle.shadowOffsetX = 4;
+            menuTitle.shadowOffsetY = 4;
+            menuTitle.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
+            menuTitle.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
+            menuTitle.top = "-80px";
+            menuTitle.alpha = 1;
+            guiTexture.addControl(menuTitle);
+            window.guiElements.menuTitle = menuTitle;
 
             // --- MANA BARS ---
             // Player mana bar (below player health bar)
@@ -5522,26 +5547,24 @@
             console.log("PS1 affine texture warp shader loaded (disabled by default)");
 
             // ============================================================
-            // RETRO PIXELATION POST-PROCESSING
-            // Uses Node Material snippet for authentic pixelated look
+            // RETRO PIXELATION POST-PROCESSING - DISABLED
+            // Now using 800x600 base resolution with integer upscaling instead
+            // This provides more authentic D2-style pixelation
             // ============================================================
-            BABYLON.NodeMaterial.ParseFromSnippetAsync("1IHPPF", scene).then((nodeMaterial) => {
-                const postProcess = nodeMaterial.createPostProcess(camera, 1.0, BABYLON.Constants.TEXTURE_NEAREST_NEAREST);
-                postProcess.samples = 1;  // No anti-aliasing for crisp pixels
-
-                // Set fixed pixelation amount (higher = more pixelated)
-                const pixelateX = nodeMaterial.getBlockByName("pixelateSizeX");
-                const pixelateY = nodeMaterial.getBlockByName("pixelateSizeY");
-
-                if (pixelateX && pixelateY) {
-                    pixelateX.value = 2.5;
-                    pixelateY.value = 2.5;
-                }
-
-                console.log("Retro pixelation shader loaded");
-            }).catch((err) => {
-                console.warn("Could not load pixelation shader:", err);
-            });
+            // BABYLON.NodeMaterial.ParseFromSnippetAsync("1IHPPF", scene).then((nodeMaterial) => {
+            //     const postProcess = nodeMaterial.createPostProcess(camera, 1.0, BABYLON.Constants.TEXTURE_NEAREST_NEAREST);
+            //     postProcess.samples = 1;
+            //     const pixelateX = nodeMaterial.getBlockByName("pixelateSizeX");
+            //     const pixelateY = nodeMaterial.getBlockByName("pixelateSizeY");
+            //     if (pixelateX && pixelateY) {
+            //         pixelateX.value = 2.5;
+            //         pixelateY.value = 2.5;
+            //     }
+            //     console.log("Retro pixelation shader loaded");
+            // }).catch((err) => {
+            //     console.warn("Could not load pixelation shader:", err);
+            // });
+            console.log("Pixelation shader disabled (using 800x600 base res instead)");
 
             // ============================================================
             // STYLIZED DEPTH POST-PROCESSING
@@ -5613,20 +5636,22 @@
                 }
             `;
 
+            // Posterize - subtle banding for that baked/painted look
+            // Higher levels = subtler effect (was 16, now 24 for lighter touch)
             const posterizePostProcess = new BABYLON.PostProcess(
                 "posterize",
                 "posterize",
-                ["levels", "edgeThreshold"],  // Uniforms
-                null,   // Samplers
-                1.0,    // Ratio
+                ["levels", "edgeThreshold"],
+                null,
+                1.0,
                 camera,
-                BABYLON.Texture.NEAREST_SAMPLINGMODE  // Crisp pixels
+                BABYLON.Texture.NEAREST_SAMPLINGMODE
             );
             posterizePostProcess.onApply = (effect) => {
-                effect.setFloat("levels", posterizeLevels);
+                effect.setFloat("levels", 24);  // Subtler than before (was 16)
                 effect.setFloat("edgeThreshold", 0.12);
             };
-            console.log("Posterize shader loaded (light quantization + edge detection)");
+            console.log("Posterize shader loaded (subtle banding, 24 levels)");
 
             // --- Subtle CRT Post-Process ---
             // Scanlines, slight curvature, chromatic aberration
@@ -5687,7 +5712,7 @@
             crtPostProcess.onApply = (effect) => {
                 crtTime += 0.016;
                 effect.setFloat("time", crtTime);
-                effect.setFloat("scanlineIntensity", 0.05);  // Subtle scanlines
+                effect.setFloat("scanlineIntensity", 0.02);  // Reduced - low-res does heavy lifting
                 effect.setFloat("curvature", 0.12);          // Moderate CRT curve (CSS handles edge darkening)
                 effect.setFloat("aberration", 0.001);        // Slight color fringe
                 effect.setVector2("resolution", new BABYLON.Vector2(
@@ -5747,6 +5772,9 @@
             shadowGenerator.usePoissonSampling = true; // Dithering for retro feel
             shadowGenerator.bias = 0.0001; // Fix shadow acne
             shadowGenerator.transparencyShadow = true;
+
+            // STEPPED SHADOWS - Update every N frames for retro feel (not every frame)
+            shadowGenerator.getShadowMap().refreshRate = 6;  // Update every 6 frames (~10fps at 60fps)
 
             // Store globally for debugging
             window.shadowGenerator = shadowGenerator;
@@ -5889,7 +5917,18 @@
             scene.fogEnd = 60;
 
             // === MATERIALS (solid colors for now - add textures later) ===
-            const floorMat = createClassicMaterial("floorMat", "textures/stage2.png", 4, 2, new BABYLON.Color3(0.65, 0.65, 0.67));  // Brightened floor for clearer shadows
+            const floorMat = createClassicMaterial("floorMat", "textures/stage2.png", 4, 2, new BABYLON.Color3(0.65, 0.7, 0.55));  // Dimmer but saturated
+            floorMat.emissiveColor = new BABYLON.Color3(0.25, 0.28, 0.2);  // Lift black point - flatter, D2-style
+
+            // Optional bump/normal map - disabled (created outline artifacts, not D2 style)
+            // Uncomment to re-enable:
+            // const floorBump = new BABYLON.Texture("textures/floor_normal.png", scene, false, true, BABYLON.Texture.NEAREST_SAMPLINGMODE);
+            // floorBump.uScale = 4;
+            // floorBump.vScale = 2;
+            // floorMat.bumpTexture = floorBump;
+            // floorMat.bumpTexture.level = 0.06;
+            // floorMat.invertNormalMapX = true;
+            // floorMat.invertNormalMapY = true;
             const groundMat = createClassicMaterial("groundMat", null, 1, 1, GRAY.ground);
             const wallStoneMat = createClassicMaterial("wallStoneMat", "textures/rail.png", 8, 1, new BABYLON.Color3(0.6, 0.6, 0.6));
             wallStoneMat.emissiveColor = new BABYLON.Color3(0.15, 0.12, 0.1);  // Subtle glow so walls are always visible
@@ -6210,6 +6249,16 @@
             let aiAnimations = {};
             let playerSkeleton = null;
             let aiSkeleton = null;
+
+            // STEPPED ANIMATIONS - Update at D2 framerate (25fps) for authentic feel
+            const ANIM_STEP_MS = 40;  // 25fps (1000/25) - matches Diablo 2
+            let lastAnimStepTime = 0;
+            let animSteppingEnabled = true;  // Toggle for testing
+            window.setAnimStepping = (enabled, fps = 25) => {
+                animSteppingEnabled = enabled;
+                window.ANIM_STEP_MS = 1000 / fps;
+                console.log("Animation stepping: " + (enabled ? fps + "fps" : "smooth"));
+            };
 
             // Animation name mapping - maps game actions to actual animation names in model
             // User's original mapping:
@@ -9270,8 +9319,10 @@
                     aiGravityCooldown = combatants.right.cooldowns.gravity;
                 }
 
-                // Always update cooldown UI every frame for accurate display
-                updateCooldownUI();
+                // Update cooldown UI at stepped rate (25fps) for D2 feel
+                if (window.shouldStepUI && window.shouldStepUI()) {
+                    updateCooldownUI();
+                }
 
                 // Passive mana regeneration (1 per 5 seconds) - using combatant system
                 if (roundActive) {
@@ -10418,6 +10469,24 @@
             const PS1_FRAME_TIME = 1000 / PS1_TARGET_FPS;
             let ps1ThrottleEnabled = false;  // Disabled by default - enable for authentic PS1 feel
 
+            // STEPPED UI - All UI elements update at D2 framerate (25fps)
+            const UI_STEP_MS = 40;  // 25fps (1000/25)
+            let lastUIStepTime = 0;
+            let uiSteppingEnabled = true;
+            window.shouldStepUI = () => {
+                if (!uiSteppingEnabled) return true;  // Always update if disabled
+                const now = performance.now();
+                if (now - lastUIStepTime >= UI_STEP_MS) {
+                    lastUIStepTime = now;
+                    return true;
+                }
+                return false;
+            };
+            window.setUIStepping = (enabled) => {
+                uiSteppingEnabled = enabled;
+                console.log("UI stepping: " + (enabled ? "25fps" : "smooth"));
+            };
+
             window.setPS1Framerate = (enabled, fps = 20) => {
                 ps1ThrottleEnabled = enabled;
                 if (fps) {
@@ -10428,8 +10497,24 @@
 
             // Store render loop function globally so we can restart it after pausing
             window.gameRenderLoop = () => {
+                const now = performance.now();
+
+                // STEPPED ANIMATIONS - Pause/resume at fixed intervals for retro sprite feel
+                if (animSteppingEnabled) {
+                    const stepMs = window.ANIM_STEP_MS || ANIM_STEP_MS;
+                    if (now - lastAnimStepTime >= stepMs) {
+                        lastAnimStepTime = now;
+                        // Unfreeze animations for this step
+                        scene.animationsEnabled = true;
+                    } else {
+                        // Freeze animations between steps
+                        scene.animationsEnabled = false;
+                    }
+                } else {
+                    scene.animationsEnabled = true;
+                }
+
                 if (ps1ThrottleEnabled) {
-                    const now = performance.now();
                     if (now - lastFrameTime >= (window.PS1_FRAME_TIME || PS1_FRAME_TIME)) {
                         lastFrameTime = now;
                         scene.render();
@@ -10444,6 +10529,7 @@
             window.addEventListener('resize', () => {
                 resize4to3();
                 engine.resize();
+                applyRetroResolution();
             });
 
             // Initialize UI
@@ -10841,20 +10927,28 @@
                 }
             }
 
-            // Hide the game container entirely
-            const gameContainer = document.getElementById('gameContainer');
-            if (gameContainer) gameContainer.style.display = 'none';
-
-            // Stop the render loop to pause the game completely
-            if (window.gameEngine) window.gameEngine.stopRenderLoop();
-
             // Hide any game messages while talent screen is showing
             hideMessage();
 
             // Use default fireball (no upgrade selection for now)
             selectedUpgrade = 'default';
 
-            // Show the screen
+            // Keep game container visible - 3D scene shows behind menu with CRT effects
+            const gameContainer = document.getElementById('gameContainer');
+            if (gameContainer) gameContainer.style.display = 'block';
+
+            // Show GUI menu title
+            if (window.guiElements && window.guiElements.menuTitle) {
+                window.guiElements.menuTitle.alpha = 1;
+            }
+
+            // Hide ability bar and parry button
+            const abilityBar = document.getElementById('abilityBar');
+            if (abilityBar) abilityBar.style.display = 'none';
+            const parryButton = document.getElementById('parryButton');
+            if (parryButton) parryButton.style.display = 'none';
+
+            // Show the screen (overlays 3D scene)
             talentScreen.classList.add('visible');
         }
 
@@ -10868,6 +10962,17 @@
             if (window.gameEngine && window.gameRenderLoop) {
                 window.gameEngine.runRenderLoop(window.gameRenderLoop);
             }
+
+            // Hide GUI menu title
+            if (window.guiElements && window.guiElements.menuTitle) {
+                window.guiElements.menuTitle.alpha = 0;
+            }
+
+            // Show ability bar and parry button
+            const abilityBar = document.getElementById('abilityBar');
+            if (abilityBar) abilityBar.style.display = 'flex';
+            const parryButton = document.getElementById('parryButton');
+            if (parryButton) parryButton.style.display = 'block';
         }
 
         // Update ability UI based on selected upgrade
@@ -13019,21 +13124,39 @@
             }
         }
 
-        // === NES-STYLED FLOATING COMBAT TEXT SYSTEM ===
+        // === GUI-BASED FLOATING COMBAT TEXT SYSTEM ===
+        // Renders in Babylon.js GUI for CRT shader effects
         // Queue-based, model-anchored, stepped movement
         const combatTextQueue = { player: [], ai: [] };
-        const STEP_INTERVAL = 80;  // ms between position steps (choppy retro feel)
+        const STEP_INTERVAL = 40;  // 25fps to match D2 (1000/25 = 40ms)
         let lastTextStepTime = 0;
 
-        // Add text to the queue for a side
+        // Color map for combat text types
+        const combatTextColors = {
+            fire: '#ffa040',
+            frost: '#80d0ff',
+            frozen: '#4080ff',
+            damage: '#ff4040',
+            cancel: '#ffff40',
+            default: '#ffffff'
+        };
+
+        // Create an HTML combat text element (NES style - crisp and readable)
+        function createHTMLCombatText(text, type = '') {
+            const el = document.createElement('div');
+            el.className = 'combat-text' + (type ? ' ' + type : '');
+            el.textContent = text.toUpperCase();
+            el.style.opacity = '1';
+            document.getElementById('gameContainer').appendChild(el);
+            return el;
+        }
+
+        // Add text to the queue for a side (player/AI anchored)
         window.showCombatText = (isPlayer, text, type = '') => {
             if (!scene) return;
             const side = isPlayer ? 'player' : 'ai';
-            const el = document.createElement('div');
-            el.className = 'combat-text' + (type ? ' ' + type : '');
-            el.textContent = text;
-            el.style.opacity = '1';
-            document.body.appendChild(el);
+            const el = createHTMLCombatText(text, type);
+            if (!el) return;
 
             combatTextQueue[side].push({
                 el: el,
@@ -13046,7 +13169,7 @@
             // Limit queue length per side
             if (combatTextQueue[side].length > 4) {
                 const old = combatTextQueue[side].shift();
-                if (old.el.parentNode) old.el.remove();
+                if (old.el) old.el.remove();
             }
         };
 
@@ -13054,11 +13177,8 @@
         const floatingTexts = [];
         window.showCombatTextAt = (worldPos, text, type = '') => {
             if (!scene) return;
-            const el = document.createElement('div');
-            el.className = 'combat-text' + (type ? ' ' + type : '');
-            el.textContent = text;
-            el.style.opacity = '1';
-            document.body.appendChild(el);
+            const el = createHTMLCombatText(text, type);
+            if (!el) return;
 
             floatingTexts.push({
                 el: el,
@@ -13073,63 +13193,69 @@
         window.updateFloatingTexts = (dt) => {
             if (!scene) return;
             const now = Date.now();
-            const doStep = (now - lastFloatStepTime) >= STEP_INTERVAL;  // Same as combat text
+            const doStep = (now - lastFloatStepTime) >= STEP_INTERVAL;
             if (doStep) lastFloatStepTime = now;
+
+            const canvas = scene.getEngine().getRenderingCanvas();
+            const canvasRect = canvas.getBoundingClientRect();
+            const renderWidth = scene.getEngine().getRenderWidth();
+            const renderHeight = scene.getEngine().getRenderHeight();
 
             for (let i = floatingTexts.length - 1; i >= 0; i--) {
                 const item = floatingTexts[i];
                 item.age += dt;
 
-                // Remove after 1.5s - stepped fade for retro feel
-                if (item.age > 1.5) {
-                    if (item.el.parentNode) item.el.remove();
+                // Remove after 2.5s (1s still + 1.5s moving/fading)
+                if (item.age > 2.5) {
+                    if (item.el) item.el.remove();
                     floatingTexts.splice(i, 1);
                     continue;
-                } else if (item.age > 1.0 && doStep) {
-                    // Stepped fade: 1.0 -> 0.66 -> 0.33 -> 0
-                    const fadeProgress = (item.age - 1.0) / 0.5;
-                    const steppedOpacity = fadeProgress < 0.33 ? 1 : fadeProgress < 0.66 ? 0.66 : fadeProgress < 1 ? 0.33 : 0;
-                    item.el.style.opacity = String(steppedOpacity);
+                } else if (item.age > 2.0 && doStep) {
+                    // Stepped fade after 2s
+                    const fadeProgress = (item.age - 2.0) / 0.5;
+                    const steppedAlpha = fadeProgress < 0.33 ? 1 : fadeProgress < 0.66 ? 0.66 : fadeProgress < 1 ? 0.33 : 0;
+                    if (item.el) item.el.style.opacity = steppedAlpha;
                 }
 
-                // Stepped Y offset for choppy movement
-                const steppedAge = Math.floor(item.age / 0.15) * 0.15;
+                // Stepped Y offset - stay still for first second, then move up
+                const moveAge = Math.max(0, item.age - 1.0);  // Delay movement by 1 second
+                const steppedMoveAge = Math.floor(moveAge / 0.15) * 0.15;
 
                 // Project to screen
                 const screenPos = BABYLON.Vector3.Project(
-                    new BABYLON.Vector3(item.worldPos.x, item.worldPos.y + steppedAge * 1.5, item.worldPos.z),
+                    new BABYLON.Vector3(item.worldPos.x, item.worldPos.y + steppedMoveAge * 1.5, item.worldPos.z),
                     BABYLON.Matrix.Identity(),
                     scene.getTransformMatrix(),
-                    scene.activeCamera.viewport.toGlobal(
-                        scene.getEngine().getRenderWidth(),
-                        scene.getEngine().getRenderHeight()
-                    )
+                    scene.activeCamera.viewport.toGlobal(renderWidth, renderHeight)
                 );
 
-                // Get canvas offset for correct positioning
-                const canvas = scene.getEngine().getRenderingCanvas();
-                const canvasRect = canvas.getBoundingClientRect();
-                const scaleX = canvasRect.width / scene.getEngine().getRenderWidth();
-                const scaleY = canvasRect.height / scene.getEngine().getRenderHeight();
-
-                // Only update position on step intervals
-                if (doStep) {
-                    item.el.style.left = Math.floor(canvasRect.left + screenPos.x * scaleX) + 'px';
-                    item.el.style.top = Math.floor(canvasRect.top + screenPos.y * scaleY) + 'px';
-                    item.el.style.transform = 'translate(-50%, -50%)';
+                // Scale to canvas size and position HTML element
+                if (doStep && item.el) {
+                    const scaleX = canvasRect.width / renderWidth;
+                    const scaleY = canvasRect.height / renderHeight;
+                    item.el.style.left = Math.floor(screenPos.x * scaleX) + "px";
+                    item.el.style.top = Math.floor(screenPos.y * scaleY) + "px";
+                    item.el.style.transform = "translate(-50%, -50%)";
                 }
             }
         };
 
         // Update combat text positions (called from render loop)
         // Uniform stacking with stepped upward movement
-        const STACK_SPACING = 28;  // Pixels between stacked messages
+        const STACK_SPACING = 22;  // Pixels between stacked messages
         window.updateCombatText = (dt) => {
             if (!scene) return;
 
             const now = Date.now();
             const doStep = (now - lastTextStepTime) >= STEP_INTERVAL;
             if (doStep) lastTextStepTime = now;
+
+            const canvas = scene.getEngine().getRenderingCanvas();
+            const canvasRect = canvas.getBoundingClientRect();
+            const renderWidth = scene.getEngine().getRenderWidth();
+            const renderHeight = scene.getEngine().getRenderHeight();
+            const scaleX = canvasRect.width / renderWidth;
+            const scaleY = canvasRect.height / renderHeight;
 
             for (const side of ['player', 'ai']) {
                 const paddle = side === 'player' ? playerPaddle : aiPaddle;
@@ -13141,47 +13267,42 @@
                     worldPos,
                     BABYLON.Matrix.Identity(),
                     scene.getTransformMatrix(),
-                    scene.activeCamera.viewport.toGlobal(
-                        scene.getEngine().getRenderWidth(),
-                        scene.getEngine().getRenderHeight()
-                    )
+                    scene.activeCamera.viewport.toGlobal(renderWidth, renderHeight)
                 );
 
-                const canvas = scene.getEngine().getRenderingCanvas();
-                const canvasRect = canvas.getBoundingClientRect();
-                const scaleX = canvasRect.width / scene.getEngine().getRenderWidth();
-                const scaleY = canvasRect.height / scene.getEngine().getRenderHeight();
-                const baseX = Math.floor(canvasRect.left + screenPos.x * scaleX);
-                const baseY = Math.floor(canvasRect.top + screenPos.y * scaleY);
+                // Scale to canvas size for HTML positioning
+                const baseX = screenPos.x * scaleX;
+                const baseY = screenPos.y * scaleY;
 
                 // Process queue - index 0 is oldest (top), last is newest (bottom)
                 for (let i = combatTextQueue[side].length - 1; i >= 0; i--) {
                     const item = combatTextQueue[side][i];
                     item.age += dt;
 
-                    // Remove after 1.5s
-                    if (item.age > 1.5) {
-                        if (item.el.parentNode) item.el.remove();
+                    // Remove after 2.5s (1s still + 1.5s moving/fading)
+                    if (item.age > 2.5) {
+                        if (item.el) item.el.remove();
                         combatTextQueue[side].splice(i, 1);
                         continue;
                     }
 
-                    // Stepped fade after 1.0s
-                    if (item.age > 1.0 && doStep) {
-                        const fadeProgress = (item.age - 1.0) / 0.5;
-                        const steppedOpacity = fadeProgress < 0.33 ? 1 : fadeProgress < 0.66 ? 0.66 : fadeProgress < 1 ? 0.33 : 0;
-                        item.el.style.opacity = String(steppedOpacity);
+                    // Stepped fade after 2.0s
+                    if (item.age > 2.0 && doStep) {
+                        const fadeProgress = (item.age - 2.0) / 0.5;
+                        const steppedAlpha = fadeProgress < 0.33 ? 1 : fadeProgress < 0.66 ? 0.66 : fadeProgress < 1 ? 0.33 : 0;
+                        if (item.el) item.el.style.opacity = steppedAlpha;
                     }
 
-                    // Stepped upward movement (same as damage text)
-                    const steppedAge = Math.floor(item.age / 0.15) * 0.15;
+                    // Stepped upward movement - stay still for first second
+                    const moveAge = Math.max(0, item.age - 1.0);  // Delay movement by 1 second
+                    const steppedMoveAge = Math.floor(moveAge / 0.15) * 0.15;
                     const slot = combatTextQueue[side].length - 1 - i;
-                    const slotY = baseY - (slot * STACK_SPACING) - (steppedAge * 30);
+                    const slotY = baseY - (slot * STACK_SPACING) - (steppedMoveAge * 30);
 
-                    if (doStep) {
-                        item.el.style.left = baseX + 'px';
-                        item.el.style.top = Math.floor(slotY) + 'px';
-                        item.el.style.transform = 'translate(-50%, -50%)';
+                    if (doStep && item.el) {
+                        item.el.style.left = Math.floor(baseX) + "px";
+                        item.el.style.top = Math.floor(slotY) + "px";
+                        item.el.style.transform = "translate(-50%, -50%)";
                     }
                 }
             }
