@@ -365,3 +365,10 @@ Before ending a session:
 - Check DevLog.md for recent changes and context
 - Architecture.md has code patterns and future plans
 - After major changes, update documentation
+
+### Tooling Preferences
+1. **Git first**: Always commit before making large/destructive changes
+2. **Edit tool for code changes**: Use Edit tool for anything that touches HTML/JS/CSS structure
+3. **Bash for read-only ops**: Only use bash/sed for non-destructive things (printing, searching, git commands)
+4. **Large block removals**: For removing 100+ lines, use head/tail to reconstruct files (with git backup)
+5. **No blind bash edits**: Avoid sed -i for in-place edits unless git backup exists
