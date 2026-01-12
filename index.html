@@ -5,8 +5,8 @@
     <title>Volleybolt</title>
     <!-- Preload custom font -->
     <link rel="preload" href="fonts/esthetique.otf" as="font" type="font/otf" crossorigin>
-    <!-- Retro Game Fonts - Classic 90s/2000s style -->
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Retro Game Fonts - Classic 90s/2000s style + NES font -->
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&family=Press+Start+2P&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <style>
@@ -278,35 +278,14 @@
             display: none !important;
         }
 
-        /* Floating spell cast text (appears on cast release) */
-        .spell-cast-text {
-            position: absolute;
-            font-family: 'Esthetique', 'Cinzel', serif;
-            font-size: 28px;
-            font-style: italic;
-            font-weight: 400;
-            text-shadow: 2px 2px 0px #000;  /* Simple pixel shadow */
-            pointer-events: none;
-            animation: spellCastFloat 1.5s ease-out forwards;
-            z-index: 1000;
-        }
-        .spell-cast-text.fire {
-            color: #ffa040;
-            text-shadow: 2px 2px 0px #000, -1px -1px 0px #ff6020;  /* Pixel shadow + subtle highlight */
-        }
-        .spell-cast-text.frost {
-            color: #80d0ff;
-            text-shadow: 2px 2px 0px #000, -1px -1px 0px #4080ff;  /* Pixel shadow + subtle highlight */
-        }
-
-        /* NES-styled floating combat text - 60% black bar, no border */
+        /* NES-styled floating combat text - unified system for all text types */
         .combat-text {
             position: absolute;
-            font-family: 'Esthetique', 'Press Start 2P', 'Courier New', monospace;
-            font-size: 14px;
-            font-weight: 700;
+            font-family: 'Press Start 2P', 'Courier New', monospace;
+            font-size: 10px;
+            font-weight: 400;
             color: #fff;
-            padding: 6px 12px;
+            padding: 6px 10px;
             background: rgba(0, 0, 0, 0.6);
             border: none;
             text-shadow: 2px 2px 0px #000;
@@ -314,19 +293,13 @@
             z-index: 1001;
             white-space: nowrap;
             text-transform: uppercase;
-            letter-spacing: 2px;
+            letter-spacing: 1px;
         }
         .combat-text.fire { color: #ffa040; }
         .combat-text.frost { color: #80d0ff; }
         .combat-text.frozen { color: #4080ff; }
-        .combat-text.damage { color: #ff4040; font-size: 18px; }
+        .combat-text.damage { color: #ff4040; font-size: 12px; }
         .combat-text.cancel { color: #ffff40; }
-
-        @keyframes spellCastFloat {
-            0% { opacity: 0.9; transform: translate(-50%, -50%) scale(1); }
-            30% { opacity: 1; transform: translate(-50%, -60%) scale(1.05); }
-            100% { opacity: 0; transform: translate(-50%, -100%) scale(0.9); }
-        }
 
         /* Score display (HIDDEN - now in Babylon.js GUI) */
         #ui {
@@ -423,22 +396,23 @@
             text-shadow: 1px 1px 0px #000;
         }
 
-        /* Damage numbers */
+        /* Damage numbers - same format as combat text */
         .damage-number {
             position: absolute;
-            color: var(--red-light);
-            font-family: 'Crimson Text', Georgia, serif;
-            font-size: 48px;
-            font-weight: bold;
-            text-shadow: 3px 3px 0px #000;  /* Simple pixel shadow */
+            font-family: 'Press Start 2P', 'Courier New', monospace;
+            font-size: 12px;
+            font-weight: 400;
+            color: #ff4040;
+            padding: 6px 10px;
+            background: rgba(0, 0, 0, 0.6);
+            border: none;
+            text-shadow: 2px 2px 0px #000;
             pointer-events: none;
-            animation: damageFloat 1s ease-out forwards;
+            z-index: 1001;
+            white-space: nowrap;
+            text-transform: uppercase;
+            letter-spacing: 1px;
             transform: translate(-50%, -50%);
-        }
-
-        @keyframes damageFloat {
-            0% { opacity: 1; transform: translateY(0); }
-            100% { opacity: 0; transform: translateY(-40px); }
         }
 
         /* Frozen text */
@@ -1175,6 +1149,16 @@
                 rgba(30, 26, 22, 1) 0%,
                 rgba(45, 38, 32, 1) 40%,
                 rgba(38, 32, 28, 1) 100%);
+        }
+
+        #parryButton:hover .ability-tooltip {
+            opacity: 1;
+        }
+
+        #parryButton .ability-tooltip {
+            bottom: 100%;
+            left: 50%;
+            margin-bottom: 12px;
         }
 
         /* Pressed state for abilities and parry */
@@ -2033,7 +2017,7 @@
                         <span class="tooltip-stat-item mana"><span class="icon">*</span><span class="value">1 Mana</span></span>
                         <span class="tooltip-stat-item cast"><span class="icon">></span><span class="value">1s Cast</span></span>
                     </div>
-                    <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">5s CD</span></span>
+                    <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">4s CD</span></span>
                 </div>
                 <div class="tooltip-description">
                     Throw a <span class="tt-spell">Fireball</span> in front of you, dealing <span class="tt-value">2</span> <span class="tt-fire">Fire</span> damage, scaling up to <span class="tt-value">5</span> with <span class="tt-mechanic">Volleys</span>.
@@ -2056,7 +2040,7 @@
             <div class="ability-key">2</div>
             <!-- Tooltip -->
             <div class="ability-tooltip" id="frostboltTooltip">
-                <div class="tooltip-title">Frost Bolt</div>
+                <div class="tooltip-title">Frostbolt</div>
                 <div class="tooltip-stats-row">
                     <div class="tooltip-stats-left">
                         <span class="tooltip-stat-item mana"><span class="icon">*</span><span class="value">2 Mana</span></span>
@@ -2139,6 +2123,20 @@
             <div class="parry-cooldown-sweep" id="parrySweep"></div>
         </div>
         <span class="parry-key">SPC</span>
+        <!-- Tooltip -->
+        <div class="ability-tooltip" id="parryTooltip">
+            <div class="tooltip-title">Parry</div>
+            <div class="tooltip-stats-row">
+                <div class="tooltip-stats-left">
+                    <span class="tooltip-stat-item mana"><span class="icon">*</span><span class="value">Free</span></span>
+                    <span class="tooltip-stat-item cast"><span class="icon">></span><span class="value">Instant</span></span>
+                </div>
+                <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">0.2s / 3s CD</span></span>
+            </div>
+            <div class="tooltip-description">
+                <span class="tt-mechanic">Parry</span> incoming projectiles to reflect them back with increased speed. Grants <span class="tt-value">1</span> <span class="tt-mana">Mana</span> on success. <span class="tt-value">0.2s</span> CD on hit, <span class="tt-value">3s</span> CD on miss.
+            </div>
+        </div>
     </div>
 
     <!-- Upgrade Points HUD -->
@@ -2267,7 +2265,7 @@
 
         // Mana system
         const maxMana = 3;
-        const manaRegenTime = 5;  // seconds per 1 mana
+        const manaRegenTime = 3;  // seconds per 0.5 mana (discrete ticks)
         // LEGACY - sync only, read from combatants.left/right.mana/manaRegen
         let playerMana = 0;
         let aiMana = 0;
@@ -2378,6 +2376,10 @@
             // Calculate which mana segments will be "spent" when cast completes
             const manaAfterCast = Math.max(0, combatant.mana - pendingCost);
 
+            // Handle fractional mana (e.g., 0.5 from blocking)
+            const fullMana = Math.floor(combatant.mana);
+            const fractionalMana = combatant.mana - fullMana;
+
             for (let i = 1; i <= maxMana; i++) {
                 const segment = document.getElementById(ui.manaPrefix + i);
                 if (!segment) continue;
@@ -2385,7 +2387,7 @@
                 let fillPercent = 0;
                 let isPendingSpend = false;
 
-                if (i <= combatant.mana) {
+                if (i <= fullMana) {
                     // Full segment
                     fillPercent = 100;
                     segment.value = 100;
@@ -2393,9 +2395,10 @@
                     if (isCasting && i > manaAfterCast) {
                         isPendingSpend = true;
                     }
-                } else if (i === combatant.mana + 1 && combatant.mana < maxMana) {
-                    // Filling segment - show partial progress
-                    fillPercent = (combatant.manaRegen / manaRegenTime) * 100;
+                } else if (i === fullMana + 1 && combatant.mana < maxMana) {
+                    // Filling segment - discrete display based on fractional mana only
+                    // No smooth animation - just show 0%, 50%, or 100% based on fractional part
+                    fillPercent = fractionalMana * 100;
                     segment.value = fillPercent;
                 } else {
                     // Empty segment
@@ -2521,14 +2524,14 @@
         // Ability system (legacy - kept for backwards compatibility)
         const abilities = {
             fireball: {
-                cooldown: 5,          // 5 second cooldown after cast completes
+                cooldown: 4,          // 4 second cooldown after cast completes
                 castTime: 1.0,        // 1 second cast time
                 speed: 12,
                 damage: 1,
                 manaCost: 1           // mana cost
             },
             frostbolt: {
-                cooldown: 12,         // seconds - longer cooldown
+                cooldown: 7,          // 7 second cooldown
                 speed: 24,            // 10% faster than before (was 22)
                 freezeDuration: 1.0,  // seconds
                 manaCost: 2           // mana cost
@@ -2692,7 +2695,7 @@
             // ========== FROST BOLT ==========
             frostbolt: {
                 id: 'frostbolt',
-                name: 'Frost Bolt',
+                name: 'Frostbolt',
                 description: 'Launch a piercing shard of ice. Freezes the enemy on contact, trapping them in a block of ice.',
                 icon: '❄️',
                 element: 'ice',
@@ -3259,7 +3262,7 @@
             },
             frostbolt: {
                 abilityId: 'frostbolt',
-                abilityName: 'Frost Bolt',
+                abilityName: 'Frostbolt',
                 icon: '❄️',
                 tiers: {
                     1: { choices: ['frostbite', 'glacial_cascade'] },
@@ -4028,41 +4031,59 @@
                 gravityAbsorb: 'sfx/gravitysphere_absorb.wav',
                 victory: 'sfx/victory.wav',
                 defeat: 'sfx/defeat.wav',
-                iceShatter: 'sfx/ice-shatter.wav'
+                iceShatter: 'sfx/ice-shatter.wav',
+                cancel: 'sfx/cancel.wav',
+                overpowered: 'sfx/overpowered.wav'
             };
+
+            // Looping casting sounds - separate for player and AI with panning
+            // Player is on right side of arena, AI on left
+            const playerCastPanner = new Tone.Panner(0.6).connect(chipReverb);
+            synths.playerCastingLoop = new Tone.Player({
+                url: 'sfx/mid-cast.wav',
+                loop: true
+            }).connect(playerCastPanner);
+            synths.playerCastingLoop.volume.value = -8;
+
+            const aiCastPanner = new Tone.Panner(-0.6).connect(chipReverb);
+            synths.aiCastingLoop = new Tone.Player({
+                url: 'sfx/mid-cast.wav',
+                loop: true
+            }).connect(aiCastPanner);
+            synths.aiCastingLoop.volume.value = -8;
 
             // Load each sample
             for (const [name, path] of Object.entries(sampleFiles)) {
                 try {
                     synths.samples[name] = new Tone.Player(path).connect(chipReverb);
-                    synths.samples[name].volume.value = -12;  // Adjust volume
+                    synths.samples[name].volume.value = -3;  // Louder samples
                 } catch (e) {
                     console.log("Could not load sample:", name);
                 }
             }
+            // Lower parry volume specifically
+            if (synths.samples.parry) synths.samples.parry.volume.value = -10;
+            // Lower overpowered volume
+            if (synths.samples.overpowered) synths.samples.overpowered.volume.value = -10;
 
             // ========================================
             // BACKGROUND MUSIC - Looping 8-bit track
             // ========================================
 
-            // Separate chain for music (less crushed, more reverb)
-            const musicBitCrusher = new Tone.BitCrusher(8).connect(chipPanner);  // 8-bit for music (less harsh)
-            const musicReverb = new Tone.Reverb({
-                decay: 2.0,
-                wet: 0.3
-            }).connect(musicBitCrusher);
-            await musicReverb.generate();
+            // Separate chain for music - only bitcrusher, no panning (centered)
+            const musicBitCrusher = new Tone.BitCrusher(8).toDestination();  // Direct to output, no panning
 
             // Music player - loops automatically
             synths.music = new Tone.Player({
-                url: 'sfx/musica.wav',
+                url: 'sfx/musica.ogg',
                 loop: true,
                 loopStart: 0,
                 loopEnd: 0,  // 0 = loop entire file
                 fadeIn: 0.5,
-                fadeOut: 0.5
-            }).connect(musicReverb);
-            synths.music.volume.value = -18;  // Background level
+                fadeOut: 0.5,
+                onload: () => console.log("Music loaded successfully")
+            }).connect(musicBitCrusher);
+            synths.music.volume.value = -12;  // Lower volume
 
             console.log("Sound therapy + 8-bit samples + music initialized");
         }
@@ -4274,6 +4295,18 @@
                 playSample('iceShatter');
             },
 
+            // Cancel - projectile mutual destruction
+            cancel: async () => {
+                if (!toneStarted) await initToneJS();
+                playSample('cancel');
+            },
+
+            // Overpowered - one projectile wins over another
+            overpowered: async () => {
+                if (!toneStarted) await initToneJS();
+                playSample('overpowered');
+            },
+
             // Gravity cast - crushed sample only
             gravityCast: async () => {
                 if (!toneStarted) await initToneJS();
@@ -4294,54 +4327,66 @@
                 playSample('gravityAbsorb');
             },
 
-            // Casting loop start - gentle isochronic pulse on B3
-            castingStart: async () => {
-                if (!toneStarted) await initToneJS();
-                await isoGenerator.setCarrier(N.B3);
-                await isoGenerator.setBrainwave('theta');
-                await isoGenerator.start();
-                isoGenerator.rampTo('alpha', 1);  // Gentle ramp to focus
-            },
-
-            // Casting loop stop
-            castingStop: async () => {
-                isoGenerator.stop();
-            },
-
-            // Game state: active gameplay - subtle alpha pulse + music
-            gameplayStart: async () => {
-                if (!toneStarted) await initToneJS();
-                await isoGenerator.setCarrier(N.B3);
-                await isoGenerator.setBrainwave('alpha');
-                await isoGenerator.start();
-                // Start background music
-                if (synths.music && synths.music.state !== 'started') {
-                    synths.music.start();
+            // Casting loop start - plays mid-cast.wav looping (panned by side)
+            castingStart: async (side = 'player') => {
+                const loop = side === 'player' ? synths.playerCastingLoop : synths.aiCastingLoop;
+                if (loop && loop.loaded) {
+                    try {
+                        loop.start();
+                    } catch (e) {
+                        // Ignore if already playing
+                    }
                 }
             },
 
-            // Game state: between rounds - deeper relaxation
+            // Casting loop stop - stops mid-cast.wav
+            castingStop: async (side = 'all') => {
+                // Stop player casting loop
+                if (side === 'all' || side === 'player') {
+                    if (synths.playerCastingLoop) {
+                        try { synths.playerCastingLoop.stop(); } catch (e) {}
+                    }
+                }
+                // Stop AI casting loop
+                if (side === 'all' || side === 'ai') {
+                    if (synths.aiCastingLoop) {
+                        try { synths.aiCastingLoop.stop(); } catch (e) {}
+                    }
+                }
+            },
+
+            // Game state: active gameplay - music only (isochronic tones disabled)
+            gameplayStart: async () => {
+                if (!toneStarted) await initToneJS();
+                // Wait for all audio to be loaded
+                await Tone.loaded();
+                // Start background music
+                if (synths.music && synths.music.state !== 'started') {
+                    synths.music.start();
+                    console.log("Music started");
+                }
+            },
+
+            // Game state: between rounds (isochronic tones disabled)
             roundEnd: async () => {
-                if (!toneStarted) await initToneJS();
-                await isoGenerator.setBrainwave('theta');
+                // Isochronic tones disabled
+                // if (!toneStarted) await initToneJS();
+                // await isoGenerator.setBrainwave('theta');
             },
 
-            // UI hover - gentle high tone (F#)
+            // UI hover - disabled (generated tones off)
             uiHover: async () => {
-                if (!toneStarted) await initToneJS();
-                synths.bell.triggerAttackRelease(N.Fs5, "8n");
+                // Generated tones disabled
             },
 
-            // UI confirm - positive chord tone (B)
+            // UI confirm - disabled (generated tones off)
             uiConfirm: async () => {
-                if (!toneStarted) await initToneJS();
-                synths.therapy.triggerAttackRelease(N.B4, "8n");
+                // Generated tones disabled
             },
 
-            // UI back - gentle step down (A)
+            // UI back - disabled (generated tones off)
             uiBack: async () => {
-                if (!toneStarted) await initToneJS();
-                synths.therapy.triggerAttackRelease(N.A4, "8n");
+                // Generated tones disabled
             },
 
             // Music controls
@@ -4363,7 +4408,7 @@
                     synths.music.volume.rampTo(-60, duration);
                     setTimeout(() => {
                         synths.music.stop();
-                        synths.music.volume.value = -18;  // Reset volume
+                        synths.music.volume.value = -12;  // Reset volume
                     }, duration * 1000);
                 }
             },
@@ -4816,7 +4861,7 @@
             scoreText.fontSize = 42;
             scoreText.fontFamily = "'Rajdhani', sans-serif";
             scoreText.fontWeight = "700";
-            scoreText.alpha = 0;  // Hidden - using HTML overlay for crisp text
+            scoreText.alpha = 1;  // Visible in GUI
             scorePanel.addControl(scoreText);
             window.guiElements.scoreText = scoreText;
 
@@ -5664,35 +5709,44 @@
             // LIGHTING - Diablo 2 style (dark, warm, high contrast)
             // ============================================================
 
-            // Main light - positioned for northwest shadows
-            // Light comes from southeast to cast shadows northwest (upper-left on screen)
-            const sunLight = new BABYLON.DirectionalLight("sun", new BABYLON.Vector3(-1, -1, -0.5).normalize(), scene);
-            sunLight.intensity = 1.8;
-            sunLight.diffuse = new BABYLON.Color3(1, 0.88, 0.65);  // Warm torch/fire color
-            sunLight.specular = BABYLON.Color3.Black();  // No shine
+            // 1. DIRECTION & LENGTH:
+            // Position Light in South-East (+X, -Z) to cast North-West shadows.
+            // Higher Y value = shorter shadows, lower Y = longer shadows
+            const sunPos = new BABYLON.Vector3(25, 22, -20);
+            const sunDir = sunPos.scale(-1).normalize(); // Point back at origin
 
-            // Position light for shadow projection - D2 style northwest shadows
-            sunLight.position = new BABYLON.Vector3(12, 28, -8);
+            const sunLight = new BABYLON.DirectionalLight("sun", sunDir, scene);
+            sunLight.position = sunPos;
+            sunLight.intensity = 2.2; // Higher contrast against the dark ambient
+            sunLight.diffuse = new BABYLON.Color3(1, 0.9, 0.7); // Warm sunlight
+            sunLight.specular = new BABYLON.Color3(0.1, 0.1, 0.1); // Low specular
 
-            // Auto-calculate shadow bounds to cover the scene
+            // 2. FIX MISSING SHADOWS (BOUNDS):
+            // Define the area the light "sees" to ensure shadows render across the whole table
+            sunLight.orthoLeft = -30;
+            sunLight.orthoRight = 30;
+            sunLight.orthoTop = 30;
+            sunLight.orthoBottom = -30;
             sunLight.autoCalcShadowZBounds = true;
 
-            // Ambient - low for Diablo 2 style deep shadows
+            // Ambient - Keep low for "Pretty Dark" everywhere else
             const ambient = new BABYLON.HemisphericLight("ambient", new BABYLON.Vector3(0, 1, 0), scene);
-            ambient.intensity = 0.15;  // Low fill for deep blacks
-            ambient.diffuse = new BABYLON.Color3(0.4, 0.35, 0.45);  // Soft purple tint
-            ambient.groundColor = new BABYLON.Color3(0.1, 0.08, 0.06);  // Very dark ground
+            ambient.intensity = 0.2; // Very dark shadows
+            ambient.diffuse = new BABYLON.Color3(0.2, 0.2, 0.3); // Cold dark blue tint for shadows
+            ambient.groundColor = new BABYLON.Color3(0.05, 0.05, 0.05); // Pitch black ground
 
-            // Shadow generator - pitch black character shadows
+            // 3. SHADOW GENERATOR CONFIG
             const shadowGenerator = new BABYLON.ShadowGenerator(2048, sunLight);
-            shadowGenerator.useExponentialShadowMap = true;  // Soft but defined edges
-            shadowGenerator.useBlurExponentialShadowMap = true;
-            shadowGenerator.blurKernel = 4;  // Slight blur for natural look
-            shadowGenerator.darkness = 0.15;  // D2 style - near pitch black (0=black, 1=invisible)
-            shadowGenerator.bias = 0.00005;
-            shadowGenerator.normalBias = 0.002;
-            shadowGenerator.frustumEdgeFalloff = 0.5;
-            shadowGenerator.transparencyShadow = true;  // Handle transparent parts
+
+            // FIX INVISIBLE SHADOWS:
+            // 0.0 = Pitch Black, 1.0 = Invisible.
+            shadowGenerator.darkness = 0.1;
+
+            // Sharp, crisp shadows (Diablo style) instead of blurry soft ones
+            shadowGenerator.useExponentialShadowMap = false;
+            shadowGenerator.usePoissonSampling = true; // Dithering for retro feel
+            shadowGenerator.bias = 0.0001; // Fix shadow acne
+            shadowGenerator.transparencyShadow = true;
 
             // Store globally for debugging
             window.shadowGenerator = shadowGenerator;
@@ -5835,7 +5889,7 @@
             scene.fogEnd = 60;
 
             // === MATERIALS (solid colors for now - add textures later) ===
-            const floorMat = createClassicMaterial("floorMat", "textures/stage2.png", 4, 2, new BABYLON.Color3(0.35, 0.35, 0.38));  // Darker floor for shadow contrast
+            const floorMat = createClassicMaterial("floorMat", "textures/stage2.png", 4, 2, new BABYLON.Color3(0.65, 0.65, 0.67));  // Brightened floor for clearer shadows
             const groundMat = createClassicMaterial("groundMat", null, 1, 1, GRAY.ground);
             const wallStoneMat = createClassicMaterial("wallStoneMat", "textures/rail.png", 8, 1, new BABYLON.Color3(0.6, 0.6, 0.6));
             wallStoneMat.emissiveColor = new BABYLON.Color3(0.15, 0.12, 0.1);  // Subtle glow so walls are always visible
@@ -5996,7 +6050,7 @@
             playerPaddle = BABYLON.MeshBuilder.CreateBox("player", { width: 0.4, height: 0.5, depth: 2.5 }, scene);
             playerPaddle.position.set(-tableWidth/2 + 1.5, 0.25, 0);
             playerPaddle.material = playerMat;
-            shadowGenerator.addShadowCaster(playerPaddle);
+            // No shadow for paddle - only character casts shadow
             playerPaddle.enableEdgesRendering();
             playerPaddle.edgesWidth = 2.0;
             playerPaddle.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
@@ -6008,7 +6062,7 @@
             aiPaddle.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
             aiPaddle.position.set(tableWidth/2 - 1.5, 0.25, 0);
             aiPaddle.material = aiMat;
-            shadowGenerator.addShadowCaster(aiPaddle);
+            // No shadow for paddle - only character casts shadow
 
             // Show paddles (models disabled for now)
             playerPaddle.visibility = 1;
@@ -8861,8 +8915,8 @@
                 // Flash force field shield (parry version - brighter)
                 if (window.flashShield) flashShield(parryer === 'player', true);
 
-                // Gain 3 mana on parry
-                gainMana(parryer, 3);
+                // Gain 1 mana on parry
+                gainMana(parryer, 1);
 
                 // Boost speed
                 proj.speed = Math.min(proj.speed * parryBoost, maxParrySpeed);
@@ -9230,11 +9284,11 @@
                         if (c.manaRegen >= manaRegenTime) {
                             c.manaRegen = 0;
                             if (c.mana < maxMana) {
-                                c.mana++;
+                                c.mana = Math.min(maxMana, c.mana + 0.5);  // Discrete 0.5 mana tick
                             }
+                            // Update UI only on mana tick (discrete, not smooth)
+                            updateCombatantManaUI(c);
                         }
-                        // Update mana UI every frame for smooth fill
-                        updateCombatantManaUI(c);
                     }
                     // Sync legacy variables for backwards compatibility
                     if (combatants.left) { playerMana = combatants.left.mana; playerManaRegen = combatants.left.manaRegen; }
@@ -9363,10 +9417,11 @@
                     const atBottomBoundary = playerPaddle.position.z <= -paddleBoundary;
                     const canActuallyMove = !(moveDir > 0 && atTopBoundary) && !(moveDir < 0 && atBottomBoundary);
 
-                    // Play movement animations (unless locked by one-shot anim or playing cast_release)
+                    // Play movement animations (unless locked by one-shot anim, playing cast_release, or round transitioning)
                     const playerAnimIsLocked = combatants.left.animLocked || playerAnimLocked;
                     const playerInCastRelease = combatants.left.currentAnim === 'cast_release';
-                    if (!playerAnimIsLocked && !playerInCastRelease) {
+                    const playerInEndAnim = combatants.left.currentAnim === 'victory' || combatants.left.currentAnim === 'defeat';
+                    if (!playerAnimIsLocked && !playerInCastRelease && !roundTransitioning && !playerInEndAnim) {
                         if (moveDir > 0 && canActuallyMove && combatants.left.currentAnim !== 'left') {
                             playPlayerAnim('left', true);
                         } else if (moveDir < 0 && canActuallyMove && combatants.left.currentAnim !== 'right') {
@@ -9442,11 +9497,12 @@
                         const aiAtBottomBoundary = aiPaddle.position.z <= -paddleBoundary;
                         const aiCanActuallyMove = !(aiMoveDir > 0 && aiAtTopBoundary) && !(aiMoveDir < 0 && aiAtBottomBoundary);
 
-                        // AI movement animations (unless locked by one-shot anim or playing cast_release)
+                        // AI movement animations (unless locked by one-shot anim, playing cast_release, or round transitioning)
                         const aiIsCasting = combatants.right && combatants.right.casting;
                         const aiAnimIsLocked = combatants.right.animLocked || aiAnimLocked;
                         const aiInCastRelease = combatants.right.currentAnim === 'cast_release';
-                        if (!aiAnimIsLocked && !aiInCastRelease) {
+                        const aiInEndAnim = combatants.right.currentAnim === 'victory' || combatants.right.currentAnim === 'defeat';
+                        if (!aiAnimIsLocked && !aiInCastRelease && !roundTransitioning && !aiInEndAnim) {
                             if (aiMoveDir > 0 && aiCanActuallyMove && combatants.right.currentAnim !== 'left') {
                                 playAIAnim('left', true);
                             } else if (aiMoveDir < 0 && aiCanActuallyMove && combatants.right.currentAnim !== 'right') {
@@ -9709,10 +9765,13 @@
                                 const collisionDist = (proj.hitboxRadius || 0.3) + (otherProj.hitboxRadius || 0.3);
                                 if (dist < collisionDist) {
                                     // Frostbolt cancels the enemy projectile, both are destroyed
+                                    const midPos = proj.mesh.position.add(otherProj.mesh.position).scale(0.5);
                                     if (window.createImpactFlash) {
                                         createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(0.5, 0.8, 1), 1.5);
                                     }
-                                    playSound('frozen', proj.mesh.position.x, 0.5, 1.5);
+                                    // Show Cancel text at collision point (both destroyed)
+                                    if (window.showCombatTextAt) showCombatTextAt(midPos, 'Cancel', 'cancel');
+                                    playSound('cancel', proj.mesh.position.x, 0.7);
                                     toDestroy.push(proj);
                                     toDestroy.push(otherProj);
                                     break;
@@ -9750,16 +9809,16 @@
                                             toDestroy.push(otherProj);
                                             if (window.createImpactFlash) createImpactFlash(otherProj.mesh.position.clone(), new BABYLON.Color3(1, 0.5, 0.2), 1.5);
                                             if (window.createImpactDecal) createImpactDecal({ x: midPos.x, z: midPos.z }, 'fire');
-                                            playSound('block', midPos.x, 0.8, 0.7);
-                                            // Show CANCEL text at collision point
-                                            if (window.showCombatTextAt) showCombatTextAt(midPos, 'CANCEL', 'cancel');
+                                            playSound('overpowered', midPos.x, 0.8);
+                                            // Show Overpowered text when one wins
+                                            if (window.showCombatTextAt) showCombatTextAt(midPos, 'Overpowered!', 'cancel');
                                         } else if (otherDmg > projDmg) {
                                             // Other wins - destroy this
                                             toDestroy.push(proj);
                                             if (window.createImpactFlash) createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(1, 0.5, 0.2), 1.5);
                                             if (window.createImpactDecal) createImpactDecal({ x: midPos.x, z: midPos.z }, 'fire');
-                                            playSound('block', midPos.x, 0.8, 0.7);
-                                            if (window.showCombatTextAt) showCombatTextAt(midPos, 'CANCEL', 'cancel');
+                                            playSound('overpowered', midPos.x, 0.8);
+                                            if (window.showCombatTextAt) showCombatTextAt(midPos, 'Overpowered!', 'cancel');
                                             break;
                                         } else {
                                             // Equal damage - mutual destruction with big explosion
@@ -9767,8 +9826,8 @@
                                             toDestroy.push(otherProj);
                                             if (window.createImpactFlash) createImpactFlash(midPos, new BABYLON.Color3(1, 0.7, 0.2), 3.0);
                                             if (window.createImpactDecal) createImpactDecal({ x: midPos.x, z: midPos.z }, 'fire');
-                                            playSound('block', midPos.x, 1.0, 0.5);
-                                            if (window.showCombatTextAt) showCombatTextAt(midPos, 'CANCEL', 'cancel');
+                                            playSound('cancel', midPos.x, 0.8);
+                                            if (window.showCombatTextAt) showCombatTextAt(midPos, 'Cancel', 'cancel');
                                             break;
                                         }
                                     }
@@ -10307,9 +10366,10 @@
 
                 const decalMat = new BABYLON.StandardMaterial("decalMat", scene);
                 decalMat.disableLighting = true;
-                if (type === 'burn') {
-                    decalMat.emissiveColor = new BABYLON.Color3(0.15, 0.05, 0);
-                    decalMat.alpha = 0.6;
+                if (type === 'burn' || type === 'fire') {
+                    // Red/brown burn mark, starting at 70% opacity
+                    decalMat.emissiveColor = new BABYLON.Color3(0.35, 0.15, 0.05);
+                    decalMat.alpha = 0.7;
                 } else if (type === 'frost') {
                     decalMat.emissiveColor = new BABYLON.Color3(0.1, 0.2, 0.3);
                     decalMat.alpha = 0.5;
@@ -10346,6 +10406,7 @@
                 // Update floating combat text positions
                 if (window.updateCombatText) window.updateCombatText(dt);
                 if (window.updateFloatingTexts) window.updateFloatingTexts(dt);
+                if (window.updateDamageText) window.updateDamageText(dt);
             });
 
             // Normal render loop - game runs at full 60fps
@@ -10550,7 +10611,7 @@
             // Show floating spell name
             const isPlayer = caster === 'player';
             const upgrade = combatant.upgrades ? combatant.upgrades.find(u => u.baseAbility === 'frostbolt') : null;
-            const spellName = upgrade ? UpgradeRegistry[upgrade.id].name : 'Frost Bolt';
+            const spellName = upgrade ? UpgradeRegistry[upgrade.id].name : 'Frostbolt';
             showSpellCastText(isPlayer, spellName, 'frost');
         }
 
@@ -10769,12 +10830,14 @@
                 ToneSFX.musicStop();
             }
 
-            // Cancel any active casts for both combatants
+            // Cancel any active casts and reset mana for both combatants
             for (const c of [combatants.left, combatants.right]) {
                 if (c) {
                     c.casting = null;
                     c.castProgress = 0;
                     c.castTime = 0;
+                    c.mana = 0;
+                    c.manaRegen = 0;
                 }
             }
 
@@ -10858,14 +10921,8 @@
                 console.log("Player using default fireball");
             }
 
-            // AI randomly picks between default and magma_lob
-            const aiChoice = Math.random() < 0.5 ? 'default' : 'magma_lob';
-            if (aiChoice !== 'default') {
-                aiUpgrades.push(aiChoice);
-                console.log("AI selected:", aiChoice);
-            } else {
-                console.log("AI using default fireball");
-            }
+            // AI uses default fireball (magma_lob disabled)
+            console.log("AI using default fireball");
 
             // Update ability UI to reflect selected upgrade
             updateAbilityUI();
@@ -11819,7 +11876,7 @@
                 if (c.cooldowns.gravity > 0) c.cooldowns.gravity -= dt;
             }
 
-            // Mana regeneration (stops while frozen)
+            // Mana regeneration (stops while frozen) - discrete 0.5 every 2 seconds
             for (const c of [combatants.left, combatants.right]) {
                 if (!c) continue;
                 if (c.freezeTime > 0) continue;
@@ -11827,7 +11884,7 @@
                     c.manaRegen += dt;
                     if (c.manaRegen >= manaRegenTime) {
                         c.manaRegen = 0;
-                        c.mana++;
+                        c.mana = Math.min(maxMana, c.mana + 0.5);
                     }
                 }
             }
@@ -12085,6 +12142,10 @@
                 if (!c) continue;
                 combatantReset(c, true);
                 updateCombatantManaUI(c);
+                // Reset animation to idle when new round starts
+                if (window.combatantPlayAnim) {
+                    combatantPlayAnim(c, 'idle', true);
+                }
             }
 
             // Set cooldowns - player ready, AI has startup delay
@@ -12142,9 +12203,10 @@
             msg.textContent = text;
             msg.style.display = 'block';
 
-            // Update Babylon.js GUI message (CRT-affected)
+            // Update Babylon.js GUI message (CRT-affected) - show it
             if (window.guiElements && window.guiElements.messageText) {
                 window.guiElements.messageText.text = text;
+                window.guiElements.messageText.alpha = 1;  // Make visible
             }
 
             // Update HTML overlay message (crisp text)
@@ -12158,9 +12220,10 @@
         function hideMessage() {
             document.getElementById('message').style.display = 'none';
 
-            // Update Babylon.js GUI message (CRT-affected)
+            // Update Babylon.js GUI message (CRT-affected) - hide it
             if (window.guiElements && window.guiElements.messageText) {
                 window.guiElements.messageText.text = "";
+                window.guiElements.messageText.alpha = 0;  // Make invisible
             }
 
             // Update HTML overlay message (crisp text)
@@ -12204,6 +12267,10 @@
                 c.cooldowns = { fireball: 0, frostbolt: 0, gravity: 0 };
                 c.towerHealth = maxTowerHealth;
             }
+
+            // Reset paddle positions to center
+            if (playerPaddle) playerPaddle.position.z = 0;
+            if (aiPaddle) aiPaddle.position.z = 0;
 
             // LEGACY - sync variables for backwards compatibility
             playerTowerHealth = maxTowerHealth;
@@ -12559,8 +12626,8 @@
                 const castProgressOverlay = document.getElementById(abilityId + 'CastProgress');
                 if (castProgressOverlay) castProgressOverlay.style.setProperty('--cast-progress', '360deg');
 
-                // Start isochronic casting sound (theta->beta ramp for focus)
-                if (window.ToneSFX) ToneSFX.castingStart();
+                // Start casting sound (panned left for player)
+                if (window.ToneSFX) ToneSFX.castingStart('player');
             } else {
                 // Sync legacy variables
                 aiCasting = c.casting;
@@ -12571,7 +12638,8 @@
                 showAICastBar(true);
                 if (window.playAIAnim) playAIAnim('cast_loop', true);
 
-                // AI casting - no isochronic (that's for player mental state)
+                // Start casting sound (panned right for AI)
+                if (window.ToneSFX) ToneSFX.castingStart('ai');
             }
 
             return true;
@@ -12585,8 +12653,8 @@
             // Clear pending mana cost (mana was never spent, so no refund needed)
             c.pendingManaCost = 0;
 
-            // Stop isochronic casting sound
-            if (window.ToneSFX) ToneSFX.castingStop();
+            // Stop casting sound for this caster
+            if (window.ToneSFX) ToneSFX.castingStop(isPlayer ? 'player' : 'ai');
 
             if (isPlayer) {
                 // Reset cast progress overlay (player only)
@@ -12759,8 +12827,8 @@
             }
             // Add other cast-time abilities here
 
-            // Stop isochronic casting sound
-            if (window.ToneSFX) ToneSFX.castingStop();
+            // Stop isochronic casting sound for the correct side
+            if (window.ToneSFX) ToneSFX.castingStop(isPlayer ? 'player' : 'ai');
 
             // Reset casting state (don't play idle again, animation handles it)
             if (isPlayer) {
@@ -12865,13 +12933,17 @@
             }
         }
 
+        // Damage number queue for uniform positioning
+        const damageTextQueue = { player: [], ai: [] };
+        let lastDamageStepTime = 0;
+
         function showDamageNumber(damage, isPlayerTower, worldZ) {
             if (!scene) return;
 
             // Convert 3D position to screen position
             const tableWidth = 20;
             const gateX = isPlayerTower ? -(tableWidth/2 + 1.2) : (tableWidth/2 + 1.2);
-            const worldPos = new BABYLON.Vector3(gateX, 2, worldZ || 0);
+            const worldPos = new BABYLON.Vector3(gateX, 2.5, worldZ || 0);
             const screenPos = BABYLON.Vector3.Project(
                 worldPos,
                 BABYLON.Matrix.Identity(),
@@ -12882,20 +12954,68 @@
                 )
             );
 
+            // Get canvas offset for letterbox alignment
+            const canvas = scene.getEngine().getRenderingCanvas();
+            const canvasRect = canvas.getBoundingClientRect();
+            const scaleX = canvasRect.width / scene.getEngine().getRenderWidth();
+            const scaleY = canvasRect.height / scene.getEngine().getRenderHeight();
+
             const dmgEl = document.createElement('div');
             dmgEl.className = 'damage-number';
             dmgEl.textContent = '-' + damage;
-            dmgEl.style.left = screenPos.x + 'px';
-            dmgEl.style.top = screenPos.y + 'px';
+            dmgEl.style.left = Math.floor(canvasRect.left + screenPos.x * scaleX) + 'px';
+            dmgEl.style.top = Math.floor(canvasRect.top + screenPos.y * scaleY) + 'px';
+            dmgEl.style.opacity = '1';
             document.body.appendChild(dmgEl);
-            // Remove after animation
-            setTimeout(() => dmgEl.remove(), 1000);
+
+            // Add to queue for stepped animation
+            const side = isPlayerTower ? 'player' : 'ai';
+            damageTextQueue[side].push({
+                el: dmgEl,
+                age: 0,
+                startY: canvasRect.top + screenPos.y * scaleY
+            });
         }
+
+        // Update damage text with stepped animation (called from render loop)
+        window.updateDamageText = (dt) => {
+            if (!scene) return;
+            const now = Date.now();
+            const doStep = (now - lastDamageStepTime) >= 100;
+            if (doStep) lastDamageStepTime = now;
+
+            for (const side of ['player', 'ai']) {
+                for (let i = damageTextQueue[side].length - 1; i >= 0; i--) {
+                    const item = damageTextQueue[side][i];
+                    item.age += dt;
+
+                    // Remove after 1.5s
+                    if (item.age > 1.5) {
+                        if (item.el.parentNode) item.el.remove();
+                        damageTextQueue[side].splice(i, 1);
+                        continue;
+                    }
+
+                    // Stepped fade and movement
+                    if (doStep) {
+                        // Stepped fade: 1.0 -> 0.66 -> 0.33 -> 0
+                        if (item.age > 1.0) {
+                            const fadeProgress = (item.age - 1.0) / 0.5;
+                            const steppedOpacity = fadeProgress < 0.33 ? 1 : fadeProgress < 0.66 ? 0.66 : fadeProgress < 1 ? 0.33 : 0;
+                            item.el.style.opacity = String(steppedOpacity);
+                        }
+                        // Stepped Y movement
+                        const steppedAge = Math.floor(item.age / 0.15) * 0.15;
+                        item.el.style.top = Math.floor(item.startY - steppedAge * 30) + 'px';
+                    }
+                }
+            }
+        };
 
         function showFrozenText(isPlayer) {
             // Use new NES-styled combat text system
             if (window.showCombatText) {
-                window.showCombatText(isPlayer, 'FROZEN!', 'frozen');
+                window.showCombatText(isPlayer, 'Frozen!', 'frozen');
             }
         }
 
@@ -12948,24 +13068,36 @@
         };
 
         // Update floating texts at world positions (called from render loop)
+        // Uses same step interval as combat text for consistency
+        let lastFloatStepTime = 0;
         window.updateFloatingTexts = (dt) => {
             if (!scene) return;
+            const now = Date.now();
+            const doStep = (now - lastFloatStepTime) >= STEP_INTERVAL;  // Same as combat text
+            if (doStep) lastFloatStepTime = now;
+
             for (let i = floatingTexts.length - 1; i >= 0; i--) {
                 const item = floatingTexts[i];
                 item.age += dt;
 
-                // Remove after 1.5s
+                // Remove after 1.5s - stepped fade for retro feel
                 if (item.age > 1.5) {
                     if (item.el.parentNode) item.el.remove();
                     floatingTexts.splice(i, 1);
                     continue;
-                } else if (item.age > 1.0) {
-                    item.el.style.opacity = String(1 - (item.age - 1.0) / 0.5);
+                } else if (item.age > 1.0 && doStep) {
+                    // Stepped fade: 1.0 -> 0.66 -> 0.33 -> 0
+                    const fadeProgress = (item.age - 1.0) / 0.5;
+                    const steppedOpacity = fadeProgress < 0.33 ? 1 : fadeProgress < 0.66 ? 0.66 : fadeProgress < 1 ? 0.33 : 0;
+                    item.el.style.opacity = String(steppedOpacity);
                 }
+
+                // Stepped Y offset for choppy movement
+                const steppedAge = Math.floor(item.age / 0.15) * 0.15;
 
                 // Project to screen
                 const screenPos = BABYLON.Vector3.Project(
-                    new BABYLON.Vector3(item.worldPos.x, item.worldPos.y + item.age * 1.5, item.worldPos.z),
+                    new BABYLON.Vector3(item.worldPos.x, item.worldPos.y + steppedAge * 1.5, item.worldPos.z),
                     BABYLON.Matrix.Identity(),
                     scene.getTransformMatrix(),
                     scene.activeCamera.viewport.toGlobal(
@@ -12974,13 +13106,24 @@
                     )
                 );
 
-                item.el.style.left = Math.floor(screenPos.x) + 'px';
-                item.el.style.top = Math.floor(screenPos.y) + 'px';
-                item.el.style.transform = 'translate(-50%, -50%)';
+                // Get canvas offset for correct positioning
+                const canvas = scene.getEngine().getRenderingCanvas();
+                const canvasRect = canvas.getBoundingClientRect();
+                const scaleX = canvasRect.width / scene.getEngine().getRenderWidth();
+                const scaleY = canvasRect.height / scene.getEngine().getRenderHeight();
+
+                // Only update position on step intervals
+                if (doStep) {
+                    item.el.style.left = Math.floor(canvasRect.left + screenPos.x * scaleX) + 'px';
+                    item.el.style.top = Math.floor(canvasRect.top + screenPos.y * scaleY) + 'px';
+                    item.el.style.transform = 'translate(-50%, -50%)';
+                }
             }
         };
 
         // Update combat text positions (called from render loop)
+        // Uniform stacking with stepped upward movement
+        const STACK_SPACING = 28;  // Pixels between stacked messages
         window.updateCombatText = (dt) => {
             if (!scene) return;
 
@@ -12992,70 +13135,64 @@
                 const paddle = side === 'player' ? playerPaddle : aiPaddle;
                 if (!paddle) continue;
 
-                // Stack offset for multiple texts
-                let stackOffset = 0;
+                // Get base screen position (above cast bar)
+                const worldPos = new BABYLON.Vector3(paddle.position.x, 2.5, paddle.position.z);
+                const screenPos = BABYLON.Vector3.Project(
+                    worldPos,
+                    BABYLON.Matrix.Identity(),
+                    scene.getTransformMatrix(),
+                    scene.activeCamera.viewport.toGlobal(
+                        scene.getEngine().getRenderWidth(),
+                        scene.getEngine().getRenderHeight()
+                    )
+                );
+
+                const canvas = scene.getEngine().getRenderingCanvas();
+                const canvasRect = canvas.getBoundingClientRect();
+                const scaleX = canvasRect.width / scene.getEngine().getRenderWidth();
+                const scaleY = canvasRect.height / scene.getEngine().getRenderHeight();
+                const baseX = Math.floor(canvasRect.left + screenPos.x * scaleX);
+                const baseY = Math.floor(canvasRect.top + screenPos.y * scaleY);
+
+                // Process queue - index 0 is oldest (top), last is newest (bottom)
                 for (let i = combatTextQueue[side].length - 1; i >= 0; i--) {
                     const item = combatTextQueue[side][i];
                     item.age += dt;
 
-                    // Fade out after 1.5s, remove after 2s
-                    if (item.age > 2) {
+                    // Remove after 1.5s
+                    if (item.age > 1.5) {
                         if (item.el.parentNode) item.el.remove();
                         combatTextQueue[side].splice(i, 1);
                         continue;
-                    } else if (item.age > 1.5) {
-                        item.el.style.opacity = String(1 - (item.age - 1.5) / 0.5);
                     }
 
-                    // Calculate target position (anchored to model)
-                    const worldPos = new BABYLON.Vector3(paddle.position.x, 2.0 + stackOffset * 0.5, paddle.position.z);
-                    const screenPos = BABYLON.Vector3.Project(
-                        worldPos,
-                        BABYLON.Matrix.Identity(),
-                        scene.getTransformMatrix(),
-                        scene.activeCamera.viewport.toGlobal(
-                            scene.getEngine().getRenderWidth(),
-                            scene.getEngine().getRenderHeight()
-                        )
-                    );
+                    // Stepped fade after 1.0s
+                    if (item.age > 1.0 && doStep) {
+                        const fadeProgress = (item.age - 1.0) / 0.5;
+                        const steppedOpacity = fadeProgress < 0.33 ? 1 : fadeProgress < 0.66 ? 0.66 : fadeProgress < 1 ? 0.33 : 0;
+                        item.el.style.opacity = String(steppedOpacity);
+                    }
 
-                    // Stepped movement (only update on step intervals)
+                    // Stepped upward movement (same as damage text)
+                    const steppedAge = Math.floor(item.age / 0.15) * 0.15;
+                    const slot = combatTextQueue[side].length - 1 - i;
+                    const slotY = baseY - (slot * STACK_SPACING) - (steppedAge * 30);
+
                     if (doStep) {
-                        item.el.style.left = Math.floor(screenPos.x) + 'px';
-                        item.el.style.top = Math.floor(screenPos.y - item.age * 20) + 'px';
+                        item.el.style.left = baseX + 'px';
+                        item.el.style.top = Math.floor(slotY) + 'px';
                         item.el.style.transform = 'translate(-50%, -50%)';
                     }
-
-                    stackOffset++;
                 }
             }
         };
 
-        // Show floating spell cast text above caster
+        // Show floating spell cast text above caster - uses unified combat text system
         function showSpellCastText(isPlayer, spellName, element) {
-            if (!scene) return;
-
-            // Position above the caster (closer to character)
-            const paddle = isPlayer ? playerPaddle : aiPaddle;
-            const worldPos = new BABYLON.Vector3(paddle.position.x, 1.4, paddle.position.z);
-            const screenPos = BABYLON.Vector3.Project(
-                worldPos,
-                BABYLON.Matrix.Identity(),
-                scene.getTransformMatrix(),
-                scene.activeCamera.viewport.toGlobal(
-                    scene.getEngine().getRenderWidth(),
-                    scene.getEngine().getRenderHeight()
-                )
-            );
-
-            const spellEl = document.createElement('div');
-            spellEl.className = 'spell-cast-text ' + (element || 'fire');
-            spellEl.textContent = spellName;
-            spellEl.style.left = screenPos.x + 'px';
-            spellEl.style.top = screenPos.y + 'px';
-            spellEl.style.transform = 'translate(-50%, -50%)';
-            document.body.appendChild(spellEl);
-            setTimeout(() => spellEl.remove(), 1500);
+            // Use the unified combat text system with element type
+            if (window.showCombatText) {
+                showCombatText(isPlayer, spellName, element || 'fire');
+            }
         }
 
         // Sound cooldown to prevent double-plays on rapid hits
