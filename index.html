@@ -8179,6 +8179,18 @@
             // Preload particle texture (global for upgrades to access)
             const flareTexture = window.flareTexture = new BABYLON.Texture("https://assets.babylonjs.com/textures/flare.png", scene);
 
+            // D2-style square particle texture (pixelated, hard edges)
+            const squareParticleCanvas = document.createElement('canvas');
+            squareParticleCanvas.width = 16;
+            squareParticleCanvas.height = 16;
+            const sqCtx = squareParticleCanvas.getContext('2d');
+            sqCtx.fillStyle = 'white';
+            sqCtx.fillRect(2, 2, 12, 12);  // Square with slight margin
+            const squareParticleTexture = window.squareParticleTexture = BABYLON.Texture.LoadFromDataString(
+                "squareParticle", squareParticleCanvas.toDataURL(), scene, false, false,
+                BABYLON.Texture.NEAREST_SAMPLINGMODE
+            );
+
             // Fireball material - glowing hot core (D2 style)
             const fireballCoreMat = new BABYLON.StandardMaterial("fireballCoreMat", scene);
             fireballCoreMat.emissiveColor = new BABYLON.Color3(1, 0.6, 0.2);  // Warm orange glow
@@ -8310,25 +8322,30 @@
                 proj.particles.maxEmitPower = 2;
                 proj.particles.start();
 
-                // Outer flames (removed for magma bombs)
+                // Outer flames / trail (removed for magma bombs) - D2 style square particles with stepped fade
                 const outerCount = proj.isMagmaBomb ? 0 : 50;
                 proj.outerFlames = new BABYLON.ParticleSystem("fireOuter_" + Date.now(), outerCount, scene);
-                proj.outerFlames.particleTexture = flareTexture;
+                proj.outerFlames.particleTexture = squareParticleTexture;  // Square pixels for D2 look
                 proj.outerFlames.emitter = proj.mesh;
                 proj.outerFlames.minEmitBox = new BABYLON.Vector3(-0.15, -0.1, -0.15);
                 proj.outerFlames.maxEmitBox = new BABYLON.Vector3(0.15, 0.1, 0.15);
                 if (proj.isMagmaBomb) {
-                    proj.outerFlames.color1 = new BABYLON.Color4(0.5, 0.2, 0.05, 0.5);
-                    proj.outerFlames.color2 = new BABYLON.Color4(0.4, 0.1, 0.02, 0.3);
-                    proj.outerFlames.colorDead = new BABYLON.Color4(0.2, 0.05, 0, 0);
                     proj.outerFlames.minSize = 0.15;
                     proj.outerFlames.maxSize = 0.3;
+                    // Stepped color gradient for magma bombs
+                    proj.outerFlames.addColorGradient(0.0, new BABYLON.Color4(0.7, 0.3, 0.1, 0.8));
+                    proj.outerFlames.addColorGradient(0.5, new BABYLON.Color4(0.5, 0.15, 0.05, 0.6));
+                    proj.outerFlames.addColorGradient(0.75, new BABYLON.Color4(0.3, 0.08, 0.02, 0.3));
+                    proj.outerFlames.addColorGradient(1.0, new BABYLON.Color4(0.2, 0.05, 0, 0));
                 } else {
-                    proj.outerFlames.color1 = new BABYLON.Color4(1, 0.4, 0.1, 0.8);
-                    proj.outerFlames.color2 = new BABYLON.Color4(0.8, 0.2, 0.05, 0.6);
-                    proj.outerFlames.colorDead = new BABYLON.Color4(0.3, 0.1, 0, 0);
-                    proj.outerFlames.minSize = 0.3;
-                    proj.outerFlames.maxSize = 0.6;
+                    proj.outerFlames.minSize = 0.08;
+                    proj.outerFlames.maxSize = 0.15;
+                    // Stepped color gradient - discrete alpha steps for D2 retro fade
+                    proj.outerFlames.addColorGradient(0.0, new BABYLON.Color4(1, 0.5, 0.1, 0.9));
+                    proj.outerFlames.addColorGradient(0.3, new BABYLON.Color4(1, 0.4, 0.1, 0.7));
+                    proj.outerFlames.addColorGradient(0.6, new BABYLON.Color4(0.9, 0.25, 0.05, 0.4));
+                    proj.outerFlames.addColorGradient(0.85, new BABYLON.Color4(0.6, 0.15, 0.02, 0.15));
+                    proj.outerFlames.addColorGradient(1.0, new BABYLON.Color4(0.3, 0.1, 0, 0));
                 }
                 proj.outerFlames.minLifeTime = 0.15;
                 proj.outerFlames.maxLifeTime = 0.35;
@@ -8453,18 +8470,20 @@
                 proj.particles.maxEmitPower = 1.5;
                 proj.particles.start();
 
-                // Frost mist trail
+                // Frost mist trail - D2 style square particles with stepped fade
                 const vDir = Math.sign(velX);
                 proj.outerFlames = new BABYLON.ParticleSystem("frostMist_" + Date.now(), 40, scene);
-                proj.outerFlames.particleTexture = flareTexture;
+                proj.outerFlames.particleTexture = squareParticleTexture;  // Square pixels for D2 look
                 proj.outerFlames.emitter = proj.mesh;
                 proj.outerFlames.minEmitBox = new BABYLON.Vector3(-0.1, -0.05, -0.1);
                 proj.outerFlames.maxEmitBox = new BABYLON.Vector3(0.1, 0.05, 0.1);
-                proj.outerFlames.color1 = new BABYLON.Color4(0.6, 0.8, 1, 0.6);
-                proj.outerFlames.color2 = new BABYLON.Color4(0.4, 0.6, 0.9, 0.4);
-                proj.outerFlames.colorDead = new BABYLON.Color4(0.2, 0.3, 0.5, 0);
-                proj.outerFlames.minSize = 0.25;
-                proj.outerFlames.maxSize = 0.5;
+                // Stepped color gradient for D2 retro fade
+                proj.outerFlames.addColorGradient(0.0, new BABYLON.Color4(0.7, 0.9, 1, 0.7));
+                proj.outerFlames.addColorGradient(0.4, new BABYLON.Color4(0.5, 0.7, 0.95, 0.5));
+                proj.outerFlames.addColorGradient(0.7, new BABYLON.Color4(0.3, 0.5, 0.8, 0.25));
+                proj.outerFlames.addColorGradient(1.0, new BABYLON.Color4(0.2, 0.3, 0.6, 0));
+                proj.outerFlames.minSize = 0.06;
+                proj.outerFlames.maxSize = 0.12;
                 proj.outerFlames.minLifeTime = 0.2;
                 proj.outerFlames.maxLifeTime = 0.4;
                 proj.outerFlames.emitRate = 40;

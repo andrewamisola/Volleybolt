@@ -41,7 +41,8 @@
       "Bash(ping:*)",
       "Bash(git add:*)",
       "Bash(git push:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd Session 34 priority tasks\n\n- GUI migration: move all text to Babylon GUI for CRT effects\n- Floating combat text: 3D space, 60% black bar, no border, NES bold\n- Visual polish: darken ground, pixel shadows, letter spacing\n- Projectile collision: damage-based fireball vs fireball\n- Tooltip fixes: update damage values\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd Session 34 priority tasks\n\n- GUI migration: move all text to Babylon GUI for CRT effects\n- Floating combat text: 3D space, 60% black bar, no border, NES bold\n- Visual polish: darken ground, pixel shadows, letter spacing\n- Projectile collision: damage-based fireball vs fireball\n- Tooltip fixes: update damage values\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit:*)"
     ]
   }
 }
