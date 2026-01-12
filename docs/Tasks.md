@@ -130,6 +130,48 @@
 
 ## Completed Tasks
 
+### 2026-01-12 Session 33 (Git Recovery)
+- [x] Restored all features from sessions 16-32 after git wipe
+- [x] Updated model loading for p1/p2 folder structure
+- [x] Rebuilt documentation
+
+### 2026-01-09 to 2026-01-11 Sessions 16-32 (Consolidated)
+**Balance:**
+- [x] Fireball damage: 2 base + volleyCount, max 5 (was 1/2/3)
+- [x] Mana per block: 0.5 (was 1.0)
+- [x] Parry cooldowns: 0.2s success, 3.0s fail (punishes spam)
+
+**Frostbolt:**
+- [x] Cancels enemy projectiles on collision
+- [x] Stops mana regen while frozen
+- [x] Cancels active casting when hit
+
+**Visuals (D2 Style):**
+- [x] Shadow system: light (12,28,-8), darkness 0.15, characters only
+- [x] Post-processing: contrast 1.4, saturation 1.2
+- [x] Fog: opacity 0.45, height 0.25
+- [x] Stepped fading for impacts/decals
+- [x] Text shadows: pixel only (no blur)
+
+**Gameplay:**
+- [x] Paddle momentum affects ball (0.4 factor)
+- [x] Projectile-projectile collision (damage-based, 0.5s grace)
+- [x] Magma bomb simplified (8 particles, shorter trail)
+
+**UI/UX:**
+- [x] Menu pauses game properly
+- [x] Victory/defeat animations loop
+- [x] NES floating combat text (black bars, queue, stepped)
+
+**Multiplayer:**
+- [x] Client W/S controls inverted
+- [x] Freeze text shows for both players
+- [x] Rollback netcode
+
+**Models:**
+- [x] Per-player folders (p1, p2, p3, p4)
+- [x] Dynamic path loading based on player side
+
 ### 2026-01-09 Session 15
 - [x] HotS-style in-game talent system (replaces pre-game selection)
 - [x] TalentTree data structure (tiers 1-3, branching choices per ability)

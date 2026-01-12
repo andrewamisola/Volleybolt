@@ -19,36 +19,67 @@
 | [Debug.md](./docs/Debug.md) | Test scenarios |
 
 ## Current State
-- **Last Updated**: 2026-01-09 (Session 15)
-- **Game Status**: HotS-style in-game talent system, game starts immediately
+- **Last Updated**: 2026-01-12 (Session 33 - Git Recovery)
+- **Game Status**: Fully functional with multiplayer, restored from git wipe
 - **Active Branch**: gh-pages
 
 ### What's Working
+
+#### Core Systems
 - **In-Game Talent System**: HotS-style - earn upgrade points after rounds, click abilities to upgrade
 - **TalentTree + TalentState**: Tier 1-3 progression per ability with branching choices
-- **Upgrade Indicators**: Golden pulsing badges on ability slots when upgrades available
-- **Talent Panel UI**: Click ability → expand panel with tier choices → select to apply
-- **Upgrade Points HUD**: Shows available points at top center
 - **UpgradeRegistry**: Modular system for defining spell upgrades with hooks
-- **Magma Lob Upgrade**: 45-degree arc peaks at midline, splits into 2 bouncing bombs
-- **Bouncing Bombs**: Real floor physics (Y=0.22), darker visuals, 1 fixed damage, varied velocities
-- **Character Models**: GLB wizard models with animations (idle, strafe, cast, parry)
-- **Animation System**: 0.2s crossfade blending, freeze on frostbolt hit
-- **Loading Screen**: Shows while models load, fades when ready
-- **Cast Time System**: 1s cast for fireball, 5s cooldown after
-- **Cast Progress on Icons**: Radial overlay reveals icon as cast completes
-- **Mid-Cast Audio**: Looping sound during spell casting
-- **Movement cancels cast**: W/S during cast = cancel + mana refund
-- **AI Cast Bar**: Shows enemy casting progress
-- **AI Mana Bar**: 3 segments matching player style
+- **Magma Lob Upgrade**: 45-degree arc peaks at midline, splits into 2 bouncing bombs (8 particles, short trail)
+
+#### Balance (Sessions 16-32)
+- **Fireball Damage**: 2 base + volleyCount, max 5
+- **Mana Per Block**: 0.5 (reduced from 1.0)
+- **Parry Cooldowns**: 0.2s on success, 3.0s on fail (punishes spam)
+
+#### Frostbolt Mechanics
+- **Cancels Projectiles**: Destroys enemy fireballs on collision
+- **Stops Mana Regen**: Frozen players don't regenerate mana
+- **Cancels Casting**: Getting frozen interrupts active spell casts
+
+#### Visual Style (Diablo 2 Inspired)
+- **Shadow System**: Light at (12, 28, -8), darkness 0.15, only characters cast
+- **Post-Processing**: Contrast 1.4, saturation 1.2
+- **Fog**: Opacity 0.45, height 0.25, color (0.25, 0.28, 0.35)
+- **Stepped Fading**: Impact flashes and decals use discrete alpha steps
+- **Text Shadows**: Simple pixel shadows only (no blur)
+
+#### Gameplay Mechanics
+- **Paddle Momentum**: Ball trajectory affected by paddle velocity (0.4 factor)
+- **Projectile Collision**: Projectiles can collide, damage-based resolution, 0.5s grace period
+
+#### Character Models
+- **Per-Player Folders**: models/p1/, p2/, p3/, p4/ for different skins
+- **P2 Naming**: Animations use `_P2_` suffix in p2 folder
+- **Animation System**: 0.2s crossfade, freeze on frostbolt hit
+- **Victory/Defeat**: Animations now loop correctly
+
+#### UI/UX
+- **NES Combat Text**: Black background, white border, queue system, model-anchored, stepped movement (80ms)
+- **Menu System**: Game pauses properly when in background
+- **Upgrade Indicators**: Golden pulsing badges on ability slots
+- **Cast Progress**: Radial overlay on skill icons
 - **Symmetrical UI**: Player left, AI right
-- **Parry Button**: Underneath ability bar with SPACE keybind
-- **Input Feedback**: Key presses flash corresponding UI buttons
-- **Textures**: Gate stone texture loading (tints by team)
-- **Sound System**: Stereo panning, pitch control, victory/defeat sounds
+
+#### Multiplayer (P2P via PeerJS)
+- **Client Controls**: W/S inverted for right-side player
+- **Rollback Netcode**: State synchronization with prediction
+- **Freeze Text**: Shows for both players
+
+#### Audio
+- **Sound System**: Stereo panning, pitch control
+- **Mid-Cast Audio**: Looping sound during casting
+- **Victory/Defeat**: Dedicated sounds
+
+#### Other Working Features
+- **Loading Screen**: Shows while models load, fades when ready
 - **Explosive Bricks**: Gate bricks explode outward on hit
 - **Ice Shatter**: Ice block breaks into physics shards when freeze ends
-- **Character Flash**: Emissive glow on block/parry (tuned intensity)
+- **Character Flash**: Emissive glow on block/parry
 - **Gravity Sphere**: Commented out for rework
 
 ### Talent System (HotS-Style)
@@ -166,11 +197,12 @@ Two wizards facing off, casting spells at each other's towers. Blocking is passi
 
 ### Mana System
 - **Max Mana**: 3 (displayed as 3 segments above ability bar)
-- **Passive Regen**: +1 mana every 5 seconds
-- **Block**: +1 mana
+- **Passive Regen**: +1 mana every 5 seconds (blocked while frozen)
+- **Block**: +0.5 mana (reduced from 1.0)
 - **Parry**: +3 mana (fills entire bar)
 - **Starting Mana**: 1 (enough for initial fireball)
 - Spells require both cooldown AND mana to cast
+- **Frozen Effect**: Mana regen stops while frozen
 
 ### Key Mechanics
 1. **Parry System**: SPACE near ball (tight timing!) = boost + straight shot + color change
@@ -180,14 +212,17 @@ Two wizards facing off, casting spells at each other's towers. Blocking is passi
 
 ### Key Constants
 ```javascript
-const parryWindow = 1.0;       // Tight timing
-const parryBoost = 1.4;        // Speed multiplier
-const maxParrySpeed = 28;      // Hard velocity cap
+const parryWindow = 1.0;           // Tight timing
+const parryBoost = 1.4;            // Speed multiplier
+const maxParrySpeed = 28;          // Hard velocity cap
+const parrySuccessCooldown = 0.2;  // Quick recovery on success
+const parryFailCooldown = 3.0;     // Long recovery on miss (punishes spam)
 const paddleSpeed = 20;
 const aiSpeed = 11;
-const maxTowerHealth = 20;     // Matches brick count
-const maxMana = 3;             // Holy Power style segments
-const manaRegenTime = 5;       // Passive regen: 1 mana every 5s
+const maxTowerHealth = 20;         // Matches brick count
+const maxMana = 3;                 // Holy Power style segments
+const manaRegenTime = 5;           // Passive regen: 1 mana every 5s
+const momentumFactor = 0.4;        // Paddle velocity influence on ball
 
 // Abilities now defined in AbilityRegistry with full config
 // See AbilityRegistry section below for complete structure
@@ -196,8 +231,9 @@ const manaRegenTime = 5;       // Passive regen: 1 mana every 5s
 ### Damage Scaling
 ```javascript
 // Volley count determines damage
-// 0 volleys = 1 damage, 1-2 = 2 damage, 3+ = 3 damage (capped)
-const damage = proj.volleyCount >= 3 ? 3 : (proj.volleyCount >= 1 ? 2 : 1);
+// Base 2 damage + volleyCount, capped at 5
+const damage = Math.min(2 + proj.volleyCount, 5);
+// 0 volleys = 2, 1 volley = 3, 2 volleys = 4, 3+ volleys = 5 (max)
 ```
 
 ---

@@ -1,5 +1,65 @@
 # Development Log - Volleybolt (formerly Wizard Duel Arena)
 
+## 2026-01-12
+
+### Session 33 (Git Disaster Recovery & Documentation)
+**Time**: Night
+
+#### Summary
+Recovered from devastating git pull that wiped progress from sessions 16-32. Restored all features from memory/conversation history. Updated model loading to use new per-player folder structure (models/p1/, p2/, etc.).
+
+#### Restored/Verified
+- All features from sessions 16-32 (see below)
+- Model paths updated for p1/p2 folder structure
+- Documentation rebuild
+
+---
+
+### Sessions 16-32 (Consolidated - Recovered from Git Wipe)
+**Time**: 2026-01-09 through 2026-01-11
+
+#### Summary
+These sessions were lost in a git pull disaster. Features have been restored but original session logs are unrecoverable. Below is the consolidated list of all implemented features.
+
+#### Balance Changes
+- [x] **Fireball Damage Scaling**: Changed from 1/2/3 to 2 base + volleyCount (max 5)
+- [x] **Mana Per Block**: Reduced from 1.0 to 0.5 mana per block
+- [x] **Parry Cooldown Rework**: Success = 0.2s cooldown, Fail = 3.0s cooldown (punishes spam)
+
+#### Frostbolt Enhancements
+- [x] **Cancels Enemy Projectiles**: Frostbolt destroys fireballs on collision
+- [x] **Stops Mana Regen**: Frozen players don't regenerate mana
+- [x] **Cancels Casting**: Getting frozen interrupts active spell casts
+
+#### Visual Overhaul (Diablo 2 Style)
+- [x] **Shadow System**: Light at (12, 28, -8), darkness 0.15, only characters cast shadows
+- [x] **Scene Post-Processing**: Contrast 1.4, saturation 1.2
+- [x] **Fog Settings**: Opacity 0.45, height 0.25, color (0.25, 0.28, 0.35)
+- [x] **Stepped Fading**: Impact flashes and decals use discrete alpha steps (retro feel)
+- [x] **Text Shadows**: Simplified to pixel shadows only (no blur)
+
+#### Gameplay Mechanics
+- [x] **Paddle Momentum**: Ball trajectory affected by paddle velocity (0.4 factor)
+- [x] **Projectile-Projectile Collision**: Damage-based resolution with 0.5s grace period
+- [x] **Magma Bomb Simplification**: 8 particles, trail length 8, width 0.15, no outer flames
+
+#### UI/UX Improvements
+- [x] **Menu System**: Game properly stops/pauses when in background
+- [x] **Victory/Defeat Animations**: Now loop correctly
+- [x] **NES-Styled Floating Combat Text**: Black background with white border, queue system, model-anchored, stepped movement (80ms intervals)
+
+#### Multiplayer (P2P via PeerJS)
+- [x] **Client Controls Fix**: W/S inverted for client (right-side player)
+- [x] **Rollback Netcode**: State synchronization with prediction
+- [x] **Freeze Text in Multiplayer**: Shows "FROZEN!" for both players
+
+#### Model System
+- [x] **Per-Player Folders**: models/p1/, p2/, p3/, p4/ for different character skins
+- [x] **P2 File Naming**: Animations use `_P2_` suffix in p2 folder
+- [x] **Dynamic Path Loading**: Loader selects correct folder based on player side
+
+---
+
 ## 2026-01-09
 
 ### Session 15 (HotS-Style In-Game Talent System)
