@@ -226,11 +226,11 @@
         .tower-label {
             font-family: 'Esthetique', 'Cinzel', serif;
             font-size: 26px;
-            font-weight: 400;
+            font-weight: 700;
             color: #c9a44a;
-            text-shadow:
-                2px 2px 4px rgba(0,0,0,0.9),
-                0 0 15px rgba(0,0,0,0.8);
+            text-shadow: 2px 2px 0px #000, 3px 3px 0px #000;
+            letter-spacing: 4px;
+            text-transform: uppercase;
         }
         #playerTowerLabel {
             top: 20px;
@@ -249,11 +249,9 @@
             transform: translateX(-50%);
             font-family: 'Esthetique', 'Cinzel', serif;
             font-size: 48px;
-            font-weight: 400;
+            font-weight: 700;
             color: #c9a44a;
-            text-shadow:
-                2px 2px 4px rgba(0,0,0,0.9),
-                0 0 10px rgba(0,0,0,0.8);
+            text-shadow: 3px 3px 0px #000, 4px 4px 0px #000;
         }
 
         /* Center message (Victory, Defeat, etc) */
@@ -263,11 +261,11 @@
             transform: translate(-50%, -50%);
             font-family: 'Esthetique', 'Cinzel', serif;
             font-size: 56px;
-            font-weight: 400;
+            font-weight: 700;
             color: #f0c050;
-            text-shadow:
-                3px 3px 6px rgba(0,0,0,0.9),
-                0 0 20px rgba(0,0,0,0.8);
+            text-shadow: 4px 4px 0px #000, 5px 5px 0px #000;
+            letter-spacing: 6px;
+            text-transform: uppercase;
             opacity: 0;
             transition: opacity 0.3s ease;
         }
@@ -301,25 +299,28 @@
             text-shadow: 2px 2px 0px #000, -1px -1px 0px #4080ff;  /* Pixel shadow + subtle highlight */
         }
 
-        /* NES-styled floating combat text */
+        /* NES-styled floating combat text - 60% black bar, no border */
         .combat-text {
             position: absolute;
-            font-family: 'NES Font', 'Press Start 2P', 'Courier New', monospace;
-            font-size: 12px;
+            font-family: 'Esthetique', 'Press Start 2P', 'Courier New', monospace;
+            font-size: 14px;
+            font-weight: 700;
             color: #fff;
-            padding: 4px 8px;
-            background: #000;
-            border: 2px solid #fff;
-            box-shadow: 4px 4px 0px #000;
+            padding: 6px 12px;
+            background: rgba(0, 0, 0, 0.6);
+            border: none;
+            text-shadow: 2px 2px 0px #000;
             pointer-events: none;
             z-index: 1001;
             white-space: nowrap;
-            image-rendering: pixelated;
+            text-transform: uppercase;
+            letter-spacing: 2px;
         }
-        .combat-text.fire { color: #ffa040; border-color: #ffa040; }
-        .combat-text.frost { color: #80d0ff; border-color: #80d0ff; }
-        .combat-text.frozen { color: #4080ff; border-color: #4080ff; }
-        .combat-text.damage { color: #ff4040; border-color: #ff4040; }
+        .combat-text.fire { color: #ffa040; }
+        .combat-text.frost { color: #80d0ff; }
+        .combat-text.frozen { color: #4080ff; }
+        .combat-text.damage { color: #ff4040; font-size: 18px; }
+        .combat-text.cancel { color: #ffff40; }
 
         @keyframes spellCastFloat {
             0% { opacity: 0.9; transform: translate(-50%, -50%) scale(1); }
@@ -447,7 +448,7 @@
             font-family: 'Crimson Text', Georgia, serif;
             font-size: 64px;
             font-weight: bold;
-            text-shadow: 4px 4px 0px #000, 0 0 30px #4080ff, 0 0 60px #2060c0;
+            text-shadow: 3px 3px 0px #000, 4px 4px 0px #000;
             pointer-events: none;
             animation: frozenFloat 1.2s ease-out forwards;
             z-index: 1000;
@@ -679,7 +680,7 @@
             font-size: 36px;
             font-weight: bold;
             color: #ffffff;
-            text-shadow: 2px 2px 2px #000, 0 0 6px #000;
+            text-shadow: 2px 2px 0px #000, 3px 3px 0px #000;
         }
 
         .ability-key {
@@ -1945,8 +1946,8 @@
     <div id="gameContainer">
     <canvas id="canvas"></canvas>
 
-    <!-- HTML Text Overlay - Crisp text over Babylon.js GUI -->
-    <div id="htmlOverlay">
+    <!-- HTML Text Overlay - HIDDEN: Now using Babylon.js GUI for CRT effects -->
+    <div id="htmlOverlay" style="display: none;">
         <!-- Tower Labels -->
         <div id="playerTowerLabel" class="overlay-text tower-label">YOUR TOWER</div>
         <div id="aiTowerLabel" class="overlay-text tower-label">ENEMY TOWER</div>
@@ -1962,7 +1963,8 @@
         <div id="aiCastLabelHtml" class="overlay-text cast-label">Fireball</div>
     </div>
 
-    <div id="towerHealth">
+    <!-- HIDDEN: Using Babylon.js GUI for CRT effects -->
+    <div id="towerHealth" style="display: none;">
         <div>
             <div class="health-label">Your Tower</div>
             <progress class="nes-progress is-primary" id="playerHealthBar" value="100" max="100"></progress>
@@ -1972,9 +1974,9 @@
             <progress class="nes-progress is-error" id="aiHealthBar" value="100" max="100"></progress>
         </div>
     </div>
-    <div id="ui"><span id="playerScore">0</span> - <span id="aiScore">0</span></div>
-    <div id="message">Ready</div>
-    <div id="instructions">W/S to move</div>
+    <div id="ui" style="display: none;"><span id="playerScore">0</span> - <span id="aiScore">0</span></div>
+    <div id="message" style="display: none;">Ready</div>
+    <div id="instructions" style="display: none;">W/S to move</div>
     <div id="volumeControl">
         <span id="volumeIcon">🔊</span>
         <input type="range" id="volumeSlider" min="0" max="100" value="50">
@@ -2034,7 +2036,7 @@
                     <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">5s CD</span></span>
                 </div>
                 <div class="tooltip-description">
-                    Throw a <span class="tt-spell">Fireball</span> in front of you, dealing <span class="tt-value">1</span> <span class="tt-fire">Fire</span> damage and scaling up to <span class="tt-value">3</span> per <span class="tt-mechanic">Volley</span>.
+                    Throw a <span class="tt-spell">Fireball</span> in front of you, dealing <span class="tt-value">2</span> <span class="tt-fire">Fire</span> damage, scaling up to <span class="tt-value">5</span> with <span class="tt-mechanic">Volleys</span>.
                 </div>
             </div>
         </div>
@@ -2063,7 +2065,7 @@
                     <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">14s CD</span></span>
                 </div>
                 <div class="tooltip-description">
-                    Launch a piercing <span class="tt-spell">Frostbolt</span> that <span class="tt-frost">Freezes</span> the <span class="tt-enemy">Enemy</span> for <span class="tt-value">1</span> <span class="tt-duration">second</span>. Deals no damage but creates an opening.
+                    Launch a <span class="tt-spell">Frostbolt</span> that <span class="tt-frost">Freezes</span> the <span class="tt-enemy">Enemy</span> for <span class="tt-value">1</span> <span class="tt-duration">second</span>. <span class="tt-mechanic">Cancels</span> enemy projectiles on contact. Freeze stops <span class="tt-mana">Mana</span> regen and interrupts casting.
                 </div>
             </div>
         </div>
@@ -4702,12 +4704,12 @@
             playerHealthLabel.fontFamily = "'Esthetique', 'Cinzel', serif";
             playerHealthLabel.fontWeight = "700";
             playerHealthLabel.shadowColor = "#000";
-            playerHealthLabel.shadowBlur = 15;
+            playerHealthLabel.shadowBlur = 0;  // Pixel shadow, no blur
             playerHealthLabel.shadowOffsetX = 2;
             playerHealthLabel.shadowOffsetY = 2;
             playerHealthLabel.height = "32px";
             playerHealthLabel.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-            playerHealthLabel.alpha = 0;  // Hidden - using HTML overlay for crisp text
+            playerHealthLabel.alpha = 1;  // Visible - using Babylon GUI for CRT effects
             playerHealthPanel.addControl(playerHealthLabel);
 
             // Health bar background
@@ -4757,12 +4759,12 @@
             aiHealthLabel.fontFamily = "'Esthetique', 'Cinzel', serif";
             aiHealthLabel.fontWeight = "700";
             aiHealthLabel.shadowColor = "#000";
-            aiHealthLabel.shadowBlur = 15;
+            aiHealthLabel.shadowBlur = 0;  // Pixel shadow, no blur
             aiHealthLabel.shadowOffsetX = 2;
             aiHealthLabel.shadowOffsetY = 2;
             aiHealthLabel.height = "32px";
             aiHealthLabel.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
-            aiHealthLabel.alpha = 0;  // Hidden - using HTML overlay for crisp text
+            aiHealthLabel.alpha = 1;  // Visible - using Babylon GUI for CRT effects
             aiHealthPanel.addControl(aiHealthLabel);
 
             // AI Health bar background
@@ -4826,7 +4828,7 @@
             messageText.fontFamily = "'Esthetique', 'Cinzel', serif";
             messageText.fontWeight = "700";
             messageText.shadowColor = "#000";
-            messageText.shadowBlur = 15;
+            messageText.shadowBlur = 0;  // Pixel shadow
             messageText.shadowOffsetX = 3;
             messageText.shadowOffsetY = 3;
             messageText.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
@@ -4941,7 +4943,7 @@
             playerCastLabel.fontFamily = "'Esthetique', 'Cinzel', serif";
             playerCastLabel.fontWeight = "700";
             playerCastLabel.shadowColor = "#000";
-            playerCastLabel.shadowBlur = 10;
+            playerCastLabel.shadowBlur = 0;  // Pixel shadow
             playerCastLabel.shadowOffsetX = 2;
             playerCastLabel.shadowOffsetY = 2;
             playerCastLabel.height = "24px";
@@ -4994,7 +4996,7 @@
             aiCastLabel.fontFamily = "'Esthetique', 'Cinzel', serif";
             aiCastLabel.fontWeight = "700";
             aiCastLabel.shadowColor = "#000";
-            aiCastLabel.shadowBlur = 10;
+            aiCastLabel.shadowBlur = 0;  // Pixel shadow
             aiCastLabel.shadowOffsetX = 2;
             aiCastLabel.shadowOffsetY = 2;
             aiCastLabel.height = "24px";
@@ -5107,7 +5109,7 @@
                 cooldownText.fontFamily = "'Rajdhani', sans-serif";
                 cooldownText.fontWeight = "700";
                 cooldownText.shadowColor = "#000";
-                cooldownText.shadowBlur = 8;
+                cooldownText.shadowBlur = 0;  // Pixel shadow
                 cooldownText.isVisible = false;
                 cooldownText.alpha = 0;  // Hidden - using HTML overlay for crisp text
                 btnBg.addControl(cooldownText);
@@ -5131,7 +5133,7 @@
                 keyText.fontFamily = "'Rajdhani', sans-serif";
                 keyText.fontWeight = "700";
                 keyText.shadowColor = "#000";
-                keyText.shadowBlur = 6;
+                keyText.shadowBlur = 0;  // Pixel shadow
                 keyText.alpha = 0;  // Hidden - using HTML overlay for crisp text
                 keyBadge.addControl(keyText);
 
@@ -5252,7 +5254,7 @@
             parryKeyText.fontFamily = "'Rajdhani', sans-serif";
             parryKeyText.fontWeight = "700";
             parryKeyText.shadowColor = "#000";
-            parryKeyText.shadowBlur = 4;
+            parryKeyText.shadowBlur = 0;  // Pixel shadow
             parryKeyText.alpha = 0;  // Hidden - using HTML overlay for crisp text
             parryKeyBadge.addControl(parryKeyText);
 
@@ -5833,7 +5835,7 @@
             scene.fogEnd = 60;
 
             // === MATERIALS (solid colors for now - add textures later) ===
-            const floorMat = createClassicMaterial("floorMat", "textures/stage2.png", 4, 2, new BABYLON.Color3(0.85, 0.85, 0.85));  // Brighter floor for visible shadows
+            const floorMat = createClassicMaterial("floorMat", "textures/stage2.png", 4, 2, new BABYLON.Color3(0.35, 0.35, 0.38));  // Darker floor for shadow contrast
             const groundMat = createClassicMaterial("groundMat", null, 1, 1, GRAY.ground);
             const wallStoneMat = createClassicMaterial("wallStoneMat", "textures/rail.png", 8, 1, new BABYLON.Color3(0.6, 0.6, 0.6));
             wallStoneMat.emissiveColor = new BABYLON.Color3(0.15, 0.12, 0.1);  // Subtle glow so walls are always visible
@@ -9741,23 +9743,32 @@
                                         // Damage-based resolution
                                         const projDmg = proj.damage !== undefined ? proj.damage : Math.min(2 + proj.volleyCount, 5);
                                         const otherDmg = otherProj.damage !== undefined ? otherProj.damage : Math.min(2 + otherProj.volleyCount, 5);
+                                        const midPos = proj.mesh.position.add(otherProj.mesh.position).scale(0.5);
+
                                         if (projDmg > otherDmg) {
-                                            // This proj wins - destroy other
+                                            // This proj wins - destroy other, continue on path
                                             toDestroy.push(otherProj);
-                                            if (window.createImpactFlash) createImpactFlash(otherProj.mesh.position.clone(), new BABYLON.Color3(1, 0.5, 0.2), 1.0);
+                                            if (window.createImpactFlash) createImpactFlash(otherProj.mesh.position.clone(), new BABYLON.Color3(1, 0.5, 0.2), 1.5);
+                                            if (window.createImpactDecal) createImpactDecal({ x: midPos.x, z: midPos.z }, 'fire');
+                                            playSound('block', midPos.x, 0.8, 0.7);
+                                            // Show CANCEL text at collision point
+                                            if (window.showCombatTextAt) showCombatTextAt(midPos, 'CANCEL', 'cancel');
                                         } else if (otherDmg > projDmg) {
                                             // Other wins - destroy this
                                             toDestroy.push(proj);
-                                            if (window.createImpactFlash) createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(1, 0.5, 0.2), 1.0);
+                                            if (window.createImpactFlash) createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(1, 0.5, 0.2), 1.5);
+                                            if (window.createImpactDecal) createImpactDecal({ x: midPos.x, z: midPos.z }, 'fire');
+                                            playSound('block', midPos.x, 0.8, 0.7);
+                                            if (window.showCombatTextAt) showCombatTextAt(midPos, 'CANCEL', 'cancel');
                                             break;
                                         } else {
                                             // Equal damage - mutual destruction with big explosion
                                             toDestroy.push(proj);
                                             toDestroy.push(otherProj);
-                                            const midPos = proj.mesh.position.add(otherProj.mesh.position).scale(0.5);
-                                            if (window.createImpactFlash) createImpactFlash(midPos, new BABYLON.Color3(1, 0.7, 0.2), 2.5);
+                                            if (window.createImpactFlash) createImpactFlash(midPos, new BABYLON.Color3(1, 0.7, 0.2), 3.0);
                                             if (window.createImpactDecal) createImpactDecal({ x: midPos.x, z: midPos.z }, 'fire');
-                                            playSound('block', midPos.x, 0.9);
+                                            playSound('block', midPos.x, 1.0, 0.5);
+                                            if (window.showCombatTextAt) showCombatTextAt(midPos, 'CANCEL', 'cancel');
                                             break;
                                         }
                                     }
@@ -10334,6 +10345,7 @@
 
                 // Update floating combat text positions
                 if (window.updateCombatText) window.updateCombatText(dt);
+                if (window.updateFloatingTexts) window.updateFloatingTexts(dt);
             });
 
             // Normal render loop - game runs at full 60fps
@@ -10830,7 +10842,7 @@
                         <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">5s CD</span></span>
                     </div>
                     <div class="tooltip-description">
-                        Throw a <span class="tt-spell">Fireball</span> in front of you, dealing <span class="tt-value">1</span> <span class="tt-fire">Fire</span> damage and scaling up to <span class="tt-value">3</span> per <span class="tt-mechanic">Volley</span>.
+                        Throw a <span class="tt-spell">Fireball</span> in front of you, dealing <span class="tt-value">2</span> <span class="tt-fire">Fire</span> damage, scaling up to <span class="tt-value">5</span> with <span class="tt-mechanic">Volleys</span>.
                     </div>
                 `;
             }
@@ -12915,6 +12927,56 @@
             if (combatTextQueue[side].length > 4) {
                 const old = combatTextQueue[side].shift();
                 if (old.el.parentNode) old.el.remove();
+            }
+        };
+
+        // Show combat text at a specific 3D world position (for collisions, etc)
+        const floatingTexts = [];
+        window.showCombatTextAt = (worldPos, text, type = '') => {
+            if (!scene) return;
+            const el = document.createElement('div');
+            el.className = 'combat-text' + (type ? ' ' + type : '');
+            el.textContent = text;
+            el.style.opacity = '1';
+            document.body.appendChild(el);
+
+            floatingTexts.push({
+                el: el,
+                worldPos: worldPos.clone(),
+                age: 0
+            });
+        };
+
+        // Update floating texts at world positions (called from render loop)
+        window.updateFloatingTexts = (dt) => {
+            if (!scene) return;
+            for (let i = floatingTexts.length - 1; i >= 0; i--) {
+                const item = floatingTexts[i];
+                item.age += dt;
+
+                // Remove after 1.5s
+                if (item.age > 1.5) {
+                    if (item.el.parentNode) item.el.remove();
+                    floatingTexts.splice(i, 1);
+                    continue;
+                } else if (item.age > 1.0) {
+                    item.el.style.opacity = String(1 - (item.age - 1.0) / 0.5);
+                }
+
+                // Project to screen
+                const screenPos = BABYLON.Vector3.Project(
+                    new BABYLON.Vector3(item.worldPos.x, item.worldPos.y + item.age * 1.5, item.worldPos.z),
+                    BABYLON.Matrix.Identity(),
+                    scene.getTransformMatrix(),
+                    scene.activeCamera.viewport.toGlobal(
+                        scene.getEngine().getRenderWidth(),
+                        scene.getEngine().getRenderHeight()
+                    )
+                );
+
+                item.el.style.left = Math.floor(screenPos.x) + 'px';
+                item.el.style.top = Math.floor(screenPos.y) + 'px';
+                item.el.style.transform = 'translate(-50%, -50%)';
             }
         };
 
