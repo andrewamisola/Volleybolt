@@ -117,6 +117,55 @@
 
 ---
 
+## Session 34 Priority Tasks
+
+### GUI Migration (Babylon.js GUI)
+| Status | Task | Notes |
+|--------|------|-------|
+| `[ ]` | Move ALL text to Babylon GUI | Enables CRT/letterbox effects on text |
+| `[ ]` | Score display → GUI | Currently HTML |
+| `[ ]` | Skills/ability bar → GUI | Currently HTML |
+| `[ ]` | Victory/defeat text → GUI | Currently HTML |
+| `[ ]` | Headers → GUI | "Your Tower", "Enemy Tower" with wide letter-spacing |
+| `[ ]` | HTML tooltips with letterbox spacing | Account for 3:4 letterbox when positioning |
+
+### Floating Combat Text (3D Space)
+| Status | Task | Notes |
+|--------|------|-------|
+| `[ ]` | Render in 3D space like cast bar | Position above cast bar |
+| `[ ]` | Remove border, use 60% black bar | No white border |
+| `[ ]` | Thicker NES font (bold) | More readable |
+| `[ ]` | Spell names on cast | "FIREBALL", "FROSTBOLT" |
+| `[ ]` | Status ailments | "FROZEN!" etc |
+| `[ ]` | Damage numbers (slightly bigger) | Same 60% black bar style |
+| `[ ]` | Cancel notifications | When projectiles cancel each other |
+| `[ ]` | Queue system | Stack/offset multiple texts |
+
+### Visual Polish
+| Status | Task | Notes |
+|--------|------|-------|
+| `[ ]` | Darken ground floor | Shadows not visible enough |
+| `[ ]` | Text shadows: duplicate only | No blur, pixel shadow offset |
+| `[ ]` | Bold text throughout | |
+| `[ ]` | Wide letter-spacing on headers | Improve readability |
+| `[ ]` | CRT letterbox consistency | Main menu has it, apply everywhere |
+
+### Projectile Collision Enhancement
+| Status | Task | Notes |
+|--------|------|-------|
+| `[ ]` | Fireball vs Fireball | Damage-based: higher wins, continues; lower destroyed |
+| `[ ]` | Explosion + burn mark on cancel | Visual feedback |
+| `[ ]` | "CANCEL" text on collision | Floating combat text |
+| `[ ]` | Frostbolt cancels (already done) | Verify working |
+
+### Tooltip Fixes
+| Status | Task | Notes |
+|--------|------|-------|
+| `[ ]` | Fix fireball tooltip | Says "1-3 damage" but now 2-5 |
+| `[ ]` | Clarify frostbolt cancel mechanics | In tooltip description |
+
+---
+
 ## Pending Work (Talent System)
 
 | Status | Task | Notes |
