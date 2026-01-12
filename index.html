@@ -9878,7 +9878,8 @@
                                             // This proj wins - destroy other, continue on path
                                             toDestroy.push(otherProj);
                                             if (window.createImpactFlash) createImpactFlash(otherProj.mesh.position.clone(), new BABYLON.Color3(1, 0.5, 0.2), 1.5);
-                                            if (window.createImpactDecal) createImpactDecal({ x: midPos.x, z: midPos.z }, 'fire');
+                                            // Directional streak in winning projectile's direction
+                                            if (window.createImpactDecal) createImpactDecal({ x: midPos.x, z: midPos.z }, 'overpower', { x: proj.velX, z: proj.velZ });
                                             playSound('overpowered', midPos.x, 0.8);
                                             // Show Overpowered text when one wins
                                             if (window.showCombatTextAt) showCombatTextAt(midPos, 'Overpowered!', 'cancel');
@@ -9886,7 +9887,8 @@
                                             // Other wins - destroy this
                                             toDestroy.push(proj);
                                             if (window.createImpactFlash) createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(1, 0.5, 0.2), 1.5);
-                                            if (window.createImpactDecal) createImpactDecal({ x: midPos.x, z: midPos.z }, 'fire');
+                                            // Directional streak in winning projectile's direction
+                                            if (window.createImpactDecal) createImpactDecal({ x: midPos.x, z: midPos.z }, 'overpower', { x: otherProj.velX, z: otherProj.velZ });
                                             playSound('overpowered', midPos.x, 0.8);
                                             if (window.showCombatTextAt) showCombatTextAt(midPos, 'Overpowered!', 'cancel');
                                             break;
@@ -10424,19 +10426,45 @@
             const impactDecals = [];
             const maxDecals = 20;
 
-            window.createImpactDecal = (position, type = 'burn') => {
-                const decalSize = 0.5 + Math.random() * 0.5;
-                const decal = BABYLON.MeshBuilder.CreateDisc("decal", {
-                    radius: decalSize,
-                    tessellation: 8
-                }, scene);
-                decal.position.set(position.x, 0.01, position.z);
-                decal.rotation.x = Math.PI / 2;
-                decal.rotation.y = Math.random() * Math.PI * 2;
+            window.createImpactDecal = (position, type = 'burn', direction = null) => {
+                let decal;
+
+                // Overpower: thin pointed oval streak in the direction of the winning projectile
+                if (type === 'overpower' && direction) {
+                    const streakLength = 1.0 + Math.random() * 0.3;
+                    const streakWidth = 0.12 + Math.random() * 0.05;
+                    // Use disc scaled to create pointed oval shape
+                    decal = BABYLON.MeshBuilder.CreateDisc("streakDecal", {
+                        radius: 0.5,
+                        tessellation: 12  // Smooth oval
+                    }, scene);
+                    decal.position.set(position.x, 0.01, position.z);
+                    decal.rotation.x = Math.PI / 2;
+                    // Scale to create thin pointed oval
+                    decal.scaling.x = streakLength;
+                    decal.scaling.z = streakWidth;
+                    // Rotate to match projectile direction
+                    const angle = Math.atan2(direction.z, direction.x);
+                    decal.rotation.y = -angle;
+                } else {
+                    // Regular circular decal for cancel/burn/frost
+                    const decalSize = 0.5 + Math.random() * 0.5;
+                    decal = BABYLON.MeshBuilder.CreateDisc("decal", {
+                        radius: decalSize,
+                        tessellation: 8
+                    }, scene);
+                    decal.position.set(position.x, 0.01, position.z);
+                    decal.rotation.x = Math.PI / 2;
+                    decal.rotation.y = Math.random() * Math.PI * 2;
+                }
 
                 const decalMat = new BABYLON.StandardMaterial("decalMat", scene);
                 decalMat.disableLighting = true;
-                if (type === 'burn' || type === 'fire') {
+                if (type === 'overpower') {
+                    // Dark burnt streak for overpower
+                    decalMat.emissiveColor = new BABYLON.Color3(0.2, 0.08, 0.02);
+                    decalMat.alpha = 0.85;
+                } else if (type === 'burn' || type === 'fire') {
                     // Red/brown burn mark, starting at 70% opacity
                     decalMat.emissiveColor = new BABYLON.Color3(0.35, 0.15, 0.05);
                     decalMat.alpha = 0.7;
