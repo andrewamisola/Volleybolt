@@ -1007,61 +1007,25 @@ export function showLobbyView(viewId) {
 // ============================================================
 // BACKWARD COMPATIBILITY - Expose on window
 // ============================================================
+// NOTE: Many UI functions are STILL DEFINED in index.html and should NOT
+// be overwritten here. The inline versions have proper access to scene,
+// combatants, and other game state.
 
 if (typeof window !== 'undefined') {
-    // Score
-    window.updateScore = updateScore;
+    // Only expose functions NOT defined in index.html
+    // Most UI functions are still inline - do not overwrite them!
 
-    // Messages
-    window.showMessage = showMessage;
-    window.hideMessage = hideMessage;
+    // NOTE: The following are STILL DEFINED in index.html:
+    // - updateScore, showMessage, hideMessage
+    // - updateCooldownUI, updateManaUI, updateAIManaUI, updateManaAvailability
+    // - updateCastBarUI, showCastBar, updateAICastBarUI, showAICastBar
+    // - updateHealthBars, showDamageNumber, updateDamageText
+    // - showCombatText, showCombatTextAt, updateFloatingTexts, updateCombatText
+    // - showFrozenText, showSpellCastText
+    // - updateGravityUI, showKeyPressedFeedback
+    // - showTalentScreen, hideTalentScreen, updateAbilityUI
+    // - showMultiplayerLobby, hideMultiplayerLobby, showLobbyView
 
-    // Cooldowns
-    window.updateCooldownUI = updateCooldownUI;
-
-    // Mana
-    window.updateManaUI = updateManaUI;
-    window.updateAIManaUI = updateAIManaUI;
-    window.updateManaAvailability = updateManaAvailability;
-
-    // Cast bars
-    window.updateCastBarUI = updateCastBarUI;
-    window.showCastBar = showCastBar;
-    window.updateAICastBarUI = updateAICastBarUI;
-    window.showAICastBar = showAICastBar;
-
-    // Health bars
-    window.updateHealthBars = updateHealthBars;
-
-    // Damage numbers
-    window.showDamageNumber = showDamageNumber;
-    window.updateDamageText = updateDamageText;
-
-    // Combat text
-    window.createHTMLCombatText = createHTMLCombatText;
-    window.showCombatText = showCombatText;
-    window.showCombatTextAt = showCombatTextAt;
-    window.updateFloatingTexts = updateFloatingTexts;
-    window.updateCombatText = updateCombatText;
+    // Export only color constants (safe, no function conflicts)
     window.combatTextColors = combatTextColors;
-
-    // Frozen & spell cast text
-    window.showFrozenText = showFrozenText;
-    window.showSpellCastText = showSpellCastText;
-
-    // Gravity UI
-    window.updateGravityUI = updateGravityUI;
-
-    // Key feedback
-    window.showKeyPressedFeedback = showKeyPressedFeedback;
-
-    // Talent screen
-    window.showTalentScreen = showTalentScreen;
-    window.hideTalentScreen = hideTalentScreen;
-    window.updateAbilityUI = updateAbilityUI;
-
-    // Multiplayer lobby
-    window.showMultiplayerLobby = showMultiplayerLobby;
-    window.hideMultiplayerLobby = hideMultiplayerLobby;
-    window.showLobbyView = showLobbyView;
 }

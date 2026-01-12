@@ -430,37 +430,20 @@ export function setDefaultCameraAlpha(alpha) {
 // ============================================================
 // BACKWARD COMPATIBILITY - Expose on window
 // ============================================================
+// NOTE: Many rendering functions are STILL DEFINED in index.html and
+// should NOT be overwritten. Only export constants that don't conflict.
 
 if (typeof window !== 'undefined') {
-    // Palettes
+    // Palettes only - these are safe constants
     window.NES_PALETTE = NES_PALETTE;
     window.GRAYBOX_PALETTE = GRAYBOX_PALETTE;
     window.MCM_PALETTE = MCM_PALETTE;
     window.getNESColors = getNESColors;
     window.getGrayboxColors = getGrayboxColors;
 
-    // Retro resolution
-    window.applyRetroResolution = applyRetroResolution;
-    window.create4to3Handler = create4to3Handler;
-
-    // Screen shake
-    window.initScreenShake = initScreenShake;
-    window.screenShake = screenShake;
-    window.updateScreenShake = updateScreenShake;
-
-    // Impact decals
-    window.createImpactDecal = createImpactDecal;
-    window.updateImpactDecals = updateImpactDecals;
-    window.clearImpactDecals = clearImpactDecals;
-
-    // UI/Animation stepping
-    window.shouldStepUI = shouldStepUI;
-    window.setUIStepping = setUIStepping;
-    window.setPS1Framerate = setPS1Framerate;
-    window.getPS1Settings = getPS1Settings;
-
-    // Camera utilities
-    window.flipCameraForClient = flipCameraForClient;
-    window.resetCameraToDefault = resetCameraToDefault;
-    window.setDefaultCameraAlpha = setDefaultCameraAlpha;
+    // NOTE: The following are STILL DEFINED in index.html:
+    // - screenShake, createImpactDecal (visual effects)
+    // - shouldStepUI, setUIStepping, setPS1Framerate (timing)
+    // - flipCameraForClient, resetCameraToDefault (camera)
+    // Do NOT overwrite them!
 }
