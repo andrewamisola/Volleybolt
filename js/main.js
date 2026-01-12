@@ -1,23 +1,156 @@
 /**
  * Volleybolt - Main Entry Point
  *
- * This file initializes the game and coordinates all modules.
- * ES Modules are used throughout the codebase.
+ * This file imports and verifies all extracted modules.
+ * The game initialization still runs from index.html during the refactor.
+ *
+ * Module Architecture:
+ * - Config modules define game constants and ability data
+ * - Audio module handles Web Audio and Tone.js sound effects
+ * - UI module manages all DOM-based UI updates
+ * - Rendering module provides color palettes and visual effects
+ * - Systems module contains core game mechanics (mana, casting, combatants)
  */
 
-// Babylon.js is loaded via CDN and available as window.BABYLON
-const BABYLON = window.BABYLON;
+// ============================================================
+// MODULE IMPORTS
+// ============================================================
 
-// TODO: Import modules as they are extracted
-// import { GAME_CONFIG, createGameState } from './config/game-state.js';
-// import { AbilityRegistry } from './config/ability-registry.js';
-// import { AudioSystem } from './audio/audio-system.js';
-// import { UISystem } from './ui/ui-system.js';
-// import { SceneSetup } from './rendering/scene-setup.js';
-// import { GameLoop } from './systems/game-loop.js';
+// Config
+import { SCORING, PHYSICS, PARRY, MANA, MOVEMENT, NETCODE } from './config/game-config.js';
+import { AbilityRegistry, getAbility, calculateDamage } from './config/ability-registry.js';
 
-console.log('Volleybolt - Modular Build');
-console.log('Modules will be imported as they are extracted...');
+// Audio
+import {
+    initAudioContext,
+    playSound,
+    loadAllSounds,
+    initToneJS,
+    ToneSFX,
+    IsochronicGenerator
+} from './audio/audio-system.js';
 
-// Temporary: The game code is still in index.html during refactor
-// Once all modules are extracted, this file will orchestrate everything
+// UI
+import {
+    updateScore,
+    showMessage,
+    hideMessage,
+    updateCooldownUI,
+    updateManaUI,
+    updateAIManaUI,
+    updateHealthBars,
+    showDamageNumber,
+    showCombatText,
+    showFrozenText,
+    updateGravityUI,
+    showTalentScreen,
+    hideTalentScreen,
+    showMultiplayerLobby,
+    hideMultiplayerLobby
+} from './ui/ui-system.js';
+
+// Rendering
+import {
+    NES_PALETTE,
+    GRAYBOX_PALETTE,
+    getNESColors,
+    getGrayboxColors,
+    applyRetroResolution,
+    create4to3Handler,
+    screenShake,
+    createImpactDecal,
+    shouldStepUI,
+    setPS1Framerate
+} from './rendering/rendering-utils.js';
+
+// Game Systems
+import {
+    createCombatant,
+    getCombatant,
+    getCombatantLegacy,
+    combatantReset,
+    combatantIsRooted,
+    gainMana,
+    spendMana,
+    startCasting,
+    cancelCasting,
+    applyCastPushback,
+    abilities,
+    isPlayerRooted,
+    isAIRooted
+} from './systems/game-systems.js';
+
+// ============================================================
+// MODULE VERIFICATION
+// ============================================================
+
+console.log('%c=== VOLLEYBOLT MODULAR BUILD ===', 'color: #c9a44a; font-weight: bold; font-size: 14px;');
+console.log('%cModules loaded:', 'color: #58D854;');
+
+// Verify config
+const configLoaded = SCORING && PHYSICS && PARRY && MANA && MOVEMENT && NETCODE && AbilityRegistry;
+console.log(`  - Config: ${configLoaded ? 'OK' : 'MISSING'}`);
+
+// Verify audio
+const audioLoaded = typeof initAudioContext === 'function' && typeof playSound === 'function';
+console.log(`  - Audio: ${audioLoaded ? 'OK' : 'MISSING'}`);
+
+// Verify UI
+const uiLoaded = typeof updateScore === 'function' && typeof showMessage === 'function';
+console.log(`  - UI: ${uiLoaded ? 'OK' : 'MISSING'}`);
+
+// Verify rendering
+const renderingLoaded = NES_PALETTE && typeof screenShake === 'function';
+console.log(`  - Rendering: ${renderingLoaded ? 'OK' : 'MISSING'}`);
+
+// Verify game systems
+const systemsLoaded = typeof createCombatant === 'function' && typeof startCasting === 'function';
+console.log(`  - Game Systems: ${systemsLoaded ? 'OK' : 'MISSING'}`);
+
+// Summary
+const allLoaded = configLoaded && audioLoaded && uiLoaded && renderingLoaded && systemsLoaded;
+if (allLoaded) {
+    console.log('%cAll modules loaded successfully!', 'color: #58D854; font-weight: bold;');
+} else {
+    console.warn('Some modules failed to load. Check console for errors.');
+}
+
+// ============================================================
+// GAME CONFIG SUMMARY
+// ============================================================
+
+console.log('%cGame Config:', 'color: #3CBCFC;');
+console.log(`  - Winning Score: ${SCORING.winningScore}`);
+console.log(`  - Max Tower Health: ${SCORING.maxTowerHealth}`);
+console.log(`  - Max Mana: ${MANA.max}`);
+console.log(`  - Parry Window: ${PARRY.window}s`);
+console.log(`  - Abilities: ${Object.keys(AbilityRegistry).join(', ')}`);
+
+// ============================================================
+// EXPORTS (for potential future use)
+// ============================================================
+
+export {
+    // Config
+    SCORING, PHYSICS, PARRY, MANA, MOVEMENT, NETCODE,
+    AbilityRegistry, getAbility, calculateDamage,
+
+    // Audio
+    initAudioContext, playSound, loadAllSounds, initToneJS, ToneSFX, IsochronicGenerator,
+
+    // UI
+    updateScore, showMessage, hideMessage, updateCooldownUI, updateManaUI,
+    updateAIManaUI, updateHealthBars, showDamageNumber, showCombatText,
+    showFrozenText, updateGravityUI, showTalentScreen, hideTalentScreen,
+    showMultiplayerLobby, hideMultiplayerLobby,
+
+    // Rendering
+    NES_PALETTE, GRAYBOX_PALETTE, getNESColors, getGrayboxColors,
+    applyRetroResolution, create4to3Handler, screenShake, createImpactDecal,
+    shouldStepUI, setPS1Framerate,
+
+    // Game Systems
+    createCombatant, getCombatant, getCombatantLegacy, combatantReset,
+    combatantIsRooted, gainMana, spendMana, startCasting, cancelCasting,
+    applyCastPushback, abilities, isPlayerRooted, isAIRooted
+};
