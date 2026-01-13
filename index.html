@@ -16,6 +16,17 @@
     <!-- Hidden font loader - ensures Esthetique is loaded -->
     <div style="font-family: 'Esthetique'; position: absolute; left: -9999px;">.</div>
 
+    <!-- SVG Filters for retro effects -->
+    <svg style="display:none">
+        <filter id="posterize">
+            <feComponentTransfer>
+                <feFuncR type="discrete" tableValues="0 0.2 0.4 0.6 0.8 1"/>
+                <feFuncG type="discrete" tableValues="0 0.2 0.4 0.6 0.8 1"/>
+                <feFuncB type="discrete" tableValues="0 0.2 0.4 0.6 0.8 1"/>
+            </feComponentTransfer>
+        </filter>
+    </svg>
+
     <div id="loadingScreen">
         <div id="loadingTitle">VOLLEYBOLT</div>
         <div id="loadingBarContainer">
@@ -109,6 +120,11 @@
     <div id="ui" style="display: none;"><span id="playerScore">0</span> - <span id="aiScore">0</span></div>
     <div id="message" style="display: none;">Ready</div>
     <div id="instructions" style="display: none;">W/S to move</div>
+    <!-- Stage Transition Overlay -->
+    <div id="stageTransitionOverlay">
+        <div id="stageTransitionText"></div>
+    </div>
+
     <div id="volumeControl">
         <span id="volumeIcon">🔊</span>
         <input type="range" id="volumeSlider" min="0" max="100" value="50">
@@ -341,6 +357,21 @@
         const winningScore = 5;
         let gameOver = false;
         let waitingToServe = true;
+
+        // Stage/Tug-of-War state
+        // Stages: 0=Player Core, 1=Player Area, 2=Midfield, 3=AI Area, 4=AI Core
+        let currentStage = 2;  // Start at midfield
+        let stageResults = [null, null, null, null, null];  // null=未played, 'player'=won, 'ai'=lost
+
+        // MOBA-style persistent gate health - damage carries over when returning to a stage
+        let playerGateHealthByStage = [20, 20, 20, 20, 20];  // Your gate health at each stage
+        let aiGateHealthByStage = [20, 20, 20, 20, 20];      // Enemy gate health at each stage
+
+        // Gate regeneration system - ALL gates regen 25% per round away from stage
+        let totalRoundsPlayed = 0;
+        let lastRoundAtStage = [0, 0, 0, 0, 0];  // When we last played at each stage
+        const GATE_REGEN_PER_ROUND = 0.25;  // 25% of max health per round away
+
         let ball, playerPaddle, aiPaddle;
         // Towers replaced by brick gates
         const initialBallSpeed = 12;
@@ -360,6 +391,16 @@
         const bounceRetention = 0;      // No repeat bounces - one and done
         const tableY = 0.6;             // Fireball floats above table
         const maxBounceVel = 7;         // Bigger pop - arcs over midline
+
+        // Fixed timestep constants (60Hz simulation, uncapped render)
+        const FIXED_DT = 1 / 60;        // 16.67ms fixed simulation step
+        const FIXED_DT_MS = 1000 / 60;
+        const MAX_STEPS_PER_FRAME = 5;  // Spiral-of-death guard
+        const MAX_FRAME_TIME = 0.1;     // Cap renderDt to 100ms
+        let gameAccumulator = 0;
+
+        // Distance-based trail sampling (FPS-independent trails)
+        const TRAIL_SAMPLE_SPACING = 0.2;  // Distance between trail samples
 
         // Parry state
         let isParried = false;
@@ -420,8 +461,26 @@
         let isResimulating = false;
 
         // Mana system
-        const maxMana = 3;
+        const baseMana = 3;
         const manaRegenTime = 3;  // seconds per 0.5 mana (discrete ticks)
+
+        // Territorial mana advantage - defender gets more mana
+        // Stage 0=Your Core, 1=Your Territory, 2=Midfield, 3=Enemy Territory, 4=Enemy Core
+        function getMaxMana(side) {
+            // Player (left) defends stages 0-1, AI (right) defends stages 3-4
+            if (side === 'left' || side === 'player') {
+                if (currentStage === 0) return 5;  // Player's core - max defense
+                if (currentStage === 1) return 4;  // Player's territory
+                return 3;  // Midfield or enemy territory
+            } else {
+                if (currentStage === 4) return 5;  // AI's core - max defense
+                if (currentStage === 3) return 4;  // AI's territory
+                return 3;  // Midfield or player territory
+            }
+        }
+
+        // Legacy compatibility
+        const maxMana = 3;  // Base value, use getMaxMana(side) for territorial
         // LEGACY - sync only, read from combatants.left/right.mana/manaRegen
         let playerMana = 0;
         let aiMana = 0;
@@ -528,6 +587,7 @@
             const ui = getCombatantUIElements(combatant);
             const pendingCost = combatant.pendingManaCost || 0;
             const isCasting = combatant.casting && pendingCost > 0;
+            const cMaxMana = getMaxMana(combatant.side);
 
             // Calculate which mana segments will be "spent" when cast completes
             const manaAfterCast = Math.max(0, combatant.mana - pendingCost);
@@ -536,7 +596,7 @@
             const fullMana = Math.floor(combatant.mana);
             const fractionalMana = combatant.mana - fullMana;
 
-            for (let i = 1; i <= maxMana; i++) {
+            for (let i = 1; i <= cMaxMana; i++) {
                 const segment = document.getElementById(ui.manaPrefix + i);
                 if (!segment) continue;
 
@@ -551,7 +611,7 @@
                     if (isCasting && i > manaAfterCast) {
                         isPendingSpend = true;
                     }
-                } else if (i === fullMana + 1 && combatant.mana < maxMana) {
+                } else if (i === fullMana + 1 && combatant.mana < cMaxMana) {
                     // Filling segment - discrete display based on fractional mana only
                     // No smooth animation - just show 0%, 50%, or 100% based on fractional part
                     fillPercent = fractionalMana * 100;
@@ -562,22 +622,23 @@
                     segment.value = 0;
                 }
 
-                // Update Babylon.js GUI mana segments
+                // Update Babylon.js GUI mana segments (orbs - half/full states)
                 if (window.guiElements) {
                     const guiSegments = combatant.isLocalPlayer
                         ? window.guiElements.playerManaSegments
                         : window.guiElements.aiManaSegments;
                     if (guiSegments && guiSegments[i - 1]) {
                         const guiSeg = guiSegments[i - 1];
-                        guiSeg.width = fillPercent + "%";
-
-                        // Flash/pulse segments that will be spent (mana preview)
-                        if (isPendingSpend) {
-                            // Pulsing effect - use time-based alpha
-                            const pulse = 0.4 + Math.sin(Date.now() * 0.008) * 0.3;
-                            guiSeg.alpha = pulse;
+                        // Show half circle for partial, full circle for complete
+                        if (fillPercent >= 100) {
+                            guiSeg.half.isVisible = false;
+                            guiSeg.full.isVisible = true;
+                        } else if (fillPercent > 0) {
+                            guiSeg.half.isVisible = true;
+                            guiSeg.full.isVisible = false;
                         } else {
-                            guiSeg.alpha = 1.0;
+                            guiSeg.half.isVisible = false;
+                            guiSeg.full.isVisible = false;
                         }
                     }
                 }
@@ -1959,8 +2020,14 @@
 
         // Update position of a looping sound
         function updateSoundPan(loopData, x) {
-            if (loopData && loopData.panner) {
+            if (!loopData) return;
+            // Web Audio API style (old)
+            if (loopData.panner) {
                 loopData.panner.pan.value = xToPan(x);
+            }
+            // Tone.js style (new fire roar)
+            if (loopData.setPan) {
+                loopData.setPan(xToPan(x));
             }
         }
 
@@ -1978,9 +2045,17 @@
 
         // Stop and dispose a looping sound
         function stopLoopingSound(loopData) {
-            if (loopData && loopData.source) {
+            if (!loopData) return;
+            // Web Audio API style (old)
+            if (loopData.source) {
                 try {
                     loopData.source.stop();
+                } catch (e) {}
+            }
+            // Tone.js style (new fire roar)
+            if (loopData.stop) {
+                try {
+                    loopData.stop();
                 } catch (e) {}
             }
         }
@@ -2065,10 +2140,19 @@
         };
 
         async function initToneJS() {
-            if (toneStarted) return;
-            await Tone.start();
-            toneStarted = true;
-            console.log("Tone.js sound therapy system started");
+            console.log("initToneJS called, toneStarted:", toneStarted);
+            if (toneStarted) {
+                console.log("initToneJS early return - already started");
+                return;
+            }
+            try {
+                await Tone.start();
+                toneStarted = true;
+                console.log("Tone.js sound therapy system started");
+            } catch (e) {
+                console.error("Tone.start() error:", e);
+                throw e;
+            }
 
             // Stereo panner for therapy sounds (controlled by X position)
             therapyPanner = new Tone.Panner(0).toDestination();
@@ -2237,11 +2321,16 @@
                 loopEnd: 0,  // 0 = loop entire file
                 fadeIn: 0.5,
                 fadeOut: 0.5,
-                onload: () => console.log("Music loaded successfully")
+                onload: () => {
+                    console.log("Music loaded successfully");
+                    synths.musicLoaded = true;
+                }
             }).connect(musicBitCrusher);
             synths.music.volume.value = -12;  // Lower volume
+            synths.musicLoaded = false;
 
             console.log("Sound therapy + 8-bit samples + music initialized");
+            console.log("synths keys at end of initToneJS:", Object.keys(synths));
         }
 
         // ============================================================
@@ -2325,6 +2414,104 @@
                     synths.samples[name].stop();  // Stop if already playing
                 } catch(e) {}
                 synths.samples[name].start();
+            }
+        }
+
+        // ========================================
+        // ROARING FIRE SOUND - Tone.js synthesized
+        // ========================================
+        function createFireRoarSound(pan = 0) {
+            // DISABLED - fire crackling was causing audio loop issues
+            return null;
+            if (!toneStarted) return null;
+
+            try {
+                // Make sure transport is running for the crackle loop
+                if (Tone.Transport.state !== "started") {
+                    Tone.Transport.start();
+                }
+                // Master output for this fire sound - subtle like pre-cast
+                const masterGain = new Tone.Gain(0.15).toDestination();
+
+                // Panner for stereo positioning
+                const panner = new Tone.Panner(pan).connect(masterGain);
+
+                // BitCrusher for 8-bit crunch
+                const crusher = new Tone.BitCrusher({
+                    bits: 4,
+                    wet: 1
+                }).connect(panner);
+
+                // The body (the roar) - brown noise
+                const fireBody = new Tone.Noise("brown");
+                fireBody.volume.value = -15;  // Subtle
+
+                // Low-pass filter for the rumble
+                const fireFilter = new Tone.Filter({
+                    type: "lowpass",
+                    frequency: 450,
+                    rolloff: -12
+                }).connect(crusher);
+
+                fireBody.connect(fireFilter);
+                fireBody.start();
+
+                // The crackle (subtle pops)
+                const crackleSynth = new Tone.NoiseSynth({
+                    noise: { type: "white" },
+                    envelope: {
+                        attack: 0.005,
+                        decay: 0.1,
+                        sustain: 0
+                    }
+                }).connect(crusher);
+                crackleSynth.volume.value = -18;  // Very subtle
+
+                // Crackle loop
+                const crackleLoop = new Tone.Loop(time => {
+                    if (Math.random() < 0.15) {
+                        let randomVel = Math.random() * 0.3 + 0.1;
+                        crackleSynth.triggerAttackRelease("16n", time, randomVel);
+                    }
+                }, "8n");
+                crackleLoop.start(0);
+
+                // Track if already stopped to prevent double-cleanup
+                let stopped = false;
+
+                // Return object with stop method
+                return {
+                    stop: () => {
+                        if (stopped) return;  // Prevent double-cleanup
+                        stopped = true;
+                        try {
+                            // IMPORTANT: Stop loop first, then cancel any scheduled events
+                            crackleLoop.stop();
+                            crackleLoop.cancel();  // Cancel any pending scheduled events
+                            crackleLoop.dispose();
+
+                            // Stop and dispose the noise
+                            fireBody.stop();
+                            fireBody.dispose();
+
+                            // Dispose synths and effects
+                            crackleSynth.dispose();
+                            fireFilter.dispose();
+                            crusher.dispose();
+                            panner.dispose();
+                            masterGain.dispose();
+                        } catch(e) {
+                            console.log("Fire roar cleanup error:", e);
+                        }
+                    },
+                    setPan: (p) => {
+                        if (stopped) return;
+                        panner.pan.value = Math.max(-1, Math.min(1, p));
+                    }
+                };
+            } catch(e) {
+                console.log("Could not create fire roar:", e);
+                return null;
             }
         }
 
@@ -2513,13 +2700,46 @@
 
             // Game state: active gameplay - music only (isochronic tones disabled)
             gameplayStart: async () => {
-                if (!toneStarted) await initToneJS();
+                console.log("gameplayStart called, toneStarted:", toneStarted);
+                if (!toneStarted) {
+                    try {
+                        await initToneJS();
+                        console.log("initToneJS completed successfully");
+                    } catch (e) {
+                        console.error("initToneJS error:", e);
+                    }
+                }
+                console.log("After initToneJS, synths keys:", Object.keys(synths));
                 // Wait for all audio to be loaded
                 await Tone.loaded();
-                // Start background music
-                if (synths.music && synths.music.state !== 'started') {
-                    synths.music.start();
-                    console.log("Music started");
+                // Start background music (check if loaded via our flag)
+                console.log("synths.music:", synths.music, "synths.musicLoaded:", synths.musicLoaded);
+                if (synths.music) {
+                    // Wait for music to be loaded if it isn't yet
+                    if (!synths.musicLoaded) {
+                        console.log("Waiting for music to load...");
+                        await new Promise(resolve => {
+                            const checkLoaded = () => {
+                                if (synths.musicLoaded) {
+                                    resolve();
+                                } else {
+                                    setTimeout(checkLoaded, 100);
+                                }
+                            };
+                            checkLoaded();
+                        });
+                    }
+                    console.log("Music loaded, attempting to start. State:", synths.music.state);
+                    if (synths.music.state !== 'started') {
+                        try {
+                            synths.music.start();
+                            console.log("Music started successfully");
+                        } catch (e) {
+                            console.error("Music start error:", e);
+                        }
+                    }
+                } else {
+                    console.log("synths.music is null/undefined");
                 }
             },
 
@@ -2548,8 +2768,19 @@
             // Music controls
             musicStart: async () => {
                 if (!toneStarted) await initToneJS();
-                if (synths.music && synths.music.state !== 'started') {
-                    synths.music.start();
+                if (synths.music) {
+                    if (!synths.musicLoaded) {
+                        await new Promise(resolve => {
+                            const checkLoaded = () => {
+                                if (synths.musicLoaded) resolve();
+                                else setTimeout(checkLoaded, 100);
+                            };
+                            checkLoaded();
+                        });
+                    }
+                    if (synths.music.state !== 'started') {
+                        synths.music.start();
+                    }
                 }
             },
 
@@ -2665,6 +2896,14 @@
 
             // Any action starts the round when waiting
             const talentVisible = document.getElementById('talentScreen').classList.contains('visible');
+
+            // Game over - return to menu on any key
+            if (gameOver && !roundTransitioning && !talentVisible) {
+                resetGame();
+                showTalentScreen();
+                return;
+            }
+
             if (waitingToServe && !gameOver && !talentVisible && !roundTransitioning) {
                 resetRound();  // Reset gates/health first
                 startRound();
@@ -2684,11 +2923,11 @@
             // Fireball ability - key 1 (cast time ability)
             // Use combatant state for cooldowns and mana checks
             const leftCombatant = combatants.left;
-            if (e.code === 'Digit1' && !gameOver && roundActive && !leftCombatant.casting && leftCombatant.cooldowns.fireball <= 0 && leftCombatant.mana >= abilities.fireball.manaCost) {
+            if (e.code === 'Digit1' && !gameOver && roundActive && !roundTransitioning && !leftCombatant.casting && leftCombatant.cooldowns.fireball <= 0 && leftCombatant.mana >= abilities.fireball.manaCost) {
                 startCasting('player', 'fireball');
             }
             // Frostbolt ability - key 2
-            if (e.code === 'Digit2' && !gameOver && roundActive && leftCombatant.cooldowns.frostbolt <= 0 && leftCombatant.mana >= abilities.frostbolt.manaCost) {
+            if (e.code === 'Digit2' && !gameOver && roundActive && !roundTransitioning && leftCombatant.cooldowns.frostbolt <= 0 && leftCombatant.mana >= abilities.frostbolt.manaCost) {
                 castFrostbolt('player');
             }
             // Gravity ability - key 3 (COMMENTED OUT FOR REWORK)
@@ -2759,8 +2998,16 @@
             resize4to3();
             window.addEventListener('resize', resize4to3);
 
-            const engine = new BABYLON.Engine(canvas, true);
+            const engine = new BABYLON.Engine(canvas, true, {
+                preserveDrawingBuffer: false,
+                stencil: true,
+                disableWebGL2Support: false,
+                doNotHandleContextLost: true
+            });
             window.gameEngine = engine;  // Store globally for menu control
+
+            engine.setDitheringState(false);
+            console.log("FPS capped at 60 inside render loop for consistent gameplay");
 
             // ============================================================
             // D2-STYLE RETRO RESOLUTION - Fixed internal res, upscaled crisp
@@ -2951,16 +3198,22 @@
             playerHealthLabel.alpha = 1;  // Visible - using Babylon GUI for CRT effects
             playerHealthPanel.addControl(playerHealthLabel);
 
+            // Health bar row (bar + percentage on right)
+            const playerHealthRow = new BABYLON.GUI.StackPanel();
+            playerHealthRow.isVertical = false;
+            playerHealthRow.height = "30px";
+            playerHealthRow.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+            playerHealthPanel.addControl(playerHealthRow);
+
             // Health bar background
             const playerHealthBg = new BABYLON.GUI.Rectangle();
-            playerHealthBg.width = "300px";
+            playerHealthBg.width = "240px";
             playerHealthBg.height = "24px";
             playerHealthBg.background = "#1a1a1a";
             playerHealthBg.color = "#333";
             playerHealthBg.thickness = 3;
             playerHealthBg.cornerRadius = 2;
-            playerHealthBg.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-            playerHealthPanel.addControl(playerHealthBg);
+            playerHealthRow.addControl(playerHealthBg);
 
             // Health bar fill
             const playerHealthFill = new BABYLON.GUI.Rectangle();
@@ -2980,6 +3233,19 @@
             playerHealthTexture.stretch = BABYLON.GUI.Image.STRETCH_FILL;
             playerHealthTexture.alpha = 0.2;
             playerHealthFill.addControl(playerHealthTexture);
+
+            // Health percentage text (right of bar) - NES style
+            const playerHealthPercent = new BABYLON.GUI.TextBlock();
+            playerHealthPercent.text = "100%";
+            playerHealthPercent.color = "#209cee";
+            playerHealthPercent.fontSize = 18;
+            playerHealthPercent.fontFamily = "'Press Start 2P', monospace";
+            playerHealthPercent.width = "100px";
+            playerHealthPercent.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+            playerHealthPercent.paddingLeft = "8px";
+            playerHealthPercent.top = "3px";
+            playerHealthRow.addControl(playerHealthPercent);
+            window.guiElements.playerHealthPercent = playerHealthPercent;
 
             // AI health bar (top-right corner)
             const aiHealthPanel = new BABYLON.GUI.StackPanel();
@@ -3006,16 +3272,35 @@
             aiHealthLabel.alpha = 1;  // Visible - using Babylon GUI for CRT effects
             aiHealthPanel.addControl(aiHealthLabel);
 
+            // AI Health bar row (percentage on left + bar)
+            const aiHealthRow = new BABYLON.GUI.StackPanel();
+            aiHealthRow.isVertical = false;
+            aiHealthRow.height = "30px";
+            aiHealthRow.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
+            aiHealthPanel.addControl(aiHealthRow);
+
+            // AI Health percentage text (left of bar) - NES style
+            const aiHealthPercent = new BABYLON.GUI.TextBlock();
+            aiHealthPercent.text = "100%";
+            aiHealthPercent.color = "#e76e55";
+            aiHealthPercent.fontSize = 18;
+            aiHealthPercent.fontFamily = "'Press Start 2P', monospace";
+            aiHealthPercent.width = "100px";
+            aiHealthPercent.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
+            aiHealthPercent.paddingRight = "8px";
+            aiHealthPercent.top = "3px";
+            aiHealthRow.addControl(aiHealthPercent);
+            window.guiElements.aiHealthPercent = aiHealthPercent;
+
             // AI Health bar background
             const aiHealthBg = new BABYLON.GUI.Rectangle();
-            aiHealthBg.width = "300px";
+            aiHealthBg.width = "240px";
             aiHealthBg.height = "24px";
             aiHealthBg.background = "#1a1a1a";
             aiHealthBg.color = "#333";
             aiHealthBg.thickness = 3;
             aiHealthBg.cornerRadius = 2;
-            aiHealthBg.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
-            aiHealthPanel.addControl(aiHealthBg);
+            aiHealthRow.addControl(aiHealthBg);
 
             // AI Health bar fill
             const aiHealthFill = new BABYLON.GUI.Rectangle();
@@ -3059,6 +3344,150 @@
             scorePanel.addControl(scoreText);
             window.guiElements.scoreText = scoreText;
 
+            // --- STAGE INDICATOR (Tug-of-War progress) ---
+            // Use Grid for precise centering
+            const stageGrid = new BABYLON.GUI.Grid();
+            stageGrid.width = "200px";
+            stageGrid.height = "28px";
+            stageGrid.top = "80px";
+            stageGrid.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
+            stageGrid.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+            // 5 equal columns
+            stageGrid.addColumnDefinition(1);
+            stageGrid.addColumnDefinition(1);
+            stageGrid.addColumnDefinition(1);
+            stageGrid.addColumnDefinition(1);
+            stageGrid.addColumnDefinition(1);
+            stageGrid.addRowDefinition(1);
+            guiTexture.addControl(stageGrid);
+
+            // Stage names for messages
+            const stageNames = ["Your Core", "Your Territory", "Midfield", "Enemy Territory", "Enemy Core"];
+
+            window.guiElements.stageSegments = [];
+            window.stageNames = stageNames;
+            for (let i = 0; i < 5; i++) {
+                const stageBg = new BABYLON.GUI.Rectangle();
+                stageBg.width = "34px";
+                stageBg.height = "24px";
+                stageBg.background = "#1a1a1a";
+                stageBg.color = "#333";
+                stageBg.thickness = 2;
+                stageGrid.addControl(stageBg, 0, i);
+
+                // Fill rectangle (shows current/won/lost state)
+                const stageFill = new BABYLON.GUI.Rectangle();
+                stageFill.width = "100%";
+                stageFill.height = "100%";
+                stageFill.background = i === currentStage ? "#c9a44a" : "#2a2a2a";
+                stageFill.color = "transparent";
+                stageFill.thickness = 0;
+                stageBg.addControl(stageFill);
+
+                window.guiElements.stageSegments.push({ bg: stageBg, fill: stageFill });
+            }
+
+            // Stage name text below progress bar (stageGrid ends at ~108px)
+            const stageNameText = new BABYLON.GUI.TextBlock();
+            stageNameText.text = stageNames[currentStage].toUpperCase();
+            stageNameText.color = "#c9a44a";  // Gold to match current stage
+            stageNameText.fontSize = "10px";
+            stageNameText.fontFamily = "'Press Start 2P', 'Courier New', monospace";
+            stageNameText.top = "120px";
+            stageNameText.height = "24px";
+            stageNameText.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
+            stageNameText.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+            stageNameText.shadowColor = "#000";
+            stageNameText.shadowOffsetX = 2;
+            stageNameText.shadowOffsetY = 2;
+            guiTexture.addControl(stageNameText);
+            window.guiElements.stageNameText = stageNameText;
+
+            // Update stage indicator function
+            window.updateStageIndicator = function() {
+                if (!window.guiElements || !window.guiElements.stageSegments) return;
+                for (let i = 0; i < 5; i++) {
+                    const seg = window.guiElements.stageSegments[i];
+                    const result = stageResults[i];
+
+                    // Current stage ALWAYS takes priority (yellow) - so player knows where they are
+                    if (i === currentStage) {
+                        // Current stage - bright gold
+                        seg.fill.background = "#c9a44a";
+                        seg.bg.color = "#f0c050";
+                    } else if (result === 'player') {
+                        // Player won this stage - blue/green
+                        seg.fill.background = "#209cee";
+                        seg.bg.color = "#3cb0f3";
+                    } else if (result === 'ai') {
+                        // AI won this stage - red
+                        seg.fill.background = "#e74c3c";
+                        seg.bg.color = "#ff6b5b";
+                    } else {
+                        // Future/unplayed - dim
+                        seg.fill.background = "#2a2a2a";
+                        seg.bg.color = "#333";
+                    }
+                }
+
+                // Update stage name text
+                if (window.guiElements.stageNameText && window.stageNames) {
+                    window.guiElements.stageNameText.text = window.stageNames[currentStage].toUpperCase();
+                }
+            };
+
+            // Update mana bar visibility based on territorial advantage
+            window.updateManaBarVisibility = function() {
+                if (!window.guiElements) return;
+
+                const playerMax = getMaxMana('player');
+                const aiMax = getMaxMana('ai');
+
+                // Update player mana segments visibility
+                if (window.guiElements.playerManaWrappers) {
+                    for (let i = 0; i < 5; i++) {
+                        window.guiElements.playerManaWrappers[i].isVisible = i < playerMax;
+                    }
+                }
+
+                // Update AI mana segments visibility
+                if (window.guiElements.aiManaWrappers) {
+                    for (let i = 0; i < 5; i++) {
+                        window.guiElements.aiManaWrappers[i].isVisible = i < aiMax;
+                    }
+                }
+            };
+
+            // --- TRANSITION FADE OVERLAY (fullscreen black for stage transitions) ---
+            const transitionOverlay = new BABYLON.GUI.Rectangle();
+            transitionOverlay.width = "100%";
+            transitionOverlay.height = "100%";
+            transitionOverlay.background = "#000000";
+            transitionOverlay.color = "transparent";
+            transitionOverlay.thickness = 0;
+            transitionOverlay.alpha = 0;  // Start invisible
+            transitionOverlay.zIndex = 100;  // Above scene, below transition text
+            guiTexture.addControl(transitionOverlay);
+            window.guiElements.transitionOverlay = transitionOverlay;
+
+            // --- TRANSITION TEXT (stage name during transitions) ---
+            const transitionText = new BABYLON.GUI.TextBlock();
+            transitionText.text = "";
+            transitionText.color = "#f0c050";
+            transitionText.fontSize = 42;
+            transitionText.fontFamily = "'Esthetique', 'Cinzel', serif";
+            transitionText.fontWeight = "700";
+            transitionText.shadowColor = "#000";
+            transitionText.shadowBlur = 0;
+            transitionText.shadowOffsetX = 3;
+            transitionText.shadowOffsetY = 3;
+            transitionText.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
+            transitionText.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
+            transitionText.alpha = 0;  // Start invisible
+            transitionText.zIndex = 101;  // Above overlay
+            guiTexture.addControl(transitionText);
+            window.guiElements.transitionText = transitionText;
+
             // --- CENTER MESSAGE ---
             const messageText = new BABYLON.GUI.TextBlock();
             messageText.text = "";
@@ -3072,7 +3501,8 @@
             messageText.shadowOffsetY = 3;
             messageText.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
             messageText.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
-            messageText.alpha = 0;  // Hidden - using HTML overlay for crisp text
+            messageText.alpha = 0;
+            messageText.zIndex = 50;  // Below transition elements
             guiTexture.addControl(messageText);
             window.guiElements.messageText = messageText;
 
@@ -3098,7 +3528,7 @@
             // Player mana bar (below player health bar)
             const playerManaContainer = new BABYLON.GUI.StackPanel();
             playerManaContainer.isVertical = false;
-            playerManaContainer.height = "24px";
+            playerManaContainer.height = "28px";
             playerManaContainer.width = "180px";
             playerManaContainer.left = "20px";
             playerManaContainer.top = "85px";  // Below health bar (20 + 60 + 5)
@@ -3107,41 +3537,74 @@
             guiTexture.addControl(playerManaContainer);
 
             window.guiElements.playerManaSegments = [];
-            for (let i = 0; i < 3; i++) {
-                const manaBg = new BABYLON.GUI.Rectangle();
-                manaBg.width = "54px";
-                manaBg.height = "20px";
+            window.guiElements.playerManaBgs = [];  // Store backgrounds for visibility control
+            window.guiElements.playerManaWrappers = [];  // Store wrappers for visibility control
+            for (let i = 0; i < 5; i++) {
+                // Wrapper container for spacing
+                const manaWrapper = new BABYLON.GUI.Rectangle();
+                manaWrapper.width = "28px";
+                manaWrapper.height = "28px";
+                manaWrapper.thickness = 0;
+                manaWrapper.background = "transparent";
+                manaWrapper.isVisible = i < 3;  // Only show base 3 initially
+                playerManaContainer.addControl(manaWrapper);
+
+                // Background ellipse (dark circle)
+                const manaBg = new BABYLON.GUI.Ellipse();
+                manaBg.width = "22px";
+                manaBg.height = "22px";
                 manaBg.background = "#1a1a1a";
                 manaBg.color = "#333";
                 manaBg.thickness = 2;
-                manaBg.paddingLeft = "2px";
-                manaBg.paddingRight = "2px";
-                playerManaContainer.addControl(manaBg);
+                manaWrapper.addControl(manaBg);
 
-                const manaFill = new BABYLON.GUI.Rectangle();
-                manaFill.width = "0%";
-                manaFill.height = "100%";
-                manaFill.background = "#209cee";
-                manaFill.color = "transparent";
-                manaFill.thickness = 0;
-                manaFill.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+                // Half circle (bottom half) - shown at 1-99%
+                const manaHalf = new BABYLON.GUI.Ellipse();
+                manaHalf.width = "18px";
+                manaHalf.height = "9px";  // Half height = half circle
+                manaHalf.background = "#209cee";
+                manaHalf.color = "transparent";
+                manaHalf.thickness = 0;
+                manaHalf.top = "4px";  // Position in bottom half
+                manaHalf.isVisible = false;
+                manaBg.addControl(manaHalf);
 
-                // Mana texture overlay
-                const manaTexture = new BABYLON.GUI.Image("playerManaTex" + i, "textures/mana_texture.png");
-                manaTexture.width = "100%";
-                manaTexture.height = "100%";
-                manaTexture.stretch = BABYLON.GUI.Image.STRETCH_FILL;
-                manaTexture.alpha = 0.2;
-                manaFill.addControl(manaTexture);
-                manaBg.addControl(manaFill);
-                window.guiElements.playerManaSegments.push(manaFill);
+                // Texture for half
+                const manaHalfTex = new BABYLON.GUI.Image("playerManaHalfTex" + i, "textures/mana_texture.png");
+                manaHalfTex.width = "100%";
+                manaHalfTex.height = "100%";
+                manaHalfTex.stretch = BABYLON.GUI.Image.STRETCH_FILL;
+                manaHalfTex.alpha = 0.15;
+                manaHalf.addControl(manaHalfTex);
+
+                // Full circle - shown at 100%
+                const manaFull = new BABYLON.GUI.Ellipse();
+                manaFull.width = "18px";
+                manaFull.height = "18px";
+                manaFull.background = "#209cee";
+                manaFull.color = "transparent";
+                manaFull.thickness = 0;
+                manaFull.isVisible = false;
+                manaBg.addControl(manaFull);
+
+                // Texture for full
+                const manaFullTex = new BABYLON.GUI.Image("playerManaFullTex" + i, "textures/mana_texture.png");
+                manaFullTex.width = "100%";
+                manaFullTex.height = "100%";
+                manaFullTex.stretch = BABYLON.GUI.Image.STRETCH_FILL;
+                manaFullTex.alpha = 0.15;
+                manaFull.addControl(manaFullTex);
+
+                window.guiElements.playerManaSegments.push({ half: manaHalf, full: manaFull });
+                window.guiElements.playerManaBgs.push(manaBg);
+                window.guiElements.playerManaWrappers.push(manaWrapper);
             }
 
             // AI mana bar (below AI health bar)
             const aiManaContainer = new BABYLON.GUI.StackPanel();
             aiManaContainer.isVertical = false;
-            aiManaContainer.height = "24px";
-            aiManaContainer.width = "180px";
+            aiManaContainer.height = "28px";
+            aiManaContainer.adaptWidthToChildren = true;  // Shrink to fit segments
             aiManaContainer.left = "-20px";
             aiManaContainer.top = "85px";  // Below health bar
             aiManaContainer.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -3149,35 +3612,67 @@
             guiTexture.addControl(aiManaContainer);
 
             window.guiElements.aiManaSegments = [];
-            for (let i = 0; i < 3; i++) {
-                const manaBg = new BABYLON.GUI.Rectangle();
-                manaBg.width = "54px";
-                manaBg.height = "20px";
+            window.guiElements.aiManaBgs = [];  // Store backgrounds for visibility control
+            window.guiElements.aiManaWrappers = [];  // Store wrappers for visibility control
+            for (let i = 0; i < 5; i++) {
+                // Wrapper container for spacing
+                const manaWrapper = new BABYLON.GUI.Rectangle();
+                manaWrapper.width = "28px";
+                manaWrapper.height = "28px";
+                manaWrapper.thickness = 0;
+                manaWrapper.background = "transparent";
+                manaWrapper.isVisible = i < 3;  // Only show base 3 initially
+                aiManaContainer.addControl(manaWrapper);
+
+                // Background ellipse (dark circle)
+                const manaBg = new BABYLON.GUI.Ellipse();
+                manaBg.width = "22px";
+                manaBg.height = "22px";
                 manaBg.background = "#1a1a1a";
                 manaBg.color = "#333";
                 manaBg.thickness = 2;
-                manaBg.paddingLeft = "2px";
-                manaBg.paddingRight = "2px";
-                aiManaContainer.addControl(manaBg);
+                manaWrapper.addControl(manaBg);
 
-                const manaFill = new BABYLON.GUI.Rectangle();
-                manaFill.width = "0%";
-                manaFill.height = "100%";
-                manaFill.background = "#e76e55";
-                manaFill.color = "transparent";
-                manaFill.thickness = 0;
-                manaFill.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+                // Half circle (bottom half) - shown at 1-99%
+                const manaHalf = new BABYLON.GUI.Ellipse();
+                manaHalf.width = "18px";
+                manaHalf.height = "9px";  // Half height = half circle
+                manaHalf.background = "#e76e55";
+                manaHalf.color = "transparent";
+                manaHalf.thickness = 0;
+                manaHalf.top = "4px";  // Position in bottom half
+                manaHalf.isVisible = false;
+                manaBg.addControl(manaHalf);
 
-                // Mana texture overlay
-                const aiManaTexture = new BABYLON.GUI.Image("aiManaTex" + i, "textures/mana_texture.png");
-                aiManaTexture.width = "100%";
-                aiManaTexture.height = "100%";
-                aiManaTexture.stretch = BABYLON.GUI.Image.STRETCH_FILL;
-                aiManaTexture.alpha = 0.2;
-                manaFill.addControl(aiManaTexture);
+                // Texture for half
+                const manaHalfTex = new BABYLON.GUI.Image("aiManaHalfTex" + i, "textures/mana_texture.png");
+                manaHalfTex.width = "100%";
+                manaHalfTex.height = "100%";
+                manaHalfTex.stretch = BABYLON.GUI.Image.STRETCH_FILL;
+                manaHalfTex.alpha = 0.15;
+                manaHalf.addControl(manaHalfTex);
 
-                manaBg.addControl(manaFill);
-                window.guiElements.aiManaSegments.push(manaFill);
+                // Full circle - shown at 100%
+                const manaFull = new BABYLON.GUI.Ellipse();
+                manaFull.width = "18px";
+                manaFull.height = "18px";
+                manaFull.background = "#e76e55";
+                manaFull.color = "transparent";
+                manaFull.thickness = 0;
+                manaFull.isVisible = false;
+                manaBg.addControl(manaFull);
+
+                // Texture for full
+                const manaFullTex = new BABYLON.GUI.Image("aiManaFullTex" + i, "textures/mana_texture.png");
+                manaFullTex.width = "100%";
+                manaFullTex.height = "100%";
+                manaFullTex.stretch = BABYLON.GUI.Image.STRETCH_FILL;
+                manaFullTex.alpha = 0.15;
+                manaFull.addControl(manaFullTex);
+
+                window.guiElements.aiManaSegments.push({ half: manaHalf, full: manaFull });
+                window.guiElements.aiManaBgs.push(manaBg);
+                window.guiElements.aiManaWrappers.push(manaWrapper);
             }
 
             // --- CAST BARS (in addition to 3D cast bars) ---
@@ -3287,8 +3782,96 @@
             aiCastTexture.alpha = 0.7;
             aiCastFill.addControl(aiCastTexture);
 
-            // --- ABILITY BAR (bottom center) ---
-            // HIDDEN - using HTML ability bar for crisp text and tooltips
+            // --- ABILITY BAR BACKGROUND (bottom center) ---
+            // Rendered in Babylon GUI for CRT shader effects
+            // HTML ability icons overlay on top for crisp interaction
+            // Emboss effect using textured layers at different brightness
+
+            // Container for emboss effect (sized for up to 4 abilities)
+            const abilityBarContainer2 = new BABYLON.GUI.Rectangle("abilityBarFrame");
+            abilityBarContainer2.width = "450px";
+            abilityBarContainer2.height = "140px";
+            abilityBarContainer2.top = "-92px";
+            abilityBarContainer2.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
+            abilityBarContainer2.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
+            abilityBarContainer2.background = "transparent";
+            abilityBarContainer2.color = "transparent";
+            abilityBarContainer2.thickness = 0;
+            abilityBarContainer2.isVisible = false;
+            guiTexture.addControl(abilityBarContainer2);
+
+            // Shadow layer (bottom-right) - darkened texture
+            const shadowLayer = new BABYLON.GUI.Rectangle("shadowLayer");
+            shadowLayer.width = "434px";
+            shadowLayer.height = "124px";
+            shadowLayer.left = "4px";
+            shadowLayer.top = "4px";
+            shadowLayer.background = "transparent";
+            shadowLayer.color = "transparent";
+            shadowLayer.thickness = 0;
+            abilityBarContainer2.addControl(shadowLayer);
+
+            const shadowTex = new BABYLON.GUI.Image("shadowTex", "textures/ui.png");
+            shadowTex.width = "100%";
+            shadowTex.height = "100%";
+            shadowTex.stretch = BABYLON.GUI.Image.STRETCH_FILL;
+            shadowTex.alpha = 0.8;
+            shadowLayer.addControl(shadowTex);
+
+            // Dark overlay for shadow
+            const shadowOverlay = new BABYLON.GUI.Rectangle("shadowOverlay");
+            shadowOverlay.width = "100%";
+            shadowOverlay.height = "100%";
+            shadowOverlay.background = "rgba(0, 0, 0, 0.5)";
+            shadowOverlay.color = "transparent";
+            shadowOverlay.thickness = 0;
+            shadowLayer.addControl(shadowOverlay);
+
+            // Highlight layer (top-left) - lightened texture
+            const highlightLayer = new BABYLON.GUI.Rectangle("highlightLayer");
+            highlightLayer.width = "434px";
+            highlightLayer.height = "124px";
+            highlightLayer.left = "-4px";
+            highlightLayer.top = "-4px";
+            highlightLayer.background = "transparent";
+            highlightLayer.color = "transparent";
+            highlightLayer.thickness = 0;
+            abilityBarContainer2.addControl(highlightLayer);
+
+            const highlightTex = new BABYLON.GUI.Image("highlightTex", "textures/ui.png");
+            highlightTex.width = "100%";
+            highlightTex.height = "100%";
+            highlightTex.stretch = BABYLON.GUI.Image.STRETCH_FILL;
+            highlightTex.alpha = 0.6;
+            highlightLayer.addControl(highlightTex);
+
+            // Light overlay for highlight
+            const highlightOverlay = new BABYLON.GUI.Rectangle("highlightOverlay");
+            highlightOverlay.width = "100%";
+            highlightOverlay.height = "100%";
+            highlightOverlay.background = "rgba(255, 235, 200, 0.3)";
+            highlightOverlay.color = "transparent";
+            highlightOverlay.thickness = 0;
+            highlightLayer.addControl(highlightOverlay);
+
+            // Main layer - normal texture
+            const mainLayer = new BABYLON.GUI.Rectangle("mainLayer");
+            mainLayer.width = "434px";
+            mainLayer.height = "124px";
+            mainLayer.background = "transparent";
+            mainLayer.color = "transparent";
+            mainLayer.thickness = 0;
+            abilityBarContainer2.addControl(mainLayer);
+
+            const abilityBarBg = new BABYLON.GUI.Image("abilityBarBg", "textures/ui.png");
+            abilityBarBg.width = "100%";
+            abilityBarBg.height = "100%";
+            abilityBarBg.stretch = BABYLON.GUI.Image.STRETCH_FILL;
+            mainLayer.addControl(abilityBarBg);
+
+            window.guiElements.abilityBarBg = abilityBarContainer2;
+
+            // Legacy hidden container (not used)
             const abilityBarContainer = new BABYLON.GUI.StackPanel();
             abilityBarContainer.isVertical = false;
             abilityBarContainer.height = "120px";
@@ -3296,11 +3879,8 @@
             abilityBarContainer.top = "-20px";
             abilityBarContainer.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
             abilityBarContainer.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
-            abilityBarContainer.isVisible = false;  // Hidden - using HTML ability bar
+            abilityBarContainer.isVisible = false;
             guiTexture.addControl(abilityBarContainer);
-
-            // GUI ability icons removed - using HTML icons instead
-            // User will pre-pixelize the icon images for the retro look
 
             // Helper function to create ability button
             function createAbilityButton(name, keyLabel, readyColor, bgColor, noManaColor) {
@@ -6468,10 +7048,15 @@
                 proj.glow.position = BABYLON.Vector3.Zero();
                 proj.glowMat = glowMat;
 
-                // Fire trail
+                // Fire trail with distance-based sampling (FPS-independent)
                 const trailLength = proj.isMagmaBomb ? 8 : 30;
                 const trailWidth = proj.isMagmaBomb ? 0.15 : 0.25;
-                proj.trail = new BABYLON.TrailMesh("fireTrail_" + Date.now(), proj.mesh, scene, trailWidth, trailLength, true);
+                // Create invisible anchor that trail follows - updates only on distance threshold
+                proj.trailAnchor = BABYLON.MeshBuilder.CreateBox("trailAnchor_" + Date.now(), {size: 0.01}, scene);
+                proj.trailAnchor.isVisible = false;
+                proj.trailAnchor.position.copyFrom(proj.mesh.position);
+                proj.lastTrailSamplePos = proj.mesh.position.clone();
+                proj.trail = new BABYLON.TrailMesh("fireTrail_" + Date.now(), proj.trailAnchor, scene, trailWidth, trailLength, true);
                 const trailMat = new BABYLON.StandardMaterial("trailMat_" + Date.now(), scene);
                 trailMat.emissiveColor = proj.isMagmaBomb ? new BABYLON.Color3(0.5, 0.1, 0.02) : new BABYLON.Color3(1, 0.3, 0.05);
                 trailMat.alpha = proj.isMagmaBomb ? 0.4 : 0.6;
@@ -6572,8 +7157,9 @@
                 proj.flash.parent = proj.mesh;
                 proj.flash.position = BABYLON.Vector3.Zero();
 
-                // Attach looping sound (low volume)
-                proj.loopSound = createLoopingSound('fireballLoop', startX, 0.12);
+                // Attach roaring fire sound (Tone.js synthesized)
+                const pan = startX / 10;  // Convert X position to -1 to 1 pan
+                proj.loopSound = createFireRoarSound(pan);
 
                 // Apply player upgrades to this projectile (if player owns it and not a split)
                 if (!isSplitProjectile) {
@@ -6587,9 +7173,9 @@
             // Update fireball scale based on damage (2-5 range maps to 0.85-1.25 scale)
             const updateFireballScale = (proj) => {
                 if (!proj || !proj.mesh || proj.type !== 'fireball' || proj.isMagmaBomb) return;
-                const damage = Math.min(2 + proj.volleyCount, 5);  // 2-5
-                // Map damage 2-5 to scale 0.85-1.25
-                const scale = 0.85 + (damage - 2) * 0.133;  // ~0.133 per damage point
+                const damage = Math.min(2 + proj.volleyCount, 6);  // 2-6 (6 only via overpower)
+                // Map damage 2-6 to scale 0.85-1.35
+                const scale = 0.85 + (damage - 2) * 0.125;  // ~0.125 per damage point
                 proj.mesh.scaling.setAll(scale);
             };
             window.updateFireballScale = updateFireballScale;
@@ -6644,8 +7230,12 @@
                 proj.glow.position = BABYLON.Vector3.Zero();
                 proj.glowMat = glowMat;
 
-                // Ice trail
-                proj.trail = new BABYLON.TrailMesh("iceTrail_" + Date.now(), proj.mesh, scene, 0.18, 25, true);
+                // Ice trail with distance-based sampling (FPS-independent)
+                proj.trailAnchor = BABYLON.MeshBuilder.CreateBox("iceTrailAnchor_" + Date.now(), {size: 0.01}, scene);
+                proj.trailAnchor.isVisible = false;
+                proj.trailAnchor.position.copyFrom(proj.mesh.position);
+                proj.lastTrailSamplePos = proj.mesh.position.clone();
+                proj.trail = new BABYLON.TrailMesh("iceTrail_" + Date.now(), proj.trailAnchor, scene, 0.18, 25, true);
                 const trailMat = new BABYLON.StandardMaterial("iceTrailMat_" + Date.now(), scene);
                 trailMat.emissiveColor = new BABYLON.Color3(0.4, 0.7, 1);
                 trailMat.diffuseColor = new BABYLON.Color3(0, 0, 0);
@@ -7012,6 +7602,7 @@
                 if (proj.light) proj.light.dispose();
                 if (proj.flash) proj.flash.dispose();
                 if (proj.flashMat) proj.flashMat.dispose();
+                if (proj.trailAnchor) proj.trailAnchor.dispose();  // Distance-based trail anchor
                 if (proj.mesh) proj.mesh.dispose();
             };
 
@@ -7216,10 +7807,17 @@
                         proj.velZ *= 0.5;
                     }
                 } else {
-                    // AI parry - aim away from player
-                    const aimDir = (playerPaddle.position.z > 0) ? -1 : 1;
+                    // AI parry - aim at opening (smart targeting)
+                    const targetZ = findOpenTarget();
+                    const currentZ = aiPaddle.position.z;
+                    const aimDiff = targetZ - currentZ;
+
+                    // Calculate aim direction and strength based on opening position
                     proj.velX = -proj.speed * 0.85;
-                    proj.velZ = aimDir * proj.speed * 0.45;
+
+                    // Stronger angle if target is far from current position
+                    const angleStrength = Math.min(Math.abs(aimDiff) / 4, 1);  // 0 to 1
+                    proj.velZ = Math.sign(aimDiff) * proj.speed * (0.3 + angleStrength * 0.4);
                 }
 
                 // Reset Y for normal projectiles (not magma bombs)
@@ -7415,12 +8013,23 @@
                 }
             };
 
-            // AI parry check for a projectile
+            // AI parry check for a projectile - Smart AI parries often!
             const tryAIParry = (proj) => {
-                const playerOffset = Math.abs(proj.mesh.position.z - playerPaddle.position.z);
-                if (playerOffset > 2.5) return Math.random() < 0.7;
-                if (playerOffset > 1.5) return Math.random() < 0.3;
-                return false;
+                // High damage projectiles = always try to parry for the overpower bonus
+                const damage = (proj.volleyCount || 0) + 2;
+                if (damage >= 4) return Math.random() < 0.85;  // 85% parry on big hits
+
+                // Check if player is in good position - if yes, parry to aim at opening
+                const playerZ = playerPaddle.position.z;
+                const projZ = proj.mesh.position.z;
+                const playerOffset = Math.abs(projZ - playerZ);
+
+                // If ball going away from player, parry to exploit opening
+                if (playerOffset > 2.5) return Math.random() < 0.75;
+                if (playerOffset > 1.5) return Math.random() < 0.5;
+
+                // Even if player is in position, still parry sometimes
+                return Math.random() < 0.35;
             };
 
             // Reset projectile parry state (for when it bounces off paddle normally)
@@ -7428,6 +8037,60 @@
                 proj.isParried = false;
                 proj.parriedBy = null;
             };
+
+            // ================== SMART AI SYSTEM (OPTIMIZED) ==================
+
+            // AI state - updated periodically, not every frame
+            let aiTargetZ = 0;                // Where AI is trying to go
+            let aiLastThinkTime = 0;          // When AI last "thought"
+            const AI_THINK_INTERVAL = 0.22;   // Think every 220ms (human reaction time)
+            const AI_PREDICTION_ERROR = 0.5;  // Slight prediction error
+
+            // Simple prediction - where will projectile be when it reaches AI?
+            const predictZ = (proj) => {
+                const aiX = tableWidth/2 - 1.5;
+                const distX = aiX - proj.mesh.position.x;
+                if (distX <= 0 || proj.velX <= 0) return proj.mesh.position.z;
+
+                const time = distX / proj.velX;
+                let z = proj.mesh.position.z + proj.velZ * time;
+
+                // Simple bounce (just one)
+                const wall = tableDepth/2 - 0.5;
+                if (z > wall) z = 2 * wall - z;
+                if (z < -wall) z = -2 * wall - z;
+
+                return Math.max(-wall, Math.min(wall, z));
+            };
+
+            // Find most urgent incoming projectile (simple: closest one heading toward AI)
+            const findUrgentThreat = () => {
+                let closest = null;
+                let closestX = Infinity;
+                for (const proj of projectiles) {
+                    if (proj.velX > 0 && proj.mesh.position.x < closestX) {
+                        closestX = proj.mesh.position.x;
+                        closest = proj;
+                    }
+                }
+                return closest;
+            };
+
+            // Find the best target Z to aim at (away from player)
+            const findOpenTarget = () => {
+                const playerZ = playerPaddle.position.z;
+                const boundary = tableDepth/2 - 0.5;
+                if (playerZ > 1) return -boundary + 1;
+                if (playerZ < -1) return boundary - 1;
+                return playerZ > 0 ? -boundary + 0.5 : boundary - 0.5;
+            };
+
+            // Check if player is blocking the direct shot path
+            const isPlayerBlocking = (aiZ) => {
+                return Math.abs(aiZ - playerPaddle.position.z) < 1.5;
+            };
+
+            // ================== END SMART AI SYSTEM ==================
 
             // Center line (dashed effect with multiple boxes)
             const lineMat = new BABYLON.StandardMaterial("lineMat", scene);
@@ -7442,7 +8105,7 @@
 
             // Game constants
             const paddleSpeed = 20;
-            const aiSpeed = 11;
+            const aiSpeed = 20;  // Same as player - fair fight
             const paddleBoundary = tableDepth/2 - 1.5;
             const goalX = tableWidth/2 + 1;
             const paddleHalfDepth = 1.25;
@@ -7454,44 +8117,70 @@
             const ballRadius = 0.25;
             const maxHitHeight = 1.3;  // Taller hitbox to hit bouncing balls
 
-            // Game loop
-            scene.onBeforeRenderObservable.add(() => {
-                if (gameOver) return;
+            // ============ PERFORMANCE MONITOR ============
+            const perfStats = {
+                frames: 0,
+                totalTime: 0,
+                lastFPS: 60,
+                slowFrames: [],
+                lastLogTime: performance.now()
+            };
 
-                const dt = engine.getDeltaTime() / 1000;
+            // Create FPS display overlay
+            const fpsDiv = document.createElement('div');
+            fpsDiv.id = 'fps-monitor';
+            fpsDiv.style.cssText = 'position:fixed;top:10px;left:10px;background:rgba(0,0,0,0.8);color:#0f0;font-family:monospace;font-size:14px;padding:8px 12px;z-index:99999;border-radius:4px;';
+            document.body.appendChild(fpsDiv);
 
-                // PvP mode uses fixed timestep with rollback
-                if (gameMode === 'pvp' && roundActive) {
-                    runPvPGameLoop(dt);
-                    return;  // Skip single-player loop
+            // Log slow frames to console
+            window.perfLog = [];  // Accessible from console
+
+            const updatePerfMonitor = (dt) => {
+                perfStats.frames++;
+                perfStats.totalTime += dt;
+
+                const frameMs = dt * 1000;
+
+                // Log slow frames (over 25ms = under 40fps)
+                if (frameMs > 25) {
+                    const entry = {
+                        time: performance.now().toFixed(0),
+                        frameMs: frameMs.toFixed(1),
+                        projectiles: projectiles.length,
+                        aiThinking: (performance.now() / 1000 - aiLastThinkTime < 0.01) ? 'YES' : 'no'
+                    };
+                    perfStats.slowFrames.push(entry);
+                    window.perfLog.push(entry);
+                    if (perfStats.slowFrames.length > 50) perfStats.slowFrames.shift();
                 }
 
-                // Update lingering trails (fade out after projectile destroyed)
-                if (window.updateLingeringTrails) updateLingeringTrails(dt);
+                // Update display every 500ms
+                const now = performance.now();
+                if (now - perfStats.lastLogTime > 500) {
+                    const fps = perfStats.frames / perfStats.totalTime;
+                    perfStats.lastFPS = fps;
+                    const avgFrameMs = (perfStats.totalTime / perfStats.frames) * 1000;
 
-                // Diablo 2 style barrier pulsing effect
-                if (window.barrierMaterials) {
-                    const time = performance.now() * 0.002;
-                    const pulse = 0.6 + Math.sin(time) * 0.25;  // Oscillate between 0.35-0.85
-                    const fastPulse = 0.7 + Math.sin(time * 3) * 0.1;  // Faster subtle pulse
+                    fpsDiv.innerHTML = `FPS: ${fps.toFixed(0)} | Frame: ${avgFrameMs.toFixed(1)}ms | Proj: ${projectiles.length}`;
+                    fpsDiv.style.color = fps < 30 ? '#f00' : fps < 50 ? '#ff0' : '#0f0';
 
-                    // Player barrier pulse (blue)
-                    window.barrierMaterials.player.emissiveColor = new BABYLON.Color3(
-                        0.2 * pulse,
-                        0.5 * pulse,
-                        1.0 * pulse
-                    );
-                    window.barrierMaterials.player.alpha = 0.65 + Math.sin(time * 1.5) * 0.15;
+                    // Log to console if many slow frames
+                    if (perfStats.slowFrames.length > 5) {
+                        console.warn('SLOW FRAMES:', perfStats.slowFrames.slice(-5));
+                    }
 
-                    // AI barrier pulse (red/orange)
-                    window.barrierMaterials.ai.emissiveColor = new BABYLON.Color3(
-                        1.0 * fastPulse,
-                        0.3 * fastPulse,
-                        0.15 * fastPulse
-                    );
-                    window.barrierMaterials.ai.alpha = 0.65 + Math.sin(time * 1.7) * 0.15;
+                    perfStats.frames = 0;
+                    perfStats.totalTime = 0;
+                    perfStats.lastLogTime = now;
                 }
+            };
+            // ============ END PERFORMANCE MONITOR ============
 
+            // ============================================================
+            // FIXED TIMESTEP GAME LOGIC (60Hz simulation)
+            // All gameplay-affecting code runs here at fixed rate
+            // ============================================================
+            function updateGameLogic(dt) {
                 // Update parry system
                 updateParryTimer(dt);
                 checkParryHits();
@@ -7509,7 +8198,7 @@
                         if (c.cooldowns.fireball <= 0) {
                             c.cooldowns.fireball = 0;
                             if (roundActive && isLocal) {
-                                playSound('spellReady', paddle.position.x, 0.6);
+                                playSound('spellReady', paddle.position.x, 0.15);  // Subtle
                             }
                         }
                         if (isLocal) updateCooldownUI();
@@ -7521,7 +8210,7 @@
                         if (c.cooldowns.frostbolt <= 0) {
                             c.cooldowns.frostbolt = 0;
                             if (roundActive && isLocal) {
-                                playSound('spellReady', paddle.position.x, 0.5);
+                                playSound('spellReady', paddle.position.x, 0.12);  // Subtle
                             }
                         }
                         if (isLocal) updateCooldownUI();
@@ -7534,7 +8223,7 @@
                             c.cooldowns.gravity = 0;
                             // Read gravityPhase from combatant state
                             if (roundActive && c.gravityPhase === 'ready' && isLocal) {
-                                playSound('spellReady', paddle.position.x, 0.5);
+                                playSound('spellReady', paddle.position.x, 0.12);  // Subtle
                             }
                         }
                         if (isLocal) updateGravityUI();
@@ -7564,11 +8253,12 @@
                         if (!c) continue;
                         // Stop mana regen while frozen
                         if (c.freezeTime > 0) continue;
+                        const cMaxMana = getMaxMana(c.side);
                         c.manaRegen += dt;
                         if (c.manaRegen >= manaRegenTime) {
                             c.manaRegen = 0;
-                            if (c.mana < maxMana) {
-                                c.mana = Math.min(maxMana, c.mana + 0.5);  // Discrete 0.5 mana tick
+                            if (c.mana < cMaxMana) {
+                                c.mana = Math.min(cMaxMana, c.mana + 0.5);  // Discrete 0.5 mana tick
                             }
                             // Update UI only on mana tick (discrete, not smooth)
                             updateCombatantManaUI(c);
@@ -7684,9 +8374,9 @@
                 window.playerPaddlePrevZ = playerPaddle.position.z;
                 window.aiPaddlePrevZ = aiPaddle.position.z;
 
-                // Player movement (W/S or Arrow keys) - blocked if frozen
+                // Player movement (W/S or Arrow keys) - blocked if frozen or transitioning
                 let moveDir = 0;
-                if (playerFreezeTime <= 0) {
+                if (playerFreezeTime <= 0 && !roundTransitioning) {
                     if (keys['KeyW'] || keys['ArrowUp']) moveDir = 1;
                     if (keys['KeyS'] || keys['ArrowDown']) moveDir = -1;
 
@@ -7739,35 +8429,56 @@
                     playerTargetRotY = combatants.left.targetRotY;  // Sync legacy
                 }
 
-                // Smooth orientation interpolation for player model
-                if (combatants.left.modelRoot) {
-                    const lerpSpeed = 8 * dt;
-                    combatants.left.modelRoot.rotation.y += (combatants.left.targetRotY - combatants.left.modelRoot.rotation.y) * lerpSpeed;
-                }
+                // NOTE: Model rotation lerp moved to render callback for smooth visuals
 
                 if (roundActive) {
-                    // AI movement - track nearest incoming projectile (blocked if frozen)
-                    let targetZ = 0;
-                    let nearestX = Infinity;
-                    for (const proj of projectiles) {
-                        if (proj.velX > 0 && proj.mesh.position.x < nearestX) {
-                            nearestX = proj.mesh.position.x;
-                            targetZ = proj.mesh.position.z;
+                    // SMART AI MOVEMENT - Thinks every 220ms like a human
+                    const currentTime = performance.now() / 1000;
+
+                    // AI "thinks" periodically - not every frame
+                    if (currentTime - aiLastThinkTime > AI_THINK_INTERVAL) {
+                        aiLastThinkTime = currentTime;
+
+                        // Find the closest incoming threat
+                        const threat = findUrgentThreat();
+                        if (threat) {
+                            // Predict where it will be + velocity-scaled error
+                            // Faster balls = AI struggles more (more prediction error)
+                            const perfect = predictZ(threat);
+                            const speed = Math.abs(threat.velX);
+                            // Slow (6): ~0.4 error, Medium (10): ~0.8, Fast (15+): ~1.5+
+                            const scaledError = 0.2 + (speed / 10) * 0.8;
+                            const error = (Math.random() - 0.5) * scaledError * 2;
+                            aiTargetZ = perfect + error;
                         }
                     }
+
                     // Only move if AI is not frozen or rooted (casting)
                     if (aiFreezeTime <= 0 && !isAIRooted()) {
                         let aiMoveDir = 0;
-                        if (nearestX < Infinity) {
-                            const aiDiff = targetZ - aiPaddle.position.z;
-                            if (Math.abs(aiDiff) > 0.2) {
-                                aiMoveDir = Math.sign(aiDiff);
-                            }
+                        const aiDiff = aiTargetZ - aiPaddle.position.z;
+                        if (Math.abs(aiDiff) > 0.25) {
+                            aiMoveDir = Math.sign(aiDiff);
                         }
+
+                        // VARIABLE AI SPEED - Not always at max speed
+                        // Base: 60% speed, scales up based on urgency
+                        let speedMultiplier = 0.6;
+                        const threat = findUrgentThreat();
+                        if (threat) {
+                            const distToAI = (tableWidth/2 - 1.5) - threat.mesh.position.x;
+                            // Urgency: 0 (far) to 1 (close)
+                            const urgency = 1 - Math.min(distToAI / 15, 1);
+                            // Close ball = faster movement (up to 100%)
+                            speedMultiplier = 0.6 + urgency * 0.4;
+                            // Add slight random variation (±10%)
+                            speedMultiplier *= 0.9 + Math.random() * 0.2;
+                        }
+
                         // Retro movement: accumulate and move in discrete steps
                         const AI_STEP_SIZE = 0.3;
                         if (!window.aiMoveAccum) window.aiMoveAccum = 0;
-                        window.aiMoveAccum += aiMoveDir * aiSpeed * dt;
+                        window.aiMoveAccum += aiMoveDir * aiSpeed * speedMultiplier * dt;
 
                         if (Math.abs(window.aiMoveAccum) >= AI_STEP_SIZE) {
                             const steps = Math.trunc(window.aiMoveAccum / AI_STEP_SIZE);
@@ -7807,45 +8518,35 @@
                         aiTargetRotY = combatants.right.targetRotY;  // Sync legacy
                     }
 
-                    // Smooth orientation interpolation for AI model
-                    if (combatants.right.modelRoot) {
-                        const lerpSpeed = 8 * dt;
-                        combatants.right.modelRoot.rotation.y += (combatants.right.targetRotY - combatants.right.modelRoot.rotation.y) * lerpSpeed;
+                    // NOTE: Model rotation lerp moved to render callback for smooth visuals
+
+                    // SIMPLE AI CASTING
+                    const aiRightIsCasting = combatants.right && combatants.right.casting;
+
+                    // Check if there's a close threat - don't cast if ball is near
+                    let safeToStartCast = true;
+                    for (const p of projectiles) {
+                        if (p.velX > 0 && p.mesh.position.x > 2) {
+                            safeToStartCast = false;
+                            break;
+                        }
                     }
 
-                    // AI casting - cast fireball when off cooldown and has mana
-                    // Only cast if: not already casting, off cooldown, has mana, and no dangerous projectiles nearby
-                    const aiRightIsCasting = combatants.right && combatants.right.casting;
+                    // AI Fireball - cast when safe and not blocking player
                     if (!aiRightIsCasting && aiFireballCooldown <= 0 && aiMana >= abilities.fireball.manaCost && projectiles.length < 10) {
-                        // Check if there's a dangerous projectile coming - don't cast if we need to dodge
-                        let dangerousIncoming = false;
-                        for (const p of projectiles) {
-                            if (p.velX > 0 && p.mesh.position.x > 0 && p.mesh.position.x < 8) {
-                                dangerousIncoming = true;
-                                break;
+                        if (safeToStartCast && !isPlayerBlocking(aiPaddle.position.z)) {
+                            if (Math.random() < 0.02) {
+                                startCasting('ai', 'fireball');
                             }
                         }
-                        // Only cast if safe to do so (no imminent threats)
-                        if (!dangerousIncoming && Math.random() < 0.015) {
-                            startCasting('ai', 'fireball');
-                        }
                     }
-                    // AI casting - cast frostbolt occasionally (requires more mana)
-                    if (aiFrostboltCooldown <= 0 && aiMana >= abilities.frostbolt.manaCost && projectiles.length < 10) {
-                        if (Math.random() < 0.01) {  // Less frequent than fireball
+
+                    // AI Frostbolt
+                    if (!aiRightIsCasting && aiFrostboltCooldown <= 0 && aiMana >= abilities.frostbolt.manaCost && projectiles.length < 10) {
+                        if (safeToStartCast && Math.random() < 0.008) {
                             castFrostbolt('ai');
                         }
                     }
-                    // AI casting - use gravity barrier (COMMENTED OUT FOR REWORK)
-                    // if (aiGravityPhase === 'ready' && aiGravityCooldown <= 0 && aiMana >= abilities.gravity.manaCost) {
-                    //     let incomingCount = 0;
-                    //     for (const p of projectiles) {
-                    //         if (p.velX > 0 && p.type !== 'gravitySphere') incomingCount++;
-                    //     }
-                    //     if (incomingCount >= 2 && Math.random() < 0.03) {
-                    //         handleGravityInput('ai');
-                    //     }
-                    // }
 
                     // Process all projectiles
                     const toDestroy = [];
@@ -7853,6 +8554,17 @@
                         // Move projectile
                         proj.mesh.position.x += proj.velX * dt;
                         proj.mesh.position.z += proj.velZ * dt;
+
+                        // Update trail anchor based on distance (FPS-independent trails)
+                        if (proj.trailAnchor && proj.lastTrailSamplePos) {
+                            const dx = proj.mesh.position.x - proj.lastTrailSamplePos.x;
+                            const dz = proj.mesh.position.z - proj.lastTrailSamplePos.z;
+                            const dist = Math.sqrt(dx * dx + dz * dz);
+                            if (dist >= TRAIL_SAMPLE_SPACING) {
+                                proj.trailAnchor.position.copyFrom(proj.mesh.position);
+                                proj.lastTrailSamplePos.copyFrom(proj.mesh.position);
+                            }
+                        }
 
                         // Decrement collision grace time
                         if (proj.collisionGraceTime > 0) proj.collisionGraceTime -= dt;
@@ -8042,8 +8754,11 @@
                                 if (toDestroy.includes(otherProj)) continue;
                                 // Only collide with projectiles traveling opposite direction (enemy)
                                 if ((proj.velX > 0 && otherProj.velX > 0) || (proj.velX < 0 && otherProj.velX < 0)) continue;
-                                // Check collision
+                                // Must be moving TOWARD each other (not passing by)
                                 const dx = otherProj.mesh.position.x - proj.mesh.position.x;
+                                if (proj.velX > 0 && dx < 0) continue;  // frostbolt going right but already past other
+                                if (proj.velX < 0 && dx > 0) continue;  // frostbolt going left but already past other
+                                // Check collision
                                 const dz = otherProj.mesh.position.z - proj.mesh.position.z;
                                 const dist = Math.sqrt(dx * dx + dz * dz);
                                 const collisionDist = (proj.hitboxRadius || 0.3) + (otherProj.hitboxRadius || 0.3);
@@ -8077,20 +8792,28 @@
                                     if ((otherProj.collisionGraceTime || 0) > 0) continue;
                                     // Head-on only (opposite X velocities)
                                     if ((proj.velX > 0 && otherProj.velX > 0) || (proj.velX < 0 && otherProj.velX < 0)) continue;
-                                    // Check collision
+                                    // Must be moving TOWARD each other (not passing by)
+                                    // If proj going right (velX > 0), it should be to the LEFT of otherProj
+                                    // If proj going left (velX < 0), it should be to the RIGHT of otherProj
                                     const dx = otherProj.mesh.position.x - proj.mesh.position.x;
+                                    if (proj.velX > 0 && dx < 0) continue;  // proj going right but already past other
+                                    if (proj.velX < 0 && dx > 0) continue;  // proj going left but already past other
+                                    // Check collision
                                     const dz = otherProj.mesh.position.z - proj.mesh.position.z;
                                     const dist = Math.sqrt(dx * dx + dz * dz);
                                     const collisionDist = (proj.hitboxRadius || 0.3) + (otherProj.hitboxRadius || 0.3);
                                     if (dist < collisionDist) {
-                                        // Damage-based resolution
-                                        const projDmg = proj.damage !== undefined ? proj.damage : Math.min(2 + proj.volleyCount, 5);
-                                        const otherDmg = otherProj.damage !== undefined ? otherProj.damage : Math.min(2 + otherProj.volleyCount, 5);
+                                        // Damage-based resolution (max 6 via overpower)
+                                        const projDmg = proj.damage !== undefined ? proj.damage : Math.min(2 + proj.volleyCount, 6);
+                                        const otherDmg = otherProj.damage !== undefined ? otherProj.damage : Math.min(2 + otherProj.volleyCount, 6);
                                         const midPos = proj.mesh.position.add(otherProj.mesh.position).scale(0.5);
 
                                         if (projDmg > otherDmg) {
                                             // This proj wins - destroy other, continue on path
                                             toDestroy.push(otherProj);
+                                            // Overpower bonus: +1 damage (max 6)
+                                            proj.volleyCount = Math.min(proj.volleyCount + 1, 4);  // volleyCount 4 = damage 6
+                                            if (window.updateFireballScale) updateFireballScale(proj);
                                             if (window.createImpactFlash) createImpactFlash(otherProj.mesh.position.clone(), new BABYLON.Color3(1, 0.5, 0.2), 1.5);
                                             // Directional streak in winning projectile's direction
                                             if (window.createImpactDecal) createImpactDecal({ x: midPos.x, z: midPos.z }, 'overpower', { x: proj.velX, z: proj.velZ });
@@ -8100,6 +8823,9 @@
                                         } else if (otherDmg > projDmg) {
                                             // Other wins - destroy this
                                             toDestroy.push(proj);
+                                            // Overpower bonus: +1 damage (max 6)
+                                            otherProj.volleyCount = Math.min(otherProj.volleyCount + 1, 4);  // volleyCount 4 = damage 6
+                                            if (window.updateFireballScale) updateFireballScale(otherProj);
                                             if (window.createImpactFlash) createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(1, 0.5, 0.2), 1.5);
                                             // Directional streak in winning projectile's direction
                                             if (window.createImpactDecal) createImpactDecal({ x: midPos.x, z: midPos.z }, 'overpower', { x: otherProj.velX, z: otherProj.velZ });
@@ -8107,9 +8833,12 @@
                                             if (window.showCombatTextAt) showCombatTextAt(midPos, 'Overpowered!', 'cancel');
                                             break;
                                         } else {
-                                            // Equal damage - mutual destruction with big explosion
+                                            // Equal damage - mutual destruction (Cancel)
                                             toDestroy.push(proj);
                                             toDestroy.push(otherProj);
+                                            // Cancel rewards both players with 0.5 mana
+                                            gainMana('player', 0.5);
+                                            gainMana('ai', 0.5);
                                             if (window.createImpactFlash) createImpactFlash(midPos, new BABYLON.Color3(1, 0.7, 0.2), 3.0);
                                             if (window.createImpactDecal) createImpactDecal({ x: midPos.x, z: midPos.z }, 'fire');
                                             playSound('cancel', midPos.x, 0.8);
@@ -8243,7 +8972,7 @@
                                 dealDamageToTower(true, damage, proj.mesh.position.z);
                             } else {
                                 // Use fixed damage if set (magma bombs), otherwise scale with volleys (2 base, +1 per volley, max 5)
-                                const damage = proj.damage !== undefined ? proj.damage : Math.min(2 + proj.volleyCount, 5);
+                                const damage = proj.damage !== undefined ? proj.damage : Math.min(2 + proj.volleyCount, 6);
                                 if (window.createImpactFlash) {
                                     createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(1, 0.7, 0.2), 1.5 + damage * 0.5);
                                 }
@@ -8265,7 +8994,7 @@
                                 dealDamageToTower(false, damage, proj.mesh.position.z);
                             } else {
                                 // Use fixed damage if set (magma bombs), otherwise scale with volleys (2 base, +1 per volley, max 5)
-                                const damage = proj.damage !== undefined ? proj.damage : Math.min(2 + proj.volleyCount, 5);
+                                const damage = proj.damage !== undefined ? proj.damage : Math.min(2 + proj.volleyCount, 6);
                                 if (window.createImpactFlash) {
                                     createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(1, 0.7, 0.2), 1.5 + damage * 0.5);
                                 }
@@ -8288,6 +9017,73 @@
                     } else if (rightHealth <= 0) {
                         endRound('player');
                     }
+                }
+            }
+            // ============ END FIXED TIMESTEP GAME LOGIC ============
+
+            // ============================================================
+            // RENDER LOOP - Visual updates at render rate, game logic at 60Hz
+            // ============================================================
+            scene.onBeforeRenderObservable.add(() => {
+                if (gameOver) return;
+
+                // Get frame time with safety cap (spiral-of-death guard)
+                let renderDt = engine.getDeltaTime() / 1000;
+                renderDt = Math.min(renderDt, MAX_FRAME_TIME);  // Cap at 100ms
+
+                // Track performance (visual monitoring)
+                updatePerfMonitor(renderDt);
+
+                // VISUAL-ONLY updates (run at render rate)
+                // These are purely cosmetic - no hitboxes, cooldowns, mana, AI, projectile motion
+                if (window.updateLingeringTrails) updateLingeringTrails(renderDt);
+
+                // Diablo 2 style barrier pulsing effect (visual only)
+                if (window.barrierMaterials) {
+                    const time = performance.now() * 0.002;
+                    const pulse = 0.6 + Math.sin(time) * 0.25;
+                    const fastPulse = 0.7 + Math.sin(time * 3) * 0.1;
+
+                    window.barrierMaterials.player.emissiveColor = new BABYLON.Color3(
+                        0.2 * pulse, 0.5 * pulse, 1.0 * pulse
+                    );
+                    window.barrierMaterials.player.alpha = 0.65 + Math.sin(time * 1.5) * 0.15;
+
+                    window.barrierMaterials.ai.emissiveColor = new BABYLON.Color3(
+                        1.0 * fastPulse, 0.3 * fastPulse, 0.15 * fastPulse
+                    );
+                    window.barrierMaterials.ai.alpha = 0.65 + Math.sin(time * 1.7) * 0.15;
+                }
+
+                // Smooth model rotation interpolation (visual polish, runs at render rate)
+                if (combatants.left && combatants.left.modelRoot) {
+                    const lerpSpeed = 8 * renderDt;
+                    combatants.left.modelRoot.rotation.y += (combatants.left.targetRotY - combatants.left.modelRoot.rotation.y) * lerpSpeed;
+                }
+                if (combatants.right && combatants.right.modelRoot) {
+                    const lerpSpeed = 8 * renderDt;
+                    combatants.right.modelRoot.rotation.y += (combatants.right.targetRotY - combatants.right.modelRoot.rotation.y) * lerpSpeed;
+                }
+
+                // PvP mode already has its own fixed timestep
+                if (gameMode === 'pvp' && roundActive) {
+                    runPvPGameLoop(renderDt);
+                    return;
+                }
+
+                // FIXED TIMESTEP: Accumulate time and run simulation in fixed 60Hz steps
+                gameAccumulator += renderDt;
+
+                let steps = 0;
+                while (gameAccumulator >= FIXED_DT && steps < MAX_STEPS_PER_FRAME) {
+                    updateGameLogic(FIXED_DT);  // Always exactly 1/60 second
+                    gameAccumulator -= FIXED_DT;
+                    steps++;
+                }
+
+                // If we hit the cap, drain excess to prevent permanent lag
+                if (steps >= MAX_STEPS_PER_FRAME) {
+                    gameAccumulator = 0;  // Drop accumulated time, accept time loss
                 }
             });
 
@@ -8787,6 +9583,7 @@
                 }
             };
 
+            // Start render loop (60fps cap is inside gameRenderLoop)
             engine.runRenderLoop(window.gameRenderLoop);
 
             window.addEventListener('resize', () => {
@@ -8804,13 +9601,13 @@
             // Ability button click handlers - use combatant state for checks
             document.getElementById('fireballSlot').addEventListener('click', () => {
                 const c = combatants.left;
-                if (!gameOver && roundActive && !c.casting && c.cooldowns.fireball <= 0 && c.mana >= abilities.fireball.manaCost) {
+                if (!gameOver && roundActive && !roundTransitioning && !c.casting && c.cooldowns.fireball <= 0 && c.mana >= abilities.fireball.manaCost) {
                     startCasting('player', 'fireball');
                 }
             });
             document.getElementById('frostboltSlot').addEventListener('click', () => {
                 const c = combatants.left;
-                if (!gameOver && roundActive && c.cooldowns.frostbolt <= 0 && c.mana >= abilities.frostbolt.manaCost) {
+                if (!gameOver && roundActive && !roundTransitioning && c.cooldowns.frostbolt <= 0 && c.mana >= abilities.frostbolt.manaCost) {
                     castFrostbolt('player');
                 }
             });
@@ -9210,6 +10007,10 @@
             if (abilityBar) abilityBar.style.display = 'none';
             const parryButton = document.getElementById('parryButton');
             if (parryButton) parryButton.style.display = 'none';
+            // Hide GUI ability bar background
+            if (window.guiElements && window.guiElements.abilityBarBg) {
+                window.guiElements.abilityBarBg.isVisible = false;
+            }
 
             // Show the screen (overlays 3D scene)
             talentScreen.classList.add('visible');
@@ -9236,6 +10037,10 @@
             if (abilityBar) abilityBar.style.display = 'flex';
             const parryButton = document.getElementById('parryButton');
             if (parryButton) parryButton.style.display = 'block';
+            // Show GUI ability bar background
+            if (window.guiElements && window.guiElements.abilityBarBg) {
+                window.guiElements.abilityBarBg.isVisible = true;
+            }
         }
 
         // Update ability UI based on selected upgrade
@@ -10248,11 +11053,12 @@
             for (const c of [combatants.left, combatants.right]) {
                 if (!c) continue;
                 if (c.freezeTime > 0) continue;
-                if (c.mana < maxMana) {
+                const cMaxMana = getMaxMana(c.side);
+                if (c.mana < cMaxMana) {
                     c.manaRegen += dt;
                     if (c.manaRegen >= manaRegenTime) {
                         c.manaRegen = 0;
-                        c.mana = Math.min(maxMana, c.mana + 0.5);
+                        c.mana = Math.min(cMaxMana, c.mana + 0.5);
                     }
                 }
             }
@@ -10438,7 +11244,7 @@
                             proj.volleyCount++;
                             if (window.updateFireballScale) window.updateFireballScale(proj);  // Scale up with damage
                             // Only give block mana if not parried (parry already gives mana)
-                            if (combatants.left && !proj.isParried) combatants.left.mana = Math.min(maxMana, combatants.left.mana + 0.5);
+                            if (combatants.left && !proj.isParried) combatants.left.mana = Math.min(getMaxMana('left'), combatants.left.mana + 0.5);
                             if (!isResimulating) playSound('block', px, 0.6);
                         }
                     }
@@ -10470,7 +11276,7 @@
                             proj.volleyCount++;
                             if (window.updateFireballScale) window.updateFireballScale(proj);  // Scale up with damage
                             // Only give block mana if not parried (parry already gives mana)
-                            if (combatants.right && !proj.isParried) combatants.right.mana = Math.min(maxMana, combatants.right.mana + 0.5);
+                            if (combatants.right && !proj.isParried) combatants.right.mana = Math.min(getMaxMana('right'), combatants.right.mana + 0.5);
                             if (!isResimulating) playSound('block', px, 0.6);
                         }
                     }
@@ -10480,14 +11286,14 @@
                 if (proj.mesh.position.x < -goalX) {
                     // Hit left gate (player's tower)
                     if (proj.type !== 'frostbolt') {
-                        const damage = Math.min(2 + proj.volleyCount, 5);
+                        const damage = Math.min(2 + proj.volleyCount, 6);
                         dealDamageToTower(true, damage, proj.mesh.position.z);
                     }
                     toDestroy.push(proj);
                 } else if (proj.mesh.position.x > goalX) {
                     // Hit right gate (AI/guest tower)
                     if (proj.type !== 'frostbolt') {
-                        const damage = Math.min(2 + proj.volleyCount, 5);
+                        const damage = Math.min(2 + proj.volleyCount, 6);
                         dealDamageToTower(false, damage, proj.mesh.position.z);
                     }
                     toDestroy.push(proj);
@@ -10610,9 +11416,37 @@
             playerScore = 0;
             aiScore = 0;
             gameOver = false;
+            // Reset stage state
+            currentStage = 2;  // Back to midfield
+            stageResults = [null, null, null, null, null];
+            // Reset persistent gate health for new match
+            playerGateHealthByStage = [20, 20, 20, 20, 20];
+            aiGateHealthByStage = [20, 20, 20, 20, 20];
+            // Reset gate regeneration tracking
+            totalRoundsPlayed = 0;
+            lastRoundAtStage = [0, 0, 0, 0, 0];
+            if (window.updateStageIndicator) updateStageIndicator();
+            if (window.updateManaBarVisibility) updateManaBarVisibility();
             updateScore();
             resetTalentState();  // Reset talents for new match
             resetRound();
+        }
+
+        // Calculate gate health with regeneration - ALL gates heal 25% per round away
+        function getGateHealthWithRegen(healthArray, stage) {
+            const storedHealth = healthArray[stage];
+            const roundsAway = totalRoundsPlayed - lastRoundAtStage[stage];
+
+            if (roundsAway > 0) {
+                // Both gates regen based on rounds away from this stage
+                const regenAmount = Math.floor(roundsAway * GATE_REGEN_PER_ROUND * maxTowerHealth);
+                const finalHealth = Math.min(maxTowerHealth, storedHealth + regenAmount);
+                healthArray[stage] = finalHealth;  // Update stored health
+                return finalHealth;
+            }
+
+            // No time away - return persistent health
+            return storedHealth;
         }
 
         function resetRound() {
@@ -10623,6 +11457,13 @@
             // Clear projectiles
             if (window.clearAllProjectiles) {
                 clearAllProjectiles();
+            }
+
+            // Clean up Tone.js Transport to prevent audio accumulation
+            if (typeof Tone !== 'undefined' && Tone.Transport) {
+                try {
+                    Tone.Transport.cancel();  // Cancel all scheduled events
+                } catch (e) {}
             }
 
             // Clear gravity barriers before resetting combatant state
@@ -10637,16 +11478,23 @@
                 if (!c) continue;
                 combatantReset(c, false);
                 c.cooldowns = { fireball: 0, frostbolt: 0, gravity: 0 };
-                c.towerHealth = maxTowerHealth;
             }
+
+            // MOBA-style: Restore gate health with regeneration
+            // ALL gates heal 25% per round away from this stage
+            const playerGateHealth = getGateHealthWithRegen(playerGateHealthByStage, currentStage);
+            const aiGateHealth = getGateHealthWithRegen(aiGateHealthByStage, currentStage);
+
+            if (combatants.left) combatants.left.towerHealth = playerGateHealth;
+            if (combatants.right) combatants.right.towerHealth = aiGateHealth;
 
             // Reset paddle positions to center
             if (playerPaddle) playerPaddle.position.z = 0;
             if (aiPaddle) aiPaddle.position.z = 0;
 
             // LEGACY - sync variables for backwards compatibility
-            playerTowerHealth = maxTowerHealth;
-            aiTowerHealth = maxTowerHealth;
+            playerTowerHealth = playerGateHealth;
+            aiTowerHealth = aiGateHealth;
             playerFireballCooldown = 0;
             aiFireballCooldown = 0;
             playerFrostboltCooldown = 0;
@@ -10671,7 +11519,64 @@
                 window.resetBricks();
             }
 
-            showMessage("Ready");
+            // Show current stage name instead of generic "Ready"
+            const stageName = window.stageNames ? window.stageNames[currentStage] : "Ready";
+            showMessage(stageName);
+        }
+
+        // Stage transition - step fade to black, show location name, fade back in
+        // Uses Babylon GUI for CRT shader effects
+        function doStageTransition(stageName, callback) {
+            const overlay = window.guiElements?.transitionOverlay;
+            const text = window.guiElements?.transitionText;
+
+            if (!overlay || !text) {
+                // Fallback if GUI elements don't exist
+                if (callback) callback();
+                return;
+            }
+
+            // Animation helper - lerp alpha over time
+            function animateAlpha(element, from, to, duration, onComplete) {
+                const startTime = performance.now();
+                function update() {
+                    const elapsed = performance.now() - startTime;
+                    const t = Math.min(elapsed / duration, 1);
+                    element.alpha = from + (to - from) * t;
+                    if (t < 1) {
+                        requestAnimationFrame(update);
+                    } else if (onComplete) {
+                        onComplete();
+                    }
+                }
+                update();
+            }
+
+            // Step 1: Fade overlay to black (400ms)
+            animateAlpha(overlay, 0, 1, 400, () => {
+                // Step 2: Reset round while black
+                resetRound();
+
+                // Step 3: Set text and fade it in (400ms)
+                text.text = stageName;
+                animateAlpha(text, 0, 1, 400, () => {
+                    // Step 4: Hold with text visible (2000ms)
+                    setTimeout(() => {
+                        // Step 5: Fade out text (400ms)
+                        animateAlpha(text, 1, 0, 400, () => {
+                            text.text = "";
+
+                            // Step 6: Fade out overlay to reveal scene (500ms)
+                            animateAlpha(overlay, 1, 0, 500, () => {
+                                // Step 7: Let scene show for prep time (1500ms)
+                                setTimeout(() => {
+                                    if (callback) callback();
+                                }, 1500);
+                            });
+                        });
+                    }, 2000);
+                });
+            });
         }
 
         function updateCooldownUI() {
@@ -10826,15 +11731,16 @@
             // Read from combatant with fallback to legacy
             const mana = combatants.left ? combatants.left.mana : playerMana;
             const manaRegen = combatants.left ? combatants.left.manaRegen : playerManaRegen;
+            const cMaxMana = getMaxMana('left');
 
-            for (let i = 1; i <= maxMana; i++) {
+            for (let i = 1; i <= cMaxMana; i++) {
                 const segment = document.getElementById('mana' + i);
                 if (!segment) continue;
 
                 if (i <= mana) {
                     // Full segment
                     segment.value = 100;
-                } else if (i === mana + 1 && mana < maxMana) {
+                } else if (i === mana + 1 && mana < cMaxMana) {
                     // Currently filling segment - show partial fill
                     const progress = (manaRegen / manaRegenTime) * 100;
                     segment.value = progress;
@@ -10846,20 +11752,21 @@
             updateManaAvailability();
         }
 
-        // Update AI mana bar UI (3 segments) - NES.css progress bars
+        // Update AI mana bar UI (up to 5 segments) - NES.css progress bars
         function updateAIManaUI() {
             // Read from combatant with fallback to legacy
             const mana = combatants.right ? combatants.right.mana : aiMana;
             const manaRegen = combatants.right ? combatants.right.manaRegen : aiManaRegen;
+            const cMaxMana = getMaxMana('right');
 
-            for (let i = 1; i <= maxMana; i++) {
+            for (let i = 1; i <= cMaxMana; i++) {
                 const segment = document.getElementById('aiMana' + i);
                 if (!segment) continue;
 
                 if (i <= mana) {
                     // Full segment
                     segment.value = 100;
-                } else if (i === mana + 1 && mana < maxMana) {
+                } else if (i === mana + 1 && mana < cMaxMana) {
                     // Currently filling segment - show partial fill
                     const progress = (manaRegen / manaRegenTime) * 100;
                     segment.value = progress;
@@ -10916,10 +11823,11 @@
             }
         }
 
-        // Gain mana (capped at maxMana)
+        // Gain mana (capped at territorial max)
         function gainMana(caster, amount) {
             const c = getCombatantLegacy(caster);
-            c.mana = Math.min(maxMana, c.mana + amount);
+            const cMaxMana = getMaxMana(c.side);
+            c.mana = Math.min(cMaxMana, c.mana + amount);
             updateCombatantManaUI(c);
             // Sync legacy variables for backwards compatibility
             if (caster === 'player') playerMana = c.mana; else aiMana = c.mana;
@@ -11120,6 +12028,10 @@
                     container.classList.remove('casting');
                 }
             }
+            // Also hide Babylon GUI cast bar
+            if (window.guiElements && window.guiElements.playerCastContainer) {
+                window.guiElements.playerCastContainer.isVisible = show;
+            }
         }
 
         // Update AI cast bar UI - NES.css progress bar
@@ -11142,6 +12054,10 @@
                 } else {
                     container.classList.remove('casting');
                 }
+            }
+            // Also hide Babylon GUI cast bar
+            if (window.guiElements && window.guiElements.aiCastContainer) {
+                window.guiElements.aiCastContainer.isVisible = show;
             }
         }
 
@@ -11302,6 +12218,13 @@
                 if (window.guiElements.aiHealthFill) {
                     window.guiElements.aiHealthFill.width = aiPercent + "%";
                 }
+                // Update health percentage text
+                if (window.guiElements.playerHealthPercent) {
+                    window.guiElements.playerHealthPercent.text = Math.round(playerPercent) + "%";
+                }
+                if (window.guiElements.aiHealthPercent) {
+                    window.guiElements.aiHealthPercent.text = Math.round(aiPercent) + "%";
+                }
             }
         }
 
@@ -11384,11 +12307,35 @@
             }
         };
 
-        function showFrozenText(isPlayer) {
-            // Use new NES-styled combat text system
-            if (window.showCombatText) {
-                window.showCombatText(isPlayer, 'Frozen!', 'frozen');
+        // === AILMENT TEXT SYSTEM ===
+        // Persistent text for status ailments (frozen, etc.)
+        // Stays in place for ailment duration, other combat text floats above
+        const ailmentText = { player: null, ai: null };
+
+        function showAilmentText(isPlayer, text, type, duration) {
+            if (!scene) return;
+            const side = isPlayer ? 'player' : 'ai';
+
+            // Remove existing ailment text if any
+            if (ailmentText[side]) {
+                if (ailmentText[side].el) ailmentText[side].el.remove();
+                ailmentText[side] = null;
             }
+
+            const el = createHTMLCombatText(text, type);
+            if (!el) return;
+
+            ailmentText[side] = {
+                el: el,
+                duration: duration,
+                age: 0
+            };
+        }
+
+        function showFrozenText(isPlayer) {
+            // Show ailment text that lasts for freeze duration
+            const freezeDuration = abilities.frostbolt.freezeDuration || 1.0;
+            showAilmentText(isPlayer, '#FROZEN', 'frozen', freezeDuration);
         }
 
         // === GUI-BASED FLOATING COMBAT TEXT SYSTEM ===
@@ -11456,6 +12403,7 @@
 
         // Update floating texts at world positions (called from render loop)
         // Uses same step interval as combat text for consistency
+        // Cancel/Overpower texts: quick step fade in place, no movement
         let lastFloatStepTime = 0;
         window.updateFloatingTexts = (dt) => {
             if (!scene) return;
@@ -11472,25 +12420,22 @@
                 const item = floatingTexts[i];
                 item.age += dt;
 
-                // Remove after 2.5s (1s still + 1.5s moving/fading)
-                if (item.age > 2.5) {
+                // Quick duration: 0.8s total (visible 0.4s, then step fade)
+                if (item.age > 0.8) {
                     if (item.el) item.el.remove();
                     floatingTexts.splice(i, 1);
                     continue;
-                } else if (item.age > 2.0 && doStep) {
-                    // Stepped fade after 2s
-                    const fadeProgress = (item.age - 2.0) / 0.5;
-                    const steppedAlpha = fadeProgress < 0.33 ? 1 : fadeProgress < 0.66 ? 0.66 : fadeProgress < 1 ? 0.33 : 0;
+                } else if (item.age > 0.4 && doStep) {
+                    // Step fade after 0.4s
+                    const fadeProgress = (item.age - 0.4) / 0.4;
+                    const steppedAlpha = fadeProgress < 0.33 ? 0.66 : fadeProgress < 0.66 ? 0.33 : 0;
                     if (item.el) item.el.style.opacity = steppedAlpha;
                 }
 
-                // Stepped Y offset - stay still for first second, then move up
-                const moveAge = Math.max(0, item.age - 1.0);  // Delay movement by 1 second
-                const steppedMoveAge = Math.floor(moveAge / 0.15) * 0.15;
-
-                // Project to screen
+                // No Y movement - stay in place
+                // Project to screen at fixed position
                 const screenPos = BABYLON.Vector3.Project(
-                    new BABYLON.Vector3(item.worldPos.x, item.worldPos.y + steppedMoveAge * 1.5, item.worldPos.z),
+                    new BABYLON.Vector3(item.worldPos.x, item.worldPos.y, item.worldPos.z),
                     BABYLON.Matrix.Identity(),
                     scene.getTransformMatrix(),
                     scene.activeCamera.viewport.toGlobal(renderWidth, renderHeight)
@@ -11509,7 +12454,9 @@
 
         // Update combat text positions (called from render loop)
         // Uniform stacking with stepped upward movement
+        // Ailment text sits at base, other text floats above
         const STACK_SPACING = 22;  // Pixels between stacked messages
+        const AILMENT_OFFSET = 26; // Extra offset when ailment is active
         window.updateCombatText = (dt) => {
             if (!scene) return;
 
@@ -11541,6 +12488,37 @@
                 const baseX = screenPos.x * scaleX;
                 const baseY = screenPos.y * scaleY;
 
+                // Update ailment text (stays at base position)
+                const ailment = ailmentText[side];
+                let ailmentActive = false;
+                if (ailment) {
+                    ailment.age += dt;
+
+                    // Remove when duration expires (with short fade)
+                    if (ailment.age > ailment.duration) {
+                        if (ailment.el) ailment.el.remove();
+                        ailmentText[side] = null;
+                    } else {
+                        ailmentActive = true;
+                        // Step fade in last 0.3s
+                        const fadeStart = ailment.duration - 0.3;
+                        if (ailment.age > fadeStart && doStep) {
+                            const fadeProgress = (ailment.age - fadeStart) / 0.3;
+                            const steppedAlpha = fadeProgress < 0.33 ? 0.66 : fadeProgress < 0.66 ? 0.33 : 0;
+                            if (ailment.el) ailment.el.style.opacity = steppedAlpha;
+                        }
+                        // Position at base (no movement)
+                        if (doStep && ailment.el) {
+                            ailment.el.style.left = Math.floor(baseX) + "px";
+                            ailment.el.style.top = Math.floor(baseY) + "px";
+                            ailment.el.style.transform = "translate(-50%, -50%)";
+                        }
+                    }
+                }
+
+                // Offset for regular combat text when ailment is active
+                const ailmentYOffset = ailmentActive ? AILMENT_OFFSET : 0;
+
                 // Process queue - index 0 is oldest (top), last is newest (bottom)
                 for (let i = combatTextQueue[side].length - 1; i >= 0; i--) {
                     const item = combatTextQueue[side][i];
@@ -11564,7 +12542,7 @@
                     const moveAge = Math.max(0, item.age - 1.0);  // Delay movement by 1 second
                     const steppedMoveAge = Math.floor(moveAge / 0.15) * 0.15;
                     const slot = combatTextQueue[side].length - 1 - i;
-                    const slotY = baseY - (slot * STACK_SPACING) - (steppedMoveAge * 30);
+                    const slotY = baseY - ailmentYOffset - (slot * STACK_SPACING) - (steppedMoveAge * 30);
 
                     if (doStep && item.el) {
                         item.el.style.left = Math.floor(baseX) + "px";
@@ -11663,35 +12641,102 @@
             }
 
             // Winner is whoever destroyed the gate
+            const stageName = window.stageNames ? window.stageNames[currentStage] : "Stage";
+
+            // Track rounds for gate regeneration system
+            totalRoundsPlayed++;
+            // Record when we're leaving this stage (for regen calculation on return)
+            lastRoundAtStage[currentStage] = totalRoundsPlayed;
+
+            // MOBA-style: Save gate health before transitioning
+            const playerHealth = combatants.left ? combatants.left.towerHealth : playerTowerHealth;
+            const aiHealth = combatants.right ? combatants.right.towerHealth : aiTowerHealth;
+
+            // Pure tug-of-war: win = push forward, lose = pushed back
+            // No skipping - every stage must be fought for
+
             if (winner === 'player') {
                 playerScore++;
-                showMessage("Victory");
-                playSound('victory', 0, 0.8);
+
+                // Record stage result for progress bar coloring
+                stageResults[currentStage] = 'player';
+
+                // Save health: player gate keeps damage, AI gate was destroyed (0)
+                playerGateHealthByStage[currentStage] = playerHealth;
+                aiGateHealthByStage[currentStage] = 0;
+
                 // Play victory/defeat animations (loop until round resets)
                 if (window.combatantPlayAnim) {
                     combatantPlayAnim(combatants.left, 'victory', true, 2500);
                     combatantPlayAnim(combatants.right, 'defeat', true, 2500);
                 }
+
+                // Push toward enemy core
+                if (currentStage >= 4) {
+                    // Already at enemy core and won = VICTORY
+                    showMessage("VICTORY!");
+                    playSound('victory', 0, 1.0);
+                    gameOver = true;
+                } else {
+                    showMessage(stageName + " Won!");
+                    playSound('victory', 0, 0.8);
+                    currentStage++;
+                }
             } else {
                 aiScore++;
-                showMessage("Defeat");
-                playSound('defeat', 0, 0.8);
+
+                // Record stage result for progress bar coloring
+                stageResults[currentStage] = 'ai';
+
+                // Save health: AI gate keeps damage, player gate was destroyed (0)
+                aiGateHealthByStage[currentStage] = aiHealth;
+                playerGateHealthByStage[currentStage] = 0;
+
                 // Play victory/defeat animations (loop until round resets)
                 if (window.combatantPlayAnim) {
                     combatantPlayAnim(combatants.left, 'defeat', true, 2500);
                     combatantPlayAnim(combatants.right, 'victory', true, 2500);
                 }
+
+                // Pushed back toward player core
+                if (currentStage <= 0) {
+                    // Already at player core and lost = DEFEAT
+                    showMessage("DEFEAT!");
+                    playSound('defeat', 0, 1.0);
+                    gameOver = true;
+                } else {
+                    showMessage(stageName + " Lost!");
+                    playSound('defeat', 0, 0.8);
+                    currentStage--;
+                }
             }
 
-            updateScore();
-            checkWin();
+            // Update stage indicator and mana bar visibility for new stage
+            if (window.updateStageIndicator) updateStageIndicator();
+            if (window.updateManaBarVisibility) updateManaBarVisibility();
 
-            if (!gameOver) {
-                // Don't auto-reset - wait for player to press a key
-                // Show prompt after animations finish
+            updateScore();
+
+            if (gameOver) {
+                // Final game over - auto-return to menu after delay
                 setTimeout(() => {
-                    roundTransitioning = false;  // Allow input now
-                    showMessage("Press any key");
+                    roundTransitioning = false;
+                    resetGame();
+                    showTalentScreen();
+                }, 4000);
+            } else {
+                // After win/lose message, do step fade transition to next stage
+                const nextStageName = window.stageNames ? window.stageNames[currentStage] : "Stage";
+                setTimeout(() => {
+                    // Hide the current message before transition
+                    hideMessage();
+
+                    // Do the step fade transition showing next stage name
+                    doStageTransition(nextStageName, () => {
+                        // Auto-start the round after transition
+                        startRound();
+                        roundTransitioning = false;
+                    });
                 }, 2500);
             }
         }

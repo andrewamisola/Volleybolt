@@ -542,6 +542,8 @@ export async function playSynthSound(name, x = 0) {
 // BACKWARD COMPATIBILITY - Expose on window
 // ============================================================
 
+// Note: ToneSFX and initToneJS are defined in index.html's inline script
+// We don't overwrite them here to avoid conflicts with the main game's audio system
 if (typeof window !== 'undefined') {
     window.initAudioContext = initAudioContext;
     window.setMasterVolume = setMasterVolume;
@@ -552,9 +554,9 @@ if (typeof window !== 'undefined') {
     window.updateSoundPitch = updateSoundPitch;
     window.stopLoopingSound = stopLoopingSound;
     window.loadAllSounds = loadAllSounds;
-    window.initToneJS = initToneJS;
-    window.ToneSFX = ToneSFX;
-    window.setTonePan = setTonePan;
-    window.playSynthSound = playSynthSound;
-    window.isoGenerator = isoGenerator;
+    // Don't overwrite window.initToneJS - index.html has the main version
+    // Don't overwrite window.ToneSFX - index.html has the main version
+    // window.setTonePan is set in index.html
+    // window.playSynthSound is set in index.html
+    // window.isoGenerator - not used by main game
 }

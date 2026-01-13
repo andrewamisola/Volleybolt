@@ -246,7 +246,7 @@ html, body {
     font-weight: 400;
     color: #fff;
     padding: 6px 10px;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgba(0, 0, 0, 0.4);
     border: none;
     text-shadow: 2px 2px 0px #000;
     pointer-events: none;
@@ -257,7 +257,11 @@ html, body {
 }
 .combat-text.fire { color: #ffa040; }
 .combat-text.frost { color: #80d0ff; }
-.combat-text.frozen { color: #4080ff; }
+.combat-text.frozen {
+    color: #ffffff;
+    background: rgba(64, 128, 255, 0.4);
+    font-style: italic;
+}
 .combat-text.damage { color: #ff4040; font-size: 12px; }
 .combat-text.cancel { color: #ffff40; }
 
@@ -364,7 +368,7 @@ html, body {
     font-weight: 400;
     color: #ff4040;
     padding: 6px 10px;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgba(0, 0, 0, 0.4);
     border: none;
     text-shadow: 2px 2px 0px #000;
     pointer-events: none;
@@ -455,43 +459,12 @@ html, body {
     padding: 12px 18px;
     z-index: 200;
     pointer-events: auto;
-    /* Stone/metal frame background */
-    background:
-        linear-gradient(180deg,
-            rgba(60, 50, 40, 0.95) 0%,
-            rgba(35, 30, 25, 0.98) 50%,
-            rgba(25, 20, 18, 0.98) 100%);
-    border: 2px solid #4a3c2a;
-    border-top-color: #6b5a42;
-    border-left-color: #5d4d38;
-    border-radius: 4px;
-    /* Metallic edge highlights */
-    box-shadow:
-        inset 0 1px 0 rgba(255, 215, 140, 0.15),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.4),
-        0 2px 8px rgba(0, 0, 0, 0.6),
-        0 0 20px rgba(0, 0, 0, 0.4);
-}
-
-/* Ornate corner accents */
-#abilityBar::before,
-#abilityBar::after {
-    content: '';
-    position: absolute;
-    width: 8px;
-    height: 8px;
-    background: linear-gradient(135deg, #c9a44a 0%, #8b6914 100%);
-    border-radius: 1px;
-}
-#abilityBar::before {
-    top: -1px;
-    left: -1px;
-    border-radius: 3px 0 0 0;
-}
-#abilityBar::after {
-    top: -1px;
-    right: -1px;
-    border-radius: 0 3px 0 0;
+    /* Transparent - background rendered in Babylon GUI */
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    /* No box shadow - clean overlay */
+    box-shadow: none;
 }
 
 .ability-slot {
@@ -565,7 +538,7 @@ html, body {
     width: 70px;
     height: 70px;
     z-index: 1;
-    filter: drop-shadow(2px 2px 3px #000);
+    filter: url(#posterize) drop-shadow(2px 2px 3px #000);
     transition: all 0.1s ease;
     background-size: contain;
     background-position: center;
@@ -582,11 +555,11 @@ html, body {
 }
 
 .ability-slot.ready .ability-icon {
-    filter: drop-shadow(1px 1px 2px #000) brightness(1.2);
+    filter: url(#posterize) drop-shadow(1px 1px 2px #000) brightness(1.2);
 }
 
 .ability-slot.on-cooldown .ability-icon {
-    filter: grayscale(80%) brightness(0.4);
+    filter: url(#posterize) grayscale(80%) brightness(0.4);
 }
 
 .cooldown-overlay {
@@ -766,7 +739,7 @@ html, body {
 }
 
 .ability-slot.no-mana .ability-icon {
-    filter: grayscale(80%) brightness(0.4) !important;
+    filter: url(#posterize) grayscale(80%) brightness(0.4) !important;
 }
 
 .ability-slot.no-mana .mana-cost {
@@ -1021,7 +994,7 @@ html, body {
     left: 0;
     width: 100%;
     height: 100%;
-    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    border-radius: 2px;
     background: conic-gradient(
         from 0deg,
         rgba(0, 0, 0, 0.75) var(--cast-progress, 0deg),
@@ -1085,7 +1058,7 @@ html, body {
     background-size: contain;
     background-position: center;
     background-repeat: no-repeat;
-    filter: drop-shadow(2px 2px 2px #000);
+    filter: url(#posterize) drop-shadow(2px 2px 2px #000);
     image-rendering: pixelated;
 }
 
@@ -1170,7 +1143,7 @@ html, body {
 }
 
 #parryButton.on-cooldown .parry-icon {
-    filter: grayscale(0.5) brightness(0.7) drop-shadow(2px 2px 2px #000);
+    filter: url(#posterize) grayscale(0.5) brightness(0.7) drop-shadow(2px 2px 2px #000);
 }
 
 #parryButton.on-cooldown .parry-key {
@@ -1825,4 +1798,45 @@ html, body {
     border-right-color: #284;
     color: #6ca;
     transform: translateY(-2px);
+}
+
+/* ============================================================
+   Stage Transition Overlay - Step fade between rounds
+   ============================================================ */
+#stageTransitionOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.4s ease;
+}
+
+#stageTransitionOverlay.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+#stageTransitionText {
+    font-family: 'Esthetique', 'Cinzel', 'Georgia', serif;
+    font-size: 42px;
+    color: var(--gold-light);
+    text-shadow: 0 0 30px rgba(212, 168, 73, 0.6),
+                 0 0 60px rgba(212, 168, 73, 0.3),
+                 3px 3px 0 #000;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+}
+
+#stageTransitionText.visible {
+    opacity: 1;
 }

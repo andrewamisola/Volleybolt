@@ -727,10 +727,10 @@ export function updateCombatText(dt) {
 // ============================================================
 
 /**
- * Show "Frozen!" text above player/AI
+ * Show "#FROZEN" text above player/AI (status ailment)
  */
 export function showFrozenText(isPlayer) {
-    showCombatText(isPlayer, 'Frozen!', 'frozen');
+    showCombatText(isPlayer, '#FROZEN', 'frozen');
 }
 
 /**
