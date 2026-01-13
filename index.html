@@ -142,18 +142,22 @@
         <progress class="nes-progress is-error" id="aiCastBarProgress" value="0" max="100"></progress>
     </div>
 
-    <!-- AI Mana Bar (3 segments) -->
+    <!-- AI Mana Bar (5 segments - visible count depends on stage) -->
     <div id="aiManaBar">
         <progress class="nes-progress is-error mana-segment" id="aiMana1" value="0" max="100"></progress>
         <progress class="nes-progress is-error mana-segment" id="aiMana2" value="0" max="100"></progress>
         <progress class="nes-progress is-error mana-segment" id="aiMana3" value="0" max="100"></progress>
+        <progress class="nes-progress is-error mana-segment" id="aiMana4" value="0" max="100"></progress>
+        <progress class="nes-progress is-error mana-segment" id="aiMana5" value="0" max="100"></progress>
     </div>
 
-    <!-- Mana Bar (Holy Power style - 3 segments) -->
+    <!-- Mana Bar (Holy Power style - 5 segments, visible count depends on stage) -->
     <div id="manaBar">
         <progress class="nes-progress is-primary mana-segment" id="mana1" value="0" max="100"></progress>
         <progress class="nes-progress is-primary mana-segment" id="mana2" value="0" max="100"></progress>
         <progress class="nes-progress is-primary mana-segment" id="mana3" value="0" max="100"></progress>
+        <progress class="nes-progress is-primary mana-segment" id="mana4" value="0" max="100"></progress>
+        <progress class="nes-progress is-primary mana-segment" id="mana5" value="0" max="100"></progress>
     </div>
 
     <!-- MOBA-style Ability Bar -->
@@ -385,6 +389,24 @@
         let aiTowerHealth = maxTowerHealth;
         let roundActive = false;
         let roundTransitioning = false;  // Block actions during round end transition
+
+        // Game state machine: "menu" | "playing" | "paused"
+        let gameState = "menu";
+
+        // Menu camera settings (low angle hero shot from center stage)
+        // Camera at floor level, center stage, looking up at player with castle behind
+        const MENU_CAMERA = {
+            alpha: 0,                // Camera on +X side (center stage)
+            beta: 1.9,               // Looking up (~109 degrees from vertical)
+            radius: 5.5              // Distance to frame player + castle
+        };
+
+        // Gameplay camera settings (top-down angled)
+        const GAME_CAMERA = {
+            alpha: -Math.PI / 2,
+            beta: Math.PI / 3,
+            radius: 30
+        };
 
         // Physics constants
         const gravity = -30;            // Tuned for arc over midline
@@ -2863,13 +2885,16 @@
         }
 
         document.addEventListener('keydown', (e) => {
+            // Initialize audio context on first interaction (always allowed)
+            initAudioContext();
+
+            // Block all gameplay input when not playing
+            if (gameState !== "playing") return;
+
             keys[e.code] = true;
 
             // Visual feedback for ability/parry keys
             showKeyPressedFeedback(e.code);
-
-            // Initialize audio context on first interaction
-            initAudioContext();
 
             // PvP mode - update network input buffer
             if (gameMode === 'pvp' && roundActive) {
@@ -2936,6 +2961,9 @@
             // }
         });
         document.addEventListener('keyup', (e) => {
+            // Block gameplay input when not playing
+            if (gameState !== "playing") return;
+
             keys[e.code] = false;
 
             // PvP mode - update movement when key released
@@ -2954,6 +2982,8 @@
         // Parry button click handler
         document.getElementById('parryButton').addEventListener('click', () => {
             initAudioContext();
+            // Block when not playing
+            if (gameState !== "playing") return;
             showKeyPressedFeedback('Space');
             // Any click starts the round when waiting
             const talentVisible = document.getElementById('talentScreen').classList.contains('visible');
@@ -3128,20 +3158,21 @@
             // Load sounds (async, will be ready shortly after game starts)
             loadAllSounds();
 
-            // Camera - top-down angled view, rotated for horizontal pong
+            // Camera - starts in menu position, transitions to gameplay
+            // Target between center and player, camera positioned at center floor looking up
             const camera = new BABYLON.ArcRotateCamera(
                 "camera",
-                -Math.PI / 2,  // alpha - looking from the side (host view)
-                Math.PI / 3,   // beta - angle from top
-                30,            // radius
-                new BABYLON.Vector3(0, 0, 0),
+                MENU_CAMERA.alpha,  // Start at menu angle
+                MENU_CAMERA.beta,   // Menu beta (looking up)
+                MENU_CAMERA.radius, // Menu radius
+                new BABYLON.Vector3(-5, 2, 0),  // Between center and player, at body height
                 scene
             );
             camera.inputs.clear(); // Lock camera
 
             // Store camera globally for multiplayer camera flip
             window.gameCamera = camera;
-            window.defaultCameraAlpha = -Math.PI / 2;
+            window.defaultCameraAlpha = GAME_CAMERA.alpha;
 
             // Flip camera for client (called when starting PvP match as guest)
             window.flipCameraForClient = () => {
@@ -3167,6 +3198,8 @@
             // Create fullscreen UI texture for proper screen-space positioning
             const guiTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI", true, scene);
             guiTexture.idealHeight = 1080;  // Reference height for scaling
+            guiTexture.idealWidth = 1440;   // Reference width for scaling (4:3 aspect)
+            guiTexture.useInvalidateRectOptimization = false;  // Ensure proper redraw
 
             // Store globally for update functions
             window.guiTexture = guiTexture;
@@ -3181,7 +3214,9 @@
             playerHealthPanel.top = "20px";
             playerHealthPanel.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
             playerHealthPanel.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+            playerHealthPanel.isVisible = false;  // Start hidden (menu state)
             guiTexture.addControl(playerHealthPanel);
+            window.guiElements.playerHealthPanel = playerHealthPanel;
 
             const playerHealthLabel = new BABYLON.GUI.TextBlock();
             playerHealthLabel.text = "YOUR TOWER";
@@ -3255,7 +3290,9 @@
             aiHealthPanel.top = "20px";
             aiHealthPanel.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
             aiHealthPanel.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+            aiHealthPanel.isVisible = false;  // Start hidden (menu state)
             guiTexture.addControl(aiHealthPanel);
+            window.guiElements.aiHealthPanel = aiHealthPanel;
 
             const aiHealthLabel = new BABYLON.GUI.TextBlock();
             aiHealthLabel.text = "ENEMY TOWER";
@@ -3332,7 +3369,9 @@
             scorePanel.cornerRadius = 4;
             scorePanel.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
             scorePanel.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+            scorePanel.isVisible = false;  // Start hidden (menu state)
             guiTexture.addControl(scorePanel);
+            window.guiElements.scorePanel = scorePanel;
 
             const scoreText = new BABYLON.GUI.TextBlock();
             scoreText.text = "0 - 0";
@@ -3340,7 +3379,7 @@
             scoreText.fontSize = 42;
             scoreText.fontFamily = "'Rajdhani', sans-serif";
             scoreText.fontWeight = "700";
-            scoreText.alpha = 1;  // Visible in GUI
+            scoreText.alpha = 0;  // Start hidden (menu state)
             scorePanel.addControl(scoreText);
             window.guiElements.scoreText = scoreText;
 
@@ -3350,6 +3389,7 @@
             stageGrid.width = "200px";
             stageGrid.height = "28px";
             stageGrid.top = "80px";
+            stageGrid.isVisible = false;  // Start hidden (menu state)
             stageGrid.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
             stageGrid.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
             // 5 equal columns
@@ -3360,6 +3400,7 @@
             stageGrid.addColumnDefinition(1);
             stageGrid.addRowDefinition(1);
             guiTexture.addControl(stageGrid);
+            window.guiElements.stageGrid = stageGrid;
 
             // Stage names for messages
             const stageNames = ["Your Core", "Your Territory", "Midfield", "Enemy Territory", "Enemy Core"];
@@ -3400,6 +3441,7 @@
             stageNameText.shadowColor = "#000";
             stageNameText.shadowOffsetX = 2;
             stageNameText.shadowOffsetY = 2;
+            stageNameText.isVisible = false;  // Start hidden (menu state)
             guiTexture.addControl(stageNameText);
             window.guiElements.stageNameText = stageNameText;
 
@@ -3467,6 +3509,8 @@
             transitionOverlay.thickness = 0;
             transitionOverlay.alpha = 0;  // Start invisible
             transitionOverlay.zIndex = 100;  // Above scene, below transition text
+            transitionOverlay.isPointerBlocker = false;  // Don't block clicks when invisible
+            transitionOverlay.isHitTestVisible = false;  // Allow clicks to pass through
             guiTexture.addControl(transitionOverlay);
             window.guiElements.transitionOverlay = transitionOverlay;
 
@@ -3506,23 +3550,199 @@
             guiTexture.addControl(messageText);
             window.guiElements.messageText = messageText;
 
+            // --- VICTORY/DEFEAT OVERLAY (Bigger, more celebratory) ---
+            const victoryOverlay = new BABYLON.GUI.Rectangle();
+            victoryOverlay.width = "100%";
+            victoryOverlay.height = "100%";
+            victoryOverlay.background = "rgba(0, 0, 0, 0.7)";
+            victoryOverlay.thickness = 0;
+            victoryOverlay.isVisible = false;
+            victoryOverlay.zIndex = 200;
+            victoryOverlay.isPointerBlocker = true;  // Block clicks from falling through
+            guiTexture.addControl(victoryOverlay);
+            window.guiElements.victoryOverlay = victoryOverlay;
+
+            // Victory/Defeat title (BIG)
+            const victoryTitle = new BABYLON.GUI.TextBlock();
+            victoryTitle.text = "VICTORY!";
+            victoryTitle.color = "#ffd700";  // Gold
+            victoryTitle.fontSize = 96;
+            victoryTitle.fontFamily = "'Esthetique', 'Cinzel', serif";
+            victoryTitle.fontWeight = "700";
+            victoryTitle.shadowColor = "#000";
+            victoryTitle.shadowBlur = 0;
+            victoryTitle.shadowOffsetX = 5;
+            victoryTitle.shadowOffsetY = 5;
+            victoryTitle.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
+            victoryTitle.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
+            victoryTitle.top = "-80px";
+            victoryOverlay.addControl(victoryTitle);
+            window.guiElements.victoryTitle = victoryTitle;
+
+            // Subtitle text
+            const victorySubtitle = new BABYLON.GUI.TextBlock();
+            victorySubtitle.text = "You have conquered the arena!";
+            victorySubtitle.color = "#e0d0a0";
+            victorySubtitle.fontSize = 24;
+            victorySubtitle.fontFamily = "'Esthetique', 'Cinzel', serif";
+            victorySubtitle.fontWeight = "400";
+            victorySubtitle.shadowColor = "#000";
+            victorySubtitle.shadowBlur = 0;
+            victorySubtitle.shadowOffsetX = 2;
+            victorySubtitle.shadowOffsetY = 2;
+            victorySubtitle.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
+            victorySubtitle.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
+            victorySubtitle.top = "20px";
+            victoryOverlay.addControl(victorySubtitle);
+            window.guiElements.victorySubtitle = victorySubtitle;
+
+            // Continue button (stone-styled, consistent with menu buttons)
+            const continueBtn = BABYLON.GUI.Button.CreateSimpleButton("continueBtn", "Continue");
+            continueBtn.width = "300px";
+            continueBtn.height = "60px";
+            continueBtn.color = "#d4c4a0";
+            continueBtn.fontSize = 24;
+            continueBtn.fontFamily = "'Esthetique', 'Cinzel', serif";
+            continueBtn.background = "#3d3528";
+            continueBtn.cornerRadius = 6;
+            continueBtn.thickness = 3;
+            continueBtn.shadowColor = "#000";
+            continueBtn.shadowOffsetX = 3;
+            continueBtn.shadowOffsetY = 3;
+            continueBtn.paddingTop = "10px";
+            continueBtn.paddingBottom = "10px";
+            continueBtn.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
+            continueBtn.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
+            continueBtn.top = "100px";
+            continueBtn.textBlock.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
+            continueBtn.isPointerBlocker = true;
+            continueBtn.isHitTestVisible = true;
+            continueBtn.onPointerEnterObservable.add(() => {
+                continueBtn.background = "#4a4235";
+                continueBtn.color = "#f0e0c0";
+            });
+            continueBtn.onPointerOutObservable.add(() => {
+                continueBtn.background = "#3d3528";
+                continueBtn.color = "#d4c4a0";
+            });
+            continueBtn.onPointerDownObservable.add(() => {
+                continueBtn.background = "#2a2520";
+                continueBtn.top = "102px";  // Slight inset like menu buttons
+            });
+            continueBtn.onPointerUpObservable.add(() => {
+                continueBtn.background = "#4a4235";
+                continueBtn.top = "100px";
+                // Use fade transition to return to menu
+                returnToMenuTransition();
+            });
+            victoryOverlay.addControl(continueBtn);
+            window.guiElements.continueBtn = continueBtn;
+
             // --- MAIN MENU TITLE (GUI for CRT effects) ---
             const menuTitle = new BABYLON.GUI.TextBlock();
             menuTitle.text = "VOLLEYBOLT";
             menuTitle.color = "#c9a44a";
-            menuTitle.fontSize = 64;
+            menuTitle.fontSize = 86;
             menuTitle.fontFamily = "'Esthetique', 'Cinzel', serif";
             menuTitle.fontWeight = "700";
             menuTitle.shadowColor = "#000";
             menuTitle.shadowBlur = 0;
-            menuTitle.shadowOffsetX = 4;
-            menuTitle.shadowOffsetY = 4;
+            menuTitle.shadowOffsetX = 5;
+            menuTitle.shadowOffsetY = 5;
             menuTitle.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
             menuTitle.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
-            menuTitle.top = "-80px";
+            menuTitle.top = "-200px";  // Positioned above the buttons
             menuTitle.alpha = 1;
+            menuTitle.zIndex = 500;  // High zIndex to be on top
             guiTexture.addControl(menuTitle);
             window.guiElements.menuTitle = menuTitle;
+
+            // --- MAIN MENU CONTAINER (holds title + buttons) ---
+            const menuContainer = new BABYLON.GUI.StackPanel();
+            menuContainer.isVertical = true;
+            menuContainer.width = "500px";
+            menuContainer.height = "220px";  // Explicit height for proper hit detection
+            menuContainer.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
+            menuContainer.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
+            menuContainer.top = "40px";  // Slightly below center
+            menuContainer.isVisible = true;
+            menuContainer.zIndex = 500;  // High zIndex to be on top
+            menuContainer.isPointerBlocker = true;  // Block clicks from falling through
+            menuContainer.isHitTestVisible = true;
+            guiTexture.addControl(menuContainer);
+            window.guiElements.menuContainer = menuContainer;
+
+            // Helper to create stone-styled menu button
+            function createMenuButton(text, onClick) {
+                const btn = BABYLON.GUI.Button.CreateSimpleButton("btn_" + text, text);
+                btn.width = "420px";
+                btn.height = "80px";
+                btn.color = "#d4c4a0";  // Light stone text
+                btn.fontSize = 28;
+                btn.fontFamily = "'Esthetique', 'Cinzel', serif";
+                btn.background = "#3d3528";  // Dark stone base
+                btn.cornerRadius = 6;
+                btn.thickness = 3;
+                btn.shadowColor = "#000";
+                btn.shadowOffsetX = 3;
+                btn.shadowOffsetY = 3;
+                btn.paddingTop = "15px";
+                btn.paddingBottom = "15px";
+                btn.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;  // Center in container
+                // Center text within the button
+                btn.textBlock.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
+                btn.isPointerBlocker = true;  // Ensure button captures clicks
+                btn.isHitTestVisible = true;  // Ensure button receives hit tests
+
+                // Hover effect
+                btn.onPointerEnterObservable.add(() => {
+                    btn.background = "#4a4235";  // Lighter on hover
+                    btn.color = "#f0e0c0";
+                });
+                btn.onPointerOutObservable.add(() => {
+                    btn.background = "#3d3528";
+                    btn.color = "#d4c4a0";
+                });
+
+                // Press effect
+                btn.onPointerDownObservable.add(() => {
+                    btn.background = "#2a2520";  // Darker when pressed
+                    btn.top = "2px";  // Slight inset
+                });
+                btn.onPointerUpObservable.add(() => {
+                    btn.background = "#4a4235";
+                    btn.top = "0px";
+                });
+
+                // Use click observable for the action
+                btn.onPointerClickObservable.add(() => {
+                    if (onClick) onClick();
+                });
+
+                return btn;
+            }
+
+            // Start Battle button
+            const btnStartBattle = createMenuButton("Start Battle", () => {
+                startGame();
+            });
+            menuContainer.addControl(btnStartBattle);
+
+            // Spacer
+            const spacer1 = new BABYLON.GUI.Rectangle();
+            spacer1.height = "25px";
+            spacer1.thickness = 0;
+            spacer1.background = "transparent";
+            menuContainer.addControl(spacer1);
+
+            // Multiplayer button
+            const btnMultiplayer = createMenuButton("Multiplayer", () => {
+                showMultiplayerLobbyGUI();
+            });
+            menuContainer.addControl(btnMultiplayer);
+
+            window.guiElements.btnStartBattle = btnStartBattle;
+            window.guiElements.btnMultiplayer = btnMultiplayer;
 
             // --- MANA BARS ---
             // Player mana bar (below player health bar)
@@ -3534,7 +3754,9 @@
             playerManaContainer.top = "85px";  // Below health bar (20 + 60 + 5)
             playerManaContainer.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
             playerManaContainer.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+            playerManaContainer.isVisible = false;  // Start hidden (menu state)
             guiTexture.addControl(playerManaContainer);
+            window.guiElements.playerManaContainer = playerManaContainer;
 
             window.guiElements.playerManaSegments = [];
             window.guiElements.playerManaBgs = [];  // Store backgrounds for visibility control
@@ -3609,7 +3831,9 @@
             aiManaContainer.top = "85px";  // Below health bar
             aiManaContainer.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
             aiManaContainer.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+            aiManaContainer.isVisible = false;  // Start hidden (menu state)
             guiTexture.addControl(aiManaContainer);
+            window.guiElements.aiManaContainer = aiManaContainer;
 
             window.guiElements.aiManaSegments = [];
             window.guiElements.aiManaBgs = [];  // Store backgrounds for visibility control
@@ -4853,8 +5077,9 @@
             redBase.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
 
             // Player paddle (LEFT side of screen)
+            // Paddle is invisible hitbox - position at ground level so parented wizard stands on floor
             playerPaddle = BABYLON.MeshBuilder.CreateBox("player", { width: 0.4, height: 0.5, depth: 2.5 }, scene);
-            playerPaddle.position.set(-tableWidth/2 + 1.5, 0.25, 0);
+            playerPaddle.position.set(-tableWidth/2 + 1.5, 0, 0);
             playerPaddle.material = playerMat;
             // No shadow for paddle - only character casts shadow
             playerPaddle.enableEdgesRendering();
@@ -4866,7 +5091,7 @@
             aiPaddle.enableEdgesRendering();
             aiPaddle.edgesWidth = 2.0;
             aiPaddle.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
-            aiPaddle.position.set(tableWidth/2 - 1.5, 0.25, 0);
+            aiPaddle.position.set(tableWidth/2 - 1.5, 0, 0);
             aiPaddle.material = aiMat;
             // No shadow for paddle - only character casts shadow
 
@@ -5005,17 +5230,20 @@
 
             const checkAllLoaded = () => {
                 if (playerModelLoaded && aiModelLoaded) {
-                    // Hide loading screen (HTML)
-                    const loadingScreen = document.getElementById('loadingScreen');
-                    if (loadingScreen) {
-                        loadingScreen.classList.add('hidden');
-                        setTimeout(() => loadingScreen.style.display = 'none', 500);
-                    }
                     console.log("All models loaded!");
-
-                    // Initialize talent system and show upgrade selection
+                    console.log("Player animations available:", Object.keys(combatants.left?.animations || {}));
                     initTalentSystem();
-                    setTimeout(() => showTalentScreen(), 500);
+
+                    // Hide loading screen with a small delay for stability
+                    setTimeout(() => {
+                        const loadingScreen = document.getElementById('loadingScreen');
+                        if (loadingScreen) {
+                            loadingScreen.classList.add('hidden');
+                            setTimeout(() => loadingScreen.style.display = 'none', 500);
+                        }
+                        // showTalentScreen will handle starting the dance animation
+                        showTalentScreen();
+                    }, 200);  // 200ms for animations to be fully ready
                 }
             };
 
@@ -5074,7 +5302,7 @@
                         });
 
                         playerWizard.parent = playerPaddle;
-                        playerWizard.position.set(0, -0.25, 0); // Lower to ground level
+                        playerWizard.position.set(0, 0, 0); // Paddle at ground, wizard at same level
                         playerWizard.scaling = new BABYLON.Vector3(1, 1, 1);
                         playerWizard.rotation.y = Math.PI / 2; // Face right
                         playerPaddle.visibility = 0;
@@ -5143,7 +5371,7 @@
                         });
 
                         aiWizard.parent = aiPaddle;
-                        aiWizard.position.set(0, -0.25, 0); // Lower to ground level
+                        aiWizard.position.set(0, 0, 0); // Paddle at ground, wizard at same level
                         aiWizard.scaling = new BABYLON.Vector3(1, 1, 1);
                         aiWizard.rotation.y = -Math.PI / 2; // Face left
                         aiPaddle.visibility = 0;
@@ -6400,7 +6628,8 @@
                 loadCharacterModels(); // Original wizard
             }
             initTalentSystem();
-            setTimeout(() => showTalentScreen(), 500);
+            // Note: Main showTalentScreen is called after models load (see checkAllModelsLoaded)
+            // This is a fallback that may run before models are ready
 
             // Ice block material - transparent frozen effect
             const iceMat = new BABYLON.StandardMaterial("iceMat", scene);
@@ -6600,6 +6829,10 @@
             keystoneMat.specularColor = BABYLON.Color3.Black();  // FLAT
 
             // Load castle wall texture
+            // Materials for buttresses (rotated texture) - will be set when texture loads
+            let playerButtressMat = null;
+            let aiButtressMat = null;
+
             const loadGateTextures = () => {
                 const wallTex = new BABYLON.Texture("textures/castle_wall.png", scene, false, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE,
                     () => {
@@ -6613,7 +6846,27 @@
                         // Keystones keep gold tint
                         keystoneMat.diffuseTexture = wallTex.clone();
                         keystoneMat.diffuseColor = MCM.goldBright;
-                        console.log("Castle wall texture loaded");
+
+                        // Create rotated texture for buttresses (90 degrees)
+                        const buttressTex = wallTex.clone();
+                        buttressTex.wAng = Math.PI / 2;  // Rotate 90 degrees
+                        buttressTex.uScale = 2;
+                        buttressTex.vScale = 2;
+
+                        // Apply to buttress materials
+                        playerButtressMat = playerGateMat.clone("playerButtressMat");
+                        playerButtressMat.diffuseTexture = buttressTex;
+                        aiButtressMat = aiGateMat.clone("aiButtressMat");
+                        aiButtressMat.diffuseTexture = buttressTex.clone();
+                        aiButtressMat.diffuseTexture.wAng = Math.PI / 2;
+
+                        // Update existing buttress meshes
+                        scene.meshes.forEach(m => {
+                            if (m.name.includes("playerButtress")) m.material = playerButtressMat;
+                            if (m.name.includes("aiButtress")) m.material = aiButtressMat;
+                        });
+
+                        console.log("Castle wall texture loaded (including rotated buttress version)");
                     },
                     () => console.log("No castle wall texture, using solid colors")
                 );
@@ -6694,7 +6947,7 @@
                         buttressHeight / 2,
                         side * (wallWidth/2 + buttressWidth/2 - 0.2)
                     );
-                    buttress.material = mat;
+                    buttress.material = mat;  // Use same material - texture loads async
                     buttress.enableEdgesRendering();
                     buttress.edgesWidth = 2.5;
                     buttress.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
@@ -6791,6 +7044,43 @@
 
             createGate(true);   // Player gate
             createGate(false);  // AI gate
+
+            // === CASTLE SELF-SHADOWING ===
+            // Create a separate light & shadow generator just for castle self-shadows
+            // This way castle shadows don't appear on the floor
+            const castleLight = new BABYLON.DirectionalLight(
+                "castleLight",
+                sunLight.direction.clone(),  // Same direction as main sun
+                scene
+            );
+            castleLight.intensity = 0;  // No actual illumination, just for shadows
+            castleLight.shadowEnabled = true;
+
+            const castleShadowGen = new BABYLON.ShadowGenerator(1024, castleLight);
+            castleShadowGen.darkness = 0.3;
+            castleShadowGen.useExponentialShadowMap = false;
+            castleShadowGen.usePoissonSampling = true;
+            castleShadowGen.bias = 0.0001;
+            castleShadowGen.getShadowMap().refreshRate = 6;
+
+            // Find all castle meshes and add them as shadow casters
+            const castlePrefixes = ["playerBrick_", "aiBrick_", "playerButtress_", "aiButtress_",
+                "playerMerlon_", "aiMerlon_", "playerSlit_", "aiSlit_",
+                "playerArchway", "aiArchway", "playerArchTop", "aiArchTop",
+                "playerFoundation", "aiFoundation"];
+
+            scene.meshes.forEach(mesh => {
+                const isCastle = castlePrefixes.some(prefix => mesh.name.startsWith(prefix));
+                if (isCastle) {
+                    castleShadowGen.addShadowCaster(mesh);
+                    mesh.receiveShadows = true;  // Receive shadows from castle light
+                }
+            });
+
+            // Limit castle light to only affect castle meshes (so shadows only appear on castle)
+            castleLight.includedOnlyMeshes = scene.meshes.filter(mesh =>
+                castlePrefixes.some(prefix => mesh.name.startsWith(prefix))
+            );
 
             // === TEAM-COLORED BACKDROP WALLS ===
             const playerBackdropMat = new BABYLON.StandardMaterial("playerBackdropMat", scene);
@@ -7748,6 +8038,58 @@
             // Alias for compatibility
             window.flashShield = window.flashCharacter;
 
+            // Create parry bubble to show hitbox (works for player or AI)
+            window.createParryBubble = (paddle, isAI = false) => {
+                const bubbleRadius = 1.0;  // Smaller, character-sized bubble
+                const bubble = BABYLON.MeshBuilder.CreateSphere("parryBubble", {
+                    diameter: bubbleRadius * 2,
+                    segments: 16
+                }, scene);
+
+                // Parent to paddle so bubble follows movement
+                bubble.parent = paddle;
+                bubble.position.set(0, 1.0, 0);  // Center on character torso, relative to paddle
+
+                const bubbleMat = new BABYLON.StandardMaterial("parryBubbleMat", scene);
+                // Blue for player, magenta for AI
+                bubbleMat.emissiveColor = isAI
+                    ? new BABYLON.Color3(1, 0.3, 0.6)  // Magenta for AI
+                    : new BABYLON.Color3(0.3, 0.7, 1);  // Blue for player
+                bubbleMat.alpha = 0.12;  // Very transparent
+                bubbleMat.disableLighting = true;
+                bubbleMat.backFaceCulling = false;  // See from inside too
+                bubble.material = bubbleMat;
+
+                // Add wireframe overlay for clearer hitbox
+                const wireframe = BABYLON.MeshBuilder.CreateSphere("parryWire", {
+                    diameter: bubbleRadius * 2,
+                    segments: 12
+                }, scene);
+                wireframe.position.copyFrom(bubble.position);
+                const wireMat = new BABYLON.StandardMaterial("parryWireMat", scene);
+                wireMat.emissiveColor = isAI
+                    ? new BABYLON.Color3(0.5, 0.2, 0.35)  // Brighter magenta
+                    : new BABYLON.Color3(0.2, 0.4, 0.6);  // Brighter blue
+                wireMat.wireframe = true;
+                wireMat.alpha = 0.25;  // Slightly more visible
+                wireMat.disableLighting = true;
+                wireframe.material = wireMat;
+                wireframe.parent = bubble;
+                wireframe.position.set(0, 0, 0);
+
+                return { bubble, wireframe, mat: bubbleMat };
+            };
+
+            // Dissolve parry bubble instantly (exact timing with parry window)
+            window.dissolveParryBubble = (bubbleObj) => {
+                if (!bubbleObj || !bubbleObj.bubble) return;
+
+                const { bubble, wireframe } = bubbleObj;
+                // Instant removal - no fade, matches parry window exactly
+                if (wireframe) wireframe.dispose();
+                bubble.dispose();
+            };
+
             window.createImpactFlash = (position, color, size = 1.5) => {
                 const flash = BABYLON.MeshBuilder.CreateSphere("impact_" + Date.now(), { diameter: size }, scene);
                 flash.position.copyFrom(position);
@@ -7783,7 +8125,7 @@
                 // Play parry sound at parryer position
                 const parryX = parryer === 'player' ? playerPaddle.position.x : aiPaddle.position.x;
                 const parryZ = parryer === 'player' ? playerPaddle.position.z : aiPaddle.position.z;
-                playSound('parry', parryX, 0.9);
+                playSound('parry', parryX, 0.5);
 
                 // Flash force field shield (parry version - brighter)
                 if (window.flashShield) flashShield(parryer === 'player', true);
@@ -7919,8 +8261,13 @@
             };
 
             // Player parry callback - activates parry window
+            let parryJustActivated = false;  // Prevent double-activation from rapid input
             parryCallback = () => {
-                if (!canParry || parryActive) return;
+                if (!canParry || parryActive || parryJustActivated) return;
+
+                // Set flag immediately to prevent double sound from rapid clicks
+                parryJustActivated = true;
+                setTimeout(() => parryJustActivated = false, 100);
 
                 // Activate parry window
                 parryActive = true;
@@ -7928,7 +8275,12 @@
                 canParry = false;
 
                 // Prime sound (activation) - different from success sound
-                if (window.playSound) playSound('spellReady', playerPaddle.position.x, 0.4);
+                if (window.playSound) playSound('spellReady', playerPaddle.position.x, 0.15);
+
+                // Create 3D parry bubble to show hitbox
+                if (window.createParryBubble) {
+                    window.activeParryBubble = createParryBubble(playerPaddle, false);
+                }
 
                 // Update GUI to active state
                 updateParryButtonGUI('active');
@@ -7968,10 +8320,16 @@
                 if (bestProj) {
                     parryProjectile(bestProj, 'player');
                     // Successful parry sound
-                    if (window.playSound) playSound('parry', playerPaddle.position.x, 0.8);
+                    if (window.playSound) playSound('parry', playerPaddle.position.x, 0.5);
                     // Successful parry - end window immediately
                     parryActive = false;
                     parryTimer = 0;
+
+                    // Dissolve parry bubble
+                    if (window.activeParryBubble && window.dissolveParryBubble) {
+                        dissolveParryBubble(window.activeParryBubble);
+                        window.activeParryBubble = null;
+                    }
 
                     // Update GUI to cooldown state
                     parryCooldown = parrySuccessCooldown;
@@ -7999,6 +8357,12 @@
                     // Window expired without hit - punish with longer cooldown
                     parryActive = false;
                     parryTimer = 0;
+
+                    // Dissolve parry bubble
+                    if (window.activeParryBubble && window.dissolveParryBubble) {
+                        dissolveParryBubble(window.activeParryBubble);
+                        window.activeParryBubble = null;
+                    }
 
                     // Update GUI to cooldown state
                     parryCooldown = parryFailCooldown;
@@ -8939,6 +9303,13 @@
                                     parryProjectile(proj, 'ai');
                                     playAIAnim('parry', false, 400, 1.5);
                                     setTimeout(() => playAIAnim('idle', true), 400);
+                                    // Show AI parry bubble (quick flash)
+                                    if (window.createParryBubble) {
+                                        const aiBubble = createParryBubble(aiPaddle, true);
+                                        setTimeout(() => {
+                                            if (window.dissolveParryBubble) dissolveParryBubble(aiBubble);
+                                        }, 300);
+                                    }
                                 } else {
                                     proj.velX = -proj.velX;
                                     const hitOffset = (proj.mesh.position.z - aiPaddle.position.z) / paddleHalfDepth;
@@ -9025,7 +9396,8 @@
             // RENDER LOOP - Visual updates at render rate, game logic at 60Hz
             // ============================================================
             scene.onBeforeRenderObservable.add(() => {
-                if (gameOver) return;
+                // Skip game logic when in menu or game over
+                if (gameState !== "playing" || gameOver) return;
 
                 // Get frame time with safety cap (spiral-of-death guard)
                 let renderDt = engine.getDeltaTime() / 1000;
@@ -9413,7 +9785,9 @@
             // --- SCREEN SHAKE ---
             let shakeIntensity = 0;
             let shakeDuration = 0;
-            const cameraBasePosition = camera.target.clone();
+            // Use gameplay center as base position (not menu camera target)
+            const cameraBasePosition = new BABYLON.Vector3(0, 0, 0);
+            window.cameraBasePosition = cameraBasePosition;  // Expose for camera transitions
 
             window.screenShake = (intensity = 0.3, duration = 0.2) => {
                 shakeIntensity = intensity;
@@ -9422,6 +9796,8 @@
 
             // Update shake in render loop
             scene.onBeforeRenderObservable.add(() => {
+                // Skip camera shake when in menu (camera is animated)
+                if (gameState !== "playing") return;
                 if (shakeDuration > 0) {
                     const dt = engine.getDeltaTime() / 1000;
                     shakeDuration -= dt;
@@ -9957,26 +10333,32 @@
         }
 
         // ==========================================
-        // TALENT SELECTION SCREEN
+        // MENU / GAME STATE MANAGEMENT
         // ==========================================
         let selectedUpgrade = null;
 
+        // Switch to menu state
         function showTalentScreen() {
-            const talentScreen = document.getElementById('talentScreen');
+            gameState = "menu";
 
-            // Stop any running game before showing menu
+            // Stop any running game
             roundActive = false;
             gameOver = false;
-            gameMode = 'single';  // Reset to single player mode
+            gameMode = 'single';
             if (window.clearAllProjectiles) clearAllProjectiles();
 
-            // Stop any casting sounds and background music
+            // Stop sounds and music
             if (window.ToneSFX) {
                 ToneSFX.castingStop();
                 ToneSFX.musicStop();
             }
 
-            // Cancel any active casts and reset mana for both combatants
+            // Clear all pressed keys to prevent stuck movement
+            for (const key in keys) {
+                keys[key] = false;
+            }
+
+            // Reset combatant state
             for (const c of [combatants.left, combatants.right]) {
                 if (c) {
                     c.casting = null;
@@ -9987,33 +10369,322 @@
                 }
             }
 
-            // Hide any game messages while talent screen is showing
             hideMessage();
-
-            // Use default fireball (no upgrade selection for now)
             selectedUpgrade = 'default';
 
-            // Keep game container visible - 3D scene shows behind menu with CRT effects
-            const gameContainer = document.getElementById('gameContainer');
-            if (gameContainer) gameContainer.style.display = 'block';
-
-            // Show GUI menu title
-            if (window.guiElements && window.guiElements.menuTitle) {
-                window.guiElements.menuTitle.alpha = 1;
+            // Animate camera to menu position
+            if (window.gameCamera) {
+                const cam = window.gameCamera;
+                // Smooth transition to menu camera
+                BABYLON.Animation.CreateAndStartAnimation("menuCamAlpha", cam, "alpha", 30, 30,
+                    cam.alpha, MENU_CAMERA.alpha, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+                BABYLON.Animation.CreateAndStartAnimation("menuCamBeta", cam, "beta", 30, 30,
+                    cam.beta, MENU_CAMERA.beta, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+                BABYLON.Animation.CreateAndStartAnimation("menuCamRadius", cam, "radius", 30, 30,
+                    cam.radius, MENU_CAMERA.radius, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+                // Animate target to hero shot position (center floor looking up at player + castle)
+                BABYLON.Animation.CreateAndStartAnimation("menuCamTargetX", cam.target, "x", 30, 30,
+                    cam.target.x, -5, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+                BABYLON.Animation.CreateAndStartAnimation("menuCamTargetY", cam.target, "y", 30, 30,
+                    cam.target.y, 2, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
             }
 
-            // Hide ability bar and parry button
+            // Show GUI menu elements
+            if (window.guiElements) {
+                if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 1;
+                if (window.guiElements.menuContainer) window.guiElements.menuContainer.isVisible = true;
+
+                // Hide gameplay UI
+                if (window.guiElements.scorePanel) window.guiElements.scorePanel.isVisible = false;
+                if (window.guiElements.scoreText) window.guiElements.scoreText.alpha = 0;
+                if (window.guiElements.playerHealthPanel) window.guiElements.playerHealthPanel.isVisible = false;
+                if (window.guiElements.aiHealthPanel) window.guiElements.aiHealthPanel.isVisible = false;
+                if (window.guiElements.playerManaContainer) window.guiElements.playerManaContainer.isVisible = false;
+                if (window.guiElements.aiManaContainer) window.guiElements.aiManaContainer.isVisible = false;
+                if (window.guiElements.stageNameText) window.guiElements.stageNameText.isVisible = false;
+                if (window.guiElements.stageGrid) window.guiElements.stageGrid.isVisible = false;
+            }
+
+            // Hide HTML ability bar and parry button
             const abilityBar = document.getElementById('abilityBar');
             if (abilityBar) abilityBar.style.display = 'none';
             const parryButton = document.getElementById('parryButton');
             if (parryButton) parryButton.style.display = 'none';
-            // Hide GUI ability bar background
             if (window.guiElements && window.guiElements.abilityBarBg) {
                 window.guiElements.abilityBarBg.isVisible = false;
             }
 
-            // Show the screen (overlays 3D scene)
-            talentScreen.classList.add('visible');
+            // Hide HTML talent screen overlay (no longer needed - using all GUI)
+            const talentScreen = document.getElementById('talentScreen');
+            if (talentScreen) talentScreen.classList.remove('visible');
+
+            // Set wizard to dance animation for menu - robust version
+            // Clear any animation lock and force animation
+            if (combatants.left) {
+                combatants.left.animLocked = false;
+                combatants.left.currentAnim = null;
+
+                const anims = combatants.left.animations;
+                console.log("showTalentScreen - available animations:", Object.keys(anims || {}));
+
+                if (anims) {
+                    // Stop all animations first
+                    Object.values(anims).forEach(a => { if (a && a.stop) a.stop(); });
+
+                    // Try victory first, fall back to idle
+                    if (anims['victory']) {
+                        console.log("Playing victory animation");
+                        anims['victory'].start(true, 1.0);
+                        combatants.left.currentAnim = 'victory';
+                    } else if (anims['idle']) {
+                        console.log("Victory not found, falling back to idle");
+                        anims['idle'].start(true, 1.0);
+                        combatants.left.currentAnim = 'idle';
+                    } else {
+                        console.warn("No animations available for menu!");
+                    }
+                }
+            }
+
+            // Play music in menu so wizard dances to something!
+            if (window.ToneSFX) {
+                ToneSFX.musicStart();
+            }
+        }
+
+        // Start game from menu
+        let startGameInProgress = false;  // Prevent double-clicks
+        function startGame() {
+            // Guard: only start if in menu state and not already starting
+            if (gameState !== "menu" || startGameInProgress) {
+                console.log("startGame blocked - gameState:", gameState, "inProgress:", startGameInProgress);
+                return;
+            }
+            startGameInProgress = true;
+
+            // Block inputs during transition
+            roundTransitioning = true;
+
+            // Hide GUI menu elements immediately
+            if (window.guiElements) {
+                if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 0;
+                if (window.guiElements.menuContainer) window.guiElements.menuContainer.isVisible = false;
+            }
+
+            // Reset game state for new match
+            resetGame();
+
+            // Do "Ready... Go!" transition
+            doReadyGoTransition(() => {
+                gameState = "playing";
+                startGameInProgress = false;
+
+                // Start the round FIRST - this sets mana to 1 and updates UI
+                // Must happen before showing mana containers to avoid stale values
+                startRound();
+
+                // NOW show gameplay UI (mana is already correct)
+                if (window.guiElements) {
+                    if (window.guiElements.scorePanel) window.guiElements.scorePanel.isVisible = true;
+                    if (window.guiElements.scoreText) window.guiElements.scoreText.alpha = 1;
+                    if (window.guiElements.playerHealthPanel) window.guiElements.playerHealthPanel.isVisible = true;
+                    if (window.guiElements.aiHealthPanel) window.guiElements.aiHealthPanel.isVisible = true;
+                    if (window.guiElements.playerManaContainer) window.guiElements.playerManaContainer.isVisible = true;
+                    if (window.guiElements.aiManaContainer) window.guiElements.aiManaContainer.isVisible = true;
+                    if (window.guiElements.stageNameText) window.guiElements.stageNameText.isVisible = true;
+                    if (window.guiElements.stageGrid) window.guiElements.stageGrid.isVisible = true;
+                }
+
+                // Show ability bar and parry button
+                const abilityBar = document.getElementById('abilityBar');
+                if (abilityBar) abilityBar.style.display = 'flex';
+                const parryButton = document.getElementById('parryButton');
+                if (parryButton) parryButton.style.display = 'block';
+                if (window.guiElements && window.guiElements.abilityBarBg) {
+                    window.guiElements.abilityBarBg.isVisible = true;
+                }
+
+                // Hide old HTML talent screen
+                hideTalentScreen();
+
+                // Update UI for new match
+                if (window.updateStageIndicator) updateStageIndicator();
+                if (window.updateManaBarVisibility) updateManaBarVisibility();
+                updateScore();
+                updateHealthBars();
+
+                // Enable inputs after everything is set up
+                roundTransitioning = false;
+            });
+        }
+
+        // "Ready... Go!" transition for starting a new game
+        function doReadyGoTransition(callback) {
+            const overlay = window.guiElements?.transitionOverlay;
+            const text = window.guiElements?.transitionText;
+
+            if (!overlay || !text) {
+                if (callback) callback();
+                return;
+            }
+
+            // Animation helper
+            function animateAlpha(element, from, to, duration, onComplete) {
+                const startTime = performance.now();
+                function update() {
+                    const elapsed = performance.now() - startTime;
+                    const t = Math.min(elapsed / duration, 1);
+                    element.alpha = from + (to - from) * t;
+                    if (t < 1) {
+                        requestAnimationFrame(update);
+                    } else if (onComplete) {
+                        onComplete();
+                    }
+                }
+                update();
+            }
+
+            // Step 1: Fade to black (300ms)
+            animateAlpha(overlay, 0, 1, 300, () => {
+                // Step 2: Snap camera to gameplay position (instant, hidden by black)
+                if (window.gameCamera) {
+                    const cam = window.gameCamera;
+                    cam.alpha = GAME_CAMERA.alpha;
+                    cam.beta = GAME_CAMERA.beta;
+                    cam.radius = GAME_CAMERA.radius;
+                    // Use cameraBasePosition if available, otherwise center
+                    const targetPos = window.cameraBasePosition || new BABYLON.Vector3(0, 0, 0);
+                    cam.target.copyFrom(targetPos);
+                }
+
+                // Reset round state while black
+                resetRound();
+
+                // Re-set roundTransitioning since resetRound clears it
+                // Inputs should stay blocked until GO! appears
+                roundTransitioning = true;
+
+                // Hide the stage name message that resetRound shows (we're showing Ready/Go instead)
+                hideMessage();
+
+                // Step 3: Show "Ready" (fade in 200ms)
+                text.text = "READY";
+                animateAlpha(text, 0, 1, 200, () => {
+                    // Hold "Ready" for 800ms
+                    setTimeout(() => {
+                        // Step 4: Fade out "Ready" (150ms)
+                        animateAlpha(text, 1, 0, 150, () => {
+                            // Step 5: Show "GO!" (fade in 150ms)
+                            text.text = "GO!";
+                            animateAlpha(text, 0, 1, 150, () => {
+                                // Step 6: Fade out overlay while "GO!" still visible (400ms)
+                                animateAlpha(overlay, 1, 0, 400, () => {
+                                    // Step 7: Fade out "GO!" (300ms)
+                                    setTimeout(() => {
+                                        animateAlpha(text, 1, 0, 300, () => {
+                                            text.text = "";
+                                            if (callback) callback();
+                                        });
+                                    }, 200);
+                                });
+                            });
+                        });
+                    }, 800);
+                });
+            });
+        }
+
+        // Return to menu with fade transition (used by Continue button on victory screen)
+        function returnToMenuTransition() {
+            const overlay = window.guiElements?.transitionOverlay;
+
+            if (!overlay) {
+                // Fallback: just do it without transition
+                hideVictoryScreen();
+                resetGame();
+                showTalentScreen();
+                return;
+            }
+
+            // Animation helper
+            function animateAlpha(element, from, to, duration, onComplete) {
+                const startTime = performance.now();
+                function update() {
+                    const elapsed = performance.now() - startTime;
+                    const t = Math.min(elapsed / duration, 1);
+                    element.alpha = from + (to - from) * t;
+                    if (t < 1) {
+                        requestAnimationFrame(update);
+                    } else if (onComplete) {
+                        onComplete();
+                    }
+                }
+                update();
+            }
+
+            // Step 1: Fade to black (400ms)
+            animateAlpha(overlay, 0, 1, 400, () => {
+                // Step 2: While black, reset everything
+                hideVictoryScreen();
+                resetGame();
+                gameState = "menu";
+                startGameInProgress = false;  // Reset so Start button works again
+
+                // Clear any held keys
+                keys = {};
+
+                // Step 3: Snap camera to menu position (instant, hidden by black)
+                if (window.gameCamera) {
+                    const cam = window.gameCamera;
+                    cam.alpha = MENU_CAMERA.alpha;
+                    cam.beta = MENU_CAMERA.beta;
+                    cam.radius = MENU_CAMERA.radius;
+                    cam.target.set(-5, 2, 0);  // Menu target position
+                }
+
+                // Step 4: Set up menu state (wizard dancing, UI visible)
+                // Set wizard to dance animation - robust version
+                if (combatants.left) {
+                    combatants.left.animLocked = false;  // Clear any lock
+                    combatants.left.currentAnim = null;  // Clear current so any anim can play
+                }
+                if (combatants.left && combatants.left.animations && combatants.left.animations['victory']) {
+                    // Stop all other animations first
+                    Object.values(combatants.left.animations).forEach(a => { if (a && a.stop) a.stop(); });
+                    // Play victory/dance directly
+                    combatants.left.animations['victory'].start(true, 1.0);
+                    combatants.left.currentAnim = 'victory';
+                }
+
+                // Show menu GUI elements
+                if (window.guiElements) {
+                    if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 1;
+                    if (window.guiElements.menuContainer) window.guiElements.menuContainer.isVisible = true;
+                }
+
+                // Play music
+                if (window.ToneSFX) {
+                    ToneSFX.musicStart();
+                }
+
+                // Step 5: Fade back in (400ms)
+                setTimeout(() => {
+                    animateAlpha(overlay, 1, 0, 400);
+                }, 100);  // Small delay for state to settle
+            });
+        }
+
+        // Show multiplayer lobby (placeholder - calls existing function)
+        function showMultiplayerLobbyGUI() {
+            // Hide menu GUI
+            if (window.guiElements && window.guiElements.menuContainer) {
+                window.guiElements.menuContainer.isVisible = false;
+            }
+            if (window.guiElements && window.guiElements.menuTitle) {
+                window.guiElements.menuTitle.alpha = 0;
+            }
+            // Show the HTML multiplayer lobby for now
+            showMultiplayerLobby();
         }
 
         function hideTalentScreen() {
@@ -10218,9 +10889,9 @@
 
         // Back to menu
         document.getElementById('btnBackToMenu').addEventListener('click', () => {
-            // Just hide the lobby, don't show the game (showTalentScreen handles that)
+            // Hide the lobby and return to GUI menu
             document.getElementById('multiplayerLobby').style.display = 'none';
-            document.getElementById('talentScreen').classList.add('visible');
+            showTalentScreen();  // Use the GUI menu system
         });
 
         // Cancel host
@@ -11024,7 +11695,7 @@
                     parryTimer = parryWindow;
                     canParry = false;
                     parryCooldown = parryFailCooldown; // Default to fail cooldown, success overrides
-                    if (!isResimulating) playSound('spellReady', playerPaddle.position.x, 0.4);
+                    if (!isResimulating) playSound('spellReady', playerPaddle.position.x, 0.15);
                 }
             }
             if (rightInput.parry && combatants.right && combatants.right.freezeTime <= 0) {
@@ -11034,7 +11705,7 @@
                     parryTimer = parryWindow;
                     canParry = false;
                     parryCooldown = parryFailCooldown; // Default to fail cooldown, success overrides
-                    if (!isResimulating) playSound('spellReady', aiPaddle.position.x, 0.4);
+                    if (!isResimulating) playSound('spellReady', aiPaddle.position.x, 0.15);
                 }
             }
 
@@ -11409,6 +12080,71 @@
             if (htmlMessage) {
                 htmlMessage.textContent = "";
                 htmlMessage.classList.remove('visible');
+            }
+        }
+
+        // Show celebratory victory/defeat screen
+        function showVictoryScreen(isVictory) {
+            if (!window.guiElements) return;
+
+            const overlay = window.guiElements.victoryOverlay;
+            const title = window.guiElements.victoryTitle;
+            const subtitle = window.guiElements.victorySubtitle;
+
+            if (!overlay || !title || !subtitle) return;
+
+            // Configure for victory or defeat
+            if (isVictory) {
+                title.text = "VICTORY!";
+                title.color = "#ffd700";  // Gold
+                subtitle.text = "You have conquered the arena!";
+            } else {
+                title.text = "DEFEAT";
+                title.color = "#c04040";  // Red
+                subtitle.text = "The enemy has prevailed...";
+            }
+
+            // Hide the regular message
+            hideMessage();
+
+            // Hide gameplay UI
+            if (window.guiElements.playerHealthPanel) window.guiElements.playerHealthPanel.isVisible = false;
+            if (window.guiElements.aiHealthPanel) window.guiElements.aiHealthPanel.isVisible = false;
+            if (window.guiElements.playerManaContainer) window.guiElements.playerManaContainer.isVisible = false;
+            if (window.guiElements.aiManaContainer) window.guiElements.aiManaContainer.isVisible = false;
+            if (window.guiElements.stageGrid) window.guiElements.stageGrid.isVisible = false;
+            if (window.guiElements.stageNameText) window.guiElements.stageNameText.isVisible = false;
+            if (window.guiElements.scorePanel) window.guiElements.scorePanel.isVisible = false;
+            if (window.guiElements.scoreText) window.guiElements.scoreText.alpha = 0;
+
+            // Hide ability bar and parry
+            const abilityBar = document.getElementById('abilityBar');
+            if (abilityBar) abilityBar.style.display = 'none';
+            const parryButton = document.getElementById('parryButton');
+            if (parryButton) parryButton.style.display = 'none';
+
+            // Show the overlay and its children
+            overlay.isVisible = true;
+            if (title) title.isVisible = true;
+            if (subtitle) subtitle.isVisible = true;
+            if (window.guiElements.continueBtn) window.guiElements.continueBtn.isVisible = true;
+        }
+
+        function hideVictoryScreen() {
+            if (window.guiElements) {
+                // Hide the overlay and all its children explicitly
+                if (window.guiElements.victoryOverlay) {
+                    window.guiElements.victoryOverlay.isVisible = false;
+                }
+                if (window.guiElements.victoryTitle) {
+                    window.guiElements.victoryTitle.isVisible = false;
+                }
+                if (window.guiElements.victorySubtitle) {
+                    window.guiElements.victorySubtitle.isVisible = false;
+                }
+                if (window.guiElements.continueBtn) {
+                    window.guiElements.continueBtn.isVisible = false;
+                }
             }
         }
 
@@ -12674,9 +13410,10 @@
                 // Push toward enemy core
                 if (currentStage >= 4) {
                     // Already at enemy core and won = VICTORY
-                    showMessage("VICTORY!");
                     playSound('victory', 0, 1.0);
                     gameOver = true;
+                    // Show victory screen after animation plays
+                    setTimeout(() => showVictoryScreen(true), 1500);
                 } else {
                     showMessage(stageName + " Won!");
                     playSound('victory', 0, 0.8);
@@ -12701,9 +13438,10 @@
                 // Pushed back toward player core
                 if (currentStage <= 0) {
                     // Already at player core and lost = DEFEAT
-                    showMessage("DEFEAT!");
                     playSound('defeat', 0, 1.0);
                     gameOver = true;
+                    // Show defeat screen after animation plays
+                    setTimeout(() => showVictoryScreen(false), 1500);
                 } else {
                     showMessage(stageName + " Lost!");
                     playSound('defeat', 0, 0.8);
@@ -12718,12 +13456,11 @@
             updateScore();
 
             if (gameOver) {
-                // Final game over - auto-return to menu after delay
+                // Victory screen handles return to menu via Continue button
+                // Just clear the round transitioning state after a delay
                 setTimeout(() => {
                     roundTransitioning = false;
-                    resetGame();
-                    showTalentScreen();
-                }, 4000);
+                }, 2000);
             } else {
                 // After win/lose message, do step fade transition to next stage
                 const nextStageName = window.stageNames ? window.stageNames[currentStage] : "Stage";
