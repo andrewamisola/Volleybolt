@@ -2161,19 +2161,17 @@
             gamma: 40      // Peak awareness (30-100 Hz)
         };
 
-        async function initToneJS() {
-            console.log("initToneJS called, toneStarted:", toneStarted);
-            if (toneStarted) {
-                console.log("initToneJS early return - already started");
-                return;
-            }
+        let toneInitializing = false;  // Prevent concurrent initialization
+        let toneInitPromise = null;    // Promise to wait for if init in progress
+
+        async function doToneInit() {
             try {
                 await Tone.start();
-                toneStarted = true;
                 console.log("Tone.js sound therapy system started");
             } catch (e) {
-                console.error("Tone.start() error:", e);
-                throw e;
+                toneInitializing = false;
+                toneInitPromise = null;
+                return; // Will retry on next user interaction
             }
 
             // Stereo panner for therapy sounds (controlled by X position)
@@ -2291,8 +2289,6 @@
                 frozen: 'sfx/frozen.wav',
                 gravityCast: 'sfx/gravitysphere_cast.wav',
                 gravityAbsorb: 'sfx/gravitysphere_absorb.wav',
-                victory: 'sfx/victory.wav',
-                defeat: 'sfx/defeat.wav',
                 iceShatter: 'sfx/ice-shatter.wav',
                 cancel: 'sfx/cancel.wav',
                 overpowered: 'sfx/overpowered.wav'
@@ -2344,15 +2340,42 @@
                 fadeIn: 0.5,
                 fadeOut: 0.5,
                 onload: () => {
-                    console.log("Music loaded successfully");
                     synths.musicLoaded = true;
                 }
             }).connect(musicBitCrusher);
             synths.music.volume.value = -12;  // Lower volume
             synths.musicLoaded = false;
 
-            console.log("Sound therapy + 8-bit samples + music initialized");
-            console.log("synths keys at end of initToneJS:", Object.keys(synths));
+            // Wait for all samples to actually load (with timeout)
+            try {
+                await Promise.race([
+                    Tone.loaded(),
+                    new Promise((_, reject) => setTimeout(() => reject('timeout'), 5000))
+                ]);
+                console.log("All Tone.js samples loaded");
+            } catch (e) {
+                console.warn("Tone.loaded timeout or error, continuing anyway:", e);
+            }
+
+            // Mark as fully initialized - MUST be at the end after all synths created
+            toneStarted = true;
+            toneInitializing = false;
+
+            // If we're in the menu, start the music now that audio is ready
+            if (gameState === 'menu' && window.ToneSFX) {
+                ToneSFX.musicStart();
+            }
+        }
+
+        // Wrapper that handles concurrent calls
+        async function initToneJS() {
+            if (toneStarted) return;
+            if (toneInitializing && toneInitPromise) {
+                return toneInitPromise;
+            }
+            toneInitializing = true;
+            toneInitPromise = doToneInit();
+            return toneInitPromise;
         }
 
         // ============================================================
@@ -2431,7 +2454,7 @@
 
         // Helper to play 8-bit crushed sample
         function playSample(name) {
-            if (synths.samples && synths.samples[name]) {
+            if (synths.samples && synths.samples[name] && synths.samples[name].loaded) {
                 try {
                     synths.samples[name].stop();  // Stop if already playing
                 } catch(e) {}
@@ -2612,33 +2635,11 @@
                 playSample('frozen');
             },
 
-            // Victory - crushed sample only
-            victory: async () => {
-                if (!toneStarted) await initToneJS();
-                // Therapy layer DISABLED
-                // const notes = [N.B3, N.D4, N.Fs4, N.B4];
-                // notes.forEach((freq, i) => {
-                //     setTimeout(() => {
-                //         synths.therapy.triggerAttackRelease(freq, "2n");
-                //         synths.harmonic.triggerAttackRelease(freq * 2, "2n");
-                //     }, i * 250);
-                // });
-                // synths.sub.triggerAttackRelease(N.B2, "1n");
-                // 8-bit crushed sample layer
-                playSample('victory');
-            },
+            // Victory - removed (no sound file)
+            victory: async () => {},
 
-            // Defeat - crushed sample only
-            defeat: async () => {
-                if (!toneStarted) await initToneJS();
-                // Therapy layer DISABLED
-                // const notes = [N.Fs4, N.E4, N.D4, N.B3];
-                // notes.forEach((freq, i) => {
-                //     setTimeout(() => synths.therapy.triggerAttackRelease(freq, "2n"), i * 300);
-                // });
-                // 8-bit crushed sample layer
-                playSample('defeat');
-            },
+            // Defeat - removed (no sound file)
+            defeat: async () => {},
 
             // Woosh - crushed sample only
             woosh: async () => {
@@ -2694,6 +2695,7 @@
 
             // Casting loop start - plays mid-cast.wav looping (panned by side)
             castingStart: async (side = 'player') => {
+                if (!toneStarted) await initToneJS();
                 const loop = side === 'player' ? synths.playerCastingLoop : synths.aiCastingLoop;
                 if (loop && loop.loaded) {
                     try {
@@ -2722,27 +2724,20 @@
 
             // Game state: active gameplay - music only (isochronic tones disabled)
             gameplayStart: async () => {
-                console.log("gameplayStart called, toneStarted:", toneStarted);
                 if (!toneStarted) {
                     try {
                         await initToneJS();
-                        console.log("initToneJS completed successfully");
                     } catch (e) {
                         console.error("initToneJS error:", e);
                     }
                 }
-                console.log("After initToneJS, synths keys:", Object.keys(synths));
-                // Wait for all audio to be loaded
                 await Tone.loaded();
-                // Start background music (check if loaded via our flag)
-                console.log("synths.music:", synths.music, "synths.musicLoaded:", synths.musicLoaded);
                 if (synths.music) {
                     // Wait for music to be loaded if it isn't yet
-                    if (!synths.musicLoaded) {
-                        console.log("Waiting for music to load...");
+                    if (!synths.musicLoaded || !synths.music.loaded) {
                         await new Promise(resolve => {
                             const checkLoaded = () => {
-                                if (synths.musicLoaded) {
+                                if (synths.musicLoaded && synths.music.loaded) {
                                     resolve();
                                 } else {
                                     setTimeout(checkLoaded, 100);
@@ -2751,17 +2746,13 @@
                             checkLoaded();
                         });
                     }
-                    console.log("Music loaded, attempting to start. State:", synths.music.state);
-                    if (synths.music.state !== 'started') {
+                    if (synths.music.loaded && synths.music.state !== 'started') {
                         try {
                             synths.music.start();
-                            console.log("Music started successfully");
                         } catch (e) {
                             console.error("Music start error:", e);
                         }
                     }
-                } else {
-                    console.log("synths.music is null/undefined");
                 }
             },
 
@@ -2791,16 +2782,17 @@
             musicStart: async () => {
                 if (!toneStarted) await initToneJS();
                 if (synths.music) {
-                    if (!synths.musicLoaded) {
+                    // Wait for both our flag AND Tone.js internal loaded state
+                    if (!synths.musicLoaded || !synths.music.loaded) {
                         await new Promise(resolve => {
                             const checkLoaded = () => {
-                                if (synths.musicLoaded) resolve();
+                                if (synths.musicLoaded && synths.music.loaded) resolve();
                                 else setTimeout(checkLoaded, 100);
                             };
                             checkLoaded();
                         });
                     }
-                    if (synths.music.state !== 'started') {
+                    if (synths.music.loaded && synths.music.state !== 'started') {
                         synths.music.start();
                     }
                 }
@@ -2850,23 +2842,29 @@
         window.ToneSFX = ToneSFX;
 
         // Pause/resume audio when tab visibility changes
-        document.addEventListener('visibilitychange', () => {
+        document.addEventListener('visibilitychange', async () => {
             if (document.hidden) {
                 // Tab hidden - suspend audio context to stop all sounds
                 if (Tone.context && Tone.context.state === 'running') {
                     Tone.context.suspend();
                 }
             } else {
-                // Tab visible - resume audio context
-                if (Tone.context && Tone.context.state === 'suspended') {
+                // Tab visible - init if needed, then resume
+                if (!toneStarted) {
+                    await initToneJS();
+                } else if (Tone.context && Tone.context.state === 'suspended') {
                     Tone.context.resume();
                 }
             }
         });
 
-        // Initialize Tone.js on first user interaction
-        document.addEventListener('click', () => initToneJS(), { once: true });
-        document.addEventListener('keydown', () => initToneJS(), { once: true });
+        // Initialize Tone.js on any user interaction (keeps trying until successful)
+        document.addEventListener('click', () => {
+            if (!toneStarted) initToneJS();
+        });
+        document.addEventListener('keydown', () => {
+            if (!toneStarted) initToneJS();
+        });
 
         // Input visual feedback - map keys to UI elements
         const keyToUIElement = {
@@ -3169,6 +3167,9 @@
                 scene
             );
             camera.inputs.clear(); // Lock camera
+            // Prevent camera from flipping upside down
+            camera.lowerBetaLimit = 0.1;
+            camera.upperBetaLimit = Math.PI - 0.1;
 
             // Store camera globally for multiplayer camera flip
             window.gameCamera = camera;
@@ -3508,9 +3509,9 @@
             transitionOverlay.color = "transparent";
             transitionOverlay.thickness = 0;
             transitionOverlay.alpha = 0;  // Start invisible
-            transitionOverlay.zIndex = 100;  // Above scene, below transition text
-            transitionOverlay.isPointerBlocker = false;  // Don't block clicks when invisible
-            transitionOverlay.isHitTestVisible = false;  // Allow clicks to pass through
+            transitionOverlay.isVisible = false;  // Start hidden to not block clicks
+            transitionOverlay.zIndex = 900;  // Highest - covers everything during transitions
+            transitionOverlay.isPointerBlocker = true;  // Block clicks when visible
             guiTexture.addControl(transitionOverlay);
             window.guiElements.transitionOverlay = transitionOverlay;
 
@@ -3528,7 +3529,8 @@
             transitionText.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
             transitionText.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
             transitionText.alpha = 0;  // Start invisible
-            transitionText.zIndex = 101;  // Above overlay
+            transitionText.isVisible = false;  // Start hidden
+            transitionText.zIndex = 901;  // Above transition overlay
             guiTexture.addControl(transitionText);
             window.guiElements.transitionText = transitionText;
 
@@ -3557,7 +3559,7 @@
             victoryOverlay.background = "rgba(0, 0, 0, 0.7)";
             victoryOverlay.thickness = 0;
             victoryOverlay.isVisible = false;
-            victoryOverlay.zIndex = 200;
+            victoryOverlay.zIndex = 600;  // Higher than menu (500) to appear on top
             victoryOverlay.isPointerBlocker = true;  // Block clicks from falling through
             guiTexture.addControl(victoryOverlay);
             window.guiElements.victoryOverlay = victoryOverlay;
@@ -5228,21 +5230,31 @@
             // Initial progress - scene created
             updateLoadingProgress(15, 'LOADING SCENE...');
 
+            let allModelsLoadedCalled = false;  // Prevent multiple showTalentScreen calls
             const checkAllLoaded = () => {
-                if (playerModelLoaded && aiModelLoaded) {
-                    console.log("All models loaded!");
-                    console.log("Player animations available:", Object.keys(combatants.left?.animations || {}));
+                if (playerModelLoaded && aiModelLoaded && !allModelsLoadedCalled) {
+                    allModelsLoadedCalled = true;  // Only do this once
                     initTalentSystem();
 
-                    // Hide loading screen with a small delay for stability
+                    // Show "Click to Start" button instead of directly showing menu
                     setTimeout(() => {
                         const loadingScreen = document.getElementById('loadingScreen');
                         if (loadingScreen) {
-                            loadingScreen.classList.add('hidden');
-                            setTimeout(() => loadingScreen.style.display = 'none', 500);
+                            // Update loading screen to show "Click to Start"
+                            document.getElementById('loadingBar').style.width = '100%';
+                            document.getElementById('loadingText').textContent = 'CLICK TO START';
+                            document.getElementById('loadingText').style.color = '#c9a44a';
+                            document.getElementById('loadingText').style.cursor = 'pointer';
+                            document.getElementById('loadingText').style.fontSize = '12px';
+                            document.getElementById('loadingTip').style.display = 'none';
+
+                            loadingScreen.addEventListener('click', async () => {
+                                await initToneJS();
+                                loadingScreen.classList.add('hidden');
+                                setTimeout(() => loadingScreen.style.display = 'none', 500);
+                                showTalentScreen();
+                            }, { once: true });
                         }
-                        // showTalentScreen will handle starting the dance animation
-                        showTalentScreen();
                     }, 200);  // 200ms for animations to be fully ready
                 }
             };
@@ -5289,9 +5301,6 @@
                 // Player character - combined model with all animations
                 BABYLON.SceneLoader.ImportMesh("", "models/", "Meshy_AI_Meshy_Merged_Animations.glb", scene,
                     (meshes, particleSystems, skeletons, animationGroups) => {
-                        console.log("Player wizard loaded!", meshes.length, "meshes");
-                        console.log("Animation groups:", animationGroups.map(a => a.name));
-
                         const playerWizard = new BABYLON.TransformNode("playerWizardRoot", scene);
                         meshes.forEach(m => {
                             if (!m.parent || m.parent === scene) {
@@ -5336,7 +5345,6 @@
                         if (combatants.left.animations['idle']) {
                             combatants.left.animations['idle'].play(true);
                         }
-                        console.log("Player animations:", Object.keys(combatants.left.animations));
                         // Store meshes for flash effect - assign to combatant first
                         combatants.left.flashMeshes = meshes.filter(m => m.material);
                         playerFlashMeshes = combatants.left.flashMeshes;
@@ -5359,7 +5367,6 @@
                 // AI character - same combined model
                 BABYLON.SceneLoader.ImportMesh("", "models/", "Meshy_AI_Meshy_Merged_Animations.glb", scene,
                     (meshes, particleSystems, skeletons, animationGroups) => {
-                        console.log("AI wizard loaded!", meshes.length, "meshes");
 
                         const aiWizard = new BABYLON.TransformNode("aiWizardRoot", scene);
                         meshes.forEach(m => {
@@ -5404,7 +5411,6 @@
                         if (combatants.right.animations['idle']) {
                             combatants.right.animations['idle'].play(true);
                         }
-                        console.log("AI animations:", Object.keys(combatants.right.animations));
                         // Store meshes for flash effect - assign to combatant first
                         combatants.right.flashMeshes = meshes.filter(m => m.material);
                         aiFlashMeshes = combatants.right.flashMeshes;
@@ -6568,7 +6574,7 @@
                                     null, // target
                                     (loadedScene) => {
                                         // Find matching animation that hasn't been renamed yet (no prefix)
-                                        const searchPattern = fileName.toLowerCase().replace('.glb', '').replace('meshy_ai_animation_', '').replace('_withskin', '');
+                                        const searchPattern = fileName.toLowerCase().replace('.glb', '').replace('meshy_ai_animation_', '').replace('_withskin', '').replace('_p2', '');
                                         const newAnims = scene.animationGroups.filter(ag => {
                                             const name = ag.name.toLowerCase();
                                             // Must match pattern AND not already have player_/ai_ prefix
@@ -6587,6 +6593,7 @@
                                         }
                                         checkAllAnimsLoaded();
                                     },
+                                    null,
                                     (err) => {
                                         console.error(`${prefix} failed to load "${action}":`, err);
                                         checkAllAnimsLoaded();
@@ -10387,6 +10394,8 @@
                     cam.target.x, -5, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
                 BABYLON.Animation.CreateAndStartAnimation("menuCamTargetY", cam.target, "y", 30, 30,
                     cam.target.y, 2, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+                BABYLON.Animation.CreateAndStartAnimation("menuCamTargetZ", cam.target, "z", 30, 30,
+                    cam.target.z, 0, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
             }
 
             // Show GUI menu elements
@@ -10425,7 +10434,6 @@
                 combatants.left.currentAnim = null;
 
                 const anims = combatants.left.animations;
-                console.log("showTalentScreen - available animations:", Object.keys(anims || {}));
 
                 if (anims) {
                     // Stop all animations first
@@ -10433,15 +10441,11 @@
 
                     // Try victory first, fall back to idle
                     if (anims['victory']) {
-                        console.log("Playing victory animation");
                         anims['victory'].start(true, 1.0);
                         combatants.left.currentAnim = 'victory';
                     } else if (anims['idle']) {
-                        console.log("Victory not found, falling back to idle");
                         anims['idle'].start(true, 1.0);
                         combatants.left.currentAnim = 'idle';
-                    } else {
-                        console.warn("No animations available for menu!");
                     }
                 }
             }
@@ -10528,6 +10532,10 @@
                 return;
             }
 
+            // Show transition elements
+            overlay.isVisible = true;
+            text.isVisible = true;
+
             // Animation helper
             function animateAlpha(element, from, to, duration, onComplete) {
                 const startTime = performance.now();
@@ -10552,9 +10560,9 @@
                     cam.alpha = GAME_CAMERA.alpha;
                     cam.beta = GAME_CAMERA.beta;
                     cam.radius = GAME_CAMERA.radius;
-                    // Use cameraBasePosition if available, otherwise center
-                    const targetPos = window.cameraBasePosition || new BABYLON.Vector3(0, 0, 0);
-                    cam.target.copyFrom(targetPos);
+                    // Reset camera target to center for gameplay
+                    cam.target.set(0, 0, 0);
+                    if (window.cameraBasePosition) window.cameraBasePosition.set(0, 0, 0);
                 }
 
                 // Reset round state while black
@@ -10583,6 +10591,9 @@
                                     setTimeout(() => {
                                         animateAlpha(text, 1, 0, 300, () => {
                                             text.text = "";
+                                            // Hide transition elements when done
+                                            overlay.isVisible = false;
+                                            text.isVisible = false;
                                             if (callback) callback();
                                         });
                                     }, 200);
@@ -10605,6 +10616,9 @@
                 showTalentScreen();
                 return;
             }
+
+            // Show overlay for transition
+            overlay.isVisible = true;
 
             // Animation helper
             function animateAlpha(element, from, to, duration, onComplete) {
@@ -10631,7 +10645,7 @@
                 startGameInProgress = false;  // Reset so Start button works again
 
                 // Clear any held keys
-                keys = {};
+                Object.keys(keys).forEach(k => delete keys[k]);
 
                 // Step 3: Snap camera to menu position (instant, hidden by black)
                 if (window.gameCamera) {
@@ -10639,7 +10653,7 @@
                     cam.alpha = MENU_CAMERA.alpha;
                     cam.beta = MENU_CAMERA.beta;
                     cam.radius = MENU_CAMERA.radius;
-                    cam.target.set(-5, 2, 0);  // Menu target position
+                    cam.target.set(-5, 2, 0);  // Menu target position (x, y, z)
                 }
 
                 // Step 4: Set up menu state (wizard dancing, UI visible)
@@ -10656,11 +10670,28 @@
                     combatants.left.currentAnim = 'victory';
                 }
 
-                // Show menu GUI elements
+                // Show menu GUI elements and hide gameplay UI
                 if (window.guiElements) {
                     if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 1;
                     if (window.guiElements.menuContainer) window.guiElements.menuContainer.isVisible = true;
+
+                    // Hide gameplay UI
+                    if (window.guiElements.stageNameText) window.guiElements.stageNameText.isVisible = false;
+                    if (window.guiElements.stageGrid) window.guiElements.stageGrid.isVisible = false;
+                    if (window.guiElements.scorePanel) window.guiElements.scorePanel.isVisible = false;
+                    if (window.guiElements.scoreText) window.guiElements.scoreText.alpha = 0;
+                    if (window.guiElements.playerHealthPanel) window.guiElements.playerHealthPanel.isVisible = false;
+                    if (window.guiElements.aiHealthPanel) window.guiElements.aiHealthPanel.isVisible = false;
+                    if (window.guiElements.playerManaContainer) window.guiElements.playerManaContainer.isVisible = false;
+                    if (window.guiElements.aiManaContainer) window.guiElements.aiManaContainer.isVisible = false;
+                    if (window.guiElements.abilityBarBg) window.guiElements.abilityBarBg.isVisible = false;
                 }
+
+                // Hide HTML ability bar and parry button
+                const abilityBar = document.getElementById('abilityBar');
+                if (abilityBar) abilityBar.style.display = 'none';
+                const parryButton = document.getElementById('parryButton');
+                if (parryButton) parryButton.style.display = 'none';
 
                 // Play music
                 if (window.ToneSFX) {
@@ -10669,7 +10700,10 @@
 
                 // Step 5: Fade back in (400ms)
                 setTimeout(() => {
-                    animateAlpha(overlay, 1, 0, 400);
+                    animateAlpha(overlay, 1, 0, 400, () => {
+                        // Hide overlay when done
+                        overlay.isVisible = false;
+                    });
                 }, 100);  // Small delay for state to settle
             });
         }
@@ -10756,7 +10790,10 @@
         }
 
         // Start battle button handler
-        document.getElementById('startBattleBtn').addEventListener('click', () => {
+        document.getElementById('startBattleBtn').addEventListener('click', async () => {
+            // Ensure audio is ready before starting
+            await initToneJS();
+
             // Only add upgrade if not default
             if (selectedUpgrade && selectedUpgrade !== 'default') {
                 playerUpgrades.push(selectedUpgrade);
@@ -10913,7 +10950,8 @@
         });
 
         // Start Match button (host only)
-        document.getElementById('btnStartMatch').addEventListener('click', () => {
+        document.getElementById('btnStartMatch').addEventListener('click', async () => {
+            await initToneJS();
             if (isHost && conn && conn.open) {
                 // Generate shared RNG seed
                 const sharedSeed = Math.floor(Math.random() * 2147483647);
@@ -11981,7 +12019,17 @@
         function startRound() {
             waitingToServe = false;
             roundActive = true;
+            roundTransitioning = false;
             hideMessage();
+
+            // Show ability bar for the new round
+            const abilityBar = document.getElementById('abilityBar');
+            if (abilityBar) abilityBar.style.display = 'flex';
+            const parryButton = document.getElementById('parryButton');
+            if (parryButton) parryButton.style.display = 'block';
+            if (window.guiElements && window.guiElements.abilityBarBg) {
+                window.guiElements.abilityBarBg.isVisible = true;
+            }
 
             // Start beta brainwave entrainment for gameplay focus
             if (window.ToneSFX) ToneSFX.gameplayStart();
@@ -12107,6 +12155,10 @@
             // Hide the regular message
             hideMessage();
 
+            // Hide menu if visible (shouldn't be, but just in case)
+            if (window.guiElements.menuContainer) window.guiElements.menuContainer.isVisible = false;
+            if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 0;
+
             // Hide gameplay UI
             if (window.guiElements.playerHealthPanel) window.guiElements.playerHealthPanel.isVisible = false;
             if (window.guiElements.aiHealthPanel) window.guiElements.aiHealthPanel.isVisible = false;
@@ -12166,6 +12218,12 @@
             updateScore();
             resetTalentState();  // Reset talents for new match
             resetRound();
+
+            // Hide gameplay UI when resetting (menu state)
+            if (window.guiElements) {
+                if (window.guiElements.stageNameText) window.guiElements.stageNameText.isVisible = false;
+                if (window.guiElements.stageGrid) window.guiElements.stageGrid.isVisible = false;
+            }
         }
 
         // Calculate gate health with regeneration - ALL gates heal 25% per round away
@@ -12272,6 +12330,10 @@
                 return;
             }
 
+            // Show transition elements
+            overlay.isVisible = true;
+            text.isVisible = true;
+
             // Animation helper - lerp alpha over time
             function animateAlpha(element, from, to, duration, onComplete) {
                 const startTime = performance.now();
@@ -12304,6 +12366,9 @@
 
                             // Step 6: Fade out overlay to reveal scene (500ms)
                             animateAlpha(overlay, 1, 0, 500, () => {
+                                // Hide transition elements when done
+                                overlay.isVisible = false;
+                                text.isVisible = false;
                                 // Step 7: Let scene show for prep time (1500ms)
                                 setTimeout(() => {
                                     if (callback) callback();
@@ -13363,6 +13428,15 @@
             waitingToServe = true;
             roundTransitioning = true;  // Block actions until reset
 
+            // Hide ability bar between rounds
+            const abilityBar = document.getElementById('abilityBar');
+            if (abilityBar) abilityBar.style.display = 'none';
+            const parryButton = document.getElementById('parryButton');
+            if (parryButton) parryButton.style.display = 'none';
+            if (window.guiElements && window.guiElements.abilityBarBg) {
+                window.guiElements.abilityBarBg.isVisible = false;
+            }
+
             // Stop casting sounds and switch to alpha waves for calm between rounds
             if (window.ToneSFX) {
                 ToneSFX.castingStop();
@@ -13410,13 +13484,11 @@
                 // Push toward enemy core
                 if (currentStage >= 4) {
                     // Already at enemy core and won = VICTORY
-                    playSound('victory', 0, 1.0);
                     gameOver = true;
-                    // Show victory screen after animation plays
-                    setTimeout(() => showVictoryScreen(true), 1500);
+                    // Show victory screen instantly
+                    showVictoryScreen(true);
                 } else {
                     showMessage(stageName + " Won!");
-                    playSound('victory', 0, 0.8);
                     currentStage++;
                 }
             } else {
@@ -13438,13 +13510,11 @@
                 // Pushed back toward player core
                 if (currentStage <= 0) {
                     // Already at player core and lost = DEFEAT
-                    playSound('defeat', 0, 1.0);
                     gameOver = true;
-                    // Show defeat screen after animation plays
-                    setTimeout(() => showVictoryScreen(false), 1500);
+                    // Show defeat screen instantly
+                    showVictoryScreen(false);
                 } else {
                     showMessage(stageName + " Lost!");
-                    playSound('defeat', 0, 0.8);
                     currentStage--;
                 }
             }

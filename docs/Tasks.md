@@ -144,6 +144,7 @@
 ### Visual Polish
 | Status | Task | Notes |
 |--------|------|-------|
+| `[ ]` | Fix cast radial swipe on ability bar | Currently hexagon shape, should be circular |
 | `[ ]` | Darken ground floor | Shadows not visible enough |
 | `[ ]` | Text shadows: duplicate only | No blur, pixel shadow offset |
 | `[ ]` | Bold text throughout | |

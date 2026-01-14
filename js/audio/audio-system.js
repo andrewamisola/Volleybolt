@@ -282,8 +282,6 @@ export async function initToneJS() {
         frozen: 'sfx/frozen.wav',
         gravityCast: 'sfx/gravitysphere_cast.wav',
         gravityAbsorb: 'sfx/gravitysphere_absorb.wav',
-        victory: 'sfx/victory.wav',
-        defeat: 'sfx/defeat.wav',
         iceShatter: 'sfx/ice-shatter.wav',
         cancel: 'sfx/cancel.wav',
         overpowered: 'sfx/overpowered.wav'
@@ -329,7 +327,7 @@ export async function initToneJS() {
 
 // Helper to play sample
 function playSample(name) {
-    if (synths.samples && synths.samples[name]) {
+    if (synths.samples && synths.samples[name] && synths.samples[name].loaded) {
         try { synths.samples[name].stop(); } catch(e) {}
         synths.samples[name].start();
     }
@@ -430,14 +428,8 @@ export const ToneSFX = {
         if (!toneStarted) await initToneJS();
         playSample('frozen');
     },
-    victory: async () => {
-        if (!toneStarted) await initToneJS();
-        playSample('victory');
-    },
-    defeat: async () => {
-        if (!toneStarted) await initToneJS();
-        playSample('defeat');
-    },
+    victory: async () => {},
+    defeat: async () => {},
     woosh: async () => {
         if (!toneStarted) await initToneJS();
         playSample('woosh');
