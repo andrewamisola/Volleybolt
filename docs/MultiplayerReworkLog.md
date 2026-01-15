@@ -35,3 +35,4 @@
 - Updated score display and win/lose messaging to be local-perspective in PvP.
 - Throttled PvP UI updates to reduce per-frame DOM churn.
 - Mapped frozen text to local perspective in PvP.
+- Added silent projectile cleanup path for rollback sync to avoid lingering VFX.

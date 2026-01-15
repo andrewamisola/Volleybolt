@@ -7907,7 +7907,8 @@
             };
 
             // Destroy projectile function
-            window.destroyProjectile = (proj) => {
+            window.destroyProjectile = (proj, options = {}) => {
+                const silent = !!options.silent;
                 const idx = projectiles.indexOf(proj);
                 if (idx > -1) projectiles.splice(idx, 1);
 
@@ -7923,14 +7924,19 @@
 
                 // Make trail linger and fade out instead of instant dispose
                 if (proj.trail && proj.trailMat) {
-                    lingeringTrails.push({
-                        trail: proj.trail,
-                        trailMat: proj.trailMat,
-                        life: TRAIL_LINGER_TIME,
-                        originalAlpha: proj.trailMat.alpha || 0.5
-                    });
-                    proj.trail = null;  // Prevent double-dispose
-                    proj.trailMat = null;
+                    if (!silent) {
+                        lingeringTrails.push({
+                            trail: proj.trail,
+                            trailMat: proj.trailMat,
+                            life: TRAIL_LINGER_TIME,
+                            originalAlpha: proj.trailMat.alpha || 0.5
+                        });
+                        proj.trail = null;  // Prevent double-dispose
+                        proj.trailMat = null;
+                    } else {
+                        proj.trail.dispose();
+                        proj.trailMat.dispose();
+                    }
                 } else {
                     if (proj.trail) proj.trail.dispose();
                     if (proj.trailMat) proj.trailMat.dispose();
@@ -11525,14 +11531,8 @@
                 }
             }
             for (const p of toRemove) {
-                // Silently destroy without sound during rollback
-                if (p.mesh) p.mesh.dispose();
-                if (p.particles) p.particles.dispose();
-                if (p.trail) p.trail.dispose();
-                if (p.light) p.light.dispose();
-                if (p.sound && p.sound.stop) p.sound.stop();
-                const idx = projectiles.indexOf(p);
-                if (idx >= 0) projectiles.splice(idx, 1);
+                // Silently destroy without VFX during rollback
+                destroyProjectile(p, { silent: true });
             }
 
             // Update existing projectiles and create missing ones
