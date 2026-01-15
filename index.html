@@ -503,6 +503,10 @@
             return netRngSeed / 0x7fffffff;
         }
 
+        function simRandom() {
+            return gameMode === 'pvp' ? seededRandom() : Math.random();
+        }
+
         // Unique projectile ID counter (must be deterministic)
         let nextProjectileId = 0;
 
@@ -1417,16 +1421,16 @@
                     const baseVelX = proj.velX * 0.5;
 
                     // Each bomb gets noticeably different speed
-                    const velX1 = baseVelX * (0.6 + Math.random() * 0.5);  // 60-110% - one slower
-                    const velX2 = baseVelX * (0.9 + Math.random() * 0.5);  // 90-140% - one faster
+                    const velX1 = baseVelX * (0.6 + simRandom() * 0.5);  // 60-110% - one slower
+                    const velX2 = baseVelX * (0.9 + simRandom() * 0.5);  // 90-140% - one faster
 
                     // Different upward pops - more variation
-                    const popUp1 = 1 + Math.random() * 4;
-                    const popUp2 = 3 + Math.random() * 4;  // Higher range
+                    const popUp1 = 1 + simRandom() * 4;
+                    const popUp2 = 3 + simRandom() * 4;  // Higher range
 
                     // Different spread angles
-                    const zVel1 = 1.5 + Math.random() * 3;
-                    const zVel2 = -(2 + Math.random() * 3);
+                    const zVel1 = 1.5 + simRandom() * 3;
+                    const zVel2 = -(2 + simRandom() * 3);
 
                     // Spawn at apex height with varied velocities (bounceCount limits to 1 bounce)
                     const bombOptions1 = { isMagmaBomb: true, startY: baseY, velY: popUp1, bounceCount: 0 };
@@ -3494,7 +3498,11 @@
                 if (!window.guiElements || !window.guiElements.stageSegments) return;
                 for (let i = 0; i < 5; i++) {
                     const seg = window.guiElements.stageSegments[i];
-                    const result = stageResults[i];
+                    let result = stageResults[i];
+                    if (gameMode === 'pvp' && !isHost) {
+                        if (result === 'player') result = 'ai';
+                        else if (result === 'ai') result = 'player';
+                    }
 
                     // Current stage ALWAYS takes priority (yellow) - so player knows where they are
                     if (i === currentStage) {
