@@ -29,3 +29,7 @@
 - Implemented PvP parry detection for both sides and synced local parry UI.
 - Added PvP parry aiming for right-side player via input direction.
 - Switched tower damage targeting to projectile ownership and update ownership on blocks/parries.
+- Removed random fireball launch angle; aim now derives from movement input.
+- Captured move accumulator and stage state in rollback snapshots.
+- Restored projectile ownership during rollback sync.
+- Updated score display and win/lose messaging to be local-perspective in PvP.

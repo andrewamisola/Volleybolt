@@ -8804,6 +8804,9 @@
                 if (playerFreezeTime <= 0 && !roundTransitioning) {
                     if (keys['KeyW'] || keys['ArrowUp']) moveDir = 1;
                     if (keys['KeyS'] || keys['ArrowDown']) moveDir = -1;
+                    if (combatants.left) {
+                        combatants.left.lastMoveDir = moveDir;
+                    }
 
                     // Cancel cast if player tries to move while casting
                     const playerIsCasting = combatants.left && combatants.left.casting;
@@ -8884,6 +8887,9 @@
                         const aiDiff = aiTargetZ - aiPaddle.position.z;
                         if (Math.abs(aiDiff) > 0.25) {
                             aiMoveDir = Math.sign(aiDiff);
+                        }
+                        if (combatants.right) {
+                            combatants.right.lastMoveDir = aiMoveDir;
                         }
 
                         // VARIABLE AI SPEED - Not always at max speed
@@ -9449,9 +9455,9 @@
                     const leftHealth = combatants.left ? combatants.left.towerHealth : playerTowerHealth;
                     const rightHealth = combatants.right ? combatants.right.towerHealth : aiTowerHealth;
                     if (leftHealth <= 0) {
-                        endRound('ai');
+                        endRound('right');
                     } else if (rightHealth <= 0) {
-                        endRound('player');
+                        endRound('left');
                     }
                 }
             }
@@ -11341,6 +11347,7 @@
                 // Combatant states
                 left: {
                     paddleZ: playerPaddle ? playerPaddle.position.z : 0,
+                    moveAccum: combatants.left ? (combatants.left.moveAccum || 0) : 0,
                     mana: combatants.left ? combatants.left.mana : 0,
                     manaRegen: combatants.left ? combatants.left.manaRegen : 0,
                     freezeTime: combatants.left ? combatants.left.freezeTime : 0,
@@ -11352,6 +11359,7 @@
                 },
                 right: {
                     paddleZ: aiPaddle ? aiPaddle.position.z : 0,
+                    moveAccum: combatants.right ? (combatants.right.moveAccum || 0) : 0,
                     mana: combatants.right ? combatants.right.mana : 0,
                     manaRegen: combatants.right ? combatants.right.manaRegen : 0,
                     freezeTime: combatants.right ? combatants.right.freezeTime : 0,
@@ -11398,6 +11406,19 @@
                 aiScore: aiScore,
                 roundActive: roundActive,
 
+                // Stage state (for rollbacks across transitions)
+                stage: {
+                    currentStage: currentStage,
+                    playerGateHealthByStage: Array.isArray(playerGateHealthByStage) ? [...playerGateHealthByStage] : [],
+                    aiGateHealthByStage: Array.isArray(aiGateHealthByStage) ? [...aiGateHealthByStage] : [],
+                    stageResults: Array.isArray(stageResults) ? [...stageResults] : [],
+                    totalRoundsPlayed: totalRoundsPlayed,
+                    lastRoundAtStage: Array.isArray(lastRoundAtStage) ? [...lastRoundAtStage] : [],
+                    waitingToServe: waitingToServe,
+                    roundTransitioning: roundTransitioning,
+                    gameOver: gameOver
+                },
+
                 // RNG state (for determinism)
                 rngSeed: netRngSeed,
                 nextProjId: nextProjectileId
@@ -11414,6 +11435,7 @@
 
             // Restore left combatant
             if (combatants.left) {
+                combatants.left.moveAccum = state.left.moveAccum || 0;
                 combatants.left.mana = state.left.mana;
                 combatants.left.manaRegen = state.left.manaRegen;
                 combatants.left.freezeTime = state.left.freezeTime;
@@ -11426,6 +11448,7 @@
 
             // Restore right combatant
             if (combatants.right) {
+                combatants.right.moveAccum = state.right.moveAccum || 0;
                 combatants.right.mana = state.right.mana;
                 combatants.right.manaRegen = state.right.manaRegen;
                 combatants.right.freezeTime = state.right.freezeTime;
@@ -11450,6 +11473,25 @@
             playerScore = state.playerScore;
             aiScore = state.aiScore;
             roundActive = state.roundActive;
+            if (state.stage) {
+                currentStage = state.stage.currentStage;
+                if (Array.isArray(state.stage.playerGateHealthByStage)) {
+                    playerGateHealthByStage = [...state.stage.playerGateHealthByStage];
+                }
+                if (Array.isArray(state.stage.aiGateHealthByStage)) {
+                    aiGateHealthByStage = [...state.stage.aiGateHealthByStage];
+                }
+                if (Array.isArray(state.stage.stageResults)) {
+                    stageResults = [...state.stage.stageResults];
+                }
+                totalRoundsPlayed = state.stage.totalRoundsPlayed;
+                if (Array.isArray(state.stage.lastRoundAtStage)) {
+                    lastRoundAtStage = [...state.stage.lastRoundAtStage];
+                }
+                waitingToServe = state.stage.waitingToServe;
+                roundTransitioning = state.stage.roundTransitioning;
+                gameOver = state.stage.gameOver;
+            }
 
             // Restore RNG
             netRngSeed = state.rngSeed;
@@ -11501,6 +11543,7 @@
                         existing.mesh.position.y = sp.y;
                         existing.mesh.position.z = sp.z;
                     }
+                    existing.owner = sp.owner;
                     existing.velX = sp.velX;
                     existing.velY = sp.velY;
                     existing.velZ = sp.velZ;
@@ -11998,6 +12041,8 @@
             }
 
             // Apply movement inputs
+            if (combatants.left) combatants.left.lastMoveDir = leftInput.moveDir;
+            if (combatants.right) combatants.right.lastMoveDir = rightInput.moveDir;
             applyNetworkMovement(combatants.left, leftInput.moveDir, playerPaddle, dt);
             applyNetworkMovement(combatants.right, rightInput.moveDir, aiPaddle, dt);
 
@@ -12020,9 +12065,9 @@
 
             // Check win conditions
             if (combatants.left && combatants.left.towerHealth <= 0) {
-                endRound('ai');
+                endRound('right');
             } else if (combatants.right && combatants.right.towerHealth <= 0) {
-                endRound('player');
+                endRound('left');
             }
         }
 
@@ -12287,17 +12332,19 @@
         }
 
         function updateScore() {
-            document.getElementById('playerScore').textContent = playerScore;
-            document.getElementById('aiScore').textContent = aiScore;
+            const displayLeftScore = (gameMode === 'pvp' && !isHost) ? aiScore : playerScore;
+            const displayRightScore = (gameMode === 'pvp' && !isHost) ? playerScore : aiScore;
+            document.getElementById('playerScore').textContent = displayLeftScore;
+            document.getElementById('aiScore').textContent = displayRightScore;
 
             // Update Babylon.js GUI score (CRT-affected)
             if (window.guiElements && window.guiElements.scoreText) {
-                window.guiElements.scoreText.text = playerScore + " - " + aiScore;
+                window.guiElements.scoreText.text = displayLeftScore + " - " + displayRightScore;
             }
 
             // Update HTML overlay score (crisp text)
             const htmlScore = document.getElementById('htmlScore');
-            if (htmlScore) htmlScore.textContent = playerScore + " - " + aiScore;
+            if (htmlScore) htmlScore.textContent = displayLeftScore + " - " + displayRightScore;
         }
 
         function checkWin() {
@@ -13205,9 +13252,17 @@
                 aiFireballCooldown = effectiveCooldown;
             }
 
-            // Spawn with slight random angle
-            const angle = (Math.random() - 0.5) * 0.4;
-            const velZ = Math.sin(angle) * speed * 0.3;
+            // Aim based on deterministic input/movement (no randomness)
+            let aimDir = 0;
+            if (c.lastMoveDir !== undefined && c.lastMoveDir !== null) {
+                aimDir = c.lastMoveDir;
+            } else if (caster === 'player') {
+                if (keys['KeyW'] || keys['ArrowUp']) aimDir = 1;
+                if (keys['KeyS'] || keys['ArrowDown']) aimDir = -1;
+            } else if (typeof aiMoveDir !== 'undefined') {
+                aimDir = Math.sign(aiMoveDir);
+            }
+            const velZ = aimDir !== 0 ? (aimDir * speed * 0.3) : 0;
 
             playSound('fireballCast', startX, 0.8);
             // Note: spawnFireball still takes 'player'/'ai' as owner for projectile tracking
@@ -13651,7 +13706,7 @@
             }
         }
 
-        function endRound(winner) {
+        function endRound(winnerSide) {
             // Guard against double-calls (e.g., two projectiles hitting same frame)
             if (!roundActive) return;
 
@@ -13683,6 +13738,9 @@
 
             // Winner is whoever destroyed the gate
             const stageName = window.stageNames ? window.stageNames[currentStage] : "Stage";
+            const winnerOwner = winnerSide === 'left' ? 'player' : 'ai';
+            const localSide = getLocalSide();
+            const localWon = gameMode === 'pvp' ? (winnerSide === localSide) : (winnerOwner === 'player');
 
             // Track rounds for gate regeneration system
             totalRoundsPlayed++;
@@ -13696,7 +13754,7 @@
             // Pure tug-of-war: win = push forward, lose = pushed back
             // No skipping - every stage must be fought for
 
-            if (winner === 'player') {
+            if (winnerOwner === 'player') {
                 playerScore++;
 
                 // Record stage result for progress bar coloring
@@ -13717,9 +13775,9 @@
                     // Already at enemy core and won = VICTORY
                     gameOver = true;
                     // Show victory screen instantly
-                    showVictoryScreen(true);
+                    showVictoryScreen(localWon);
                 } else {
-                    showMessage(stageName + " Won!");
+                    showMessage(localWon ? (stageName + " Won!") : (stageName + " Lost!"));
                     currentStage++;
                 }
             } else {
@@ -13743,9 +13801,9 @@
                     // Already at player core and lost = DEFEAT
                     gameOver = true;
                     // Show defeat screen instantly
-                    showVictoryScreen(false);
+                    showVictoryScreen(localWon);
                 } else {
-                    showMessage(stageName + " Lost!");
+                    showMessage(localWon ? (stageName + " Won!") : (stageName + " Lost!"));
                     currentStage--;
                 }
             }
