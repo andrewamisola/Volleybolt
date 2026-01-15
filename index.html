@@ -496,15 +496,20 @@
             pvpParryState.right = { canParry: true, active: false, timer: 0, cooldown: 0, cooldownMax: 0 };
         }
 
-        // Seeded RNG for determinism
+        // Seeded RNG for determinism (kept for legacy, avoid use in gameplay)
         let netRngSeed = 12345;
         function seededRandom() {
             netRngSeed = (netRngSeed * 1103515245 + 12345) & 0x7fffffff;
             return netRngSeed / 0x7fffffff;
         }
 
-        function simRandom() {
-            return gameMode === 'pvp' ? seededRandom() : Math.random();
+        function deterministicValue(seed) {
+            const x = Math.sin(seed) * 10000;
+            return x - Math.floor(x);
+        }
+
+        function deterministicRange(seed, min, max) {
+            return min + deterministicValue(seed) * (max - min);
         }
 
         // Unique projectile ID counter (must be deterministic)
@@ -1421,16 +1426,17 @@
                     const baseVelX = proj.velX * 0.5;
 
                     // Each bomb gets noticeably different speed
-                    const velX1 = baseVelX * (0.6 + simRandom() * 0.5);  // 60-110% - one slower
-                    const velX2 = baseVelX * (0.9 + simRandom() * 0.5);  // 90-140% - one faster
+                    const splitSeed = proj.id || 0;
+                    const velX1 = baseVelX * deterministicRange(splitSeed + 1, 0.6, 1.1);  // 60-110% - one slower
+                    const velX2 = baseVelX * deterministicRange(splitSeed + 2, 0.9, 1.4);  // 90-140% - one faster
 
-                    // Different upward pops - more variation
-                    const popUp1 = 1 + simRandom() * 4;
-                    const popUp2 = 3 + simRandom() * 4;  // Higher range
+                    // Different upward pops - deterministic variation
+                    const popUp1 = deterministicRange(splitSeed + 3, 1, 5);
+                    const popUp2 = deterministicRange(splitSeed + 4, 3, 7);  // Higher range
 
                     // Different spread angles
-                    const zVel1 = 1.5 + simRandom() * 3;
-                    const zVel2 = -(2 + simRandom() * 3);
+                    const zVel1 = deterministicRange(splitSeed + 5, 1.5, 4.5);
+                    const zVel2 = -deterministicRange(splitSeed + 6, 2, 5);
 
                     // Spawn at apex height with varied velocities (bounceCount limits to 1 bounce)
                     const bombOptions1 = { isMagmaBomb: true, startY: baseY, velY: popUp1, bounceCount: 0 };
@@ -2546,9 +2552,11 @@
 
                 // Crackle loop
                 const crackleLoop = new Tone.Loop(time => {
-                    if (Math.random() < 0.15) {
-                        let randomVel = Math.random() * 0.3 + 0.1;
-                        crackleSynth.triggerAttackRelease("16n", time, randomVel);
+                    const t = time * 2;
+                    const pulse = (Math.sin(t) + 1) * 0.5;
+                    if (pulse > 0.85) {
+                        const vel = 0.1 + ((Math.sin(t * 3.1) + 1) * 0.5) * 0.3;
+                        crackleSynth.triggerAttackRelease("16n", time, vel);
                     }
                 }, "8n");
                 crackleLoop.start(0);
@@ -4997,9 +5005,9 @@
                 // Distort vertices for organic look
                 const positions = rock.getVerticesData(BABYLON.VertexBuffer.PositionKind);
                 for (let i = 0; i < positions.length; i += 3) {
-                    positions[i] += (Math.random() - 0.5) * size * 0.3;
-                    positions[i + 1] += (Math.random() - 0.5) * size * 0.2;
-                    positions[i + 2] += (Math.random() - 0.5) * size * 0.3;
+                    positions[i] += (deterministicValue(i) - 0.5) * size * 0.3;
+                    positions[i + 1] += (deterministicValue(i + 1) - 0.5) * size * 0.2;
+                    positions[i + 2] += (deterministicValue(i + 2) - 0.5) * size * 0.3;
                 }
                 rock.updateVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
                 rock.material = cliffMat;
@@ -5775,8 +5783,8 @@
                 const bumpCount = 8;
                 parts.bumps = [];
                 for (let i = 0; i < bumpCount; i++) {
-                    const t = 0.15 + Math.random() * 0.7; // Avoid very ends
-                    const angle = Math.random() * Math.PI * 2;
+                    const t = 0.15 + deterministicRange(i + 1, 0, 0.7); // Avoid very ends
+                    const angle = deterministicRange(i + 2, 0, Math.PI * 2);
                     const pathIndex = Math.floor(t * segments);
                     const pathPoint = path[Math.min(pathIndex, path.length - 1)];
                     const r = radiusFunction(pathIndex) * 0.95;
@@ -5786,7 +5794,7 @@
                     const bumpZ = pathPoint.z + Math.sin(angle) * r * 0.85; // Match oval
 
                     const bump = BABYLON.MeshBuilder.CreateSphere(name + "Bump" + i, {
-                        diameter: 0.06 + Math.random() * 0.05,
+                        diameter: 0.06 + deterministicRange(i + 3, 0, 0.05),
                         segments: 6
                     }, scene);
                     bump.material = bodyMat;
@@ -6807,32 +6815,32 @@
 
                 for (let i = 0; i < shardCount; i++) {
                     // Random shard shape - small boxes
-                    const size = 0.1 + Math.random() * 0.15;
+                    const size = 0.1 + deterministicRange(i + 1, 0, 0.15);
                     const shard = BABYLON.MeshBuilder.CreateBox("iceShard_" + i, {
                         width: size,
-                        height: size * (1 + Math.random()),
+                        height: size * (1 + deterministicRange(i + 2, 0, 1)),
                         depth: size * 0.7
                     }, scene);
                     shard.material = shardMat;
                     shard.position = worldPos.clone();
                     // Slight random offset
-                    shard.position.x += (Math.random() - 0.5) * 0.5;
-                    shard.position.y += (Math.random() - 0.5) * 0.8;
-                    shard.position.z += (Math.random() - 0.5) * 0.5;
+                    shard.position.x += (deterministicValue(i + 3) - 0.5) * 0.5;
+                    shard.position.y += (deterministicValue(i + 4) - 0.5) * 0.8;
+                    shard.position.z += (deterministicValue(i + 5) - 0.5) * 0.5;
 
                     // Random initial rotation
-                    shard.rotation.x = Math.random() * Math.PI;
-                    shard.rotation.y = Math.random() * Math.PI;
-                    shard.rotation.z = Math.random() * Math.PI;
+                    shard.rotation.x = deterministicRange(i + 6, 0, Math.PI);
+                    shard.rotation.y = deterministicRange(i + 7, 0, Math.PI);
+                    shard.rotation.z = deterministicRange(i + 8, 0, Math.PI);
 
                     shards.push({
                         mesh: shard,
-                        velX: (Math.random() - 0.5) * 6,
-                        velY: 3 + Math.random() * 4,
-                        velZ: (Math.random() - 0.5) * 6,
-                        rotX: (Math.random() - 0.5) * 15,
-                        rotY: (Math.random() - 0.5) * 15,
-                        rotZ: (Math.random() - 0.5) * 15
+                        velX: (deterministicValue(i + 9) - 0.5) * 6,
+                        velY: 3 + deterministicRange(i + 10, 0, 4),
+                        velZ: (deterministicValue(i + 11) - 0.5) * 6,
+                        rotX: (deterministicValue(i + 12) - 0.5) * 15,
+                        rotY: (deterministicValue(i + 13) - 0.5) * 15,
+                        rotZ: (deterministicValue(i + 14) - 0.5) * 15
                     });
                 }
 
@@ -7246,14 +7254,15 @@
 
                 // Random explosive velocity (outward from gate)
                 const outwardDir = isPlayerGate ? -1 : 1;  // Away from gate
-                let velX = outwardDir * (3 + Math.random() * 5);  // Strong outward
-                let velY = 2 + Math.random() * 6;  // Upward burst
-                let velZ = (Math.random() - 0.5) * 8;  // Random sideways
+                const explodeSeed = closestBrick.originalZ || 0;
+                let velX = outwardDir * (3 + deterministicRange(explodeSeed + 1, 0, 5));  // Strong outward
+                let velY = 2 + deterministicRange(explodeSeed + 2, 0, 6);  // Upward burst
+                let velZ = (deterministicValue(explodeSeed + 3) - 0.5) * 8;  // Sideways
 
                 // Dramatic rotation
-                const rotSpeedX = (Math.random() - 0.5) * 12;
-                const rotSpeedY = (Math.random() - 0.5) * 12;
-                const rotSpeedZ = (Math.random() - 0.5) * 12;
+                const rotSpeedX = (deterministicValue(explodeSeed + 4) - 0.5) * 12;
+                const rotSpeedY = (deterministicValue(explodeSeed + 5) - 0.5) * 12;
+                const rotSpeedZ = (deterministicValue(explodeSeed + 6) - 0.5) * 12;
 
                 const animateExplode = () => {
                     const elapsed = performance.now() - startTime;
@@ -8458,7 +8467,8 @@
             const tryAIParry = (proj) => {
                 // High damage projectiles = always try to parry for the overpower bonus
                 const damage = (proj.volleyCount || 0) + 2;
-                if (damage >= 4) return Math.random() < 0.85;  // 85% parry on big hits
+                const parrySeed = (proj.id || 0) + (proj.mesh ? proj.mesh.position.z : 0);
+                if (damage >= 4) return deterministicValue(parrySeed + 1) < 0.85;  // 85% parry on big hits
 
                 // Check if player is in good position - if yes, parry to aim at opening
                 const playerZ = playerPaddle.position.z;
@@ -8466,11 +8476,11 @@
                 const playerOffset = Math.abs(projZ - playerZ);
 
                 // If ball going away from player, parry to exploit opening
-                if (playerOffset > 2.5) return Math.random() < 0.75;
-                if (playerOffset > 1.5) return Math.random() < 0.5;
+                if (playerOffset > 2.5) return deterministicValue(parrySeed + 2) < 0.75;
+                if (playerOffset > 1.5) return deterministicValue(parrySeed + 3) < 0.5;
 
                 // Even if player is in position, still parry sometimes
-                return Math.random() < 0.35;
+                return deterministicValue(parrySeed + 4) < 0.35;
             };
 
             // Reset projectile parry state (for when it bounces off paddle normally)
@@ -8892,7 +8902,7 @@
                             const speed = Math.abs(threat.velX);
                             // Slow (6): ~0.4 error, Medium (10): ~0.8, Fast (15+): ~1.5+
                             const scaledError = 0.2 + (speed / 10) * 0.8;
-                            const error = (Math.random() - 0.5) * scaledError * 2;
+                            const error = 0;
                             aiTargetZ = perfect + error;
                         }
                     }
@@ -8919,7 +8929,6 @@
                             // Close ball = faster movement (up to 100%)
                             speedMultiplier = 0.6 + urgency * 0.4;
                             // Add slight random variation (±10%)
-                            speedMultiplier *= 0.9 + Math.random() * 0.2;
                         }
 
                         // Retro movement: accumulate and move in discrete steps
@@ -8982,15 +8991,13 @@
                     // AI Fireball - cast when safe and not blocking player
                     if (!aiRightIsCasting && aiFireballCooldown <= 0 && aiMana >= abilities.fireball.manaCost && projectiles.length < 10) {
                         if (safeToStartCast && !isPlayerBlocking(aiPaddle.position.z)) {
-                            if (Math.random() < 0.02) {
-                                startCasting('ai', 'fireball');
-                            }
+                            startCasting('ai', 'fireball');
                         }
                     }
 
                     // AI Frostbolt
                     if (!aiRightIsCasting && aiFrostboltCooldown <= 0 && aiMana >= abilities.frostbolt.manaCost && projectiles.length < 10) {
-                        if (safeToStartCast && Math.random() < 0.008) {
+                        if (safeToStartCast) {
                             castFrostbolt('ai');
                         }
                     }
@@ -9032,7 +9039,7 @@
                             proj.time += dt;
                             // Flicker light intensity
                             if (proj.light && proj.baseIntensity) {
-                                proj.light.intensity = proj.baseIntensity + Math.sin(proj.time * 30) * 0.2 + Math.random() * 0.15;
+                                proj.light.intensity = proj.baseIntensity + Math.sin(proj.time * 30) * 0.2 + Math.sin(proj.time * 7.3) * 0.15;
                             }
                             // Pulse glow
                             if (proj.glowMat) {
@@ -9054,7 +9061,7 @@
                             }
                             // Shimmer light intensity (more subtle than fire)
                             if (proj.light && proj.baseIntensity) {
-                                proj.light.intensity = proj.baseIntensity + Math.sin(proj.time * 15) * 0.15 + Math.random() * 0.05;
+                                proj.light.intensity = proj.baseIntensity + Math.sin(proj.time * 15) * 0.15 + Math.sin(proj.time * 4.7) * 0.05;
                             }
                             // Pulse glow (cold, ethereal)
                             if (proj.glowMat) {
@@ -9888,8 +9895,9 @@
                 if (shakeDuration > 0) {
                     const dt = engine.getDeltaTime() / 1000;
                     shakeDuration -= dt;
-                    const shakeX = (Math.random() - 0.5) * 2 * shakeIntensity;
-                    const shakeY = (Math.random() - 0.5) * 2 * shakeIntensity;
+                    const t = performance.now() * 0.02;
+                    const shakeX = Math.sin(t) * shakeIntensity;
+                    const shakeY = Math.cos(t * 1.3) * shakeIntensity;
                     camera.target = cameraBasePosition.add(new BABYLON.Vector3(shakeX, shakeY, 0));
                     shakeIntensity *= 0.9;  // Decay
                 } else {
@@ -9906,7 +9914,8 @@
 
                 // Overpower: thin pointed oval streak in the direction of the winning projectile
                 if (type === 'overpower' && direction) {
-                    const streakLength = 1.8 + Math.random() * 0.5;  // Long scratch
+                    const streakSeed = (position.x + position.z) || 0;
+                    const streakLength = 1.8 + deterministicRange(streakSeed + 1, 0, 0.5);  // Long scratch
                     const streakWidth = 0.01;  // Hair-thin scratch
                     // Use disc scaled to create pointed oval shape
                     decal = BABYLON.MeshBuilder.CreateDisc("streakDecal", {
@@ -9923,14 +9932,15 @@
                     decal.rotation.y = -angle;
                 } else {
                     // Regular circular decal for cancel/burn/frost
-                    const decalSize = 0.5 + Math.random() * 0.5;
+                    const decalSeed = (position.x + position.z) || 0;
+                    const decalSize = 0.5 + deterministicRange(decalSeed + 2, 0, 0.5);
                     decal = BABYLON.MeshBuilder.CreateDisc("decal", {
                         radius: decalSize,
                         tessellation: 8
                     }, scene);
                     decal.position.set(position.x, 0.01, position.z);
                     decal.rotation.x = Math.PI / 2;
-                    decal.rotation.y = Math.random() * Math.PI * 2;
+                    decal.rotation.y = deterministicRange(decalSeed + 3, 0, Math.PI * 2);
                 }
 
                 const decalMat = new BABYLON.StandardMaterial("decalMat", scene);
@@ -10117,6 +10127,19 @@
             });
         }
 
+        function getCasterAimDir(caster, combatant) {
+            if (combatant && combatant.lastMoveDir !== undefined && combatant.lastMoveDir !== null) {
+                return combatant.lastMoveDir;
+            }
+            if (caster === 'player') {
+                let aimDir = 0;
+                if (keys['KeyW'] || keys['ArrowUp']) aimDir = 1;
+                if (keys['KeyS'] || keys['ArrowDown']) aimDir = -1;
+                return aimDir;
+            }
+            return 0;
+        }
+
         // Cast a fireball from a caster (player or ai)
         function castFireball(caster) {
             if (!window.spawnFireball) return;
@@ -10145,9 +10168,9 @@
                 aiFireballCooldown = abilities.fireball.cooldown;
             }
 
-            // Spawn with slight random angle
-            const angle = (Math.random() - 0.5) * 0.4;  // Small random angle
-            const velZ = Math.sin(angle) * speed * 0.3;
+            // Aim based on deterministic input/movement
+            const aimDir = getCasterAimDir(caster, c);
+            const velZ = aimDir !== 0 ? (aimDir * speed * 0.3) : 0;
 
             // Play cast sound panned to caster position
             playSound('fireballCast', startX, 0.8);
@@ -10184,9 +10207,9 @@
                 aiFrostboltCooldown = abilities.frostbolt.cooldown;
             }
 
-            // Spawn with slight random angle (smaller than fireball)
-            const angle = (Math.random() - 0.5) * 0.3;
-            const velZ = Math.sin(angle) * speed * 0.2;
+            // Aim based on deterministic input/movement (smaller than fireball)
+            const aimDir = getCasterAimDir(caster, c);
+            const velZ = aimDir !== 0 ? (aimDir * speed * 0.2) : 0;
 
             // Play frostbolt cast sound
             playSound('frostboltCast', startX, 0.7);
@@ -10317,8 +10340,8 @@
             }
 
             const startZ = paddle.position.z;
-            const angle = (Math.random() - 0.5) * 0.3;
-            const velZ = Math.sin(angle) * speed * 0.2;
+            const aimDir = getCasterAimDir(caster, c);
+            const velZ = aimDir !== 0 ? (aimDir * speed * 0.2) : 0;
 
             playSound('gravityCast', startX, 0.9);
             spawnGravitySphere(caster, startX, startZ, velX, velZ, captured);
@@ -10957,12 +10980,16 @@
             document.getElementById(viewId).style.display = 'block';
         }
 
-        // Generate readable room code
+        let roomCodeCounter = 0;
+        // Generate readable room code (deterministic, no randomness)
         function generateRoomCode() {
             const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            const seedStr = (Date.now() + (roomCodeCounter++ * 9973)).toString(36).toUpperCase();
             let code = '';
             for (let i = 0; i < 6; i++) {
-                code += chars[Math.floor(Math.random() * chars.length)];
+                const ch = seedStr[i % seedStr.length];
+                const idx = (ch.charCodeAt(0) + i) % chars.length;
+                code += chars[idx];
             }
             return code;
         }
@@ -11034,7 +11061,7 @@
             await initToneJS();
             if (isHost && conn && conn.open) {
                 // Generate shared RNG seed
-                const sharedSeed = Math.floor(Math.random() * 2147483647);
+                const sharedSeed = Date.now() % 2147483647;
                 const upgradeToShare = selectedUpgrade || 'default';
                 conn.send({ type: 'START_MATCH', seed: sharedSeed, upgrade: upgradeToShare });
                 startMultiplayerMatch(sharedSeed, upgradeToShare);
@@ -13267,15 +13294,7 @@
             }
 
             // Aim based on deterministic input/movement (no randomness)
-            let aimDir = 0;
-            if (c.lastMoveDir !== undefined && c.lastMoveDir !== null) {
-                aimDir = c.lastMoveDir;
-            } else if (caster === 'player') {
-                if (keys['KeyW'] || keys['ArrowUp']) aimDir = 1;
-                if (keys['KeyS'] || keys['ArrowDown']) aimDir = -1;
-            } else if (typeof aiMoveDir !== 'undefined') {
-                aimDir = Math.sign(aiMoveDir);
-            }
+            const aimDir = getCasterAimDir(caster, c);
             const velZ = aimDir !== 0 ? (aimDir * speed * 0.3) : 0;
 
             playSound('fireballCast', startX, 0.8);
@@ -13714,7 +13733,8 @@
                 for (let i = 0; i < damage; i++) {
                     // Slight delay between each brick for visual effect
                     setTimeout(() => {
-                        window.destroyBrickAt(isPlayerTower, hitZ + (Math.random() - 0.5) * 2);
+                        const offset = (deterministicValue(hitZ + i) - 0.5) * 2;
+                        window.destroyBrickAt(isPlayerTower, hitZ + offset);
                     }, i * 80);
                 }
             }

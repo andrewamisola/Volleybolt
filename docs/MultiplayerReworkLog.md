@@ -36,5 +36,7 @@
 - Throttled PvP UI updates to reduce per-frame DOM churn.
 - Mapped frozen text to local perspective in PvP.
 - Added silent projectile cleanup path for rollback sync to avoid lingering VFX.
-- Added `simRandom()` and switched magma lob split randomness to deterministic RNG in PvP.
+- Added deterministic value helpers and switched magma lob split variation to deterministic inputs.
 - Inverted stage progress colors for guest to match local perspective.
+- Removed all `Math.random` usage; replaced with deterministic inputs or sine-based variation.
+- Made AI casting/parry/error deterministic and removed random angle/velocity for abilities.
