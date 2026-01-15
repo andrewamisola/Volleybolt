@@ -159,8 +159,8 @@ export const MCM_PALETTE = {
 // RETRO RESOLUTION UTILITIES
 // ============================================================
 
-const RETRO_BASE_W = 800;
-const RETRO_BASE_H = 600;
+const RETRO_BASE_W = 960;
+const RETRO_BASE_H = 720;
 
 /**
  * Apply D2-style retro resolution with integer upscaling

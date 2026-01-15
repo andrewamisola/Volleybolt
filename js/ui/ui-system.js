@@ -946,48 +946,17 @@ export function updateAbilityUI() {
  * Show multiplayer lobby
  */
 export function showMultiplayerLobby() {
-    window.roundActive = false;
-    window.gameOver = false;
-    window.gameMode = 'single';
-    if (window.clearAllProjectiles) window.clearAllProjectiles();
-
-    if (window.ToneSFX) {
-        window.ToneSFX.castingStop();
-        window.ToneSFX.musicStop();
+    if (typeof window.showMultiplayerLobbyGUI === 'function') {
+        window.showMultiplayerLobbyGUI();
     }
-
-    const combatants = window.combatants || {};
-    for (const c of [combatants.left, combatants.right]) {
-        if (c) {
-            c.casting = null;
-            c.castProgress = 0;
-            c.castTime = 0;
-        }
-    }
-
-    const gameContainer = document.getElementById('gameContainer');
-    if (gameContainer) gameContainer.style.display = 'none';
-
-    if (window.gameEngine) window.gameEngine.stopRenderLoop();
-
-    document.getElementById('talentScreen').classList.remove('visible');
-    document.getElementById('multiplayerLobby').style.display = 'flex';
-    document.getElementById('lobbyModeSelect').style.display = 'block';
-    document.getElementById('lobbyHostView').style.display = 'none';
-    document.getElementById('lobbyJoinView').style.display = 'none';
-    document.getElementById('lobbyConnectedView').style.display = 'none';
 }
 
 /**
  * Hide multiplayer lobby
  */
 export function hideMultiplayerLobby() {
-    document.getElementById('multiplayerLobby').style.display = 'none';
-
-    const gameContainer = document.getElementById('gameContainer');
-    if (gameContainer) gameContainer.style.display = 'block';
-    if (window.gameEngine && window.gameRenderLoop) {
-        window.gameEngine.runRenderLoop(window.gameRenderLoop);
+    if (typeof window.hideMultiplayerLobby === 'function') {
+        window.hideMultiplayerLobby();
     }
 }
 
@@ -995,14 +964,11 @@ export function hideMultiplayerLobby() {
  * Show specific lobby view
  */
 export function showLobbyView(viewId) {
-    document.getElementById('lobbyModeSelect').style.display = 'none';
-    document.getElementById('lobbyHostView').style.display = 'none';
-    document.getElementById('lobbyJoinView').style.display = 'none';
-    document.getElementById('lobbyConnectedView').style.display = 'none';
-
-    const view = document.getElementById(viewId);
-    if (view) view.style.display = 'block';
+    if (typeof window.showLobbyView === 'function') {
+        window.showLobbyView(viewId);
+    }
 }
+
 
 // ============================================================
 // BACKWARD COMPATIBILITY - Expose on window
