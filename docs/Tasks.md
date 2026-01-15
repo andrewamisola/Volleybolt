@@ -167,6 +167,19 @@
 
 ---
 
+## Pending Work (Multiplayer)
+
+| Status | Task | Notes |
+|--------|------|-------|
+| `[x]` | Fix multiplayer camera (was stuck in menu view) | Added full GAME_CAMERA params to flip/reset functions |
+| `[x]` | Fix multiplayer inputs not working | Added `gameState = 'playing'` to startMultiplayerMatch |
+| `[x]` | Fix multiplayer UI missing | Added full UI setup (health, mana, abilities) to startMultiplayerMatch |
+| `[x]` | Fix UI labels for client perspective | Swap "YOUR TOWER" / "ENEMY TOWER" labels for guest |
+| `[ ]` | Fix projectile damage logic for client | Client's projectiles damage wrong towers. Need ownership tracking: projectile should damage opponent's tower regardless of screen position. Currently uses X position which breaks for flipped client view. |
+| `[ ]` | Fix camera sometimes flipping incorrectly | Intermittent issue - investigate isHost state |
+
+---
+
 ## Pending Work (Talent System)
 
 | Status | Task | Notes |
@@ -346,6 +359,103 @@
 - [x] Bouncing physics
 - [x] Height collision check
 - [x] Documentation system
+
+---
+
+## Multiplayer Determinism & Perspective Plan
+
+### Scope
+Fix determinism, ownership, and perspective issues in PvP so host/guest see identical outcomes and the simulation is rollback-safe.
+
+### Summary of Issues, Desired Outcome, and Proposed Fixes
+
+#### 1) Non-deterministic projectile launch (PvP)
+- **Issue**: `fireFireball` uses `Math.random` for launch angle, which can diverge between peers and break rollback determinism.
+- **Desired outcome**: Projectile launch direction depends only on player state/input and is identical on host/guest.
+- **Proposed code changes**:
+  - Replace `Math.random` in fireball launch with deterministic input-based aim.
+  - When the caster is moving, derive `velZ` from input direction and/or paddle velocity (deterministic); when stationary, set `velZ = 0`.
+  - Use `seededRandom()` only for cosmetic effects (non-simulated), not for simulation-critical physics.
+- **Targets**:
+  - `C:\Users\andre\BabylonPong\index.html:13178` (`fireFireball`)
+
+#### 2) World-side tower damage (PvP)
+- **Issue**: Gate collision currently resolves damage based on world X instead of ownership, so perspective can be wrong.
+- **Desired outcome**: Damage applies to the tower of the opponent of the projectile owner, regardless of camera flip.
+- **Proposed code changes**:
+  - Ensure `dealDamageToTower(isPlayerTower, ...)` uses `proj.owner` to decide which tower takes damage.
+  - Update projectile ownership on any paddle block/parry or direction reversal.
+- **Targets**:
+  - `C:\Users\andre\BabylonPong\index.html:9349` (main physics gate collision)
+  - `C:\Users\andre\BabylonPong\index.html:12191` (network physics gate collision)
+  - `C:\Users\andre\BabylonPong\index.html:9164` (parry/blocks should set `proj.owner`)
+
+#### 3) Rollback state missing projectile ownership
+- **Issue**: `syncProjectilesToState` updates velocity/position but doesn’t reapply `owner`, so damage attribution can be wrong after rollback.
+- **Desired outcome**: Rollback always restores projectile ownership consistently.
+- **Proposed code changes**:
+  - In `syncProjectilesToState`, update `existing.owner = sp.owner` for existing projectiles.
+- **Targets**:
+  - `C:\Users\andre\BabylonPong\index.html:11440` (`syncProjectilesToState`)
+
+#### 4) Rollback missing combatant movement accumulator
+- **Issue**: `combatant.moveAccum` drives step movement; not restoring it can cause divergent movement after rollback.
+- **Desired outcome**: Movement state restores exactly so resimulation matches.
+- **Proposed code changes**:
+  - Capture and restore `moveAccum` for left/right combatants in rollback state.
+- **Targets**:
+  - `C:\Users\andre\BabylonPong\index.html:11330` (`captureGameState`/`restoreGameState`)
+
+#### 5) Rollback crossing stage transitions
+- **Issue**: `currentStage` and related gate health arrays are not captured; rollback during/around transitions can desync stages.
+- **Desired outcome**: Either disallow rollback across transitions or fully capture/restore stage state.
+- **Proposed code changes**:
+  - Capture `currentStage`, `playerGateHealthByStage`, `aiGateHealthByStage`, `stageResults`, `totalRoundsPlayed`, `lastRoundAtStage`.
+  - Alternatively, prevent rollback if `roundTransitioning` or `waitingToServe` is true.
+- **Targets**:
+  - `C:\Users\andre\BabylonPong\index.html:11330`
+
+#### 6) Perspective-correct win/lose and scores
+- **Issue**: `endRound('player'|'ai')` and `updateScore()` are world-side; guest may see wrong victory/defeat.
+- **Desired outcome**: Winner is determined by side (left/right), but UI/animations reflect local vs remote.
+- **Proposed code changes**:
+  - Change `endRound` to accept a side (`left`/`right`) and derive local win/lose inside.
+  - In PvP, map winner side to local/remote before showing victory/defeat text and animations.
+  - Update `updateScore()` to show local score on left and remote score on right for guest.
+- **Targets**:
+  - `C:\Users\andre\BabylonPong\index.html:13654` (`endRound`)
+  - `C:\Users\andre\BabylonPong\index.html:12289` (`updateScore`)
+
+#### 7) PvP determinism audit (remaining randomness)
+- **Issue**: `Math.random` is used in AI and visuals; if called inside PvP simulation it can desync.
+- **Desired outcome**: PvP simulation uses only deterministic randomness or no randomness.
+- **Proposed code changes**:
+  - Replace any simulation-time randomness with `seededRandom()`.
+  - Gate VFX randomness to render-only paths that don’t affect simulation state.
+- **Targets**:
+  - `C:\Users\andre\BabylonPong\index.html` (any `Math.random` inside PvP simulation paths)
+
+#### 8) UI update efficiency (medium)
+- **Issue**: PvP loop updates DOM every tick for health/score/mana; can be wasteful.
+- **Desired outcome**: UI updates are throttled or change-driven to reduce overhead.
+- **Proposed code changes**:
+  - Throttle UI updates to 10–15 Hz or only when values change.
+- **Targets**:
+  - `C:\Users\andre\BabylonPong\index.html:11572` (PvP loop)
+
+### Proposed Implementation Order
+1. Deterministic fireball launch + remove PvP `Math.random` from physics.
+2. Ownership-based tower damage + owner updates on block/parry.
+3. Rollback state completeness (owner + moveAccum + stage state).
+4. Perspective-correct win/lose and scores.
+5. PvP determinism audit and UI efficiency pass.
+
+### Verification Checklist
+- Host and guest see identical hit attribution and tower damage.
+- Score display matches local/remote perspective for guest.
+- Parry/block always switches projectile ownership.
+- Rollback resimulation produces identical results (no drift).
+- No random input in PvP simulation unless `seededRandom()`.
 
 ---
 

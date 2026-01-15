@@ -466,8 +466,33 @@
         const TICK_MS = 1000 / TICK_RATE;
         let netAccumulator = 0;        // For fixed timestep
 
+        function getLocalSide() {
+            return isHost ? 'left' : 'right';
+        }
+
+        function getRemoteSide() {
+            return isHost ? 'right' : 'left';
+        }
+
+        function getLocalOwner() {
+            return isHost ? 'player' : 'ai';
+        }
+
+        function getRemoteOwner() {
+            return isHost ? 'ai' : 'player';
+        }
+
         // Pending input for current frame (PvP mode)
         let pendingNetInput = { moveDir: 0, parry: false, fireball: false, frostbolt: false };
+        const pvpParryState = {
+            left: { canParry: true, active: false, timer: 0, cooldown: 0, cooldownMax: 0 },
+            right: { canParry: true, active: false, timer: 0, cooldown: 0, cooldownMax: 0 }
+        };
+
+        function resetPvPParryState() {
+            pvpParryState.left = { canParry: true, active: false, timer: 0, cooldown: 0, cooldownMax: 0 };
+            pvpParryState.right = { canParry: true, active: false, timer: 0, cooldown: 0, cooldownMax: 0 };
+        }
 
         // Seeded RNG for determinism
         let netRngSeed = 12345;
@@ -594,13 +619,14 @@
         // Get UI element IDs for a combatant
         function getCombatantUIElements(combatant) {
             const isLeft = combatant.side === 'left';
+            const isLocalUI = gameMode === 'pvp' ? combatant.isLocalPlayer : isLeft;
             return {
-                manaPrefix: isLeft ? 'mana' : 'aiMana',
-                manaClass: isLeft ? 'mana-segment-fill' : 'ai-mana-segment-fill',
-                castBarContainer: isLeft ? 'castBarContainer' : 'aiCastBarContainer',
-                castBarLabel: isLeft ? 'castBarLabel' : 'aiCastBarLabel',
-                castBarProgress: isLeft ? 'castBarProgress' : 'aiCastBarProgress',
-                healthBar: isLeft ? 'playerHealthBar' : 'aiHealthBar'
+                manaPrefix: isLocalUI ? 'mana' : 'aiMana',
+                manaClass: isLocalUI ? 'mana-segment-fill' : 'ai-mana-segment-fill',
+                castBarContainer: isLocalUI ? 'castBarContainer' : 'aiCastBarContainer',
+                castBarLabel: isLocalUI ? 'castBarLabel' : 'aiCastBarLabel',
+                castBarProgress: isLocalUI ? 'castBarProgress' : 'aiCastBarProgress',
+                healthBar: isLocalUI ? 'playerHealthBar' : 'aiHealthBar'
             };
         }
 
@@ -2983,6 +3009,10 @@
             // Block when not playing
             if (gameState !== "playing") return;
             showKeyPressedFeedback('Space');
+            if (gameMode === 'pvp' && roundActive) {
+                pendingNetInput.parry = true;
+                return;
+            }
             // Any click starts the round when waiting
             const talentVisible = document.getElementById('talentScreen').classList.contains('visible');
             if (waitingToServe && !gameOver && !talentVisible && !roundTransitioning) {
@@ -3178,15 +3208,24 @@
             // Flip camera for client (called when starting PvP match as guest)
             window.flipCameraForClient = () => {
                 if (window.gameCamera) {
-                    // Rotate 180 degrees to see from opponent's side
-                    window.gameCamera.alpha = Math.PI / 2;
+                    const cam = window.gameCamera;
+                    // Set to gameplay camera with flipped alpha
+                    cam.alpha = Math.PI / 2;
+                    cam.beta = GAME_CAMERA.beta;
+                    cam.radius = GAME_CAMERA.radius;
+                    cam.target.set(0, 0, 0);
                 }
             };
 
             // Reset camera to default (host view)
             window.resetCameraToDefault = () => {
                 if (window.gameCamera) {
-                    window.gameCamera.alpha = window.defaultCameraAlpha;
+                    const cam = window.gameCamera;
+                    // Set to full gameplay camera position
+                    cam.alpha = GAME_CAMERA.alpha;
+                    cam.beta = GAME_CAMERA.beta;
+                    cam.radius = GAME_CAMERA.radius;
+                    cam.target.set(0, 0, 0);
                 }
             };
 
@@ -3233,6 +3272,7 @@
             playerHealthLabel.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
             playerHealthLabel.alpha = 1;  // Visible - using Babylon GUI for CRT effects
             playerHealthPanel.addControl(playerHealthLabel);
+            window.guiElements.playerHealthLabel = playerHealthLabel;
 
             // Health bar row (bar + percentage on right)
             const playerHealthRow = new BABYLON.GUI.StackPanel();
@@ -3309,6 +3349,7 @@
             aiHealthLabel.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
             aiHealthLabel.alpha = 1;  // Visible - using Babylon GUI for CRT effects
             aiHealthPanel.addControl(aiHealthLabel);
+            window.guiElements.aiHealthLabel = aiHealthLabel;
 
             // AI Health bar row (percentage on left + bar)
             const aiHealthRow = new BABYLON.GUI.StackPanel();
@@ -3473,9 +3514,10 @@
                     }
                 }
 
-                // Update stage name text
+                // Update stage name text (only show during gameplay, not menu)
                 if (window.guiElements.stageNameText && window.stageNames) {
                     window.guiElements.stageNameText.text = window.stageNames[currentStage].toUpperCase();
+                    window.guiElements.stageNameText.isVisible = (gameState !== 'menu');
                 }
             };
 
@@ -8125,9 +8167,10 @@
             };
 
             // Parry a specific projectile
-            const parryProjectile = (proj, parryer) => {
+            const parryProjectile = (proj, parryer, aimDir = null) => {
                 proj.isParried = true;
                 proj.parriedBy = parryer;
+                proj.owner = parryer;
 
                 // Play parry sound at parryer position
                 const parryX = parryer === 'player' ? playerPaddle.position.x : aiPaddle.position.x;
@@ -8145,9 +8188,11 @@
 
                 if (parryer === 'player') {
                     // Check directional input
-                    let aimDir = 0;
-                    if (keys['KeyW'] || keys['ArrowUp']) aimDir = 1;
-                    if (keys['KeyS'] || keys['ArrowDown']) aimDir = -1;
+                    if (aimDir === null) {
+                        aimDir = 0;
+                        if (keys['KeyW'] || keys['ArrowUp']) aimDir = 1;
+                        if (keys['KeyS'] || keys['ArrowDown']) aimDir = -1;
+                    }
 
                     proj.velX = proj.speed * 0.85;
                     if (aimDir !== 0) {
@@ -8156,17 +8201,26 @@
                         proj.velZ *= 0.5;
                     }
                 } else {
-                    // AI parry - aim at opening (smart targeting)
-                    const targetZ = findOpenTarget();
-                    const currentZ = aiPaddle.position.z;
-                    const aimDiff = targetZ - currentZ;
+                    if (aimDir !== null) {
+                        proj.velX = -proj.speed * 0.85;
+                        if (aimDir !== 0) {
+                            proj.velZ = aimDir * proj.speed * 0.6;
+                        } else {
+                            proj.velZ *= 0.5;
+                        }
+                    } else {
+                        // AI parry - aim at opening (smart targeting)
+                        const targetZ = findOpenTarget();
+                        const currentZ = aiPaddle.position.z;
+                        const aimDiff = targetZ - currentZ;
 
-                    // Calculate aim direction and strength based on opening position
-                    proj.velX = -proj.speed * 0.85;
+                        // Calculate aim direction and strength based on opening position
+                        proj.velX = -proj.speed * 0.85;
 
-                    // Stronger angle if target is far from current position
-                    const angleStrength = Math.min(Math.abs(aimDiff) / 4, 1);  // 0 to 1
-                    proj.velZ = Math.sign(aimDiff) * proj.speed * (0.3 + angleStrength * 0.4);
+                        // Stronger angle if target is far from current position
+                        const angleStrength = Math.min(Math.abs(aimDiff) / 4, 1);  // 0 to 1
+                        proj.velZ = Math.sign(aimDiff) * proj.speed * (0.3 + angleStrength * 0.4);
+                    }
                 }
 
                 // Reset Y for normal projectiles (not magma bombs)
@@ -9254,6 +9308,7 @@
                                 if (proj.isParried && proj.parriedBy === 'ai') {
                                     resetProjParryState(proj);
                                 }
+                                proj.owner = 'player';
                                 proj.velX = -proj.velX;
                                 const hitOffset = (proj.mesh.position.z - playerPaddle.position.z) / paddleHalfDepth;
                                 proj.velZ += hitOffset * 5;
@@ -9304,6 +9359,7 @@
                                 if (proj.isParried && proj.parriedBy === 'player') {
                                     resetProjParryState(proj);
                                 }
+                                proj.owner = 'ai';
                                 proj.volleyCount++;
                                 if (window.updateFireballScale) window.updateFireballScale(proj);  // Scale up with damage
                                 if (tryAIParry(proj)) {
@@ -9336,6 +9392,7 @@
 
                         // Gate collision - damage based on projectile type
                         if (proj.mesh.position.x < -goalX) {
+                            const isPlayerTower = proj.owner === 'ai';
                             if (proj.type === 'frostbolt') {
                                 // Frostbolt just fizzles at gate, no damage
                                 if (window.createImpactFlash) {
@@ -9347,17 +9404,18 @@
                                 if (window.createImpactFlash) {
                                     createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(0.5, 0.1, 0.7), 2.5 + damage * 0.3);
                                 }
-                                dealDamageToTower(true, damage, proj.mesh.position.z);
+                                dealDamageToTower(isPlayerTower, damage, proj.mesh.position.z);
                             } else {
                                 // Use fixed damage if set (magma bombs), otherwise scale with volleys (2 base, +1 per volley, max 5)
                                 const damage = proj.damage !== undefined ? proj.damage : Math.min(2 + proj.volleyCount, 6);
                                 if (window.createImpactFlash) {
                                     createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(1, 0.7, 0.2), 1.5 + damage * 0.5);
                                 }
-                                dealDamageToTower(true, damage, proj.mesh.position.z);
+                                dealDamageToTower(isPlayerTower, damage, proj.mesh.position.z);
                             }
                             toDestroy.push(proj);
                         } else if (proj.mesh.position.x > goalX) {
+                            const isPlayerTower = proj.owner === 'ai';
                             if (proj.type === 'frostbolt') {
                                 // Frostbolt just fizzles at gate, no damage
                                 if (window.createImpactFlash) {
@@ -9369,14 +9427,14 @@
                                 if (window.createImpactFlash) {
                                     createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(0.5, 0.1, 0.7), 2.5 + damage * 0.3);
                                 }
-                                dealDamageToTower(false, damage, proj.mesh.position.z);
+                                dealDamageToTower(isPlayerTower, damage, proj.mesh.position.z);
                             } else {
                                 // Use fixed damage if set (magma bombs), otherwise scale with volleys (2 base, +1 per volley, max 5)
                                 const damage = proj.damage !== undefined ? proj.damage : Math.min(2 + proj.volleyCount, 6);
                                 if (window.createImpactFlash) {
                                     createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(1, 0.7, 0.2), 1.5 + damage * 0.5);
                                 }
-                                dealDamageToTower(false, damage, proj.mesh.position.z);
+                                dealDamageToTower(isPlayerTower, damage, proj.mesh.position.z);
                             }
                             toDestroy.push(proj);
                         }
@@ -10955,8 +11013,9 @@
             if (isHost && conn && conn.open) {
                 // Generate shared RNG seed
                 const sharedSeed = Math.floor(Math.random() * 2147483647);
-                conn.send({ type: 'START_MATCH', seed: sharedSeed });
-                startMultiplayerMatch(sharedSeed);
+                const upgradeToShare = selectedUpgrade || 'default';
+                conn.send({ type: 'START_MATCH', seed: sharedSeed, upgrade: upgradeToShare });
+                startMultiplayerMatch(sharedSeed, upgradeToShare);
             }
         });
 
@@ -11119,7 +11178,7 @@
                 case 'START_MATCH':
                     // Guest receives start signal
                     if (!isHost) {
-                        startMultiplayerMatch(data.seed);
+                        startMultiplayerMatch(data.seed, data.upgrade || 'default');
                     }
                     break;
 
@@ -11136,14 +11195,15 @@
         }
 
         // Start the multiplayer match
-        function startMultiplayerMatch(seed) {
+        function startMultiplayerMatch(seed, upgradeId = selectedUpgrade) {
             console.log('Starting multiplayer match with seed:', seed);
 
             // Hide lobby
             hideMultiplayerLobby();
 
-            // Set game mode
+            // Set game mode and state
             gameMode = 'pvp';
+            gameState = 'playing';
 
             // Initialize RNG with shared seed
             netRngSeed = seed;
@@ -11156,6 +11216,7 @@
             gameStateHistory = [];
             nextProjectileId = 0;
             netAccumulator = 0;
+            resetPvPParryState();
 
             // Configure combatants
             // Host is always left (player), Guest is always right
@@ -11166,6 +11227,9 @@
                 combatants.right.isLocalPlayer = false;
                 // Host sees normal view
                 if (window.resetCameraToDefault) window.resetCameraToDefault();
+                // Reset UI labels for host perspective
+                if (window.guiElements.playerHealthLabel) window.guiElements.playerHealthLabel.text = "YOUR TOWER";
+                if (window.guiElements.aiHealthLabel) window.guiElements.aiHealthLabel.text = "ENEMY TOWER";
             } else {
                 combatants.left.inputSource = 'network';
                 combatants.left.isLocalPlayer = false;
@@ -11173,22 +11237,54 @@
                 combatants.right.isLocalPlayer = true;
                 // Client sees flipped view (so they're on the left visually)
                 if (window.flipCameraForClient) window.flipCameraForClient();
+                // Swap UI labels for client perspective
+                if (window.guiElements.playerHealthLabel) window.guiElements.playerHealthLabel.text = "ENEMY TOWER";
+                if (window.guiElements.aiHealthLabel) window.guiElements.aiHealthLabel.text = "YOUR TOWER";
             }
 
-            // Apply selected upgrade (use same for both in PvP for now)
+            // Apply shared upgrade (use same for both in PvP)
+            selectedUpgrade = upgradeId || 'default';
             if (selectedUpgrade && selectedUpgrade !== 'default') {
                 playerUpgrades.push(selectedUpgrade);
-            }
-
-            // Give opponent same upgrade for fairness
-            if (selectedUpgrade && selectedUpgrade !== 'default') {
                 aiUpgrades.push(selectedUpgrade);
             }
 
             updateAbilityUI();
 
+            // Reset game state
+            resetGame();
+
             // Start the round
             startRound();
+
+            // Show gameplay UI (same as single player)
+            if (window.guiElements) {
+                if (window.guiElements.scorePanel) window.guiElements.scorePanel.isVisible = true;
+                if (window.guiElements.scoreText) window.guiElements.scoreText.alpha = 1;
+                if (window.guiElements.playerHealthPanel) window.guiElements.playerHealthPanel.isVisible = true;
+                if (window.guiElements.aiHealthPanel) window.guiElements.aiHealthPanel.isVisible = true;
+                if (window.guiElements.playerManaContainer) window.guiElements.playerManaContainer.isVisible = true;
+                if (window.guiElements.aiManaContainer) window.guiElements.aiManaContainer.isVisible = true;
+                if (window.guiElements.stageNameText) window.guiElements.stageNameText.isVisible = true;
+                if (window.guiElements.stageGrid) window.guiElements.stageGrid.isVisible = true;
+                // Hide menu
+                if (window.guiElements.menuContainer) window.guiElements.menuContainer.isVisible = false;
+                if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 0;
+            }
+
+            // Show ability bar and parry button
+            const abilityBar = document.getElementById('abilityBar');
+            if (abilityBar) abilityBar.style.display = 'flex';
+            const parryButton = document.getElementById('parryButton');
+            if (parryButton) parryButton.style.display = 'block';
+            if (window.guiElements && window.guiElements.abilityBarBg) {
+                window.guiElements.abilityBarBg.isVisible = true;
+            }
+
+            // Update UI
+            if (window.updateStageIndicator) updateStageIndicator();
+            updateScore();
+            updateHealthBars();
         }
 
         // Receive remote input from opponent
@@ -11273,6 +11369,10 @@
                     parryTimer: parryTimer,
                     parryCooldown: parryCooldown
                 },
+                pvpParry: {
+                    left: { ...pvpParryState.left },
+                    right: { ...pvpParryState.right }
+                },
 
                 // Projectiles (minimal data for recreation)
                 projectiles: projectiles.map(p => ({
@@ -11341,6 +11441,10 @@
             parryActive = state.parry.parryActive;
             parryTimer = state.parry.parryTimer;
             parryCooldown = state.parry.parryCooldown;
+            if (state.pvpParry) {
+                pvpParryState.left = { ...state.pvpParry.left };
+                pvpParryState.right = { ...state.pvpParry.right };
+            }
 
             // Restore scores
             playerScore = state.playerScore;
@@ -11697,6 +11801,141 @@
             }
         }
 
+        function getPvPParryState(side) {
+            return side === 'left' ? pvpParryState.left : pvpParryState.right;
+        }
+
+        function updateParryCooldownSweep(progress) {
+            const sweep = document.getElementById('parrySweep');
+            if (!sweep) return;
+            sweep.style.setProperty('--sweep-angle', (progress * 360) + 'deg');
+        }
+
+        function updatePvPParryTimers(dt) {
+            for (const side of ['left', 'right']) {
+                const state = getPvPParryState(side);
+                if (state.active) {
+                    state.timer -= dt;
+                    if (state.timer <= 0) {
+                        state.active = false;
+                        state.timer = 0;
+                        state.cooldown = parryFailCooldown;
+                        state.cooldownMax = parryFailCooldown;
+                        state.canParry = false;
+
+                        const combatant = combatants[side];
+                        if (combatant && combatant.isLocalPlayer && window.activeParryBubble && window.dissolveParryBubble) {
+                            dissolveParryBubble(window.activeParryBubble);
+                            window.activeParryBubble = null;
+                        }
+                    }
+                }
+
+                if (!state.canParry) {
+                    state.cooldown -= dt;
+                    if (state.cooldown <= 0) {
+                        state.cooldown = 0;
+                        state.cooldownMax = 0;
+                        state.canParry = true;
+                    }
+                }
+            }
+        }
+
+        function tryActivatePvPParry(side) {
+            const state = getPvPParryState(side);
+            const combatant = combatants[side];
+            if (!combatant || combatant.freezeTime > 0) return;
+            if (!state.canParry || state.active) return;
+
+            state.active = true;
+            state.timer = parryWindow;
+            state.canParry = false;
+            state.cooldown = parryFailCooldown;
+            state.cooldownMax = parryFailCooldown;
+
+            if (!isResimulating && combatant.isLocalPlayer) {
+                const paddle = side === 'left' ? playerPaddle : aiPaddle;
+                if (window.playSound && paddle) playSound('spellReady', paddle.position.x, 0.15);
+                if (window.createParryBubble && paddle) {
+                    window.activeParryBubble = createParryBubble(paddle, side === 'right');
+                }
+            }
+        }
+
+        function checkPvPParryHitsForSide(side, inputState) {
+            const state = getPvPParryState(side);
+            if (!state.active) return;
+
+            const paddle = side === 'left' ? playerPaddle : aiPaddle;
+            if (!paddle) return;
+
+            const incomingVelCheck = side === 'left' ? (proj) => proj.velX < 0 : (proj) => proj.velX > 0;
+            const ownerKey = side === 'left' ? 'player' : 'ai';
+
+            const paddleHalfDepth = 2.0;
+            let bestProj = null;
+            let bestDist = Infinity;
+
+            for (const proj of projectiles) {
+                if (!incomingVelCheck(proj)) continue;
+                if (proj.owner === ownerKey && !proj.isParried) continue;
+
+                const distFromPaddle = proj.mesh.position.x - paddle.position.x;
+                if (distFromPaddle > parryHitboxExtend || distFromPaddle < -0.5) continue;
+
+                if (proj.mesh.position.z < paddle.position.z - paddleHalfDepth ||
+                    proj.mesh.position.z > paddle.position.z + paddleHalfDepth) continue;
+
+                if (distFromPaddle < bestDist) {
+                    bestDist = distFromPaddle;
+                    bestProj = proj;
+                }
+            }
+
+            if (bestProj) {
+                const parryer = side === 'left' ? 'player' : 'ai';
+                const aimDir = inputState ? inputState.moveDir : 0;
+                parryProjectile(bestProj, parryer, aimDir);
+
+                state.active = false;
+                state.timer = 0;
+                state.cooldown = parrySuccessCooldown;
+                state.cooldownMax = parrySuccessCooldown;
+                state.canParry = false;
+
+                const combatant = combatants[side];
+                if (combatant && combatant.isLocalPlayer && window.activeParryBubble && window.dissolveParryBubble) {
+                    dissolveParryBubble(window.activeParryBubble);
+                    window.activeParryBubble = null;
+                }
+            }
+        }
+
+        function syncLocalParryUI() {
+            if (gameMode !== 'pvp' || isResimulating) return;
+            const localSide = getLocalSide();
+            const state = getPvPParryState(localSide);
+
+            canParry = state.canParry;
+            parryActive = state.active;
+            parryTimer = state.timer;
+            parryCooldown = state.cooldown;
+
+            if (state.active) {
+                updateParryButtonGUI('active');
+                updateParryActiveOverlay(state.timer / parryWindow);
+            } else if (!state.canParry) {
+                updateParryButtonGUI('cooldown');
+                if (state.cooldownMax > 0) {
+                    updateParryCooldownSweep(state.cooldown / state.cooldownMax);
+                }
+            } else {
+                updateParryButtonGUI('ready');
+                updateParryCooldownSweep(0);
+            }
+        }
+
         // Simulate one frame of gameplay deterministically
         function simulateNetworkFrame(leftInput, rightInput, dt) {
             // Update freeze timers
@@ -11709,46 +11948,21 @@
                 if (combatants.right.freezeTime < 0) combatants.right.freezeTime = 0;
             }
 
-            // Update parry system
-            if (parryActive) {
-                parryTimer -= dt;
-                if (parryTimer <= 0) {
-                    parryActive = false;
-                    parryTimer = 0;
-                }
-            }
-            if (!canParry) {
-                parryCooldown -= dt;
-                if (parryCooldown <= 0) {
-                    canParry = true;
-                    parryCooldown = 0;
-                }
-            }
+            // Update parry system (PvP)
+            updatePvPParryTimers(dt);
 
             // Process parry inputs
-            if (leftInput.parry && canParry && !parryActive && combatants.left && combatants.left.freezeTime <= 0) {
-                // Left player parry (host in PvP)
-                if (isHost) {
-                    parryActive = true;
-                    parryTimer = parryWindow;
-                    canParry = false;
-                    parryCooldown = parryFailCooldown; // Default to fail cooldown, success overrides
-                    if (!isResimulating) playSound('spellReady', playerPaddle.position.x, 0.15);
-                }
+            if (leftInput.parry) {
+                tryActivatePvPParry('left');
             }
-            if (rightInput.parry && combatants.right && combatants.right.freezeTime <= 0) {
-                // Right player parry (guest in PvP)
-                if (!isHost) {
-                    parryActive = true;
-                    parryTimer = parryWindow;
-                    canParry = false;
-                    parryCooldown = parryFailCooldown; // Default to fail cooldown, success overrides
-                    if (!isResimulating) playSound('spellReady', aiPaddle.position.x, 0.15);
-                }
+            if (rightInput.parry) {
+                tryActivatePvPParry('right');
             }
 
-            // Check parry hits
-            if (window.checkParryHits) window.checkParryHits();
+            // Check parry hits for both sides
+            checkPvPParryHitsForSide('left', leftInput);
+            checkPvPParryHitsForSide('right', rightInput);
+            syncLocalParryUI();
 
             // Update cooldowns
             for (const c of [combatants.left, combatants.right]) {
@@ -11950,6 +12164,7 @@
                             proj.velX = -proj.velX;
                             const hitOffset = (proj.mesh.position.z - pz) / paddleHalfDepth;
                             proj.velZ += hitOffset * 5;
+                            proj.owner = 'player';
                             proj.volleyCount++;
                             if (window.updateFireballScale) window.updateFireballScale(proj);  // Scale up with damage
                             // Only give block mana if not parried (parry already gives mana)
@@ -11982,6 +12197,7 @@
                             proj.velX = -proj.velX;
                             const hitOffset = (proj.mesh.position.z - pz) / paddleHalfDepth;
                             proj.velZ += hitOffset * 5;
+                            proj.owner = 'ai';
                             proj.volleyCount++;
                             if (window.updateFireballScale) window.updateFireballScale(proj);  // Scale up with damage
                             // Only give block mana if not parried (parry already gives mana)
@@ -11993,17 +12209,19 @@
 
                 // Gate collisions
                 if (proj.mesh.position.x < -goalX) {
+                    const isPlayerTower = proj.owner === 'ai';
                     // Hit left gate (player's tower)
                     if (proj.type !== 'frostbolt') {
                         const damage = Math.min(2 + proj.volleyCount, 6);
-                        dealDamageToTower(true, damage, proj.mesh.position.z);
+                        dealDamageToTower(isPlayerTower, damage, proj.mesh.position.z);
                     }
                     toDestroy.push(proj);
                 } else if (proj.mesh.position.x > goalX) {
+                    const isPlayerTower = proj.owner === 'ai';
                     // Hit right gate (AI/guest tower)
                     if (proj.type !== 'frostbolt') {
                         const damage = Math.min(2 + proj.volleyCount, 6);
-                        dealDamageToTower(false, damage, proj.mesh.position.z);
+                        dealDamageToTower(isPlayerTower, damage, proj.mesh.position.z);
                     }
                     toDestroy.push(proj);
                 }
@@ -12236,6 +12454,7 @@
                 const regenAmount = Math.floor(roundsAway * GATE_REGEN_PER_ROUND * maxTowerHealth);
                 const finalHealth = Math.min(maxTowerHealth, storedHealth + regenAmount);
                 healthArray[stage] = finalHealth;  // Update stored health
+                lastRoundAtStage[stage] = totalRoundsPlayed;  // Mark regen as applied
                 return finalHealth;
             }
 
@@ -12578,15 +12797,19 @@
             }
         }
 
-        // Update ability slots to show if player has enough mana
+            // Update ability slots to show if player has enough mana
         function updateManaAvailability() {
             const fireSlot = document.getElementById('fireballSlot');
             const frostSlot = document.getElementById('frostboltSlot');
             const gravitySlot = document.getElementById('gravitySlot');
 
             // Get state from local player combatant (falls back to legacy vars if not initialized)
-            const localCooldowns = combatants.left ? combatants.left.cooldowns : { fireball: playerFireballCooldown, frostbolt: playerFrostboltCooldown, gravity: playerGravityCooldown };
-            const localMana = combatants.left ? combatants.left.mana : playerMana;
+            let localCombatant = combatants.left;
+            if (gameMode === 'pvp' && combatants.left && combatants.right) {
+                localCombatant = combatants[getLocalSide()];
+            }
+            const localCooldowns = localCombatant ? localCombatant.cooldowns : { fireball: playerFireballCooldown, frostbolt: playerFrostboltCooldown, gravity: playerGravityCooldown };
+            const localMana = localCombatant ? localCombatant.mana : playerMana;
 
             // Only show no-mana state when off cooldown
             if (localCooldowns.fireball <= 0) {
@@ -12611,7 +12834,7 @@
 
             // Gravity Well is disabled for rework
             if (gravitySlot) {
-                const gravityPhase = combatants.left ? combatants.left.gravityPhase : playerGravityPhase;
+                const gravityPhase = localCombatant ? localCombatant.gravityPhase : playerGravityPhase;
                 if (localCooldowns.gravity <= 0 && gravityPhase === 'ready') {
                     if (localMana < abilities.gravity.manaCost) {
                         gravitySlot.classList.add('no-mana');
@@ -13003,10 +13226,18 @@
 
         function updateHealthBars() {
             // Read from combatant state with fallback to legacy variables
-            const leftHealth = combatants.left ? combatants.left.towerHealth : playerTowerHealth;
-            const rightHealth = combatants.right ? combatants.right.towerHealth : aiTowerHealth;
-            const playerPercent = (leftHealth / maxTowerHealth) * 100;
-            const aiPercent = (rightHealth / maxTowerHealth) * 100;
+            let localHealth = combatants.left ? combatants.left.towerHealth : playerTowerHealth;
+            let remoteHealth = combatants.right ? combatants.right.towerHealth : aiTowerHealth;
+
+            if (gameMode === 'pvp' && combatants.left && combatants.right) {
+                const localSide = getLocalSide();
+                const remoteSide = getRemoteSide();
+                localHealth = combatants[localSide].towerHealth;
+                remoteHealth = combatants[remoteSide].towerHealth;
+            }
+
+            const playerPercent = (localHealth / maxTowerHealth) * 100;
+            const aiPercent = (remoteHealth / maxTowerHealth) * 100;
             // NES.css progress bars use value attribute (HTML fallback)
             document.getElementById('playerHealthBar').value = playerPercent;
             document.getElementById('aiHealthBar').value = aiPercent;

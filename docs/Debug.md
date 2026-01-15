@@ -178,3 +178,21 @@ if (DEBUG.logBallState) {
     console.log(`Ball: ${ball.position.x}, ${ball.position.y}, ${ball.position.z}`);
 }
 ```
+
+## Multiplayer Smoke Checklist
+- Host + guest connect successfully (room code, START_MATCH).
+- Both players can move, cast fireball, cast frostbolt, and parry.
+- Parry aim works for both sides (up/down inputs affect return angle).
+- Projectile ownership updates on block/parry; tower damage applies to opponent.
+- Score and tower labels reflect local perspective on guest.
+- Win/lose animations and text are correct for both players.
+- No obvious desync (projectiles, positions, or health diverging after 1–2 rounds).
+
+### Common Failures and Likely Fixes
+- **Connect fails or START_MATCH not received**: Verify PeerJS connection state, ensure host sends `START_MATCH` with seed/upgrade, and guest handler calls `startMultiplayerMatch` on receipt. Check `initializePeer`, `setupConnection`, and `handleNetworkMessage`.
+- **Guest movement inverted or stuck**: Confirm `isHost` is set before input capture and `moveMultiplier` is applied only in PvP input. Check keydown/keyup handlers and `pendingNetInput` updates.
+- **Parry doesn't trigger on one side**: Ensure PvP parry input sets `pendingNetInput.parry` and that `simulateNetworkFrame` calls `tryActivatePvPParry` for both sides. Validate `syncLocalParryUI` and parry timers.
+- **Parry aim doesn't follow input**: Confirm `checkPvPParryHitsForSide` passes `moveDir` and `parryProjectile` uses provided aim instead of AI targeting.
+- **Tower damage hits wrong side**: Verify `proj.owner` is updated on blocks/parries and `dealDamageToTower` uses ownership instead of X position in both physics paths.
+- **Score/tower labels wrong for guest**: Ensure local/remote perspective mapping is used in `updateScore`, `updateHealthBars`, and GUI label swap logic at match start.
+- **Desync after 1–2 rounds**: Check rollback state completeness (projectile ownership, moveAccum, stage state), and remove any `Math.random` from simulation paths.
