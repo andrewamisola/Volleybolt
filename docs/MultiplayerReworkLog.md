@@ -33,3 +33,5 @@
 - Captured move accumulator and stage state in rollback snapshots.
 - Restored projectile ownership during rollback sync.
 - Updated score display and win/lose messaging to be local-perspective in PvP.
+- Throttled PvP UI updates to reduce per-frame DOM churn.
+- Mapped frozen text to local perspective in PvP.

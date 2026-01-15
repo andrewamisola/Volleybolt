@@ -465,6 +465,8 @@
         const TICK_RATE = 60;
         const TICK_MS = 1000 / TICK_RATE;
         let netAccumulator = 0;        // For fixed timestep
+        let pvpUiAccumulator = 0;
+        const PVP_UI_INTERVAL = 0.1;   // seconds
 
         function getLocalSide() {
             return isHost ? 'left' : 'right';
@@ -9306,7 +9308,7 @@
                                 if (window.createImpactDecal) {
                                     createImpactDecal({ x: proj.mesh.position.x, z: proj.mesh.position.z }, 'frost');
                                 }
-                                showFrozenText(true);
+                                showFrozenText(!!(combatants.left && combatants.left.isLocalPlayer));
                                 toDestroy.push(proj);
                             } else {
                                 // Normal fireball behavior
@@ -9356,7 +9358,7 @@
                                 if (window.createImpactDecal) {
                                     createImpactDecal({ x: proj.mesh.position.x, z: proj.mesh.position.z }, 'frost');
                                 }
-                                showFrozenText(false);
+                                showFrozenText(!!(combatants.right && combatants.right.isLocalPlayer));
                                 if (combatants.right.casting) cancelCasting('ai', true);
                                 toDestroy.push(proj);
                             } else {
@@ -11675,12 +11677,16 @@
             }
 
             // Update UI (health bars, mana, etc.) after simulation
-            updateHealthBars();
-            if (combatants.left) updateCombatantManaUI(combatants.left);
-            if (combatants.right) updateCombatantManaUI(combatants.right);
-            updateScore();
+            pvpUiAccumulator += renderDt;
+            if (pvpUiAccumulator >= PVP_UI_INTERVAL) {
+                updateHealthBars();
+                if (combatants.left) updateCombatantManaUI(combatants.left);
+                if (combatants.right) updateCombatantManaUI(combatants.right);
+                updateScore();
+                pvpUiAccumulator = 0;
+            }
 
-            // Update cast bars for PvP
+            // Update cast bars for PvP (keep smooth)
             updatePvPCastBars();
         }
 
@@ -12200,7 +12206,7 @@
                             combatants.left.freezeTime = abilities.frostbolt.freezeDuration;
                             if (!isResimulating) {
                                 playSound('frozen', px, 0.7);
-                                showFrozenText(true);
+                                showFrozenText(!!(combatants.left && combatants.left.isLocalPlayer));
                             }
                             toDestroy.push(proj);
                         } else {
@@ -12233,7 +12239,7 @@
                             combatants.right.freezeTime = abilities.frostbolt.freezeDuration;
                             if (!isResimulating) {
                                 playSound('frozen', px, 0.7);
-                                showFrozenText(false);
+                                showFrozenText(!!(combatants.right && combatants.right.isLocalPlayer));
                             }
                             toDestroy.push(proj);
                         } else {
