@@ -257,6 +257,7 @@ html, body {
 }
 .combat-text.fire { color: #ffa040; }
 .combat-text.frost { color: #80d0ff; }
+.combat-text.lightning { color: #ffff40; }
 .combat-text.frozen {
     color: #ffffff;
     background: rgba(64, 128, 255, 0.4);
@@ -554,6 +555,11 @@ html, body {
     background-image: url('textures/frostbolt.png');
 }
 
+.ability-icon.chainlightning-icon {
+    background-image: url('textures/chainlightning.png');
+    image-rendering: pixelated;
+}
+
 .ability-slot.ready .ability-icon {
     filter: url(#posterize) drop-shadow(1px 1px 2px #000) brightness(1.2);
 }
@@ -636,62 +642,6 @@ html, body {
 /* Always show cooldown overlay when on cooldown */
 .ability-slot.on-cooldown .cooldown-sweep {
     z-index: 10;
-}
-
-/* Gravity spell - dark purple */
-.gravity-hex {
-    background: #1a0f1f;
-}
-
-#gravitySlot.ready .ability-hex {
-    border-color: #8040a0;
-    border-bottom-color: #402060;
-    border-right-color: #402060;
-}
-
-#gravitySlot.ready .ability-key {
-    color: #c080e0;
-    border-color: #8040a0;
-}
-
-.gravity-shine { display: none; }
-
-/* No animations - retro feel */
-#gravitySlot.barrier-active .ability-hex {
-    background: #2a1040;
-}
-
-/* Sphere ready state */
-#gravitySlot.sphere-ready .ability-hex::before {
-    background: linear-gradient(135deg, #2ecc71, #9b59b6, #2ecc71);
-    animation: sphereReady 0.8s ease-in-out infinite;
-}
-
-@keyframes sphereReady {
-    0%, 100% { box-shadow: 0 0 20px rgba(46, 204, 113, 0.6); }
-    50% { box-shadow: 0 0 35px rgba(155, 89, 182, 0.9), 0 0 60px rgba(46, 204, 113, 0.4); }
-}
-
-/* Capture count indicator */
-.capture-count {
-    position: absolute;
-    top: 5px;
-    right: 5px;
-    background: rgba(0, 0, 0, 0.8);
-    color: #d4a5ff;
-    font-family: 'Crimson Text', serif;
-    font-size: 12px;
-    font-weight: 700;
-    padding: 2px 6px;
-    border-radius: 10px;
-    border: 1px solid #9b59b6;
-    display: none;
-    z-index: 10;
-}
-
-#gravitySlot.barrier-active .capture-count,
-#gravitySlot.sphere-ready .capture-count {
-    display: block;
 }
 
 /* Mana Bar - NES Style (3 segments) - Player left side */
@@ -855,10 +805,6 @@ html, body {
 }
 .tt-frost {
     color: #66ccff;
-    font-weight: bold;
-}
-.tt-arcane {
-    color: #cc88ff;
     font-weight: bold;
 }
 .tt-damage {

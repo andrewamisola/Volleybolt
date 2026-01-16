@@ -184,6 +184,35 @@
                 </div>
             </div>
         </div>
+        <div id="chainLightningSlot" class="ability-slot ready" data-ability="chain_lightning">
+            <div class="mana-cost">1+</div>
+            <div class="ability-hex">
+                <div class="shine-effect"></div>
+                <span class="ability-icon chainlightning-icon"></span>
+                <div class="cooldown-sweep" id="chainLightningSweep"></div>
+            </div>
+            <div class="upgrade-indicator">
+                <span class="upgrade-indicator-icon">+</span>
+            </div>
+            <div class="cooldown-overlay">
+                <span class="cooldown-text" id="chainLightningCDText">0</span>
+            </div>
+            <div class="ability-key">3</div>
+            <!-- Tooltip -->
+            <div class="ability-tooltip" id="chainLightningTooltip">
+                <div class="tooltip-title">Chain Lightning</div>
+                <div class="tooltip-stats-row">
+                    <div class="tooltip-stats-left">
+                        <span class="tooltip-stat-item mana"><span class="icon">*</span><span class="value">1 per Zap</span></span>
+                        <span class="tooltip-stat-item cast"><span class="icon">></span><span class="value">Instant</span></span>
+                    </div>
+                    <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">8s CD</span></span>
+                </div>
+                <div class="tooltip-description">
+                    Call down <span class="tt-spell">Lightning</span> from the sky to <span class="tt-damage">destroy</span> enemy projectiles. Zaps the <span class="tt-value">closest</span> projectiles first. Costs <span class="tt-mana">1 Mana</span> per projectile (up to 3).
+                </div>
+            </div>
+        </div>
         <!-- GRAVITY WELL - COMMENTED OUT FOR REWORK
         <div id="gravitySlot" class="ability-slot ready" data-ability="gravity">
             <div class="mana-cost">3</div>
@@ -325,14 +354,25 @@
         let gameOver = false;
         let waitingToServe = true;
 
+        // Tower/Round state - health constants (must be defined before gate health arrays)
+        const SINGLES_MAX_HEALTH = 20;  // Standard 1v1 health
+        const DOUBLES_MAX_HEALTH = 50;  // Increased health for 2v2
+        let maxTowerHealth = SINGLES_MAX_HEALTH;
+        // LEGACY - sync only, read from combatants.left/right.towerHealth
+        let playerTowerHealth = maxTowerHealth;
+        let aiTowerHealth = maxTowerHealth;
+        let roundActive = false;
+        let roundTransitioning = false;  // Block actions during round end transition
+
         // Stage/Tug-of-War state
         // Stages: 0=Player Core, 1=Player Area, 2=Midfield, 3=AI Area, 4=AI Core
         let currentStage = 2;  // Start at midfield
         let stageResults = [null, null, null, null, null];  // null=未played, 'player'=won, 'ai'=lost
 
         // MOBA-style persistent gate health - damage carries over when returning to a stage
-        let playerGateHealthByStage = [20, 20, 20, 20, 20];  // Your gate health at each stage
-        let aiGateHealthByStage = [20, 20, 20, 20, 20];      // Enemy gate health at each stage
+        // Note: These are initialized with SINGLES_MAX_HEALTH, but get reset in resetGame() using maxTowerHealth
+        let playerGateHealthByStage = [SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH];
+        let aiGateHealthByStage = [SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH];
 
         // Gate regeneration system - ALL gates regen 25% per round away from stage
         let totalRoundsPlayed = 0;
@@ -340,18 +380,12 @@
         const GATE_REGEN_PER_ROUND = 0.25;  // 25% of max health per round away
 
         let ball, playerPaddle, aiPaddle;
+        // Doubles mode paddles (front positions - closer to net)
+        let playerFrontPaddle = null, aiFrontPaddle = null;
         // Towers replaced by brick gates
         const initialBallSpeed = 12;
         let ballSpeed = initialBallSpeed;
         let ballVelX = 0, ballVelZ = 0, ballVelY = 0;
-
-        // Tower/Round state
-        const maxTowerHealth = 20;  // Matches reduced brick count
-        // LEGACY - sync only, read from combatants.left/right.towerHealth
-        let playerTowerHealth = maxTowerHealth;
-        let aiTowerHealth = maxTowerHealth;
-        let roundActive = false;
-        let roundTransitioning = false;  // Block actions during round end transition
 
         // Game state machine: "menu" | "playing" | "paused"
         let gameState = "menu";
@@ -410,8 +444,46 @@
         // ============================================================
         // P2P MULTIPLAYER - Rollback Netcode
         // ============================================================
-        let gameMode = 'single';      // 'single' | 'pvp'
+        let gameMode = 'single';      // 'single' | 'pvp' | 'doubles_ai' | 'doubles_pvp'
         let isHost = false;           // Host handles tie-breaking, starts left side
+
+        // ============================================================
+        // DOUBLES MODE (2v2)
+        // ============================================================
+        let doublesConfig = null;     // null for 1v1, or { enabled: true, rotation: 'after_round' }
+
+        // Team structure for 2v2 (front = closer to net, back = defensive)
+        let teams = {
+            left: { front: null, back: null },
+            right: { front: null, back: null }
+        };
+
+        // Track which combatant the local player controls (stable reference through rotations)
+        let localPlayerCombatant = null;
+
+        // Doubles positioning constants (depth split - front near net, back near goal)
+        const DOUBLES_POSITIONS = {
+            // Both teammates on same side of court (not face-to-face)
+            left: {
+                front: { x: -3, zBoundary: 2.7 },   // Forward position on left side (closer to midline)
+                back:  { x: -8, zBoundary: 2.7 }    // Back/goal position on left side
+            },
+            right: {
+                front: { x: 3, zBoundary: 2.7 },    // Forward position on right side (closer to midline)
+                back:  { x: 8, zBoundary: 2.7 }     // Back/goal position on right side
+            }
+        };
+
+        function isDoublesMode() {
+            return gameMode === 'doubles_ai' || gameMode === 'doubles_pvp';
+        }
+
+        function getTeammate(combatant) {
+            if (!isDoublesMode() || !combatant) return null;
+            const team = teams[combatant.side];
+            if (!team) return null;
+            return combatant.position === 'front' ? team.back : team.front;
+        }
         let peer = null;              // PeerJS instance
         let conn = null;              // DataConnection to opponent
         let myPeerId = null;
@@ -515,12 +587,17 @@
         // This enables symmetric PvP and reduces player/AI code duplication.
         // ============================================================
 
-        function createCombatant(side) {
+        function createCombatant(side, position = 'solo') {
             return {
                 // Identity
                 side: side,                      // 'left' or 'right'
+                position: position,              // 'solo' | 'front' | 'back' (for doubles)
                 inputSource: 'none',             // 'local', 'ai', 'network'
                 isLocalPlayer: false,
+
+                // Doubles-specific (AI coordination)
+                aiCurrentTarget: null,           // Projectile this AI is tracking
+                moveAccum: 0,                    // Movement accumulator for step-based motion
 
                 // Core State
                 score: 0,
@@ -530,7 +607,7 @@
                 freezeTime: 0,
 
                 // Cooldowns (keyed by ability ID)
-                cooldowns: { fireball: 0, frostbolt: 0, gravity: 0 },
+                cooldowns: { fireball: 0, frostbolt: 0, gravity: 0, chain_lightning: 0 },
 
                 // Casting
                 casting: null,                   // ability ID or null
@@ -542,6 +619,14 @@
                 gravityBarrier: null,
                 capturedBalls: 0,
                 gravityPhase: 'ready',
+
+                // Chain Lightning
+                channelTime: 0,              // How long currently channeling
+                zappedCount: 0,              // Projectiles zapped this channel
+                zapTimer: 0,                 // Timer for zap interval checks
+                lightningShield: null,       // { charges, maxCharges, mesh, particles }
+                channelAura: null,           // Particle system during channel
+                lightningBolts: [],          // Active lightning bolt meshes
 
                 // Upgrades
                 upgrades: [],
@@ -560,6 +645,11 @@
                 animLocked: false,
                 baseRotY: 0,
                 targetRotY: 0,
+
+                // Animation state (for state machine)
+                moveDir: 0,                  // -1 = moving right, 0 = stopped, 1 = moving left
+                roundResult: null,           // 'victory' | 'defeat' | null
+                playingCastRelease: false,   // True while cast_release is playing
 
                 // Model parts (for procedural characters)
                 pickleParts: null,
@@ -587,6 +677,10 @@
 
         // Legacy adapter - maps 'player'/'ai' to new system during migration
         function getCombatantLegacy(caster) {
+            // In doubles mode, use the tracked local player combatant
+            if (isDoublesMode() && caster === 'player' && localPlayerCombatant) {
+                return localPlayerCombatant;
+            }
             return caster === 'player' ? combatants.left : combatants.right;
         }
 
@@ -741,6 +835,143 @@
             combatants.right.isLocalPlayer = false;
             combatants.right.baseRotY = -Math.PI / 2;    // Face left
             combatants.right.targetRotY = -Math.PI / 2;
+        }
+
+        // Initialize doubles mode (2v2) - creates 4 combatants in teams
+        function initDoublesCombatants(localPosition = 'back') {
+            // Set doubled health for 2v2 mode
+            maxTowerHealth = DOUBLES_MAX_HEALTH;
+            playerTowerHealth = maxTowerHealth;
+            aiTowerHealth = maxTowerHealth;
+            if (combatants.left) combatants.left.towerHealth = maxTowerHealth;
+            if (combatants.right) combatants.right.towerHealth = maxTowerHealth;
+            console.log('[DOUBLES] Set maxTowerHealth =', maxTowerHealth);
+
+            // IMPORTANT: Reuse existing combatants for back positions to preserve model data!
+            // The original combatants.left/right have the loaded models and animations.
+
+            // Left team (Blue) - reuse existing for back, create new for front
+            teams.left.front = createCombatant('left', 'front');
+            teams.left.front.baseRotY = Math.PI / 2;
+            teams.left.front.targetRotY = Math.PI / 2;
+
+            // Reuse existing left combatant for back (keeps model, animations, etc.)
+            teams.left.back = combatants.left;
+            teams.left.back.position = 'back';
+            teams.left.back.baseRotY = Math.PI / 2;
+            teams.left.back.targetRotY = Math.PI / 2;
+
+            // Right team (Red) - reuse existing for back, create new for front
+            teams.right.front = createCombatant('right', 'front');
+            teams.right.front.baseRotY = -Math.PI / 2;
+            teams.right.front.targetRotY = -Math.PI / 2;
+
+            // Reuse existing right combatant for back (keeps model, animations, etc.)
+            teams.right.back = combatants.right;
+            teams.right.back.position = 'back';
+            teams.right.back.baseRotY = -Math.PI / 2;
+            teams.right.back.targetRotY = -Math.PI / 2;
+
+            // Set input sources based on game mode
+            if (gameMode === 'doubles_ai') {
+                // Player controls back position, AI teammate at front
+                // Both opponents are AI
+                if (localPosition === 'back') {
+                    teams.left.back.inputSource = 'local';
+                    teams.left.back.isLocalPlayer = true;
+                    teams.left.front.inputSource = 'ai';  // Teammate AI
+                    localPlayerCombatant = teams.left.back;  // Track player's combatant
+                } else {
+                    teams.left.front.inputSource = 'local';
+                    teams.left.front.isLocalPlayer = true;
+                    teams.left.back.inputSource = 'ai';   // Teammate AI
+                    localPlayerCombatant = teams.left.front;  // Track player's combatant
+                }
+                teams.right.front.inputSource = 'ai';     // Opponent AI
+                teams.right.back.inputSource = 'ai';      // Opponent AI
+            }
+            // For doubles_pvp, input sources are set when players join slots
+
+            // Give AI combatants starting mana so they can cast
+            const allDoubCombatants = [teams.left.front, teams.left.back, teams.right.front, teams.right.back];
+            for (const c of allDoubCombatants) {
+                if (c && c.inputSource === 'ai') {
+                    c.mana = 2;  // Start with 2 mana for AI
+                }
+            }
+
+            // combatants.left/right already point to back positions (we reused them)
+            // Just ensure the reference is correct
+            combatants.left = teams.left.back;
+            combatants.right = teams.right.back;
+
+            // Enable doubles config
+            doublesConfig = { enabled: true, rotation: 'after_round' };
+
+            console.log('[Doubles] Initialized - back combatants reused with models intact');
+        }
+
+        // Get all combatants as array (for iteration)
+        function getAllCombatants() {
+            if (isDoublesMode()) {
+                return [
+                    teams.left.front,
+                    teams.left.back,
+                    teams.right.front,
+                    teams.right.back
+                ].filter(c => c !== null);
+            }
+            return [combatants.left, combatants.right].filter(c => c !== null);
+        }
+
+        // Get team combatants
+        function getTeamCombatants(side) {
+            if (!isDoublesMode()) {
+                return [combatants[side]].filter(c => c !== null);
+            }
+            const team = teams[side];
+            return [team.front, team.back].filter(c => c !== null);
+        }
+
+        // Rotate positions after round (swap front/back)
+        // Physically move the paddles to new positions so each combatant keeps their
+        // model/animations. This way the player always controls their character.
+        function rotateDoublesPositions(side) {
+            if (!isDoublesMode()) return;
+            const team = teams[side];
+            if (!team.front || !team.back) return;
+
+            // Get position coordinates
+            const frontX = DOUBLES_POSITIONS[side].front.x;
+            const backX = DOUBLES_POSITIONS[side].back.x;
+
+            // Swap paddle positions (paddles have models parented to them)
+            if (team.front.paddle && team.back.paddle) {
+                const frontPaddleX = team.front.paddle.position.x;
+                const backPaddleX = team.back.paddle.position.x;
+
+                // Move front paddle to back position
+                team.front.paddle.position.x = backX;
+                // Move back paddle to front position
+                team.back.paddle.position.x = frontX;
+            }
+
+            // Swap the combatant references in the team structure
+            const temp = team.front;
+            team.front = team.back;
+            team.back = temp;
+
+            // Update position properties
+            team.front.position = 'front';
+            team.back.position = 'back';
+
+            // localPlayerCombatant doesn't change - player keeps their combatant
+            // combatants[side] stays pointing to the back combatant for AI targeting
+
+            console.log(`[Doubles] ${side} team rotated - front: ${team.front.inputSource}, back: ${team.back.inputSource}`);
+            if (side === 'left' && localPlayerCombatant) {
+                console.log(`[Doubles] Player now at ${localPlayerCombatant.position} position`);
+            }
         }
 
         // Reset combatant state for round start/reset
@@ -1483,6 +1714,81 @@
                         });
                     }
                 }
+            },
+
+            // === CHAIN LIGHTNING UPGRADES ===
+            chain_lightning_base: {
+                id: 'chain_lightning_base',
+                name: 'Chain Lightning',
+                baseAbility: 'chain_lightning',
+                tier: 1,
+                icon: '⚡',
+                element: 'lightning',
+                description: 'Channel to zap incoming projectiles. Converts zapped projectiles into shield charges that auto-block attacks.',
+                effects: [
+                    'Drains 1 mana per second while channeling',
+                    'Zaps enemy projectiles within range',
+                    'Each zapped projectile = 1 shield charge',
+                    'Shield charges auto-block incoming attacks'
+                ],
+                // Chain Lightning specific properties
+                castType: 'channel_drain',
+                manaDrainPerSecond: 1,
+                maxChannelTime: 10,
+                zapRange: 6,
+                zapInterval: 0.15
+            },
+            extended_reach: {
+                id: 'extended_reach',
+                name: 'Extended Reach',
+                baseAbility: 'chain_lightning',
+                tier: 2,
+                icon: '⚡',
+                description: 'Increases Chain Lightning zap range.',
+                effects: [
+                    'Zap range increased from 6 to 9'
+                ],
+                zapRangeBonus: 3
+            },
+            mana_efficiency: {
+                id: 'mana_efficiency',
+                name: 'Mana Efficiency',
+                baseAbility: 'chain_lightning',
+                tier: 2,
+                icon: '⚡',
+                description: 'Reduces mana drain while channeling.',
+                effects: [
+                    'Mana drain reduced to 0.7 per second'
+                ],
+                manaDrainMultiplier: 0.7
+            },
+            overcharge: {
+                id: 'overcharge',
+                name: 'Overcharge',
+                baseAbility: 'chain_lightning',
+                tier: 3,
+                icon: '⚡',
+                description: 'Shield charges also reflect projectiles with bonus speed.',
+                effects: [
+                    'Auto-blocked projectiles are reflected at 1.5x speed',
+                    'Reflected projectiles deal +1 damage'
+                ],
+                reflectSpeedMultiplier: 1.5,
+                reflectDamageBonus: 1
+            },
+            static_field: {
+                id: 'static_field',
+                name: 'Static Field',
+                baseAbility: 'chain_lightning',
+                tier: 3,
+                icon: '⚡',
+                description: 'While shield is active, nearby enemy projectiles are slowed.',
+                effects: [
+                    'Enemy projectiles within 4 units are slowed 40%',
+                    'Creates visible static field aura'
+                ],
+                slowRadius: 4,
+                slowAmount: 0.4
             }
         };
 
@@ -1509,6 +1815,16 @@
                     2: { choices: ['frozen_orb', 'permafrost'] },
                     3: { choices: ['absolute_zero', 'ice_age'] }
                 }
+            },
+            chain_lightning: {
+                abilityId: 'chain_lightning',
+                abilityName: 'Chain Lightning',
+                icon: '⚡',
+                tiers: {
+                    1: { choices: ['chain_lightning_base'] },
+                    2: { choices: ['extended_reach', 'mana_efficiency'] },
+                    3: { choices: ['overcharge', 'static_field'] }
+                }
             }
         };
 
@@ -1524,7 +1840,8 @@
             totalPointsEarned: 0,
             abilities: {
                 fireball: { currentTier: 0, selectedTalents: [] },
-                frostbolt: { currentTier: 0, selectedTalents: [] }
+                frostbolt: { currentTier: 0, selectedTalents: [] },
+                chain_lightning: { currentTier: 0, selectedTalents: [] }
             },
             isSelectingTalent: false,
             activeAbility: null
@@ -2292,7 +2609,10 @@
                 gravityAbsorb: 'sfx/gravitysphere_absorb.wav',
                 iceShatter: 'sfx/ice-shatter.wav',
                 cancel: 'sfx/cancel.wav',
-                overpowered: 'sfx/overpowered.wav'
+                overpowered: 'sfx/overpowered.wav',
+                lightning: 'sfx/lightning.wav',
+                lightning2: 'sfx/lightning2.wav',
+                lightning3: 'sfx/lightning3.wav'
             };
 
             // Looping casting sounds - separate for player and AI with panning
@@ -2696,6 +3016,23 @@
                 playSample('gravityAbsorb');
             },
 
+            // Lightning sounds (for Chain Lightning ability) - LOUD
+            lightning: async () => {
+                if (!toneStarted) await initToneJS();
+                if (synths.samples.lightning) synths.samples.lightning.volume.value = 3;
+                playSample('lightning');
+            },
+            lightning2: async () => {
+                if (!toneStarted) await initToneJS();
+                if (synths.samples.lightning2) synths.samples.lightning2.volume.value = 3;
+                playSample('lightning2');
+            },
+            lightning3: async () => {
+                if (!toneStarted) await initToneJS();
+                if (synths.samples.lightning3) synths.samples.lightning3.volume.value = 3;
+                playSample('lightning3');
+            },
+
             // Casting loop start - plays mid-cast.wav looping (panned by side)
             castingStart: async (side = 'player') => {
                 if (!toneStarted) await initToneJS();
@@ -2874,7 +3211,7 @@
             'Space': document.getElementById('parryButton'),
             'Digit1': document.getElementById('fireballSlot'),
             'Digit2': document.getElementById('frostboltSlot'),
-            'Digit3': document.getElementById('gravitySlot')
+            'Digit3': document.getElementById('chainLightningSlot')
         };
 
         function showKeyPressedFeedback(keyCode) {
@@ -2956,10 +3293,10 @@
             if (e.code === 'Digit2' && !gameOver && roundActive && !roundTransitioning && leftCombatant.cooldowns.frostbolt <= 0 && leftCombatant.mana >= abilities.frostbolt.manaCost) {
                 castFrostbolt('player');
             }
-            // Gravity ability - key 3 (COMMENTED OUT FOR REWORK)
-            // if (e.code === 'Digit3' && !gameOver && roundActive) {
-            //     handleGravityInput('player');
-            // }
+            // Chain Lightning ability - key 3 (instant cast)
+            if (e.code === 'Digit3' && leftCombatant && !gameOver && roundActive && !roundTransitioning && !leftCombatant.casting && leftCombatant.cooldowns.chain_lightning <= 0 && leftCombatant.mana >= 1) {
+                castChainLightning('player');
+            }
         });
         document.addEventListener('keyup', (e) => {
             // Block gameplay input when not playing
@@ -2977,6 +3314,11 @@
                 if (e.code === 'KeyS' || e.code === 'ArrowDown') {
                     if (pendingNetInput.moveDir === -1 * moveMultiplier) pendingNetInput.moveDir = 0;
                 }
+            }
+
+            // Chain Lightning - end channel on key release
+            if (e.code === 'Digit3' && combatants.left && combatants.left.casting === 'chain_lightning') {
+                endChainLightningChannel(combatants.left);
             }
         });
 
@@ -3819,7 +4161,7 @@
                 return btn;
             }
 
-            // Mode select buttons
+            // Host/Join/Back buttons for multiplayer lobby
             const btnHostGame = createStoneButton("Host Game");
             const btnJoinGame = createStoneButton("Join Game");
             const btnBackMenu = createStoneButton("Back");
@@ -4034,9 +4376,14 @@
                 return btn;
             }
 
-            // Start Battle button
+            // Start Battle button - shows mode selection
             const btnStartBattle = createMenuButton("Start Battle", () => {
-                startGame();
+                if (window.guiElements && window.guiElements.modeSelectOverlay) {
+                    // Hide menu and title, show mode selection
+                    menuContainer.isVisible = false;
+                    if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 0;
+                    window.guiElements.modeSelectOverlay.isVisible = true;
+                }
             });
             menuContainer.addControl(btnStartBattle);
 
@@ -4055,6 +4402,123 @@
 
             window.guiElements.btnStartBattle = btnStartBattle;
             window.guiElements.btnMultiplayer = btnMultiplayer;
+
+            // --- MODE SELECTION OVERLAY (for Start Battle) ---
+            // Outer overlay is transparent, just for positioning
+            const modeSelectOverlay = new BABYLON.GUI.Rectangle();
+            modeSelectOverlay.width = 1;
+            modeSelectOverlay.height = 1;
+            modeSelectOverlay.thickness = 0;
+            modeSelectOverlay.background = "transparent";
+            modeSelectOverlay.isVisible = false;
+            modeSelectOverlay.zIndex = 500;
+            modeSelectOverlay.isPointerBlocker = true;
+            guiTexture.addControl(modeSelectOverlay);
+            window.guiElements.modeSelectOverlay = modeSelectOverlay;
+
+            // Dark background panel
+            const modeSelectBg = new BABYLON.GUI.Rectangle();
+            modeSelectBg.width = "100%";
+            modeSelectBg.height = "100%";
+            modeSelectBg.thickness = 0;
+            modeSelectBg.background = "rgba(0, 0, 0, 0.7)";
+            modeSelectBg.isHitTestVisible = false;
+            modeSelectOverlay.addControl(modeSelectBg);
+
+            const modeSelectPanel = new BABYLON.GUI.StackPanel();
+            modeSelectPanel.width = "500px";
+            modeSelectPanel.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
+            modeSelectPanel.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
+            modeSelectPanel.spacing = 20;
+            modeSelectPanel.isPointerBlocker = true;
+            modeSelectPanel.isHitTestVisible = true;
+            modeSelectOverlay.addControl(modeSelectPanel);
+
+            const modeSelectTitle = new BABYLON.GUI.TextBlock();
+            modeSelectTitle.text = "SELECT MODE";
+            modeSelectTitle.color = "#d8c278";
+            modeSelectTitle.fontFamily = "'Esthetique', 'Cinzel', serif";
+            modeSelectTitle.fontSize = 48;
+            modeSelectTitle.fontWeight = "800";
+            modeSelectTitle.height = "60px";
+            modeSelectTitle.shadowColor = "#000";
+            modeSelectTitle.shadowOffsetX = 3;
+            modeSelectTitle.shadowOffsetY = 3;
+            modeSelectPanel.addControl(modeSelectTitle);
+
+            // Helper to create mode buttons (reuse stone style)
+            function createModeButton(label) {
+                const btn = BABYLON.GUI.Button.CreateSimpleButton("mode_" + label, label);
+                btn.width = "400px";
+                btn.height = "80px";
+                btn.color = "#000000b3";
+                btn.fontSize = 28;
+                btn.fontFamily = "'Esthetique', 'Cinzel', serif";
+                btn.fontWeight = "900";
+                btn.thickness = 0;
+                btn.background = "#3d3528";
+                btn.paddingTop = "6px";
+                btn.paddingBottom = "6px";
+                btn.shadowOffsetX = 4;
+                btn.shadowOffsetY = 4;
+                btn.shadowColor = "#000";
+                btn.isPointerBlocker = true;
+                btn.isHitTestVisible = true;
+
+                const bgImg = new BABYLON.GUI.Image("mode_img_" + label, "textures/ui.png");
+                bgImg.stretch = BABYLON.GUI.Image.STRETCH_FILL;
+                bgImg.alpha = 0.9;
+                bgImg.isHitTestVisible = false;
+                bgImg.zIndex = 0;
+                btn.addControl(bgImg);
+                btn.textBlock.zIndex = 1;
+
+                btn.onPointerEnterObservable.add(() => { bgImg.alpha = 1.0; });
+                btn.onPointerOutObservable.add(() => { bgImg.alpha = 0.9; });
+                btn.onPointerDownObservable.add(() => { bgImg.alpha = 0.8; btn.top = "2px"; });
+                btn.onPointerUpObservable.add(() => { bgImg.alpha = 1.0; btn.top = "0px"; });
+                return btn;
+            }
+
+            const btn1v1Mode = createModeButton("1v1 Duel");
+            btn1v1Mode.onPointerClickObservable.add(() => {
+                modeSelectOverlay.isVisible = false;
+                gameMode = 'single';
+                doublesConfig = null;
+                // Reset to singles health
+                maxTowerHealth = SINGLES_MAX_HEALTH;
+                playerTowerHealth = maxTowerHealth;
+                aiTowerHealth = maxTowerHealth;
+                if (combatants.left) combatants.left.towerHealth = maxTowerHealth;
+                if (combatants.right) combatants.right.towerHealth = maxTowerHealth;
+                if (window.setDoublesPaddlesVisible) window.setDoublesPaddlesVisible(false);
+                startGame();
+            });
+            modeSelectPanel.addControl(btn1v1Mode);
+
+            const btn2v2Mode = createModeButton("2v2 (AI Partner)");
+            btn2v2Mode.onPointerClickObservable.add(() => {
+                modeSelectOverlay.isVisible = false;
+                gameMode = 'doubles_ai';
+                doublesConfig = { enabled: true, rotation: 'after_round' };
+                initDoublesCombatants();
+                if (window.assignDoublesPaddles) window.assignDoublesPaddles();
+                if (window.loadDoublesCharacters) window.loadDoublesCharacters();
+                if (window.createFrontCastBars) window.createFrontCastBars();
+                console.log('Doubles mode initialized for single player');
+                startGame();
+            });
+            modeSelectPanel.addControl(btn2v2Mode);
+
+            const btnModeBack = createModeButton("Back");
+            btnModeBack.color = "#1a120e";
+            btnModeBack.onPointerClickObservable.add(() => {
+                modeSelectOverlay.isVisible = false;
+                // Show menu and title again
+                menuContainer.isVisible = true;
+                if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 1;
+            });
+            modeSelectPanel.addControl(btnModeBack);
 
             // --- MANA BARS ---
             // Player mana bar (below player health bar)
@@ -5431,6 +5895,82 @@
             redBase.edgesWidth = 2.0;
             redBase.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
 
+            // Function to create front paddles for doubles mode
+            function createDoublesPaddles(scene, playerMat, aiMat) {
+                const tableWidth = 20;
+
+                // Left front paddle (teammate or player in front position)
+                playerFrontPaddle = BABYLON.MeshBuilder.CreateBox("playerFront", {
+                    width: 0.4, height: 0.5, depth: 2.0  // Slightly smaller than back
+                }, scene);
+                playerFrontPaddle.position.set(DOUBLES_POSITIONS.left.front.x, 0, 0);
+                playerFrontPaddle.material = playerMat;
+                playerFrontPaddle.enableEdgesRendering();
+                playerFrontPaddle.edgesWidth = 2.0;
+                playerFrontPaddle.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
+                playerFrontPaddle.visibility = 0;  // Hidden until doubles mode
+
+                // Right front paddle (opponent front or player front)
+                aiFrontPaddle = BABYLON.MeshBuilder.CreateBox("aiFront", {
+                    width: 0.4, height: 0.5, depth: 2.0
+                }, scene);
+                aiFrontPaddle.position.set(DOUBLES_POSITIONS.right.front.x, 0, 0);
+                aiFrontPaddle.material = aiMat;
+                aiFrontPaddle.enableEdgesRendering();
+                aiFrontPaddle.edgesWidth = 2.0;
+                aiFrontPaddle.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
+                aiFrontPaddle.visibility = 0;  // Hidden until doubles mode
+            }
+
+            // Show/hide doubles paddles based on game mode
+            function setDoublesPaddlesVisible(visible) {
+                if (playerFrontPaddle) playerFrontPaddle.visibility = visible ? 1 : 0;
+                if (aiFrontPaddle) aiFrontPaddle.visibility = visible ? 1 : 0;
+            }
+            window.setDoublesPaddlesVisible = setDoublesPaddlesVisible;
+
+            // Assign paddles to doubles combatants
+            function assignDoublesPaddles() {
+                if (!isDoublesMode()) {
+                    console.log('[Doubles] assignDoublesPaddles skipped - not doubles mode');
+                    return;
+                }
+
+                console.log('[Doubles] Assigning paddles...', {
+                    leftFront: teams.left.front,
+                    leftBack: teams.left.back,
+                    rightFront: teams.right.front,
+                    rightBack: teams.right.back,
+                    playerFrontPaddle: !!playerFrontPaddle,
+                    aiFrontPaddle: !!aiFrontPaddle
+                });
+
+                // Back positions use existing paddles
+                if (teams.left.back) teams.left.back.paddle = playerPaddle;
+                if (teams.right.back) teams.right.back.paddle = aiPaddle;
+
+                // Front positions use new paddles
+                if (teams.left.front) teams.left.front.paddle = playerFrontPaddle;
+                if (teams.right.front) teams.right.front.paddle = aiFrontPaddle;
+
+                // Show all 4 paddles
+                setDoublesPaddlesVisible(true);
+
+                // Update paddle positions based on DOUBLES_POSITIONS
+                playerPaddle.position.x = DOUBLES_POSITIONS.left.back.x;
+                if (playerFrontPaddle) playerFrontPaddle.position.x = DOUBLES_POSITIONS.left.front.x;
+                aiPaddle.position.x = DOUBLES_POSITIONS.right.back.x;
+                if (aiFrontPaddle) aiFrontPaddle.position.x = DOUBLES_POSITIONS.right.front.x;
+
+                console.log('[Doubles] Paddles assigned:', {
+                    leftFrontPaddle: teams.left.front?.paddle?.name,
+                    leftBackPaddle: teams.left.back?.paddle?.name,
+                    rightFrontPaddle: teams.right.front?.paddle?.name,
+                    rightBackPaddle: teams.right.back?.paddle?.name
+                });
+            }
+            window.assignDoublesPaddles = assignDoublesPaddles;
+
             // Player paddle (LEFT side of screen)
             // Paddle is invisible hitbox - position at ground level so parented wizard stands on floor
             playerPaddle = BABYLON.MeshBuilder.CreateBox("player", { width: 0.4, height: 0.5, depth: 2.5 }, scene);
@@ -5453,6 +5993,9 @@
             // Show paddles (models disabled for now)
             playerPaddle.visibility = 1;
             aiPaddle.visibility = 1;
+
+            // Create front paddles for doubles mode (hidden by default)
+            createDoublesPaddles(scene, playerMat, aiMat);
 
             // Initialize combatant system and assign paddles
             initCombatants();
@@ -5568,6 +6111,91 @@
 
             create3DCastBars();
 
+            // Create 3D cast bars for front combatants in doubles mode
+            // Also reassigns existing cast bars to the new back combatants
+            const createFrontCastBars = () => {
+                if (!isDoublesMode()) return;
+                if (!playerFrontPaddle || !aiFrontPaddle) return;
+
+                const barWidth = 1.8;
+                const barHeight = 0.18;
+                const barDepth = 0.08;
+
+                // Reuse materials from main cast bars
+                const bgMat = scene.getMaterialByName("castBarBgMat");
+                const playerFillMat = scene.getMaterialByName("playerCastFillMat");
+                const aiFillMat = scene.getMaterialByName("aiCastFillMat");
+
+                // === REASSIGN EXISTING CAST BARS TO BACK COMBATANTS ===
+                // In doubles mode, combatants.left/right were reassigned to new objects
+                // The existing cast bars (parented to playerPaddle/aiPaddle) need to be linked
+                if (teams.left.back && player3DCastBar && !teams.left.back.castBar3D) {
+                    teams.left.back.castBar3D = player3DCastBar;
+                    teams.left.back.castFill3D = player3DCastFill;
+                    console.log('[Doubles] Reassigned player cast bar to left back');
+                }
+                if (teams.right.back && ai3DCastBar && !teams.right.back.castBar3D) {
+                    teams.right.back.castBar3D = ai3DCastBar;
+                    teams.right.back.castFill3D = ai3DCastFill;
+                    console.log('[Doubles] Reassigned AI cast bar to right back');
+                }
+
+                // === LEFT FRONT (teammate) CAST BAR ===
+                if (teams.left.front && !teams.left.front.castBar3D) {
+                    const leftFrontBar = BABYLON.MeshBuilder.CreateBox("leftFront3DCastBar", {
+                        width: barWidth, height: barHeight, depth: barDepth
+                    }, scene);
+                    leftFrontBar.material = bgMat;
+                    leftFrontBar.parent = playerFrontPaddle;
+                    leftFrontBar.position.set(0, 2.0, 0);
+                    leftFrontBar.visibility = 0;
+                    leftFrontBar.renderingGroupId = 1;
+
+                    const leftFrontFill = BABYLON.MeshBuilder.CreateBox("leftFront3DCastFill", {
+                        width: barWidth * 0.98, height: barHeight * 0.7, depth: barDepth + 0.01
+                    }, scene);
+                    leftFrontFill.material = playerFillMat;
+                    leftFrontFill.parent = leftFrontBar;
+                    leftFrontFill.position.set(0, 0, 0);
+                    leftFrontFill.scaling.x = 0;
+                    leftFrontFill.visibility = 0;
+                    leftFrontFill.setPivotPoint(new BABYLON.Vector3(-barWidth * 0.49, 0, 0));
+                    leftFrontFill.renderingGroupId = 1;
+
+                    teams.left.front.castBar3D = leftFrontBar;
+                    teams.left.front.castFill3D = leftFrontFill;
+                }
+
+                // === RIGHT FRONT (enemy front) CAST BAR ===
+                if (teams.right.front && !teams.right.front.castBar3D) {
+                    const rightFrontBar = BABYLON.MeshBuilder.CreateBox("rightFront3DCastBar", {
+                        width: barWidth, height: barHeight, depth: barDepth
+                    }, scene);
+                    rightFrontBar.material = bgMat;
+                    rightFrontBar.parent = aiFrontPaddle;
+                    rightFrontBar.position.set(0, 2.0, 0);
+                    rightFrontBar.visibility = 0;
+                    rightFrontBar.renderingGroupId = 1;
+
+                    const rightFrontFill = BABYLON.MeshBuilder.CreateBox("rightFront3DCastFill", {
+                        width: barWidth * 0.98, height: barHeight * 0.7, depth: barDepth + 0.01
+                    }, scene);
+                    rightFrontFill.material = aiFillMat;
+                    rightFrontFill.parent = rightFrontBar;
+                    rightFrontFill.position.set(0, 0, 0);
+                    rightFrontFill.scaling.x = 0;
+                    rightFrontFill.visibility = 0;
+                    rightFrontFill.setPivotPoint(new BABYLON.Vector3(-barWidth * 0.49, 0, 0));
+                    rightFrontFill.renderingGroupId = 1;
+
+                    teams.right.front.castBar3D = rightFrontBar;
+                    teams.right.front.castFill3D = rightFrontFill;
+                }
+
+                console.log('[Doubles] Created 3D cast bars for front combatants');
+            };
+            window.createFrontCastBars = createFrontCastBars;
+
             // Loading state tracking
             let playerModelLoaded = false;
             let aiModelLoaded = false;
@@ -5651,290 +6279,438 @@
                 'defeat': 'angry_ground_stomp_1'
             };
 
+            // ============================================================
+            // CHARACTER MODEL LOADING - SIMPLE VERSION
+            // ============================================================
+
+            // Reverse map: file animation name -> action names
+            const REVERSE_ANIM_MAP = {};
+            for (const [action, fileName] of Object.entries(ANIM_MAP)) {
+                const key = fileName.toLowerCase();
+                if (!REVERSE_ANIM_MAP[key]) REVERSE_ANIM_MAP[key] = [];
+                REVERSE_ANIM_MAP[key].push(action);
+            }
+
+            // Helper to setup animations on a combatant
+            const setupCombatantAnimations = (combatant, animationGroups) => {
+                console.log(`[${combatant.side}] Setting up ${animationGroups.length} animations:`);
+                animationGroups.forEach(anim => {
+                    anim.stop();
+                    const name = anim.name.toLowerCase();
+                    console.log(`  - "${anim.name}" (lowercased: "${name}")`);
+                    combatant.animations[name] = anim;
+
+                    // Try exact match from REVERSE_ANIM_MAP first
+                    if (REVERSE_ANIM_MAP[name]) {
+                        REVERSE_ANIM_MAP[name].forEach(action => {
+                            combatant.animations[action] = anim;
+                            console.log(`    -> mapped to action: ${action}`);
+                        });
+                    }
+
+                    // Fallback: keyword matching for common animations
+                    if (!combatant.animations['idle'] && name.includes('idle')) {
+                        combatant.animations['idle'] = anim;
+                        console.log(`    -> keyword mapped to: idle`);
+                    }
+                    if (!combatant.animations['victory'] && (name.includes('dance') || name.includes('cherish'))) {
+                        combatant.animations['victory'] = anim;
+                        console.log(`    -> keyword mapped to: victory`);
+                    }
+                    if (!combatant.animations['defeat'] && (name.includes('stomp') || name.includes('angry'))) {
+                        combatant.animations['defeat'] = anim;
+                        console.log(`    -> keyword mapped to: defeat`);
+                    }
+                    if (!combatant.animations['left'] && name.includes('left')) {
+                        combatant.animations['left'] = anim;
+                        console.log(`    -> keyword mapped to: left`);
+                    }
+                    if (!combatant.animations['right'] && name.includes('right')) {
+                        combatant.animations['right'] = anim;
+                        console.log(`    -> keyword mapped to: right`);
+                    }
+                    if (!combatant.animations['cast_loop'] && name.includes('cast') && name.includes('5')) {
+                        combatant.animations['cast_loop'] = anim;
+                        console.log(`    -> keyword mapped to: cast_loop`);
+                    }
+                    if (!combatant.animations['cast_release'] && name.includes('cast') && name.includes('3')) {
+                        combatant.animations['cast_release'] = anim;
+                        console.log(`    -> keyword mapped to: cast_release`);
+                    }
+                });
+
+                // Adjust cast_release: 3x speed and skip first 20 frames
+                const castRelease = combatant.animations['cast_release'];
+                if (castRelease) {
+                    castRelease.speedRatio = 3.0;
+                    const origFrom = castRelease.from;
+                    const origTo = castRelease.to;
+                    castRelease.normalize(origFrom + 20, origTo);
+                    console.log(`[${combatant.side}] cast_release: 3x speed, frames ${origFrom + 20}-${origTo}`);
+                }
+
+                console.log(`[${combatant.side}] Final animation map:`, Object.keys(combatant.animations));
+            };
+
             const loadCharacterModels = () => {
-                // Player character - combined model with all animations
-                BABYLON.SceneLoader.ImportMesh("", "models/", "Meshy_AI_Meshy_Merged_Animations.glb", scene,
+                // P1 - Player (left side)
+                BABYLON.SceneLoader.ImportMesh("", "models/", "Character_All_Animations.glb", scene,
                     (meshes, particleSystems, skeletons, animationGroups) => {
-                        const playerWizard = new BABYLON.TransformNode("playerWizardRoot", scene);
+                        console.log('[P1] Loaded:', meshes.length, 'meshes,', animationGroups.length, 'anims');
+
+                        const root = new BABYLON.TransformNode("p1Root", scene);
                         meshes.forEach(m => {
-                            if (!m.parent || m.parent === scene) {
-                                m.parent = playerWizard;
-                            }
+                            if (!m.parent || m.parent === scene) m.parent = root;
                             if (m.material) m.material.backFaceCulling = true;
                             shadowGenerator.addShadowCaster(m);
                         });
 
-                        playerWizard.parent = playerPaddle;
-                        playerWizard.position.set(0, 0, 0); // Paddle at ground, wizard at same level
-                        playerWizard.scaling = new BABYLON.Vector3(1, 1, 1);
-                        playerWizard.rotation.y = Math.PI / 2; // Face right
+                        root.parent = playerPaddle;
+                        root.rotation.y = Math.PI / 2;  // Face right
                         playerPaddle.visibility = 0;
 
-                        // Assign to combatant and sync legacy
-                        combatants.left.modelRoot = playerWizard;
+                        combatants.left.modelRoot = root;
                         combatants.left.skeleton = skeletons[0];
-                        playerModelRoot = combatants.left.modelRoot;
-                        playerSkeleton = combatants.left.skeleton;
+                        combatants.left.flashMeshes = meshes.filter(m => m.material);
+                        combatants.left.modelLoaded = true;
+                        playerModelRoot = root;
+                        playerSkeleton = skeletons[0];
+                        playerFlashMeshes = combatants.left.flashMeshes;
+                        playerModelLoaded = true;
 
-                        // Store all animations by name AND mapped action name
-                        // Create reverse map: file anim name -> action name
-                        const reverseAnimMap = {};
-                        for (const [action, fileName] of Object.entries(ANIM_MAP)) {
-                            reverseAnimMap[fileName.toLowerCase()] = action;
-                        }
+                        setupCombatantAnimations(combatants.left, animationGroups);
+                        Object.assign(playerAnimations, combatants.left.animations);
 
-                        animationGroups.forEach(anim => {
-                            const name = anim.name.toLowerCase();
-                            combatants.left.animations[name] = anim;
-                            playerAnimations[name] = anim;
-                            // Also store under mapped action name for easy access
-                            if (reverseAnimMap[name]) {
-                                combatants.left.animations[reverseAnimMap[name]] = anim;
-                                playerAnimations[reverseAnimMap[name]] = anim;
-                            }
-                            anim.stop();
-                        });
-
-                        // Play idle by default
+                        // Start with idle
                         if (combatants.left.animations['idle']) {
                             combatants.left.animations['idle'].play(true);
                         }
-                        // Store meshes for flash effect - assign to combatant first
-                        combatants.left.flashMeshes = meshes.filter(m => m.material);
-                        playerFlashMeshes = combatants.left.flashMeshes;
-                        combatants.left.modelLoaded = true;
-                        playerModelLoaded = true;
+
+                        console.log('[P1] Anims:', Object.keys(combatants.left.animations));
                         updateLoadingProgress(55, 'PLAYER READY...');
                         checkAllLoaded();
                     },
                     null,
                     (scene, msg, err) => {
-                        console.log("No player model:", msg, err);
+                        console.log("P1 error:", err);
                         combatants.left.modelLoaded = true;
-                        playerModelLoaded = true; // Still mark as loaded so game can proceed
-                        playerPaddle.visibility = 1; // Show paddle if no model
+                        playerModelLoaded = true;
+                        playerPaddle.visibility = 1;
                         updateLoadingProgress(55, 'PLAYER READY...');
                         checkAllLoaded();
                     }
                 );
 
-                // AI character - same combined model
-                BABYLON.SceneLoader.ImportMesh("", "models/", "Meshy_AI_Meshy_Merged_Animations.glb", scene,
+                // P2 - AI (right side)
+                BABYLON.SceneLoader.ImportMesh("", "models/", "Character_All_Animations_P2.glb", scene,
                     (meshes, particleSystems, skeletons, animationGroups) => {
+                        console.log('[P2] Loaded:', meshes.length, 'meshes,', animationGroups.length, 'anims');
 
-                        const aiWizard = new BABYLON.TransformNode("aiWizardRoot", scene);
+                        const root = new BABYLON.TransformNode("p2Root", scene);
                         meshes.forEach(m => {
-                            if (!m.parent || m.parent === scene) {
-                                m.parent = aiWizard;
-                            }
+                            if (!m.parent || m.parent === scene) m.parent = root;
                             if (m.material) m.material.backFaceCulling = true;
                             shadowGenerator.addShadowCaster(m);
                         });
 
-                        aiWizard.parent = aiPaddle;
-                        aiWizard.position.set(0, 0, 0); // Paddle at ground, wizard at same level
-                        aiWizard.scaling = new BABYLON.Vector3(1, 1, 1);
-                        aiWizard.rotation.y = -Math.PI / 2; // Face left
+                        root.parent = aiPaddle;
+                        root.rotation.y = -Math.PI / 2;  // Face left
                         aiPaddle.visibility = 0;
 
-                        // Assign to combatant and sync legacy
-                        combatants.right.modelRoot = aiWizard;
+                        combatants.right.modelRoot = root;
                         combatants.right.skeleton = skeletons[0];
-                        aiModelRoot = combatants.right.modelRoot;
-                        aiSkeleton = combatants.right.skeleton;
+                        combatants.right.flashMeshes = meshes.filter(m => m.material);
+                        combatants.right.modelLoaded = true;
+                        aiModelRoot = root;
+                        aiSkeleton = skeletons[0];
+                        aiFlashMeshes = combatants.right.flashMeshes;
+                        aiModelLoaded = true;
 
-                        // Store all animations by name AND mapped action name
-                        const reverseAnimMapAI = {};
-                        for (const [action, fileName] of Object.entries(ANIM_MAP)) {
-                            reverseAnimMapAI[fileName.toLowerCase()] = action;
-                        }
+                        setupCombatantAnimations(combatants.right, animationGroups);
+                        Object.assign(aiAnimations, combatants.right.animations);
 
-                        animationGroups.forEach(anim => {
-                            const name = anim.name.toLowerCase();
-                            combatants.right.animations[name] = anim;
-                            aiAnimations[name] = anim;
-                            // Also store under mapped action name for easy access
-                            if (reverseAnimMapAI[name]) {
-                                combatants.right.animations[reverseAnimMapAI[name]] = anim;
-                                aiAnimations[reverseAnimMapAI[name]] = anim;
-                            }
-                            anim.stop();
-                        });
-
-                        // Play idle by default
+                        // Start with idle
                         if (combatants.right.animations['idle']) {
                             combatants.right.animations['idle'].play(true);
                         }
-                        // Store meshes for flash effect - assign to combatant first
-                        combatants.right.flashMeshes = meshes.filter(m => m.material);
-                        aiFlashMeshes = combatants.right.flashMeshes;
-                        combatants.right.modelLoaded = true;
-                        aiModelLoaded = true;
+
+                        console.log('[P2] Anims:', Object.keys(combatants.right.animations));
                         updateLoadingProgress(100, 'READY!');
                         checkAllLoaded();
                     },
                     null,
                     (scene, msg, err) => {
-                        console.log("No AI model:", msg, err);
+                        console.log("P2 error:", err);
                         combatants.right.modelLoaded = true;
-                        aiModelLoaded = true; // Still mark as loaded so game can proceed
-                        aiPaddle.visibility = 1; // Show paddle if no model
+                        aiModelLoaded = true;
+                        aiPaddle.visibility = 1;
                         updateLoadingProgress(100, 'READY!');
                         checkAllLoaded();
                     }
                 );
             };
+
+            // Load P3/P4 models for doubles mode front paddles
+            const loadDoublesCharacters = () => {
+                if (!isDoublesMode()) return;
+
+                console.log('[Doubles] Loading P3/P4 models...');
+
+                // P3 - Left front (teammate) - faces right - BLUE TINT
+                if (teams.left.front && playerFrontPaddle) {
+                    BABYLON.SceneLoader.ImportMesh("", "models/", "Character_All_Animations_P3.glb", scene,
+                        (meshes, particleSystems, skeletons, animationGroups) => {
+                            console.log('[P3] Model loaded. Meshes:', meshes.length, 'Anims:', animationGroups.length, 'Skeletons:', skeletons.length);
+
+                            const p3Wizard = new BABYLON.TransformNode("p3WizardRoot", scene);
+                            meshes.forEach(m => {
+                                if (!m.parent || m.parent === scene) m.parent = p3Wizard;
+                                m.name = `p3_${m.name}`;  // Rename for isolation
+                                shadowGenerator.addShadowCaster(m);
+
+                                // Apply BLUE TINT for teammate
+                                if (m.material) {
+                                    m.material.backFaceCulling = true;
+                                    const tintedMat = m.material.clone(`${m.material.name}_p3Tint`);
+                                    m.material = tintedMat;
+                                    if (tintedMat.albedoColor) {
+                                        tintedMat.albedoColor = new BABYLON.Color3(
+                                            tintedMat.albedoColor.r * 0.7,
+                                            tintedMat.albedoColor.g * 0.9,
+                                            Math.min(1, tintedMat.albedoColor.b * 1.3 + 0.2)
+                                        );
+                                    } else if (tintedMat.diffuseColor) {
+                                        tintedMat.diffuseColor = new BABYLON.Color3(
+                                            tintedMat.diffuseColor.r * 0.7,
+                                            tintedMat.diffuseColor.g * 0.9,
+                                            Math.min(1, tintedMat.diffuseColor.b * 1.3 + 0.2)
+                                        );
+                                    }
+                                }
+                            });
+
+                            p3Wizard.parent = playerFrontPaddle;
+                            p3Wizard.position.set(0, 0, 0);
+                            p3Wizard.scaling = new BABYLON.Vector3(1, 1, 1);
+                            p3Wizard.rotation.y = Math.PI / 2;
+                            playerFrontPaddle.visibility = 0;
+
+                            teams.left.front.modelRoot = p3Wizard;
+                            teams.left.front.skeleton = skeletons[0];
+                            teams.left.front.flashMeshes = meshes.filter(m => m.material);
+                            teams.left.front.modelLoaded = true;
+
+                            // Setup animations (simple - no bone renaming needed)
+                            setupCombatantAnimations(teams.left.front, animationGroups);
+                            if (teams.left.front.animations['idle']) {
+                                teams.left.front.animations['idle'].play(true);
+                            }
+
+                            console.log('[P3] Setup complete. Anims:', Object.keys(teams.left.front.animations));
+                        },
+                        null,
+                        (scene, msg, err) => {
+                            console.log("P3 model error:", msg, err);
+                            playerFrontPaddle.visibility = 1;
+                        }
+                    );
+                }
+
+                // P4 - Right front (enemy front) - faces left - RED TINT
+                if (teams.right.front && aiFrontPaddle) {
+                    BABYLON.SceneLoader.ImportMesh("", "models/", "Character_All_Animations_P4.glb", scene,
+                        (meshes, particleSystems, skeletons, animationGroups) => {
+                            console.log('[P4] Model loaded. Meshes:', meshes.length, 'Anims:', animationGroups.length, 'Skeletons:', skeletons.length);
+
+                            const p4Wizard = new BABYLON.TransformNode("p4WizardRoot", scene);
+                            meshes.forEach(m => {
+                                if (!m.parent || m.parent === scene) m.parent = p4Wizard;
+                                m.name = `p4_${m.name}`;  // Rename for isolation
+                                shadowGenerator.addShadowCaster(m);
+
+                                // Apply RED TINT for enemy
+                                if (m.material) {
+                                    m.material.backFaceCulling = true;
+                                    const tintedMat = m.material.clone(`${m.material.name}_p4Tint`);
+                                    m.material = tintedMat;
+                                    if (tintedMat.albedoColor) {
+                                        tintedMat.albedoColor = new BABYLON.Color3(
+                                            Math.min(1, tintedMat.albedoColor.r * 1.5 + 0.3),
+                                            tintedMat.albedoColor.g * 0.4,
+                                            tintedMat.albedoColor.b * 0.3
+                                        );
+                                    } else if (tintedMat.diffuseColor) {
+                                        tintedMat.diffuseColor = new BABYLON.Color3(
+                                            Math.min(1, tintedMat.diffuseColor.r * 1.5 + 0.3),
+                                            tintedMat.diffuseColor.g * 0.4,
+                                            tintedMat.diffuseColor.b * 0.3
+                                        );
+                                    }
+                                }
+                            });
+
+                            p4Wizard.parent = aiFrontPaddle;
+                            p4Wizard.position.set(0, 0, 0);
+                            p4Wizard.scaling = new BABYLON.Vector3(1, 1, 1);
+                            p4Wizard.rotation.y = -Math.PI / 2;
+                            aiFrontPaddle.visibility = 0;
+
+                            teams.right.front.modelRoot = p4Wizard;
+                            teams.right.front.skeleton = skeletons[0];
+                            teams.right.front.flashMeshes = meshes.filter(m => m.material);
+                            teams.right.front.modelLoaded = true;
+
+                            // Setup animations (simple - no bone renaming needed)
+                            setupCombatantAnimations(teams.right.front, animationGroups);
+                            if (teams.right.front.animations['idle']) {
+                                teams.right.front.animations['idle'].play(true);
+                            }
+
+                            console.log('[P4] Setup complete. Anims:', Object.keys(teams.right.front.animations));
+                        },
+                        null,
+                        (scene, msg, err) => {
+                            console.log("P4 model error:", msg, err);
+                            aiFrontPaddle.visibility = 1;
+                        }
+                    );
+                }
+            };
+            window.loadDoublesCharacters = loadDoublesCharacters;
+
             // Load characters based on mode toggle
             // loadCharacterModels(); // Original GLB loader - called conditionally below
 
-            // Animation state tracking
-            // LEGACY - sync only, read from combatants.left/right.currentAnim/animLocked
-            let playerCurrentAnim = 'idle';
-            let aiCurrentAnim = 'idle';
-            let playerAnimLocked = false; // Prevent interrupting one-shot animations
-            let aiAnimLocked = false;
-            const BLEND_TIME = 0.2; // seconds for crossfade
+            // ============================================================
+            // SIMPLE ANIMATION SYSTEM
+            // ============================================================
 
-            // Smooth crossfade between animations
-            // startFrame: frame to start from (default 0)
-            const crossfadeAnim = (animations, fromName, toName, loop = false, startFrame = 0) => {
-                const fromAnim = animations[fromName];
-                const toAnim = animations[toName.toLowerCase()];
-                if (!toAnim || fromName === toName.toLowerCase()) return fromName;
+            // Track which animations we've warned about (to avoid spam)
+            const warnedMissingAnims = new Set();
 
-                // Start new animation (with optional start frame offset)
-                toAnim.setWeightForAllAnimatables(0);
-                if (startFrame > 0) {
-                    toAnim.start(loop, 1.0, startFrame);
-                } else {
-                    toAnim.play(loop);
-                }
-
-                // Crossfade weights
-                let blend = 0;
-                const blendStep = () => {
-                    blend += 0.016 / BLEND_TIME; // ~60fps step
-                    if (blend >= 1) {
-                        if (fromAnim) {
-                            fromAnim.stop();
-                            fromAnim.setWeightForAllAnimatables(1);
-                        }
-                        toAnim.setWeightForAllAnimatables(1);
-                        return;
-                    }
-                    if (fromAnim) fromAnim.setWeightForAllAnimatables(1 - blend);
-                    toAnim.setWeightForAllAnimatables(blend);
-                    requestAnimationFrame(blendStep);
-                };
-                blendStep();
-
-                return toName.toLowerCase();
-            };
-
-            // Helper to play character animations with crossfade
-            // lockDuration: ms to prevent interruption (for one-shot anims)
-            // speed: playback speed multiplier (default 1.0)
-            // startFrame: frame to start from (default 0, use to skip beginning)
-            const warnedMissingAnims = { left: new Set(), right: new Set(), player: new Set(), ai: new Set() };
-
-            // Animation speed overrides
-            const ANIM_SPEED_OVERRIDES = {
-                'cast_loop': 1.0,
-                'cast_release': 3.0
-            };
-
-            // Animation start frame overrides (skip beginning frames)
-            const ANIM_START_FRAME_OVERRIDES = {
-                'cast_release': 25
-            };
-
-            // Animations that should snap IN (no crossfade blend when starting)
-            // cast_release snaps in but eases out via onAnimationGroupEndObservable
-            const ANIM_NO_BLEND = ['cast_loop', 'cast_release', 'parry'];
-
-            // Animation priorities (higher = more important, can interrupt lower)
-            const ANIM_PRIORITY = {
-                'cast_release': 100,
-                'parry': 80,
-                'cast_loop': 50,
-                'victory': 40,
-                'defeat': 40,
-                'left': 10,
-                'right': 10,
-                'idle': 0
-            };
-
-            // Unified combatant animation function
-            window.combatantPlayAnim = (combatant, name, loop = true, lockDuration = 0, speed = 1.0, startFrame = 0) => {
+            /**
+             * Play an animation on a combatant - dead simple
+             * @param {Object} combatant - The combatant (combatants.left, combatants.right, teams.*.front)
+             * @param {string} animName - Animation name ('idle', 'left', 'right', 'cast_loop', etc.)
+             * @param {boolean} loop - Whether to loop (default true)
+             */
+            let lastPlayedAnim = {};
+            function playAnim(combatant, animName, loop = true) {
                 if (!combatant || !combatant.animations) return;
-                const animations = combatant.animations;
-                const requested = name.toLowerCase();
 
-                // Alias parry to cast_release if no dedicated clip exists (resolve target only)
-                const resolved = (!animations[requested] && requested === 'parry' && animations['cast_release'])
-                    ? 'cast_release'
-                    : requested;
+                const name = animName.toLowerCase();
+                const anim = combatant.animations[name];
 
-                if (!animations[resolved]) {
-                    if (!warnedMissingAnims[combatant.side].has(name)) {
-                        console.warn(`${combatant.side} animation '${name}' not found. Available:`, Object.keys(animations));
-                        warnedMissingAnims[combatant.side].add(name);
+                if (!anim) {
+                    const key = `${combatant.side}_${name}`;
+                    if (!warnedMissingAnims.has(key)) {
+                        console.warn(`Animation '${name}' not found for ${combatant.side}. Available:`, Object.keys(combatant.animations));
+                        warnedMissingAnims.add(key);
                     }
                     return;
                 }
 
-                // Check priority - don't interrupt higher priority animations
-                const currentPriority = ANIM_PRIORITY[combatant.currentAnim] || 0;
-                const newPriority = ANIM_PRIORITY[requested] || ANIM_PRIORITY[resolved] || 0;
-                if (newPriority < currentPriority && combatant.animLocked) {
-                    return; // Can't interrupt higher priority animation
+                // Don't restart same animation if already playing
+                if (combatant.currentAnim === name && anim.isPlaying) return;
+
+                // Log animation changes
+                if (lastPlayedAnim[combatant.side] !== name) {
+                    console.log(`[PLAY ${combatant.side}] Playing '${name}' (actual: ${anim.name})`);
+                    lastPlayedAnim[combatant.side] = name;
                 }
 
-                const anim = animations[resolved];
-                // Apply speed override if exists, otherwise use passed speed
-                const finalSpeed = ANIM_SPEED_OVERRIDES[requested] || ANIM_SPEED_OVERRIDES[resolved] || speed;
-                anim.speedRatio = finalSpeed;
-                // Apply start frame override if exists
-                const finalStartFrame = ANIM_START_FRAME_OVERRIDES[requested] || ANIM_START_FRAME_OVERRIDES[resolved] || startFrame;
+                // Stop current animation
+                const current = combatant.animations[combatant.currentAnim];
+                if (current && current !== anim) current.stop();
 
-                // Check if this animation should snap (no blend)
-                if (ANIM_NO_BLEND.includes(requested) || ANIM_NO_BLEND.includes(resolved)) {
-                    // Stop ALL animations first to prevent blending issues
-                    Object.values(animations).forEach(a => { if (a && a.stop) a.stop(); });
-                    // Start new animation
-                    anim.start(loop, finalSpeed, anim.from + finalStartFrame);
-                    combatant.currentAnim = resolved;
-                } else {
-                    combatant.currentAnim = crossfadeAnim(animations, combatant.currentAnim, resolved, loop, finalStartFrame);
-                }
+                // Play new animation (snap, no crossfade)
+                anim.play(loop);
+                combatant.currentAnim = name;
+            }
+            window.playAnim = playAnim;
 
-                // Sync legacy variables
-                if (combatant.side === 'left') {
-                    playerCurrentAnim = combatant.currentAnim;
-                } else {
-                    aiCurrentAnim = combatant.currentAnim;
-                }
-
-                if (lockDuration > 0) {
-                    combatant.animLocked = true;
-                    // Sync legacy
-                    if (combatant.side === 'left') playerAnimLocked = true;
-                    else aiAnimLocked = true;
-                    setTimeout(() => {
-                        combatant.animLocked = false;
-                        if (combatant.side === 'left') playerAnimLocked = false;
-                        else aiAnimLocked = false;
-                    }, lockDuration);
-                }
+            // Alias for backwards compatibility
+            window.combatantPlayAnim = (combatant, name, loop = true) => {
+                playAnim(combatant, name, loop);
             };
 
-            // Legacy wrapper functions
-            window.playPlayerAnim = (name, loop = true, lockDuration = 0, speed = 1.0, startFrame = 0) => {
-                combatantPlayAnim(combatants.left, name, loop, lockDuration, speed, startFrame);
+            // Legacy wrapper functions (simplified)
+            window.playPlayerAnim = (name, loop = true) => {
+                const c = (isDoublesMode() && localPlayerCombatant) ? localPlayerCombatant : combatants.left;
+                playAnim(c, name, loop);
             };
-            window.playAIAnim = (name, loop = true, lockDuration = 0, speed = 1.0, startFrame = 0) => {
-                combatantPlayAnim(combatants.right, name, loop, lockDuration, speed, startFrame);
+            window.playAIAnim = (name, loop = true) => {
+                playAnim(combatants.right, name, loop);
             };
+
+            /**
+             * Animation state machine - determines correct animation based on game state
+             * Call this every frame for each combatant
+             */
+            let lastLoggedState = {};
+            function updateCombatantAnimation(combatant) {
+                if (!combatant || !combatant.modelLoaded) return;
+
+                // Debug: log state changes
+                const stateKey = `${combatant.side}_${combatant.roundResult}_${combatant.moveDir}_${combatant.casting}`;
+                if (lastLoggedState[combatant.side] !== stateKey) {
+                    console.log(`[ANIM ${combatant.side}] roundResult=${combatant.roundResult}, moveDir=${combatant.moveDir}, casting=${combatant.casting}, currentAnim=${combatant.currentAnim}`);
+                    lastLoggedState[combatant.side] = stateKey;
+                }
+
+                // Priority order (first match wins):
+
+                // 1. Round end states (highest priority)
+                if (combatant.roundResult === 'victory') {
+                    playAnim(combatant, 'victory');
+                    return;
+                }
+                if (combatant.roundResult === 'defeat') {
+                    playAnim(combatant, 'defeat');
+                    return;
+                }
+
+                // 2. Cast release (let it finish)
+                if (combatant.playingCastRelease) {
+                    return;
+                }
+
+                // 3. Casting states
+                if (combatant.casting && combatant.castProgress < combatant.castTime) {
+                    playAnim(combatant, 'cast_loop');
+                    return;
+                }
+
+                // 4. Movement states
+                if (combatant.moveDir > 0) {
+                    playAnim(combatant, 'left');
+                    return;
+                }
+                if (combatant.moveDir < 0) {
+                    playAnim(combatant, 'right');
+                    return;
+                }
+
+                // 5. Default: idle
+                playAnim(combatant, 'idle');
+            }
+            window.updateCombatantAnimation = updateCombatantAnimation;
+
+            /**
+             * Update animations for all combatants - call from render loop
+             */
+            function updateAllAnimations() {
+                // Main combatants
+                updateCombatantAnimation(combatants.left);
+                updateCombatantAnimation(combatants.right);
+
+                // Doubles mode front combatants
+                if (isDoublesMode()) {
+                    if (teams.left && teams.left.front) updateCombatantAnimation(teams.left.front);
+                    if (teams.right && teams.right.front) updateCombatantAnimation(teams.right.front);
+                }
+            }
+            window.updateAllAnimations = updateAllAnimations;
 
             // Unified freeze/unfreeze for combatants
             window.combatantFreezeAnim = (combatant) => {
@@ -6537,7 +7313,7 @@
             // CHARACTER MODE SELECTION
             // ========================================
             // Options: 'wizard' (original GLB), 'procedural_pickle', 'meshy_pickle'
-            const CHARACTER_MODE = 'meshy_pickle'; // <-- CHANGE THIS TO SWITCH!
+            const CHARACTER_MODE = 'merged_glb'; // Use merged GLB with all animations
 
             let playerPickleParts = null;
             let aiPickleParts = null;
@@ -6914,13 +7690,13 @@
                                 console.log(`${prefix} stored idle animation`);
                             }
 
-                            // Now load other animations from individual files
+                            // Load other animations SEQUENTIALLY to avoid race conditions
                             const otherAnims = ['left', 'right', 'cast_loop', 'cast_release', 'parry', 'victory', 'defeat'];
-                            let loadedCount = 0;
+                            let animIndex = 0;
 
-                            const checkAllAnimsLoaded = () => {
-                                loadedCount++;
-                                if (loadedCount >= otherAnims.length) {
+                            const loadNextAnim = () => {
+                                if (animIndex >= otherAnims.length) {
+                                    // All done
                                     console.log(`${prefix} all animations loaded:`, Object.keys(combatant.animations));
                                     // STOP ALL animations first to prevent blending
                                     Object.values(combatant.animations).forEach(a => {
@@ -6932,14 +7708,16 @@
                                         combatant.currentAnim = 'idle';
                                     }
                                     onComplete();
+                                    return;
                                 }
-                            };
 
-                            otherAnims.forEach(action => {
+                                const action = otherAnims[animIndex];
+                                animIndex++;
+
                                 const fileName = ANIM_FILES[action];
                                 if (!fileName) {
                                     console.warn(`No file for action "${action}"`);
-                                    checkAllAnimsLoaded();
+                                    loadNextAnim();
                                     return;
                                 }
 
@@ -6947,9 +7725,12 @@
                                 if (action === 'parry' && combatant.animations['cast_release']) {
                                     combatant.animations['parry'] = combatant.animations['cast_release'];
                                     animStore['parry'] = combatant.animations['cast_release'];
-                                    checkAllAnimsLoaded();
+                                    loadNextAnim();
                                     return;
                                 }
+
+                                // Track animation count before loading
+                                const animCountBefore = scene.animationGroups.length;
 
                                 // Import just the animation, targeting our skeleton
                                 BABYLON.SceneLoader.ImportAnimations(
@@ -6958,35 +7739,33 @@
                                     BABYLON.SceneLoaderAnimationGroupLoadingMode.NoSync,
                                     null, // target
                                     (loadedScene) => {
-                                        // Find matching animation that hasn't been renamed yet (no prefix)
-                                        const searchPattern = fileName.toLowerCase().replace('.glb', '').replace('meshy_ai_animation_', '').replace('_withskin', '').replace('_p2', '');
-                                        const newAnims = scene.animationGroups.filter(ag => {
-                                            const name = ag.name.toLowerCase();
-                                            // Must match pattern AND not already have player_/ai_ prefix
-                                            return name.includes(searchPattern) && !name.startsWith('player_') && !name.startsWith('ai_');
-                                        });
+                                        // Get newly added animation groups
+                                        const newAnims = scene.animationGroups.slice(animCountBefore);
+                                        console.log(`${prefix} "${action}": loaded ${newAnims.length} anim(s) from ${fileName.split('/').pop()}`);
 
                                         if (newAnims.length > 0) {
                                             const anim = newAnims[0];
-                                            // Ensure targets point to this combatant's skeleton (avoid cross-binding)
+                                            console.log(`  -> "${anim.name}"`);
                                             retargetAnimationGroup(anim, combatant.skeleton);
                                             anim.name = `${prefix}_${action}`;
                                             combatant.animations[action] = anim;
                                             animStore[action] = anim;
                                             anim.stop();
-                                            console.log(`${prefix} loaded "${action}" animation`);
                                         } else {
-                                            console.warn(`${prefix} could not find animation for "${action}"`);
+                                            console.warn(`${prefix} no animations in file for "${action}"`);
                                         }
-                                        checkAllAnimsLoaded();
+                                        loadNextAnim(); // Load next one
                                     },
                                     null,
                                     (err) => {
                                         console.error(`${prefix} failed to load "${action}":`, err);
-                                        checkAllAnimsLoaded();
+                                        loadNextAnim(); // Continue even on error
                                     }
                                 );
-                            });
+                            };
+
+                            // Start sequential loading
+                            loadNextAnim();
                         },
                         null,
                         (scene, msg, err) => {
@@ -8870,6 +9649,334 @@
 
             // ================== END SMART AI SYSTEM ==================
 
+            // ================== DOUBLES AI SYSTEM (Teammate Coordination) ==================
+
+            const TEAMMATE_THINK_INTERVAL = 0.15;  // Faster reactions for teammates (150ms)
+            let teammateLastThinkTime = { leftFront: 0, leftBack: 0, rightFront: 0, rightBack: 0 };
+
+            // Find all incoming threats toward a side (for team coordination)
+            function findAllThreatsForSide(side) {
+                const threats = [];
+                const isLeftSide = side === 'left';
+                for (const proj of projectiles) {
+                    // Threat heading toward this side
+                    if ((isLeftSide && proj.velX < 0) || (!isLeftSide && proj.velX > 0)) {
+                        threats.push(proj);
+                    }
+                }
+                // Sort by X position (closest first)
+                threats.sort((a, b) => {
+                    const distA = isLeftSide ? a.mesh.position.x : -a.mesh.position.x;
+                    const distB = isLeftSide ? b.mesh.position.x : -b.mesh.position.x;
+                    return distA - distB;
+                });
+                return threats;
+            }
+
+            // Predict Z position for a projectile reaching a specific X position
+            function predictZAtX(proj, targetX) {
+                const distX = Math.abs(targetX - proj.mesh.position.x);
+                const velX = Math.abs(proj.velX);
+                if (distX <= 0 || velX <= 0) return proj.mesh.position.z;
+
+                const time = distX / velX;
+                let z = proj.mesh.position.z + proj.velZ * time;
+
+                // Simple bounce (one bounce)
+                const wall = tableDepth/2 - 0.5;
+                if (z > wall) z = 2 * wall - z;
+                if (z < -wall) z = -2 * wall - z;
+
+                return Math.max(-wall, Math.min(wall, z));
+            }
+
+            // Check if a projectile is in the front player's zone
+            function isInFrontZone(proj, side) {
+                const frontX = DOUBLES_POSITIONS[side].front.x;
+                const backX = DOUBLES_POSITIONS[side].back.x;
+                const midX = (frontX + backX) / 2;
+
+                if (side === 'left') {
+                    return proj.mesh.position.x > midX;  // Closer to center = front zone
+                } else {
+                    return proj.mesh.position.x < midX;
+                }
+            }
+
+            // Update teammate AI for doubles mode
+            function updateTeammateAI(combatant, dt, currentTime) {
+                if (!combatant || combatant.inputSource !== 'ai' || combatant.freezeTime > 0) return;
+                if (!isDoublesMode()) return;
+
+                const side = combatant.side;
+                const position = combatant.position;
+                const paddle = combatant.paddle;
+                if (!paddle) return;
+
+                const teammate = getTeammate(combatant);
+                const thinkKey = side + (position === 'front' ? 'Front' : 'Back');
+
+                // Think periodically (faster than opponent AI)
+                if (currentTime - teammateLastThinkTime[thinkKey] < TEAMMATE_THINK_INTERVAL) return;
+                teammateLastThinkTime[thinkKey] = currentTime;
+
+                // Find threats heading our way
+                const threats = findAllThreatsForSide(side);
+                if (threats.length === 0) {
+                    // No threats - return to center position
+                    const targetZ = 0;
+                    moveTeammateToward(combatant, paddle, targetZ, dt);
+                    combatant.aiCurrentTarget = null;
+                    return;
+                }
+
+                // Coordinate with teammate - don't both chase the same ball
+                const teammateTarget = teammate ? teammate.aiCurrentTarget : null;
+
+                // Find best threat for this position
+                let myTarget = null;
+                const isFront = position === 'front';
+
+                for (const threat of threats) {
+                    // Skip if teammate is already handling this one
+                    if (teammateTarget && threat.id === teammateTarget.id) continue;
+
+                    const inFrontZone = isInFrontZone(threat, side);
+
+                    if (isFront) {
+                        // Front player: prioritize threats in front zone
+                        if (inFrontZone) {
+                            myTarget = threat;
+                            break;
+                        }
+                    } else {
+                        // Back player: take anything that gets through, or if no teammate target
+                        if (!inFrontZone || !teammateTarget) {
+                            myTarget = threat;
+                            break;
+                        }
+                    }
+                }
+
+                // If no priority target, take any available
+                if (!myTarget && threats.length > 0) {
+                    for (const threat of threats) {
+                        if (!teammateTarget || threat.id !== teammateTarget.id) {
+                            myTarget = threat;
+                            break;
+                        }
+                    }
+                }
+
+                combatant.aiCurrentTarget = myTarget;
+
+                if (myTarget) {
+                    // Move to intercept
+                    const targetZ = predictZAtX(myTarget, paddle.position.x);
+                    moveTeammateToward(combatant, paddle, targetZ, dt);
+                } else {
+                    // Cover center position
+                    moveTeammateToward(combatant, paddle, 0, dt);
+                }
+            }
+
+            // Move teammate paddle toward target Z (step-based for determinism)
+            function moveTeammateToward(combatant, paddle, targetZ, dt) {
+                const STEP_SIZE = 0.3;
+                const speed = 20;  // Same as player
+                const boundary = DOUBLES_POSITIONS[combatant.side][combatant.position].zBoundary;
+
+                const diff = targetZ - paddle.position.z;
+                if (Math.abs(diff) < 0.1) return;  // Close enough
+
+                const moveDir = diff > 0 ? 1 : -1;
+
+                if (!combatant.moveAccum) combatant.moveAccum = 0;
+                combatant.moveAccum += moveDir * speed * dt;
+
+                if (Math.abs(combatant.moveAccum) >= STEP_SIZE) {
+                    const steps = Math.trunc(combatant.moveAccum / STEP_SIZE);
+                    paddle.position.z += steps * STEP_SIZE;
+                    combatant.moveAccum -= steps * STEP_SIZE;
+                    paddle.position.z = Math.max(-boundary, Math.min(boundary, paddle.position.z));
+                }
+            }
+
+            // Simple AI for doubles mode - works exactly like existing opponent AI
+            function updateDoublesAI(combatant, dt, currentTime) {
+                const paddle = combatant.paddle;
+                if (!paddle) return;
+
+                // Don't act while frozen
+                if (combatant.freezeTime > 0) {
+                    combatant.freezeTime -= dt;
+                    return;
+                }
+
+                const side = combatant.side;
+                const isLeftSide = side === 'left';
+
+                // Find closest threat heading toward this side
+                let threat = null;
+                let closestX = isLeftSide ? -Infinity : Infinity;
+                for (const proj of projectiles) {
+                    const comingToward = isLeftSide ? proj.velX < 0 : proj.velX > 0;
+                    if (comingToward) {
+                        const isBetter = isLeftSide
+                            ? proj.mesh.position.x > closestX
+                            : proj.mesh.position.x < closestX;
+                        if (isBetter) {
+                            closestX = proj.mesh.position.x;
+                            threat = proj;
+                        }
+                    }
+                }
+
+                // Move toward threat or center
+                const targetZ = threat ? predictZAtX(threat, paddle.position.x) : 0;
+                const diff = targetZ - paddle.position.z;
+
+                if (Math.abs(diff) > 0.25) {
+                    const moveDir = diff > 0 ? 1 : -1;
+                    const speed = 20;
+                    const STEP_SIZE = 0.3;
+                    const boundary = 2.7;
+
+                    if (!combatant.moveAccum) combatant.moveAccum = 0;
+                    combatant.moveAccum += moveDir * speed * dt;
+
+                    if (Math.abs(combatant.moveAccum) >= STEP_SIZE) {
+                        const steps = Math.trunc(combatant.moveAccum / STEP_SIZE);
+                        paddle.position.z += steps * STEP_SIZE;
+                        combatant.moveAccum -= steps * STEP_SIZE;
+                        paddle.position.z = Math.max(-boundary, Math.min(boundary, paddle.position.z));
+                    }
+                }
+
+                // AI Casting - check if safe to cast
+                let safeToStartCast = true;
+                for (const p of projectiles) {
+                    const nearMe = isLeftSide
+                        ? (p.velX < 0 && p.mesh.position.x < 2)
+                        : (p.velX > 0 && p.mesh.position.x > -2);
+                    if (nearMe) {
+                        safeToStartCast = false;
+                        break;
+                    }
+                }
+
+                // Cast fireball if have mana and safe
+                const isCasting = combatant.casting !== null;
+                const casterKey = isLeftSide ? 'player' : 'ai';  // Use team's caster key for mana/cooldowns
+                const cooldown = combatant.cooldowns?.fireball || 0;
+
+                if (!isCasting && cooldown <= 0 && combatant.mana >= 1 && safeToStartCast && projectiles.length < 10) {
+                    // Start casting - use paddle position for spawn point
+                    startCastingForCombatant(combatant, 'fireball');
+                }
+            }
+
+            // Start casting for a specific combatant (front paddle AI)
+            function startCastingForCombatant(combatant, abilityId) {
+                if (!combatant || !combatant.paddle) return;
+
+                const ability = abilities[abilityId];
+                if (!ability) return;
+                if (combatant.mana < ability.manaCost) return;
+
+                combatant.casting = abilityId;
+                combatant.castProgress = 0;
+                combatant.castTime = ability.castTime;
+
+                console.log('[Doubles] Combatant', combatant.side, combatant.position, 'casting', abilityId);
+            }
+
+            // Update all doubles AI (called from game loop)
+            function updateAllDoublesAI(dt, currentTime) {
+                if (!isDoublesMode()) return;
+
+                const allCombatants = getAllCombatants();
+                for (const combatant of allCombatants) {
+                    if (combatant.inputSource === 'ai') {
+                        updateDoublesAI(combatant, dt, currentTime);
+
+                        // Update casting progress
+                        if (combatant.casting) {
+                            combatant.castProgress += dt;
+
+                            // Update 3D cast bar
+                            const progress = combatant.castProgress / combatant.castTime;
+                            if (window.combatantUpdate3DCastBar) {
+                                window.combatantUpdate3DCastBar(combatant, progress, true);
+                            }
+
+                            if (combatant.castProgress >= combatant.castTime) {
+                                // Cast complete - spawn projectile from paddle position
+                                spawnFireballFromCombatant(combatant);
+                                combatant.casting = null;
+                                combatant.castProgress = 0;
+
+                                // Hide cast bar
+                                if (window.combatantUpdate3DCastBar) {
+                                    window.combatantUpdate3DCastBar(combatant, 0, false);
+                                }
+                            }
+                        }
+
+                        // Update cooldowns
+                        if (combatant.cooldowns) {
+                            for (const key in combatant.cooldowns) {
+                                if (combatant.cooldowns[key] > 0) {
+                                    combatant.cooldowns[key] -= dt;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Spawn fireball from a specific combatant's position
+            function spawnFireballFromCombatant(combatant) {
+                if (!combatant || !combatant.paddle) return;
+
+                const paddle = combatant.paddle;
+                const isLeftSide = combatant.side === 'left';
+                const ability = abilities.fireball;
+
+                // Deduct mana
+                combatant.mana -= ability.manaCost;
+
+                // Set cooldown
+                combatant.cooldowns.fireball = ability.cooldown;
+
+                // Determine direction - left side shoots right, right side shoots left
+                const velX = isLeftSide ? ability.speed : -ability.speed;
+
+                // Create fireball at paddle position
+                const spawnX = paddle.position.x + (isLeftSide ? 0.5 : -0.5);
+                const spawnZ = paddle.position.z;
+
+                // Use spawnFireball (signature: owner, startX, startZ, velX, velZ, isSplitProjectile, options)
+                const owner = isLeftSide ? 'player' : 'ai';
+                if (window.spawnFireball) {
+                    window.spawnFireball(owner, spawnX, spawnZ, velX, 0);
+                }
+
+                // Show spell cast text at paddle position
+                if (window.showCombatTextAt) {
+                    const textPos = paddle.position.clone();
+                    textPos.y = 2.0; // Above character
+                    showCombatTextAt(textPos, 'Fireball', 'fire');
+                }
+
+                playSound('fireball', spawnX, 0.5);
+                console.log('[Doubles] Spawned fireball from', combatant.side, combatant.position, 'at', spawnX.toFixed(2), spawnZ.toFixed(2));
+            }
+
+            window.updateAllDoublesAI = updateAllDoublesAI;
+
+            // ================== END DOUBLES AI SYSTEM ==================
+
             // Center line (dashed effect with multiple boxes)
             const lineMat = new BABYLON.StandardMaterial("lineMat", scene);
             lineMat.diffuseColor = new BABYLON.Color3(0.3, 0.3, 0.35);
@@ -9006,6 +10113,19 @@
                         }
                         if (isLocal) updateGravityUI();
                     }
+
+                    // Chain Lightning cooldown
+                    if (c.cooldowns.chain_lightning > 0) {
+                        c.cooldowns.chain_lightning -= dt;
+                        if (c.cooldowns.chain_lightning <= 0) {
+                            c.cooldowns.chain_lightning = 0;
+                        }
+                    }
+
+                    // Update Chain Lightning channeling
+                    if (c.casting === 'chain_lightning') {
+                        updateChainLightningChannel(c, dt);
+                    }
                 }
                 // Sync legacy variables for backwards compatibility
                 if (combatants.left) {
@@ -9026,8 +10146,9 @@
 
                 // Passive mana regeneration (1 per 5 seconds) - using combatant system
                 if (roundActive) {
-                    for (const side of ['left', 'right']) {
-                        const c = combatants[side];
+                    // In doubles mode, regenerate mana for ALL combatants
+                    const combatantsToRegen = isDoublesMode() ? getAllCombatants() : [combatants.left, combatants.right];
+                    for (const c of combatantsToRegen) {
                         if (!c) continue;
                         // Stop mana regen while frozen
                         if (c.freezeTime > 0) continue;
@@ -9107,7 +10228,7 @@
                 const leftC = combatants.left;
                 const rightC = combatants.right;
 
-                if (leftC && leftC.casting && roundActive) {
+                if (leftC && leftC.casting && leftC.casting !== 'chain_lightning' && roundActive) {
                     leftC.castProgress += dt;
                     playerCastProgress = leftC.castProgress; // Sync legacy
 
@@ -9120,12 +10241,12 @@
                     if (leftC.castProgress >= leftC.castTime) {
                         completeCasting('player');
                     }
-                } else {
+                } else if (!leftC || !leftC.casting || leftC.casting === 'chain_lightning') {
                     // Hide 3D cast bar when not casting
                     if (window.update3DCastBar) window.update3DCastBar(0, false);
                 }
 
-                if (rightC && rightC.casting && roundActive) {
+                if (rightC && rightC.casting && rightC.casting !== 'chain_lightning' && roundActive) {
                     rightC.castProgress += dt;
                     aiCastProgress = rightC.castProgress; // Sync legacy
 
@@ -9138,7 +10259,7 @@
                     if (rightC.castProgress >= rightC.castTime) {
                         completeCasting('ai');
                     }
-                } else {
+                } else if (!rightC || !rightC.casting || rightC.casting === 'chain_lightning') {
                     // Hide AI 3D cast bar when not casting
                     if (window.updateAI3DCastBar) window.updateAI3DCastBar(0, false);
                 }
@@ -9154,37 +10275,32 @@
 
                 // Player movement (W/S or Arrow keys) - blocked if frozen or transitioning
                 let moveDir = 0;
-                if (playerFreezeTime <= 0 && !roundTransitioning) {
+                // In doubles mode, use the player's actual combatant
+                const playerCombatant = (isDoublesMode() && localPlayerCombatant) ? localPlayerCombatant : combatants.left;
+                const playerActivePaddle = playerCombatant ? playerCombatant.paddle : playerPaddle;
+                // Use the correct freeze time (combatant's own in doubles mode)
+                const playerCurrentFreezeTime = playerCombatant ? playerCombatant.freezeTime : playerFreezeTime;
+
+                if (playerCurrentFreezeTime <= 0 && !roundTransitioning) {
                     if (keys['KeyW'] || keys['ArrowUp']) moveDir = 1;
                     if (keys['KeyS'] || keys['ArrowDown']) moveDir = -1;
-                    if (combatants.left) {
-                        combatants.left.lastMoveDir = moveDir;
+                    if (playerCombatant) {
+                        playerCombatant.lastMoveDir = moveDir;
                     }
 
                     // Cancel cast if player tries to move while casting
-                    const playerIsCasting = combatants.left && combatants.left.casting;
+                    const playerIsCasting = playerCombatant && playerCombatant.casting;
                     if (moveDir !== 0 && playerIsCasting) {
                         cancelCasting('player', true); // Refund mana
                     }
 
                     // Check if at boundary (can't actually move in that direction)
-                    const atTopBoundary = playerPaddle.position.z >= paddleBoundary;
-                    const atBottomBoundary = playerPaddle.position.z <= -paddleBoundary;
+                    const atTopBoundary = playerActivePaddle.position.z >= paddleBoundary;
+                    const atBottomBoundary = playerActivePaddle.position.z <= -paddleBoundary;
                     const canActuallyMove = !(moveDir > 0 && atTopBoundary) && !(moveDir < 0 && atBottomBoundary);
 
-                    // Play movement animations (unless locked by one-shot anim, playing cast_release, or round transitioning)
-                    const playerAnimIsLocked = combatants.left.animLocked || playerAnimLocked;
-                    const playerInCastRelease = combatants.left.currentAnim === 'cast_release';
-                    const playerInEndAnim = combatants.left.currentAnim === 'victory' || combatants.left.currentAnim === 'defeat';
-                    if (!playerAnimIsLocked && !playerInCastRelease && !roundTransitioning && !playerInEndAnim) {
-                        if (moveDir > 0 && canActuallyMove && combatants.left.currentAnim !== 'left') {
-                            playPlayerAnim('left', true);
-                        } else if (moveDir < 0 && canActuallyMove && combatants.left.currentAnim !== 'right') {
-                            playPlayerAnim('right', true);
-                        } else if ((moveDir === 0 || !canActuallyMove) && !playerIsCasting && combatants.left.currentAnim !== 'idle') {
-                            playPlayerAnim('idle', true);
-                        }
-                    }
+                    // Set moveDir for animation state machine (0 if at boundary and can't move)
+                    playerCombatant.moveDir = canActuallyMove ? moveDir : 0;
 
                     // Retro movement: accumulate and move in discrete steps
                     const STEP_SIZE = 0.3;  // Size of each discrete movement step
@@ -9194,20 +10310,23 @@
                     // Only move when accumulated enough for a step
                     if (Math.abs(window.playerMoveAccum) >= STEP_SIZE) {
                         const steps = Math.trunc(window.playerMoveAccum / STEP_SIZE);
-                        playerPaddle.position.z += steps * STEP_SIZE;
+                        playerActivePaddle.position.z += steps * STEP_SIZE;
                         window.playerMoveAccum -= steps * STEP_SIZE;
                     }
-                    playerPaddle.position.z = Math.max(-paddleBoundary, Math.min(paddleBoundary, playerPaddle.position.z));
+                    playerActivePaddle.position.z = Math.max(-paddleBoundary, Math.min(paddleBoundary, playerActivePaddle.position.z));
 
                     // Set target orientation based on movement direction
                     if (moveDir > 0) {
-                        combatants.left.targetRotY = combatants.left.baseRotY + 0.6;  // Turn to face up
+                        playerCombatant.targetRotY = playerCombatant.baseRotY + 0.6;  // Turn to face up
                     } else if (moveDir < 0) {
-                        combatants.left.targetRotY = combatants.left.baseRotY - 0.6;  // Turn to face down
+                        playerCombatant.targetRotY = playerCombatant.baseRotY - 0.6;  // Turn to face down
                     } else {
-                        combatants.left.targetRotY = combatants.left.baseRotY;        // Face forward
+                        playerCombatant.targetRotY = playerCombatant.baseRotY;        // Face forward
                     }
-                    playerTargetRotY = combatants.left.targetRotY;  // Sync legacy
+                    playerTargetRotY = playerCombatant.targetRotY;  // Sync legacy
+                } else {
+                    // Frozen or round transitioning - stop moving animation
+                    if (playerCombatant) playerCombatant.moveDir = 0;
                 }
 
                 // NOTE: Model rotation lerp moved to render callback for smooth visuals
@@ -9216,8 +10335,13 @@
                     // SMART AI MOVEMENT - Thinks every 220ms like a human
                     const currentTime = performance.now() / 1000;
 
-                    // AI "thinks" periodically - not every frame
-                    if (currentTime - aiLastThinkTime > AI_THINK_INTERVAL) {
+                    // In doubles mode, update all AI teammates
+                    if (isDoublesMode() && window.updateAllDoublesAI) {
+                        window.updateAllDoublesAI(dt, currentTime);
+                    }
+
+                    // AI "thinks" periodically - not every frame (skip in doubles mode - handled by updateAllDoublesAI)
+                    if (!isDoublesMode() && currentTime - aiLastThinkTime > AI_THINK_INTERVAL) {
                         aiLastThinkTime = currentTime;
 
                         // Find the closest incoming threat
@@ -9234,8 +10358,8 @@
                         }
                     }
 
-                    // Only move if AI is not frozen or rooted (casting)
-                    if (aiFreezeTime <= 0 && !isAIRooted()) {
+                    // Only move if AI is not frozen or rooted (casting) - skip in doubles mode
+                    if (!isDoublesMode() && aiFreezeTime <= 0 && !isAIRooted()) {
                         let aiMoveDir = 0;
                         const aiDiff = aiTargetZ - aiPaddle.position.z;
                         if (Math.abs(aiDiff) > 0.25) {
@@ -9275,20 +10399,8 @@
                         const aiAtBottomBoundary = aiPaddle.position.z <= -paddleBoundary;
                         const aiCanActuallyMove = !(aiMoveDir > 0 && aiAtTopBoundary) && !(aiMoveDir < 0 && aiAtBottomBoundary);
 
-                        // AI movement animations (unless locked by one-shot anim, playing cast_release, or round transitioning)
-                        const aiIsCasting = combatants.right && combatants.right.casting;
-                        const aiAnimIsLocked = combatants.right.animLocked || aiAnimLocked;
-                        const aiInCastRelease = combatants.right.currentAnim === 'cast_release';
-                        const aiInEndAnim = combatants.right.currentAnim === 'victory' || combatants.right.currentAnim === 'defeat';
-                        if (!aiAnimIsLocked && !aiInCastRelease && !roundTransitioning && !aiInEndAnim) {
-                            if (aiMoveDir > 0 && aiCanActuallyMove && combatants.right.currentAnim !== 'left') {
-                                playAIAnim('left', true);
-                            } else if (aiMoveDir < 0 && aiCanActuallyMove && combatants.right.currentAnim !== 'right') {
-                                playAIAnim('right', true);
-                            } else if ((aiMoveDir === 0 || !aiCanActuallyMove) && !aiIsCasting && combatants.right.currentAnim !== 'idle') {
-                                playAIAnim('idle', true);
-                            }
-                        }
+                        // Set moveDir for animation state machine (0 if at boundary and can't move)
+                        combatants.right.moveDir = aiCanActuallyMove ? aiMoveDir : 0;
 
                         // Set target orientation for AI based on movement direction
                         if (aiMoveDir > 0) {
@@ -9327,6 +10439,14 @@
                         if (safeToStartCast) {
                             castFrostbolt('ai');
                         }
+                    }
+
+                    // AI Chain Lightning - use defensively when multiple projectiles are close
+                    const aiChainCooldown = combatants.right ? combatants.right.cooldowns.chain_lightning : 0;
+                    const dangerousProjectiles = projectiles.filter(p => p.velX > 0 && p.mesh && p.mesh.position.x > 3);
+                    if (!aiRightIsCasting && aiChainCooldown <= 0 && aiMana >= 1 && dangerousProjectiles.length >= 2) {
+                        // AI uses chain lightning as panic button when overwhelmed
+                        castChainLightning('ai');
                     }
 
                     // Process all projectiles
@@ -9641,6 +10761,16 @@
                             proj.mesh.position.z > playerPaddle.position.z - playerHitDepth &&
                             proj.mesh.position.z < playerPaddle.position.z + playerHitDepth) {
 
+                            // Lightning Shield auto-block check
+                            if (combatants.left && combatants.left.lightningShield && combatants.left.lightningShield.charges > 0) {
+                                // Auto-parry the projectile
+                                useShieldCharge(combatants.left);
+                                parryProjectile(proj, 'player');
+                                playSound('parry', playerPaddle.position.x, 0.5);
+                                // Skip normal collision handling
+                                continue;
+                            }
+
                             // Frostbolt freezes on hit and is destroyed
                             if (proj.type === 'frostbolt') {
                                 combatants.left.freezeTime = abilities.frostbolt.freezeDuration;
@@ -9693,6 +10823,16 @@
                             proj.mesh.position.z > aiPaddle.position.z - aiHitDepth &&
                             proj.mesh.position.z < aiPaddle.position.z + aiHitDepth) {
 
+                            // Lightning Shield auto-block check (AI)
+                            if (combatants.right && combatants.right.lightningShield && combatants.right.lightningShield.charges > 0) {
+                                // Auto-parry the projectile
+                                useShieldCharge(combatants.right);
+                                parryProjectile(proj, 'ai');
+                                playSound('parry', aiPaddle.position.x, 0.5);
+                                // Skip normal collision handling
+                                continue;
+                            }
+
                             // Frostbolt freezes on hit and is destroyed
                             if (proj.type === 'frostbolt') {
                                 combatants.right.freezeTime = abilities.frostbolt.freezeDuration;
@@ -9743,6 +10883,121 @@
                                     if (combatants.right && combatants.right.casting) applyCastPushback('ai');
                                 }
                                 updateProjectileTier(proj);
+                            }
+                        }
+
+                        // Front paddle collision (doubles mode only)
+                        // Note: Don't check visibility - paddle is hidden when model is loaded
+                        if (isDoublesMode() && playerFrontPaddle && teams.left.front) {
+                            const frontProjRadius = proj.hitboxRadius || ballRadius;
+                            const frontHitDepth = paddleHalfDepth + perspectiveZOffset;
+                            if (proj.velX < 0 &&
+                                proj.mesh.position.y < maxHitHeight &&
+                                proj.mesh.position.x - frontProjRadius < playerFrontPaddle.position.x + paddleHalfWidth &&
+                                proj.mesh.position.x > playerFrontPaddle.position.x - paddleHalfWidth &&
+                                proj.mesh.position.z > playerFrontPaddle.position.z - frontHitDepth &&
+                                proj.mesh.position.z < playerFrontPaddle.position.z + frontHitDepth) {
+
+                                // Lightning Shield auto-block check (front player)
+                                if (teams.left.front && teams.left.front.lightningShield && teams.left.front.lightningShield.charges > 0) {
+                                    useShieldCharge(teams.left.front);
+                                    parryProjectile(proj, 'player');
+                                    playSound('parry', playerFrontPaddle.position.x, 0.5);
+                                    continue;
+                                }
+
+                                if (proj.type === 'frostbolt') {
+                                    // Freeze front player
+                                    if (teams.left.front) {
+                                        teams.left.front.freezeTime = abilities.frostbolt.freezeDuration;
+                                        // Cancel casting if frozen
+                                        if (teams.left.front.casting) {
+                                            teams.left.front.casting = null;
+                                            teams.left.front.castProgress = 0;
+                                            if (window.combatantUpdate3DCastBar) {
+                                                window.combatantUpdate3DCastBar(teams.left.front, 0, false);
+                                            }
+                                        }
+                                    }
+                                    playSound('frozen', playerFrontPaddle.position.x, 0.8, 2.0);
+                                    if (window.createImpactFlash) {
+                                        createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(0.5, 0.8, 1), 2.0);
+                                    }
+                                    // Show frozen text at front paddle position
+                                    if (window.showCombatTextAt) {
+                                        showCombatTextAt(playerFrontPaddle.position.clone(), '#FROZEN', 'frozen');
+                                    }
+                                    toDestroy.push(proj);
+                                } else {
+                                    proj.mesh.position.x = playerFrontPaddle.position.x + paddleHalfWidth + frontProjRadius;
+                                    proj.owner = 'player';
+                                    proj.velX = -proj.velX;
+                                    const hitOffset = (proj.mesh.position.z - playerFrontPaddle.position.z) / paddleHalfDepth;
+                                    proj.velZ += hitOffset * 5;
+                                    proj.volleyCount++;
+                                    if (window.updateFireballScale) window.updateFireballScale(proj);
+                                    updateProjectileTier(proj);
+                                    playSound('block', playerFrontPaddle.position.x, 0.7);
+                                    if (window.flashShield) flashShield(true, false);
+                                    gainMana('player', 0.5);
+                                }
+                            }
+                        }
+
+                        // Note: Don't check visibility - paddle is hidden when model is loaded
+                        if (isDoublesMode() && aiFrontPaddle && teams.right.front) {
+                            const frontProjRadius = proj.hitboxRadius || ballRadius;
+                            const frontHitDepth = paddleHalfDepth + perspectiveZOffset;
+                            if (proj.velX > 0 &&
+                                proj.mesh.position.y < maxHitHeight &&
+                                proj.mesh.position.x + frontProjRadius > aiFrontPaddle.position.x - paddleHalfWidth &&
+                                proj.mesh.position.x < aiFrontPaddle.position.x + paddleHalfWidth &&
+                                proj.mesh.position.z > aiFrontPaddle.position.z - frontHitDepth &&
+                                proj.mesh.position.z < aiFrontPaddle.position.z + frontHitDepth) {
+
+                                // Lightning Shield auto-block check (front AI)
+                                if (teams.right.front && teams.right.front.lightningShield && teams.right.front.lightningShield.charges > 0) {
+                                    useShieldCharge(teams.right.front);
+                                    parryProjectile(proj, 'ai');
+                                    playSound('parry', aiFrontPaddle.position.x, 0.5);
+                                    continue;
+                                }
+
+                                if (proj.type === 'frostbolt') {
+                                    // Freeze front AI
+                                    if (teams.right.front) {
+                                        teams.right.front.freezeTime = abilities.frostbolt.freezeDuration;
+                                        // Cancel casting if frozen
+                                        if (teams.right.front.casting) {
+                                            teams.right.front.casting = null;
+                                            teams.right.front.castProgress = 0;
+                                            if (window.combatantUpdate3DCastBar) {
+                                                window.combatantUpdate3DCastBar(teams.right.front, 0, false);
+                                            }
+                                        }
+                                    }
+                                    playSound('frozen', aiFrontPaddle.position.x, 0.8, 2.0);
+                                    if (window.createImpactFlash) {
+                                        createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(0.5, 0.8, 1), 2.0);
+                                    }
+                                    // Show frozen text at front paddle position
+                                    if (window.showCombatTextAt) {
+                                        showCombatTextAt(aiFrontPaddle.position.clone(), '#FROZEN', 'frozen');
+                                    }
+                                    toDestroy.push(proj);
+                                } else {
+                                    proj.mesh.position.x = aiFrontPaddle.position.x - paddleHalfWidth - frontProjRadius;
+                                    proj.owner = 'ai';
+                                    proj.velX = -proj.velX;
+                                    const hitOffset = (proj.mesh.position.z - aiFrontPaddle.position.z) / paddleHalfDepth;
+                                    proj.velZ += hitOffset * 5;
+                                    proj.volleyCount++;
+                                    if (window.updateFireballScale) window.updateFireballScale(proj);
+                                    updateProjectileTier(proj);
+                                    playSound('block', aiFrontPaddle.position.x, 0.7);
+                                    if (window.flashShield) flashShield(false, false);
+                                    gainMana('ai', 0.5);
+                                }
                             }
                         }
 
@@ -9817,6 +11072,9 @@
             // RENDER LOOP - Visual updates at render rate, game logic at 60Hz
             // ============================================================
             scene.onBeforeRenderObservable.add(() => {
+                // Always update animations (menu dancing, etc.) - runs in all states
+                if (window.updateAllAnimations) updateAllAnimations();
+
                 // Skip game logic when in menu or game over
                 if (gameState !== "playing" || gameOver) return;
 
@@ -10411,6 +11669,13 @@
                     castFrostbolt('player');
                 }
             });
+            // Chain Lightning click handler
+            document.getElementById('chainLightningSlot').addEventListener('click', () => {
+                const c = combatants.left;
+                if (!gameOver && roundActive && !roundTransitioning && !c.casting && c.cooldowns.chain_lightning <= 0 && c.mana >= 0.5) {
+                    startChainLightningChannel('player');
+                }
+            });
             // Gravity click handler (COMMENTED OUT FOR REWORK)
             // document.getElementById('gravitySlot').addEventListener('click', () => {
             //     if (!gameOver && roundActive) {
@@ -10795,7 +12060,7 @@
                 keys[key] = false;
             }
 
-            // Reset combatant state
+            // Reset combatant state and set dancing for menu
             for (const c of [combatants.left, combatants.right]) {
                 if (c) {
                     c.casting = null;
@@ -10803,6 +12068,9 @@
                     c.castTime = 0;
                     c.mana = 0;
                     c.manaRegen = 0;
+                    c.moveDir = 0;
+                    c.roundResult = 'victory';  // Dancing in menu!
+                    c.playingCastRelease = false;
                 }
             }
 
@@ -11171,14 +12439,16 @@
             if (lobby) lobby.style.display = 'none';
             if (window.guiElements && window.guiElements.lobbyOverlay) {
                 window.guiElements.lobbyOverlay.isVisible = true;
-                // Default state: show mode select buttons, hide other stacks
+                // Default state: show Host/Join buttons
                 const mode = window.guiElements.lobbyModeButtons || {};
                 const host = window.guiElements.lobbyHost || {};
                 const join = window.guiElements.lobbyJoin || {};
                 const connected = window.guiElements.lobbyConnected || {};
+                // Show host/join buttons
                 if (mode.btnHostGame) mode.btnHostGame.isVisible = true;
                 if (mode.btnJoinGame) mode.btnJoinGame.isVisible = true;
                 if (mode.btnBackMenu) mode.btnBackMenu.isVisible = true;
+                // Hide other stacks
                 if (host.hostStack) host.hostStack.isVisible = false;
                 if (join.joinStack) join.joinStack.isVisible = false;
                 if (connected.connectedStack) connected.connectedStack.isVisible = false;
@@ -11401,7 +12671,7 @@
             if (gJoin.joinInput && gJoin.joinInput.focus) gJoin.joinInput.focus();
         });
 
-        // Back to menu
+        // Back to main menu
         if (gMode.btnBackMenu) gMode.btnBackMenu.onPointerClickObservable.add(() => {
             hideMultiplayerLobby();
             showTalentScreen();
@@ -11639,9 +12909,13 @@
             // Hide lobby
             hideMultiplayerLobby();
 
-            // Set game mode and state
+            // Set game mode to PvP (multiplayer is always 1v1 for now)
             gameMode = 'pvp';
             gameState = 'playing';
+            doublesConfig = null;
+
+            // Hide doubles paddles for 1v1
+            if (window.setDoublesPaddlesVisible) window.setDoublesPaddlesVisible(false);
 
             // Initialize RNG with shared seed
             netRngSeed = seed;
@@ -12442,6 +13716,12 @@
                 if (c.cooldowns.fireball > 0) c.cooldowns.fireball -= dt;
                 if (c.cooldowns.frostbolt > 0) c.cooldowns.frostbolt -= dt;
                 if (c.cooldowns.gravity > 0) c.cooldowns.gravity -= dt;
+                if (c.cooldowns.chain_lightning > 0) c.cooldowns.chain_lightning -= dt;
+
+                // Update Chain Lightning channeling
+                if (c.casting === 'chain_lightning') {
+                    updateChainLightningChannel(c, dt);
+                }
             }
 
             // Mana regeneration (stops while frozen) - discrete 0.5 every 2 seconds
@@ -12624,6 +13904,14 @@
                         proj.mesh.position.z > pz - paddleHalfDepth - 0.75 &&
                         proj.mesh.position.z < pz + paddleHalfDepth + 0.75) {
 
+                        // Lightning Shield auto-block check (left/player)
+                        if (combatants.left && combatants.left.lightningShield && combatants.left.lightningShield.charges > 0) {
+                            useShieldCharge(combatants.left);
+                            parryProjectile(proj, 'player');
+                            if (!isResimulating) playSound('parry', px, 0.5);
+                            continue;
+                        }
+
                         if (proj.type === 'frostbolt') {
                             // Freeze left player
                             combatants.left.freezeTime = abilities.frostbolt.freezeDuration;
@@ -12656,6 +13944,14 @@
                         proj.mesh.position.x < px + paddleHalfWidth &&
                         proj.mesh.position.z > pz - paddleHalfDepth - 0.75 &&
                         proj.mesh.position.z < pz + paddleHalfDepth + 0.75) {
+
+                        // Lightning Shield auto-block check (right/AI)
+                        if (combatants.right && combatants.right.lightningShield && combatants.right.lightningShield.charges > 0) {
+                            useShieldCharge(combatants.right);
+                            parryProjectile(proj, 'ai');
+                            if (!isResimulating) playSound('parry', px, 0.5);
+                            continue;
+                        }
 
                         if (proj.type === 'frostbolt') {
                             // Freeze right player
@@ -12727,22 +14023,36 @@
             if (window.ToneSFX) ToneSFX.gameplayStart();
 
             // Reset combatant state with isStart=true (starts with 1 mana)
-            for (const c of [combatants.left, combatants.right]) {
+            // In doubles mode, reset all 4 combatants
+            const combatantsToReset = isDoublesMode() ? getAllCombatants() : [combatants.left, combatants.right];
+            for (const c of combatantsToReset) {
                 if (!c) continue;
                 combatantReset(c, true);
                 updateCombatantManaUI(c);
-                // Reset animation to idle when new round starts
-                if (window.combatantPlayAnim) {
-                    combatantPlayAnim(c, 'idle', true);
-                }
+                // Clear round result so animation state machine returns to idle
+                c.roundResult = null;
+                c.playingCastRelease = false;
+                c.moveDir = 0;
             }
 
             // Set cooldowns - player ready, AI has startup delay
-            if (combatants.left) {
-                combatants.left.cooldowns = { fireball: 0, frostbolt: 0, gravity: 0 };
-            }
-            if (combatants.right) {
-                combatants.right.cooldowns = { fireball: 2, frostbolt: 3, gravity: 5 };  // AI waits before first casts
+            if (isDoublesMode()) {
+                // In doubles, set cooldowns based on input source
+                for (const c of combatantsToReset) {
+                    if (!c) continue;
+                    if (c.inputSource === 'local') {
+                        c.cooldowns = { fireball: 0, frostbolt: 0, gravity: 0, chain_lightning: 0 };
+                    } else {
+                        c.cooldowns = { fireball: 2, frostbolt: 3, gravity: 5, chain_lightning: 0 };  // AI waits before first casts
+                    }
+                }
+            } else {
+                if (combatants.left) {
+                    combatants.left.cooldowns = { fireball: 0, frostbolt: 0, gravity: 0, chain_lightning: 0 };
+                }
+                if (combatants.right) {
+                    combatants.right.cooldowns = { fireball: 2, frostbolt: 3, gravity: 5, chain_lightning: 0 };  // AI waits before first casts
+                }
             }
 
             // LEGACY - sync variables for backwards compatibility
@@ -12901,9 +14211,10 @@
             // Reset stage state
             currentStage = 2;  // Back to midfield
             stageResults = [null, null, null, null, null];
-            // Reset persistent gate health for new match
-            playerGateHealthByStage = [20, 20, 20, 20, 20];
-            aiGateHealthByStage = [20, 20, 20, 20, 20];
+            // Reset persistent gate health for new match (uses current maxTowerHealth for game mode)
+            playerGateHealthByStage = [maxTowerHealth, maxTowerHealth, maxTowerHealth, maxTowerHealth, maxTowerHealth];
+            aiGateHealthByStage = [maxTowerHealth, maxTowerHealth, maxTowerHealth, maxTowerHealth, maxTowerHealth];
+            console.log('[RESET] Gate health arrays set to', maxTowerHealth);
             // Reset gate regeneration tracking
             totalRoundsPlayed = 0;
             lastRoundAtStage = [0, 0, 0, 0, 0];
@@ -12968,7 +14279,7 @@
             for (const c of [combatants.left, combatants.right]) {
                 if (!c) continue;
                 combatantReset(c, false);
-                c.cooldowns = { fireball: 0, frostbolt: 0, gravity: 0 };
+                c.cooldowns = { fireball: 0, frostbolt: 0, gravity: 0, chain_lightning: 0 };
             }
 
             // MOBA-style: Restore gate health with regeneration
@@ -13143,7 +14454,7 @@
 
         function updateCooldownUI() {
             // Get cooldowns and mana from local player combatant
-            const localCooldowns = combatants.left ? combatants.left.cooldowns : { fireball: playerFireballCooldown, frostbolt: playerFrostboltCooldown, gravity: playerGravityCooldown };
+            const localCooldowns = combatants.left ? combatants.left.cooldowns : { fireball: playerFireballCooldown, frostbolt: playerFrostboltCooldown };
             const mana = combatants.left ? combatants.left.mana : playerMana;
 
             // Fireball cooldown
@@ -13158,16 +14469,12 @@
                 return;
             }
 
-            // HTML overlay cooldown element (optional)
-            const fireballCdHtml = document.getElementById('fireballCooldownHtml');
-
             if (localCooldowns.fireball > 0) {
                 fireSlot.classList.remove('ready');
                 fireSlot.classList.add('on-cooldown');
                 fireCdText.textContent = Math.ceil(localCooldowns.fireball);
                 const sweepAngle = (localCooldowns.fireball / abilities.fireball.cooldown) * 360;
                 fireSweep.style.setProperty('--sweep-angle', sweepAngle + 'deg');
-
 
                 // Update GUI button - on cooldown
                 if (window.guiElements && window.guiElements.fireballBtn && window.updateAbilityButtonState) {
@@ -13176,28 +14483,15 @@
                     btn.cooldownOverlay.height = ((localCooldowns.fireball / abilities.fireball.cooldown) * 100) + "%";
                     btn.cooldownText.text = Math.ceil(localCooldowns.fireball).toString();
                 }
-
-                // Update HTML overlay cooldown (crisp text)
-                if (fireballCdHtml) {
-                    fireballCdHtml.textContent = Math.ceil(localCooldowns.fireball);
-                    fireballCdHtml.style.opacity = '1';
-                }
             } else if (mana < fireballManaCost) {
                 fireSlot.classList.remove('on-cooldown');
                 fireSlot.classList.remove('ready');
                 fireCdText.textContent = '';
                 fireSweep.style.setProperty('--sweep-angle', '0deg');
 
-
                 // Update GUI button - no mana
                 if (window.guiElements && window.guiElements.fireballBtn && window.updateAbilityButtonState) {
                     window.updateAbilityButtonState(window.guiElements.fireballBtn, 'no-mana');
-                }
-
-                // Hide HTML overlay cooldown
-                if (fireballCdHtml) {
-                    fireballCdHtml.textContent = '';
-                    fireballCdHtml.style.opacity = '0';
                 }
             } else {
                 fireSlot.classList.remove('on-cooldown');
@@ -13205,82 +14499,83 @@
                 fireCdText.textContent = '';
                 fireSweep.style.setProperty('--sweep-angle', '0deg');
 
-
-                // Hide HTML overlay cooldown
-                if (fireballCdHtml) {
-                    fireballCdHtml.textContent = '';
-                    fireballCdHtml.style.opacity = '0';
-                }
-
                 // Update GUI button - ready
                 if (window.guiElements && window.guiElements.fireballBtn && window.updateAbilityButtonState) {
                     window.updateAbilityButtonState(window.guiElements.fireballBtn, 'ready');
                 }
             }
 
-            // Frostbolt cooldown
+            // Frostbolt cooldown (instant cast, but still has cooldown)
             const frostSlot = document.getElementById('frostboltSlot');
             const frostCdText = document.getElementById('frostboltCDText');
             const frostSweep = document.getElementById('frostboltSweep');
             const frostboltManaCost = abilities.frostbolt.manaCost;
 
-            // HTML overlay cooldown element
-            const frostboltCdHtml = document.getElementById('frostboltCooldownHtml');
+            if (frostSlot && frostCdText && frostSweep) {
+                if (localCooldowns.frostbolt > 0) {
+                    frostSlot.classList.remove('ready');
+                    frostSlot.classList.add('on-cooldown');
+                    frostCdText.textContent = Math.ceil(localCooldowns.frostbolt);
+                    const sweepAngle = (localCooldowns.frostbolt / abilities.frostbolt.cooldown) * 360;
+                    frostSweep.style.setProperty('--sweep-angle', sweepAngle + 'deg');
 
-            if (localCooldowns.frostbolt > 0) {
-                frostSlot.classList.remove('ready');
-                frostSlot.classList.add('on-cooldown');
-                frostCdText.textContent = Math.ceil(localCooldowns.frostbolt);
-                const sweepAngle = (localCooldowns.frostbolt / abilities.frostbolt.cooldown) * 360;
-                frostSweep.style.setProperty('--sweep-angle', sweepAngle + 'deg');
+                    // Update GUI button - on cooldown
+                    if (window.guiElements && window.guiElements.frostboltBtn && window.updateAbilityButtonState) {
+                        const btn = window.guiElements.frostboltBtn;
+                        window.updateAbilityButtonState(btn, 'cooldown');
+                        btn.cooldownOverlay.height = ((localCooldowns.frostbolt / abilities.frostbolt.cooldown) * 100) + "%";
+                        btn.cooldownText.text = Math.ceil(localCooldowns.frostbolt).toString();
+                    }
+                } else if (mana < frostboltManaCost) {
+                    frostSlot.classList.remove('on-cooldown');
+                    frostSlot.classList.remove('ready');
+                    frostCdText.textContent = '';
+                    frostSweep.style.setProperty('--sweep-angle', '0deg');
 
+                    // Update GUI button - no mana
+                    if (window.guiElements && window.guiElements.frostboltBtn && window.updateAbilityButtonState) {
+                        window.updateAbilityButtonState(window.guiElements.frostboltBtn, 'no-mana');
+                    }
+                } else {
+                    frostSlot.classList.remove('on-cooldown');
+                    frostSlot.classList.add('ready');
+                    frostCdText.textContent = '';
+                    frostSweep.style.setProperty('--sweep-angle', '0deg');
 
-                // Update GUI button - on cooldown
-                if (window.guiElements && window.guiElements.frostboltBtn && window.updateAbilityButtonState) {
-                    const btn = window.guiElements.frostboltBtn;
-                    window.updateAbilityButtonState(btn, 'cooldown');
-                    btn.cooldownOverlay.height = ((localCooldowns.frostbolt / abilities.frostbolt.cooldown) * 100) + "%";
-                    btn.cooldownText.text = Math.ceil(localCooldowns.frostbolt).toString();
+                    // Update GUI button - ready
+                    if (window.guiElements && window.guiElements.frostboltBtn && window.updateAbilityButtonState) {
+                        window.updateAbilityButtonState(window.guiElements.frostboltBtn, 'ready');
+                    }
                 }
+            }
 
-                // Update HTML overlay cooldown (crisp text)
-                if (frostboltCdHtml) {
-                    frostboltCdHtml.textContent = Math.ceil(localCooldowns.frostbolt);
-                    frostboltCdHtml.style.opacity = '1';
-                }
-            } else if (mana < frostboltManaCost) {
-                frostSlot.classList.remove('on-cooldown');
-                frostSlot.classList.remove('ready');
-                frostCdText.textContent = '';
-                frostSweep.style.setProperty('--sweep-angle', '0deg');
+            // Chain Lightning cooldown
+            const chainSlot = document.getElementById('chainLightningSlot');
+            const chainCdText = document.getElementById('chainLightningCDText');
+            const chainSweep = document.getElementById('chainLightningSweep');
+            const chainLightningManaCost = 1;  // Minimum 1 mana to cast
 
-
-                // Update GUI button - no mana
-                if (window.guiElements && window.guiElements.frostboltBtn && window.updateAbilityButtonState) {
-                    window.updateAbilityButtonState(window.guiElements.frostboltBtn, 'no-mana');
-                }
-
-                // Hide HTML overlay cooldown
-                if (frostboltCdHtml) {
-                    frostboltCdHtml.textContent = '';
-                    frostboltCdHtml.style.opacity = '0';
-                }
-            } else {
-                frostSlot.classList.remove('on-cooldown');
-                frostSlot.classList.add('ready');
-                frostCdText.textContent = '';
-                frostSweep.style.setProperty('--sweep-angle', '0deg');
-
-
-                // Update GUI button - ready
-                if (window.guiElements && window.guiElements.frostboltBtn && window.updateAbilityButtonState) {
-                    window.updateAbilityButtonState(window.guiElements.frostboltBtn, 'ready');
-                }
-
-                // Hide HTML overlay cooldown
-                if (frostboltCdHtml) {
-                    frostboltCdHtml.textContent = '';
-                    frostboltCdHtml.style.opacity = '0';
+            if (chainSlot && chainCdText && chainSweep) {
+                const chainCooldown = localCooldowns.chain_lightning || 0;
+                if (chainCooldown > 0) {
+                    // On cooldown
+                    chainSlot.classList.remove('ready', 'no-mana');
+                    chainSlot.classList.add('on-cooldown');
+                    chainCdText.textContent = Math.ceil(chainCooldown);
+                    const sweepAngle = (chainCooldown / CHAIN_LIGHTNING_COOLDOWN) * 360;
+                    chainSweep.style.setProperty('--sweep-angle', sweepAngle + 'deg');
+                } else if (mana < chainLightningManaCost) {
+                    // Not enough mana
+                    chainSlot.classList.remove('on-cooldown', 'ready');
+                    chainSlot.classList.add('no-mana');
+                    chainCdText.textContent = '';
+                    chainSweep.style.setProperty('--sweep-angle', '0deg');
+                } else {
+                    // Ready to cast
+                    chainSlot.classList.remove('on-cooldown', 'no-mana');
+                    chainSlot.classList.add('ready');
+                    chainCdText.textContent = '';
+                    chainSweep.style.setProperty('--sweep-angle', '0deg');
                 }
             }
 
@@ -13343,48 +14638,37 @@
         function updateManaAvailability() {
             const fireSlot = document.getElementById('fireballSlot');
             const frostSlot = document.getElementById('frostboltSlot');
-            const gravitySlot = document.getElementById('gravitySlot');
 
             // Get state from local player combatant (falls back to legacy vars if not initialized)
             let localCombatant = combatants.left;
             if (gameMode === 'pvp' && combatants.left && combatants.right) {
                 localCombatant = combatants[getLocalSide()];
             }
-            const localCooldowns = localCombatant ? localCombatant.cooldowns : { fireball: playerFireballCooldown, frostbolt: playerFrostboltCooldown, gravity: playerGravityCooldown };
+            const localCooldowns = localCombatant ? localCombatant.cooldowns : { fireball: playerFireballCooldown, frostbolt: playerFrostboltCooldown };
             const localMana = localCombatant ? localCombatant.mana : playerMana;
 
             // Only show no-mana state when off cooldown
-            if (localCooldowns.fireball <= 0) {
-                if (localMana < abilities.fireball.manaCost) {
-                    fireSlot.classList.add('no-mana');
+            if (fireSlot) {
+                if (localCooldowns.fireball <= 0) {
+                    if (localMana < abilities.fireball.manaCost) {
+                        fireSlot.classList.add('no-mana');
+                    } else {
+                        fireSlot.classList.remove('no-mana');
+                    }
                 } else {
                     fireSlot.classList.remove('no-mana');
                 }
-            } else {
-                fireSlot.classList.remove('no-mana');
             }
 
-            if (localCooldowns.frostbolt <= 0) {
-                if (localMana < abilities.frostbolt.manaCost) {
-                    frostSlot.classList.add('no-mana');
-                } else {
-                    frostSlot.classList.remove('no-mana');
-                }
-            } else {
-                frostSlot.classList.remove('no-mana');
-            }
-
-            // Gravity Well is disabled for rework
-            if (gravitySlot) {
-                const gravityPhase = localCombatant ? localCombatant.gravityPhase : playerGravityPhase;
-                if (localCooldowns.gravity <= 0 && gravityPhase === 'ready') {
-                    if (localMana < abilities.gravity.manaCost) {
-                        gravitySlot.classList.add('no-mana');
+            if (frostSlot) {
+                if (localCooldowns.frostbolt <= 0) {
+                    if (localMana < abilities.frostbolt.manaCost) {
+                        frostSlot.classList.add('no-mana');
                     } else {
-                        gravitySlot.classList.remove('no-mana');
+                        frostSlot.classList.remove('no-mana');
                     }
                 } else {
-                    gravitySlot.classList.remove('no-mana');
+                    frostSlot.classList.remove('no-mana');
                 }
             }
         }
@@ -13464,7 +14748,7 @@
 
                 updateCombatantCastBarUI(c, displayName, ability.element, 0);
                 showCastBar(true);
-                if (window.playPlayerAnim) playPlayerAnim('cast_loop', true);
+                // cast_loop animation handled by state machine
 
                 // Add casting class to ability slot and initialize cast progress overlay
                 const slot = document.getElementById(abilityId + 'Slot');
@@ -13482,7 +14766,7 @@
 
                 updateCombatantCastBarUI(c, displayName, ability.element, 0);
                 showAICastBar(true);
-                if (window.playAIAnim) playAIAnim('cast_loop', true);
+                // cast_loop animation handled by state machine
 
                 // Start casting sound (panned right for AI)
                 if (window.ToneSFX) ToneSFX.castingStart('ai');
@@ -13524,7 +14808,7 @@
                 if (playerLabel) playerLabel.classList.remove('visible');
                 // Hide 3D cast bar
                 if (window.updatePlayer3DCastBar) updatePlayer3DCastBar(0, false);
-                if (window.playPlayerAnim) playPlayerAnim('idle', true);
+                // idle animation handled by state machine (casting is now null)
             } else {
                 // Reset combatant state
                 c.casting = null;
@@ -13541,7 +14825,7 @@
                 if (aiLabel) aiLabel.classList.remove('visible');
                 // Hide 3D cast bar
                 if (window.updateAI3DCastBar) updateAI3DCastBar(0, false);
-                if (window.playAIAnim) playAIAnim('idle', true);
+                // idle animation handled by state machine (casting is now null)
             }
         }
 
@@ -13627,6 +14911,386 @@
             }
         }
 
+        // ============================================================
+        // CHAIN LIGHTNING SYSTEM - Instant Cast Panic Button
+        // ============================================================
+        // Costs 1 mana per projectile zapped, zaps closest first
+        // Lightning strikes from the sky!
+
+        const CHAIN_LIGHTNING_COOLDOWN = 8;  // 8 second cooldown
+        const CHAIN_LIGHTNING_MAX_ZAPS = 3;  // Max projectiles to zap
+
+        // Cast Chain Lightning - instant zap of closest enemy projectiles
+        function castChainLightning(caster) {
+            const c = getCombatantLegacy(caster);
+            const isPlayer = caster === 'player';
+
+            // Check cooldown
+            if (c.cooldowns.chain_lightning > 0) return false;
+            // Need at least 1 mana
+            if (c.mana < 1) return false;
+            // Can't cast while casting something else
+            if (c.casting) return false;
+
+            const casterOwner = isPlayer ? 'player' : 'ai';
+            const casterPos = c.paddle ? c.paddle.position : new BABYLON.Vector3(isPlayer ? -8 : 8, 0, 0);
+
+            // Find enemy projectiles COMING TOWARDS caster, sorted by distance (closest first)
+            // Player is on left (x < 0), so incoming projectiles have velX < 0
+            // AI is on right (x > 0), so incoming projectiles have velX > 0
+            const incomingVelDir = isPlayer ? -1 : 1;  // Expected velocity direction for "incoming"
+            const enemyProjs = projectiles
+                .filter(p => p.owner !== casterOwner && p.mesh && Math.sign(p.velX) === incomingVelDir)
+                .sort((a, b) => {
+                    const distA = BABYLON.Vector3.Distance(a.mesh.position, casterPos);
+                    const distB = BABYLON.Vector3.Distance(b.mesh.position, casterPos);
+                    return distA - distB;
+                });
+
+            if (enemyProjs.length === 0) {
+                // No targets - don't waste the ability
+                showCombatText(isPlayer, 'NO TARGET', 'lightning');
+                return false;
+            }
+
+            // Calculate how many we can zap (1 mana each, up to max)
+            const availableMana = Math.floor(c.mana);
+            const zapsToPerform = Math.min(availableMana, CHAIN_LIGHTNING_MAX_ZAPS, enemyProjs.length);
+
+            // Zap projectiles with staggered lightning strikes
+            for (let i = 0; i < zapsToPerform; i++) {
+                const proj = enemyProjs[i];
+                const delay = i * 100;  // Stagger strikes by 100ms
+
+                setTimeout(() => {
+                    if (!proj.mesh || proj.mesh.isDisposed()) return;
+
+                    const targetPos = proj.mesh.position.clone();
+
+                    // Create lightning from sky
+                    createSkyLightningStrike(targetPos);
+
+                    // Zap flash at impact
+                    createZapFlash(targetPos);
+
+                    // Destroy projectile
+                    destroyProjectileSilent(proj);
+                }, delay);
+            }
+
+            // Spend mana (1 per zap)
+            c.mana -= zapsToPerform;
+            if (isPlayer) playerMana = c.mana;
+            else aiMana = c.mana;
+
+            // Play lightning sound (location-based on average position)
+            let avgX = 0;
+            for (let i = 0; i < zapsToPerform; i++) {
+                avgX += enemyProjs[i].mesh.position.x;
+            }
+            avgX /= zapsToPerform;
+
+            if (window.ToneSFX && window.ToneSFX.lightning) {
+                if (window.setTonePan) window.setTonePan(avgX);
+                window.ToneSFX.lightning();
+            }
+
+            // Show combat text
+            showCombatText(isPlayer, 'ZAP x' + zapsToPerform, 'lightning');
+
+            // Start cooldown
+            c.cooldowns.chain_lightning = CHAIN_LIGHTNING_COOLDOWN;
+
+            // Update UI
+            updateManaUI();
+            updateCooldownUI();
+
+            return true;
+        }
+
+        // Create lightning strike from sky to target position
+        function createSkyLightningStrike(targetPos) {
+            if (!scene) return;
+
+            // Start high in the sky
+            const skyPos = targetPos.clone();
+            skyPos.y = 12;  // High above
+
+            const segments = 12;
+            const points = [];
+
+            // Create jagged lightning path from sky to target
+            for (let i = 0; i <= segments; i++) {
+                const t = i / segments;
+                const pos = BABYLON.Vector3.Lerp(skyPos, targetPos, t);
+
+                // Add horizontal jitter (more at top, less at bottom)
+                if (i > 0 && i < segments) {
+                    const jitterScale = (1 - t) * 1.5;  // More jitter at top
+                    pos.x += (Math.random() - 0.5) * jitterScale;
+                    pos.z += (Math.random() - 0.5) * jitterScale;
+                }
+                points.push(pos);
+            }
+
+            // Main thick bolt
+            const bolt = BABYLON.MeshBuilder.CreateTube("skyBolt_" + Date.now(), {
+                path: points,
+                radius: 0.08,
+                tessellation: 6,
+                cap: BABYLON.Mesh.CAP_ALL
+            }, scene);
+
+            const mat = new BABYLON.StandardMaterial("skyBoltMat_" + Date.now(), scene);
+            mat.emissiveColor = new BABYLON.Color3(1, 1, 0.9);
+            mat.disableLighting = true;
+            bolt.material = mat;
+
+            // Create a bright glow bolt behind it
+            const glowBolt = BABYLON.MeshBuilder.CreateTube("skyBoltGlow_" + Date.now(), {
+                path: points,
+                radius: 0.2,
+                tessellation: 6
+            }, scene);
+            const glowMat = new BABYLON.StandardMaterial("skyBoltGlowMat_" + Date.now(), scene);
+            glowMat.emissiveColor = new BABYLON.Color3(0.5, 0.5, 1);
+            glowMat.alpha = 0.4;
+            glowMat.disableLighting = true;
+            glowBolt.material = glowMat;
+
+            // Ground impact flash
+            const impactFlash = BABYLON.MeshBuilder.CreateSphere("impactFlash_" + Date.now(), {
+                diameter: 1.5,
+                segments: 8
+            }, scene);
+            impactFlash.position = targetPos.clone();
+            impactFlash.position.y = 0.3;
+            const impactMat = new BABYLON.StandardMaterial("impactMat_" + Date.now(), scene);
+            impactMat.emissiveColor = new BABYLON.Color3(1, 1, 0.8);
+            impactMat.alpha = 0.9;
+            impactMat.disableLighting = true;
+            impactFlash.material = impactMat;
+
+            // Animate and dispose
+            let frame = 0;
+            const animInterval = setInterval(() => {
+                frame++;
+                if (frame > 6) {
+                    clearInterval(animInterval);
+                    if (bolt && !bolt.isDisposed()) bolt.dispose();
+                    if (glowBolt && !glowBolt.isDisposed()) glowBolt.dispose();
+                    if (impactFlash && !impactFlash.isDisposed()) impactFlash.dispose();
+                    if (mat && !mat.isDisposed) mat.dispose();
+                    if (glowMat && !glowMat.isDisposed) glowMat.dispose();
+                    if (impactMat && !impactMat.isDisposed) impactMat.dispose();
+                } else {
+                    // Fade out
+                    mat.alpha = 1 - (frame / 6);
+                    glowMat.alpha = 0.4 * (1 - frame / 6);
+                    impactMat.alpha = 0.9 * (1 - frame / 6);
+                    impactFlash.scaling.scaleInPlace(1.3);
+                }
+            }, 25);
+        }
+
+        // Create zap flash at position
+        function createZapFlash(position) {
+            if (!scene) return;
+
+            const flash = BABYLON.MeshBuilder.CreateSphere("zapFlash_" + Date.now(), {
+                diameter: 0.8,
+                segments: 8
+            }, scene);
+            flash.position = position.clone();
+            flash.position.y += 0.5;
+
+            const mat = new BABYLON.StandardMaterial("zapFlashMat_" + Date.now(), scene);
+            mat.emissiveColor = new BABYLON.Color3(1, 1, 0.8);
+            mat.disableLighting = true;
+            mat.alpha = 0.8;
+            flash.material = mat;
+
+            // Quick flash animation
+            let alpha = 0.8;
+            const interval = setInterval(() => {
+                alpha -= 0.2;
+                if (alpha <= 0) {
+                    clearInterval(interval);
+                    if (flash && !flash.isDisposed()) flash.dispose();
+                    if (mat && !mat.isDisposed) mat.dispose();
+                } else {
+                    mat.alpha = alpha;
+                    flash.scaling.scaleInPlace(1.3);
+                }
+            }, 30);
+        }
+
+        // Legacy function stubs for compatibility
+        function startChainLightningChannel(caster) {
+            return castChainLightning(caster);
+        }
+        function endChainLightningChannel(combatant) {
+            // No-op - instant cast now
+        }
+        function updateChainLightningChannel(combatant, dt) {
+            // No-op - instant cast now
+        }
+
+        // ============================================================
+        // LIGHTNING SHIELD SYSTEM
+        // ============================================================
+
+        // Create lightning shield with charges
+        function createLightningShield(combatant, charges) {
+            if (!combatant.paddle || !scene) return;
+
+            // Dispose existing shield
+            if (combatant.lightningShield) {
+                disposeLightningShield(combatant);
+            }
+
+            // Create shield sphere
+            const shield = BABYLON.MeshBuilder.CreateSphere("lightningShield_" + combatant.side, {
+                diameter: 2.5,
+                segments: 16
+            }, scene);
+            shield.parent = combatant.paddle;
+            shield.position.y = 0.5;
+
+            const mat = new BABYLON.StandardMaterial("shieldMat_" + combatant.side, scene);
+            mat.emissiveColor = new BABYLON.Color3(1, 0.9, 0.3);
+            mat.alpha = 0.2 + (charges * 0.05);  // More charges = more visible
+            mat.backFaceCulling = false;
+            mat.wireframe = false;
+            shield.material = mat;
+
+            // Create electric spark particles on shield surface
+            const particles = new BABYLON.ParticleSystem("shieldSparks_" + combatant.side, 50, scene);
+            particles.particleTexture = flareTexture || new BABYLON.Texture("textures/flare.png", scene);
+            particles.emitter = shield;
+
+            particles.color1 = new BABYLON.Color4(1, 1, 0.5, 1);
+            particles.color2 = new BABYLON.Color4(1, 0.9, 0.3, 0.8);
+            particles.colorDead = new BABYLON.Color4(1, 1, 0.8, 0);
+
+            particles.minSize = 0.05;
+            particles.maxSize = 0.15;
+            particles.minLifeTime = 0.1;
+            particles.maxLifeTime = 0.3;
+            particles.emitRate = 20 + (charges * 5);
+
+            particles.createSphereEmitter(1.2);
+            particles.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
+            particles.start();
+
+            combatant.lightningShield = {
+                charges: charges,
+                maxCharges: charges,
+                mesh: shield,
+                material: mat,
+                particles: particles
+            };
+
+            // Show shield indicator
+            const isPlayer = combatant.side === 'left';
+            showCombatText(isPlayer, 'SHIELD x' + charges, 'lightning');
+        }
+
+        // Use one shield charge (auto-block)
+        function useShieldCharge(combatant) {
+            if (!combatant.lightningShield || combatant.lightningShield.charges <= 0) return false;
+
+            combatant.lightningShield.charges--;
+            const remaining = combatant.lightningShield.charges;
+
+            // Update visual
+            if (combatant.lightningShield.material) {
+                combatant.lightningShield.material.alpha = 0.2 + (remaining * 0.05);
+            }
+            if (combatant.lightningShield.particles) {
+                combatant.lightningShield.particles.emitRate = 20 + (remaining * 5);
+            }
+
+            // Pulse effect
+            pulseShieldEffect(combatant);
+
+            // Show remaining charges
+            const isPlayer = combatant.side === 'left';
+            if (remaining > 0) {
+                showCombatText(isPlayer, 'BLOCK x' + remaining, 'lightning');
+            } else {
+                showCombatText(isPlayer, 'SHIELD BREAK', 'lightning');
+                disposeLightningShield(combatant);
+            }
+
+            return true;
+        }
+
+        // Pulse shield effect when blocking
+        function pulseShieldEffect(combatant) {
+            if (!combatant.lightningShield || !combatant.lightningShield.mesh) return;
+
+            const shield = combatant.lightningShield.mesh;
+            const originalScale = shield.scaling.clone();
+
+            // Quick scale pulse
+            shield.scaling.scaleInPlace(1.3);
+            setTimeout(() => {
+                if (shield && !shield.isDisposed()) {
+                    shield.scaling = originalScale;
+                }
+            }, 100);
+
+            // Flash brighter
+            if (combatant.lightningShield.material) {
+                const mat = combatant.lightningShield.material;
+                const origAlpha = mat.alpha;
+                mat.alpha = 0.6;
+                setTimeout(() => {
+                    if (mat && !mat.isDisposed) mat.alpha = origAlpha;
+                }, 100);
+            }
+        }
+
+        // Dispose lightning shield
+        function disposeLightningShield(combatant) {
+            if (!combatant.lightningShield) return;
+
+            if (combatant.lightningShield.particles) {
+                combatant.lightningShield.particles.stop();
+                combatant.lightningShield.particles.dispose();
+            }
+            if (combatant.lightningShield.mesh && !combatant.lightningShield.mesh.isDisposed()) {
+                combatant.lightningShield.mesh.dispose();
+            }
+            if (combatant.lightningShield.material && !combatant.lightningShield.material.isDisposed) {
+                combatant.lightningShield.material.dispose();
+            }
+
+            combatant.lightningShield = null;
+        }
+
+        // Destroy projectile without normal effects (for zapping)
+        function destroyProjectileSilent(proj) {
+            const idx = projectiles.indexOf(proj);
+            if (idx === -1) return;
+
+            // Dispose mesh and effects
+            if (proj.mesh) proj.mesh.dispose();
+            if (proj.glow) proj.glow.dispose();
+            if (proj.trail) proj.trail.dispose();
+            if (proj.light) proj.light.dispose();
+            if (proj.particles) proj.particles.dispose();
+            if (proj.outerFlames) proj.outerFlames.dispose();
+            if (proj.sparkles) proj.sparkles.dispose();
+            if (proj.loopSound) {
+                proj.loopSound.stop();
+                proj.loopSound.dispose();
+            }
+
+            projectiles.splice(idx, 1);
+        }
+
         // Complete casting and fire the spell
         function completeCasting(caster) {
             const c = getCombatantLegacy(caster);
@@ -13641,35 +15305,27 @@
                 c.pendingManaCost = 0;
             }
 
-            // Play cast release animation - let it play fully then ease to idle
-            const playCastRelease = (combatant, playAnim) => {
-                if (!playAnim) return;
+            // Trigger cast_release animation via state machine
+            const triggerCastRelease = (combatant) => {
+                if (!combatant) return;
 
-                // Clear any existing end observers BEFORE playing to prevent stale callbacks
+                combatant.playingCastRelease = true;
+                window.playAnim(combatant, 'cast_release', false);
+
+                // Clear flag when animation ends (state machine will return to idle)
                 const anim = combatant.animations['cast_release'];
                 if (anim) {
                     anim.onAnimationGroupEndObservable.clear();
-                }
-
-                playAnim('cast_release', false, 0); // No lock, not looping
-
-                // Set up end callback only if animation exists and we're in a valid state
-                if (anim) {
-                    // When animation ends, crossfade to idle (only if not casting something else)
                     anim.onAnimationGroupEndObservable.addOnce(() => {
-                        // Only return to idle if not in another animation state
-                        if (combatant.currentAnim === 'cast_release' && !combatant.casting) {
-                            playAnim('idle', true);
-                        }
+                        combatant.playingCastRelease = false;
                     });
+                } else {
+                    // Fallback if no animation
+                    setTimeout(() => { combatant.playingCastRelease = false; }, 500);
                 }
             };
 
-            if (isPlayer) {
-                playCastRelease(combatants.left, window.playPlayerAnim);
-            } else {
-                playCastRelease(combatants.right, window.playAIAnim);
-            }
+            triggerCastRelease(c);
 
             // Fire the spell based on ability type
             if (abilityId === 'fireball') {
@@ -14202,6 +15858,15 @@
             waitingToServe = true;
             roundTransitioning = true;  // Block actions until reset
 
+            // Set victory/defeat animations for combatants
+            const allCombatants = isDoublesMode() ? getAllCombatants() : [combatants.left, combatants.right];
+            allCombatants.forEach(c => {
+                if (!c) return;
+                c.roundResult = (c.side === winnerSide) ? 'victory' : 'defeat';
+                c.moveDir = 0;
+                c.playingCastRelease = false;
+            });
+
             // Hide ability bar between rounds
             const abilityBar = document.getElementById('abilityBar');
             if (abilityBar) abilityBar.style.display = 'none';
@@ -14252,11 +15917,7 @@
                 playerGateHealthByStage[currentStage] = playerHealth;
                 aiGateHealthByStage[currentStage] = 0;
 
-                // Play victory/defeat animations (loop until round resets)
-                if (window.combatantPlayAnim) {
-                    combatantPlayAnim(combatants.left, 'victory', true, 2500);
-                    combatantPlayAnim(combatants.right, 'defeat', true, 2500);
-                }
+                // victory/defeat animations handled by state machine (roundResult)
 
                 // Push toward enemy core
                 if (currentStage >= 4) {
@@ -14278,11 +15939,7 @@
                 aiGateHealthByStage[currentStage] = aiHealth;
                 playerGateHealthByStage[currentStage] = 0;
 
-                // Play victory/defeat animations (loop until round resets)
-                if (window.combatantPlayAnim) {
-                    combatantPlayAnim(combatants.left, 'defeat', true, 2500);
-                    combatantPlayAnim(combatants.right, 'victory', true, 2500);
-                }
+                // victory/defeat animations handled by state machine (roundResult)
 
                 // Pushed back toward player core
                 if (currentStage <= 0) {
@@ -14301,6 +15958,12 @@
             if (window.updateManaBarVisibility) updateManaBarVisibility();
 
             updateScore();
+
+            // Rotate doubles positions after each round (not on game over)
+            if (isDoublesMode() && !gameOver) {
+                rotateDoublesPositions('left');
+                rotateDoublesPositions('right');
+            }
 
             if (gameOver) {
                 // Victory screen handles return to menu via Continue button
