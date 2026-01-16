@@ -185,7 +185,7 @@
             </div>
         </div>
         <div id="chainLightningSlot" class="ability-slot ready" data-ability="chain_lightning">
-            <div class="mana-cost">1+</div>
+            <div class="mana-cost">+2</div>
             <div class="ability-hex">
                 <div class="shine-effect"></div>
                 <span class="ability-icon chainlightning-icon"></span>
@@ -203,13 +203,13 @@
                 <div class="tooltip-title">Chain Lightning</div>
                 <div class="tooltip-stats-row">
                     <div class="tooltip-stats-left">
-                        <span class="tooltip-stat-item mana"><span class="icon">*</span><span class="value">1 per Zap</span></span>
+                        <span class="tooltip-stat-item mana"><span class="icon">*</span><span class="value">+2 Mana</span></span>
                         <span class="tooltip-stat-item cast"><span class="icon">></span><span class="value">Instant</span></span>
                     </div>
-                    <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">8s CD</span></span>
+                    <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">20s CD</span></span>
                 </div>
                 <div class="tooltip-description">
-                    Call down <span class="tt-spell">Lightning</span> from the sky to <span class="tt-damage">destroy</span> enemy projectiles. Zaps the <span class="tt-value">closest</span> projectiles first. Costs <span class="tt-mana">1 Mana</span> per projectile (up to 3).
+                    Call down <span class="tt-spell">Lightning</span> to recharge your <span class="tt-mana">Mana</span>. Instantly gain <span class="tt-value">+2 Mana</span>.
                 </div>
             </div>
         </div>
@@ -3293,8 +3293,8 @@
             if (e.code === 'Digit2' && !gameOver && roundActive && !roundTransitioning && leftCombatant.cooldowns.frostbolt <= 0 && leftCombatant.mana >= abilities.frostbolt.manaCost) {
                 castFrostbolt('player');
             }
-            // Chain Lightning ability - key 3 (instant cast)
-            if (e.code === 'Digit3' && leftCombatant && !gameOver && roundActive && !roundTransitioning && !leftCombatant.casting && leftCombatant.cooldowns.chain_lightning <= 0 && leftCombatant.mana >= 1) {
+            // Chain Lightning ability - key 3 (mana recovery)
+            if (e.code === 'Digit3' && leftCombatant && !gameOver && roundActive && !roundTransitioning && !leftCombatant.casting && leftCombatant.cooldowns.chain_lightning <= 0) {
                 castChainLightning('player');
             }
         });
@@ -10441,11 +10441,10 @@
                         }
                     }
 
-                    // AI Chain Lightning - use defensively when multiple projectiles are close
+                    // AI Chain Lightning - use for mana recovery when low
                     const aiChainCooldown = combatants.right ? combatants.right.cooldowns.chain_lightning : 0;
-                    const dangerousProjectiles = projectiles.filter(p => p.velX > 0 && p.mesh && p.mesh.position.x > 3);
-                    if (!aiRightIsCasting && aiChainCooldown <= 0 && aiMana >= 1 && dangerousProjectiles.length >= 2) {
-                        // AI uses chain lightning as panic button when overwhelmed
+                    if (!aiRightIsCasting && aiChainCooldown <= 0 && aiMana <= 1) {
+                        // AI uses chain lightning to recover mana when running low
                         castChainLightning('ai');
                     }
 
@@ -14549,30 +14548,23 @@
                 }
             }
 
-            // Chain Lightning cooldown
+            // Chain Lightning cooldown (no mana cost - it gives mana)
             const chainSlot = document.getElementById('chainLightningSlot');
             const chainCdText = document.getElementById('chainLightningCDText');
             const chainSweep = document.getElementById('chainLightningSweep');
-            const chainLightningManaCost = 1;  // Minimum 1 mana to cast
 
             if (chainSlot && chainCdText && chainSweep) {
                 const chainCooldown = localCooldowns.chain_lightning || 0;
                 if (chainCooldown > 0) {
                     // On cooldown
-                    chainSlot.classList.remove('ready', 'no-mana');
+                    chainSlot.classList.remove('ready');
                     chainSlot.classList.add('on-cooldown');
                     chainCdText.textContent = Math.ceil(chainCooldown);
                     const sweepAngle = (chainCooldown / CHAIN_LIGHTNING_COOLDOWN) * 360;
                     chainSweep.style.setProperty('--sweep-angle', sweepAngle + 'deg');
-                } else if (mana < chainLightningManaCost) {
-                    // Not enough mana
-                    chainSlot.classList.remove('on-cooldown', 'ready');
-                    chainSlot.classList.add('no-mana');
-                    chainCdText.textContent = '';
-                    chainSweep.style.setProperty('--sweep-angle', '0deg');
                 } else {
                     // Ready to cast
-                    chainSlot.classList.remove('on-cooldown', 'no-mana');
+                    chainSlot.classList.remove('on-cooldown');
                     chainSlot.classList.add('ready');
                     chainCdText.textContent = '';
                     chainSweep.style.setProperty('--sweep-angle', '0deg');
@@ -14912,91 +14904,45 @@
         }
 
         // ============================================================
-        // CHAIN LIGHTNING SYSTEM - Instant Cast Panic Button
+        // CHAIN LIGHTNING SYSTEM - Mana Recovery
         // ============================================================
-        // Costs 1 mana per projectile zapped, zaps closest first
+        // Press 3 to gain +2 mana instantly. 20 second cooldown.
         // Lightning strikes from the sky!
 
-        const CHAIN_LIGHTNING_COOLDOWN = 8;  // 8 second cooldown
-        const CHAIN_LIGHTNING_MAX_ZAPS = 3;  // Max projectiles to zap
+        const CHAIN_LIGHTNING_COOLDOWN = 20;  // 20 second cooldown
+        const CHAIN_LIGHTNING_MANA_GAIN = 2;  // Gain 2 mana
 
-        // Cast Chain Lightning - instant zap of closest enemy projectiles
+        // Cast Chain Lightning - mana recovery ability
         function castChainLightning(caster) {
             const c = getCombatantLegacy(caster);
             const isPlayer = caster === 'player';
 
             // Check cooldown
             if (c.cooldowns.chain_lightning > 0) return false;
-            // Need at least 1 mana
-            if (c.mana < 1) return false;
             // Can't cast while casting something else
             if (c.casting) return false;
 
-            const casterOwner = isPlayer ? 'player' : 'ai';
             const casterPos = c.paddle ? c.paddle.position : new BABYLON.Vector3(isPlayer ? -8 : 8, 0, 0);
 
-            // Find enemy projectiles COMING TOWARDS caster, sorted by distance (closest first)
-            // Player is on left (x < 0), so incoming projectiles have velX < 0
-            // AI is on right (x > 0), so incoming projectiles have velX > 0
-            const incomingVelDir = isPlayer ? -1 : 1;  // Expected velocity direction for "incoming"
-            const enemyProjs = projectiles
-                .filter(p => p.owner !== casterOwner && p.mesh && Math.sign(p.velX) === incomingVelDir)
-                .sort((a, b) => {
-                    const distA = BABYLON.Vector3.Distance(a.mesh.position, casterPos);
-                    const distB = BABYLON.Vector3.Distance(b.mesh.position, casterPos);
-                    return distA - distB;
-                });
+            // Create lightning strike on the caster
+            createSkyLightningStrike(casterPos.clone());
+            createZapFlash(casterPos.clone());
 
-            if (enemyProjs.length === 0) {
-                // No targets - don't waste the ability
-                showCombatText(isPlayer, 'NO TARGET', 'lightning');
-                return false;
-            }
-
-            // Calculate how many we can zap (1 mana each, up to max)
-            const availableMana = Math.floor(c.mana);
-            const zapsToPerform = Math.min(availableMana, CHAIN_LIGHTNING_MAX_ZAPS, enemyProjs.length);
-
-            // Zap projectiles with staggered lightning strikes
-            for (let i = 0; i < zapsToPerform; i++) {
-                const proj = enemyProjs[i];
-                const delay = i * 100;  // Stagger strikes by 100ms
-
-                setTimeout(() => {
-                    if (!proj.mesh || proj.mesh.isDisposed()) return;
-
-                    const targetPos = proj.mesh.position.clone();
-
-                    // Create lightning from sky
-                    createSkyLightningStrike(targetPos);
-
-                    // Zap flash at impact
-                    createZapFlash(targetPos);
-
-                    // Destroy projectile
-                    destroyProjectileSilent(proj);
-                }, delay);
-            }
-
-            // Spend mana (1 per zap)
-            c.mana -= zapsToPerform;
-            if (isPlayer) playerMana = c.mana;
-            else aiMana = c.mana;
-
-            // Play lightning sound (location-based on average position)
-            let avgX = 0;
-            for (let i = 0; i < zapsToPerform; i++) {
-                avgX += enemyProjs[i].mesh.position.x;
-            }
-            avgX /= zapsToPerform;
-
+            // Play lightning sound
             if (window.ToneSFX && window.ToneSFX.lightning) {
-                if (window.setTonePan) window.setTonePan(avgX);
+                if (window.setTonePan) window.setTonePan(casterPos.x);
                 window.ToneSFX.lightning();
             }
 
+            // Gain mana
+            const maxMana = getMaxMana(isPlayer ? 'left' : 'right');
+            const manaGained = Math.min(CHAIN_LIGHTNING_MANA_GAIN, maxMana - c.mana);
+            c.mana = Math.min(maxMana, c.mana + CHAIN_LIGHTNING_MANA_GAIN);
+            if (isPlayer) playerMana = c.mana;
+            else aiMana = c.mana;
+
             // Show combat text
-            showCombatText(isPlayer, 'ZAP x' + zapsToPerform, 'lightning');
+            showCombatText(isPlayer, '+' + Math.ceil(manaGained) + ' MANA', 'lightning');
 
             // Start cooldown
             c.cooldowns.chain_lightning = CHAIN_LIGHTNING_COOLDOWN;

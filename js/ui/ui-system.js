@@ -10,7 +10,6 @@
  * - Health bars
  * - Damage numbers
  * - Combat text (floating text system)
- * - Gravity Well UI
  * - Talent/Menu screens
  * - Multiplayer lobby
  */
@@ -21,13 +20,11 @@
 
 /**
  * Update score display elements
+ * Note: Main score logic is in index.html; this is a fallback/module export
  */
 export function updateScore() {
     const playerScore = window.playerScore || 0;
     const aiScore = window.aiScore || 0;
-
-    document.getElementById('playerScore').textContent = playerScore;
-    document.getElementById('aiScore').textContent = aiScore;
 
     // Update Babylon.js GUI score (CRT-affected)
     if (window.guiElements && window.guiElements.scoreText) {
@@ -100,8 +97,7 @@ export function updateCooldownUI() {
     // Get cooldowns and mana from local player combatant
     const localCooldowns = combatants.left ? combatants.left.cooldowns : {
         fireball: window.playerFireballCooldown || 0,
-        frostbolt: window.playerFrostboltCooldown || 0,
-        gravity: window.playerGravityCooldown || 0
+        frostbolt: window.playerFrostboltCooldown || 0
     };
     const mana = combatants.left ? combatants.left.mana : (window.playerMana || 0);
 
@@ -116,8 +112,6 @@ export function updateCooldownUI() {
         return;
     }
 
-    const fireballCdHtml = document.getElementById('fireballCooldownHtml');
-
     if (localCooldowns.fireball > 0) {
         fireSlot.classList.remove('ready');
         fireSlot.classList.add('on-cooldown');
@@ -131,11 +125,6 @@ export function updateCooldownUI() {
             btn.cooldownOverlay.height = ((localCooldowns.fireball / (abilities.fireball?.cooldown || 1)) * 100) + "%";
             btn.cooldownText.text = Math.ceil(localCooldowns.fireball).toString();
         }
-
-        if (fireballCdHtml) {
-            fireballCdHtml.textContent = Math.ceil(localCooldowns.fireball);
-            fireballCdHtml.style.opacity = '1';
-        }
     } else if (mana < fireballManaCost) {
         fireSlot.classList.remove('on-cooldown');
         fireSlot.classList.remove('ready');
@@ -145,33 +134,22 @@ export function updateCooldownUI() {
         if (window.guiElements && window.guiElements.fireballBtn && window.updateAbilityButtonState) {
             window.updateAbilityButtonState(window.guiElements.fireballBtn, 'no-mana');
         }
-
-        if (fireballCdHtml) {
-            fireballCdHtml.textContent = '';
-            fireballCdHtml.style.opacity = '0';
-        }
     } else {
         fireSlot.classList.remove('on-cooldown');
         fireSlot.classList.add('ready');
         fireCdText.textContent = '';
         fireSweep.style.setProperty('--sweep-angle', '0deg');
 
-        if (fireballCdHtml) {
-            fireballCdHtml.textContent = '';
-            fireballCdHtml.style.opacity = '0';
-        }
-
         if (window.guiElements && window.guiElements.fireballBtn && window.updateAbilityButtonState) {
             window.updateAbilityButtonState(window.guiElements.fireballBtn, 'ready');
         }
     }
 
-    // Frostbolt cooldown
+    // Frostbolt cooldown (instant cast, but still has cooldown)
     const frostSlot = document.getElementById('frostboltSlot');
     const frostCdText = document.getElementById('frostboltCDText');
     const frostSweep = document.getElementById('frostboltSweep');
     const frostboltManaCost = abilities.frostbolt ? abilities.frostbolt.manaCost : 2;
-    const frostboltCdHtml = document.getElementById('frostboltCooldownHtml');
 
     if (frostSlot && frostCdText && frostSweep) {
         if (localCooldowns.frostbolt > 0) {
@@ -187,11 +165,6 @@ export function updateCooldownUI() {
                 btn.cooldownOverlay.height = ((localCooldowns.frostbolt / (abilities.frostbolt?.cooldown || 1)) * 100) + "%";
                 btn.cooldownText.text = Math.ceil(localCooldowns.frostbolt).toString();
             }
-
-            if (frostboltCdHtml) {
-                frostboltCdHtml.textContent = Math.ceil(localCooldowns.frostbolt);
-                frostboltCdHtml.style.opacity = '1';
-            }
         } else if (mana < frostboltManaCost) {
             frostSlot.classList.remove('on-cooldown');
             frostSlot.classList.remove('ready');
@@ -201,11 +174,6 @@ export function updateCooldownUI() {
             if (window.guiElements && window.guiElements.frostboltBtn && window.updateAbilityButtonState) {
                 window.updateAbilityButtonState(window.guiElements.frostboltBtn, 'no-mana');
             }
-
-            if (frostboltCdHtml) {
-                frostboltCdHtml.textContent = '';
-                frostboltCdHtml.style.opacity = '0';
-            }
         } else {
             frostSlot.classList.remove('on-cooldown');
             frostSlot.classList.add('ready');
@@ -214,11 +182,6 @@ export function updateCooldownUI() {
 
             if (window.guiElements && window.guiElements.frostboltBtn && window.updateAbilityButtonState) {
                 window.updateAbilityButtonState(window.guiElements.frostboltBtn, 'ready');
-            }
-
-            if (frostboltCdHtml) {
-                frostboltCdHtml.textContent = '';
-                frostboltCdHtml.style.opacity = '0';
             }
         }
     }
@@ -293,12 +256,10 @@ export function updateManaAvailability() {
 
     const fireSlot = document.getElementById('fireballSlot');
     const frostSlot = document.getElementById('frostboltSlot');
-    const gravitySlot = document.getElementById('gravitySlot');
 
     const localCooldowns = combatants.left ? combatants.left.cooldowns : {
         fireball: window.playerFireballCooldown || 0,
-        frostbolt: window.playerFrostboltCooldown || 0,
-        gravity: window.playerGravityCooldown || 0
+        frostbolt: window.playerFrostboltCooldown || 0
     };
     const localMana = combatants.left ? combatants.left.mana : (window.playerMana || 0);
 
@@ -325,20 +286,6 @@ export function updateManaAvailability() {
             }
         } else {
             frostSlot.classList.remove('no-mana');
-        }
-    }
-
-    // Gravity Well (disabled for rework)
-    if (gravitySlot) {
-        const gravityPhase = combatants.left ? combatants.left.gravityPhase : (window.playerGravityPhase || 'ready');
-        if (localCooldowns.gravity <= 0 && gravityPhase === 'ready') {
-            if (localMana < (abilities.gravity?.manaCost || 3)) {
-                gravitySlot.classList.add('no-mana');
-            } else {
-                gravitySlot.classList.remove('no-mana');
-            }
-        } else {
-            gravitySlot.classList.remove('no-mana');
         }
     }
 }
@@ -741,67 +688,13 @@ export function showSpellCastText(isPlayer, spellName, element) {
 }
 
 // ============================================================
-// GRAVITY WELL UI
-// ============================================================
-
-/**
- * Update gravity spell UI state
- */
-export function updateGravityUI() {
-    const slot = document.getElementById('gravitySlot');
-    if (!slot) return; // Gravity Well is disabled for rework
-
-    const icon = document.getElementById('gravityIcon');
-    const captureEl = document.getElementById('captureCount');
-    const cdText = document.getElementById('gravityCDText');
-    const sweep = document.getElementById('gravitySweep');
-
-    const combatants = window.combatants || {};
-    const abilities = window.abilities || {};
-    const c = combatants.left;
-    const gravityPhase = c ? c.gravityPhase : (window.playerGravityPhase || 'ready');
-    const gravityCooldown = c ? c.cooldowns.gravity : (window.playerGravityCooldown || 0);
-    const capturedBalls = c ? c.capturedBalls : (window.playerCapturedBalls || 0);
-
-    slot.classList.remove('ready', 'on-cooldown', 'barrier-active', 'sphere-ready');
-
-    if (gravityPhase === 'barrier') {
-        slot.classList.add('barrier-active');
-        if (icon) icon.textContent = '🌀';
-        if (captureEl) captureEl.textContent = capturedBalls + '/' + (abilities.gravity?.maxCapture || 3);
-        if (cdText) cdText.textContent = '';
-        if (sweep) sweep.style.setProperty('--sweep-angle', '0deg');
-    } else if (gravityPhase === 'sphere') {
-        slot.classList.add('sphere-ready');
-        if (icon) icon.textContent = '💥';
-        if (captureEl) captureEl.textContent = capturedBalls;
-        if (cdText) cdText.textContent = '';
-        if (sweep) sweep.style.setProperty('--sweep-angle', '0deg');
-    } else if (gravityCooldown > 0) {
-        slot.classList.add('on-cooldown');
-        if (icon) icon.textContent = '🌀';
-        if (captureEl) captureEl.textContent = '';
-        if (cdText) cdText.textContent = Math.ceil(gravityCooldown);
-        const sweepAngle = (gravityCooldown / (abilities.gravity?.cooldown || 15)) * 360;
-        if (sweep) sweep.style.setProperty('--sweep-angle', sweepAngle + 'deg');
-    } else {
-        slot.classList.add('ready');
-        if (icon) icon.textContent = '🌀';
-        if (captureEl) captureEl.textContent = '';
-        if (cdText) cdText.textContent = '';
-        if (sweep) sweep.style.setProperty('--sweep-angle', '0deg');
-    }
-}
-
-// ============================================================
 // KEY PRESS FEEDBACK
 // ============================================================
 
 const keyToUIElement = {
     'Space': () => document.getElementById('parryButton'),
     'Digit1': () => document.getElementById('fireballSlot'),
-    'Digit2': () => document.getElementById('frostboltSlot'),
-    'Digit3': () => document.getElementById('gravitySlot')
+    'Digit2': () => document.getElementById('frostboltSlot')
 };
 
 /**
@@ -987,8 +880,7 @@ if (typeof window !== 'undefined') {
     // - updateCastBarUI, showCastBar, updateAICastBarUI, showAICastBar
     // - updateHealthBars, showDamageNumber, updateDamageText
     // - showCombatText, showCombatTextAt, updateFloatingTexts, updateCombatText
-    // - showFrozenText, showSpellCastText
-    // - updateGravityUI, showKeyPressedFeedback
+    // - showFrozenText, showSpellCastText, showKeyPressedFeedback
     // - showTalentScreen, hideTalentScreen, updateAbilityUI
     // - showMultiplayerLobby, hideMultiplayerLobby, showLobbyView
 
