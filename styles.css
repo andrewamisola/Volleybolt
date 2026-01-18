@@ -611,6 +611,44 @@ html, body {
     text-shadow: 2px 2px 0px #000, 3px 3px 0px #000;
 }
 
+/* Charge notches for abilities with multiple charges (like Snowball) */
+.charge-notches {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 4px;
+    z-index: 25;
+}
+
+.charge-notch {
+    width: 10px;
+    height: 10px;
+    border: 2px solid #4a6080;
+    border-radius: 2px;
+    background: transparent;
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.5), inset 0 0 2px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease;
+}
+
+.charge-notch.filled {
+    background: linear-gradient(180deg, #88ccff 0%, #66aadd 50%, #4488bb 100%);
+    border-color: #aaddff;
+    box-shadow: 0 0 6px rgba(136, 204, 255, 0.6), 0 0 3px rgba(0, 0, 0, 0.5);
+}
+
+.charge-notch.recharging {
+    background: linear-gradient(
+        to top,
+        #88ccff 0%,
+        #88ccff calc(var(--recharge-progress, 0) * 100%),
+        transparent calc(var(--recharge-progress, 0) * 100%),
+        transparent 100%
+    );
+    border-color: #6688aa;
+}
+
 .ability-key {
     position: absolute;
     bottom: -4px;
@@ -838,6 +876,14 @@ html, body {
 }
 .tt-enemy {
     color: #e76e55;
+    font-weight: bold;
+}
+.tt-lightning {
+    color: #ffee66;
+    font-weight: bold;
+}
+.tt-mana {
+    color: #6699ff;
     font-weight: bold;
 }
 

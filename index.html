@@ -151,7 +151,7 @@
                     <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">4s CD</span></span>
                 </div>
                 <div class="tooltip-description">
-                    Throw a <span class="tt-spell">Fireball</span> in front of you, dealing <span class="tt-value">2</span> <span class="tt-fire">Fire</span> damage, scaling up to <span class="tt-value">5</span> with <span class="tt-mechanic">Volleys</span>.
+                    Hurl a <span class="tt-spell">Fireball</span> that deals <span class="tt-value">2</span> <span class="tt-fire">Fire</span> damage. Damage increases with <span class="tt-mechanic">Volleys</span>, up to <span class="tt-value">5</span>.
                 </div>
             </div>
         </div>
@@ -180,12 +180,12 @@
                     <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">14s CD</span></span>
                 </div>
                 <div class="tooltip-description">
-                    Launch a <span class="tt-spell">Frostbolt</span> that <span class="tt-frost">Freezes</span> the <span class="tt-enemy">Enemy</span> for <span class="tt-value">1</span> <span class="tt-duration">second</span>. <span class="tt-mechanic">Cancels</span> enemy projectiles on contact. Freeze stops <span class="tt-mana">Mana</span> regen and interrupts casting.
+                    Launch a <span class="tt-spell">Frostbolt</span> that <span class="tt-frost">Freezes</span> the <span class="tt-enemy">Enemy</span> for <span class="tt-value">1</span> <span class="tt-duration">second</span>. <span class="tt-mechanic">Cancels</span> enemy projectiles on contact. <span class="tt-frost">Freeze</span> stops <span class="tt-mana">Mana</span> regeneration and interrupts <span class="tt-mechanic">Casting</span>.
                 </div>
             </div>
         </div>
         <div id="chainLightningSlot" class="ability-slot ready" data-ability="chain_lightning">
-            <div class="mana-cost">+2</div>
+            <div class="mana-cost">2</div>
             <div class="ability-hex">
                 <div class="shine-effect"></div>
                 <span class="ability-icon chainlightning-icon"></span>
@@ -200,16 +200,16 @@
             <div class="ability-key">3</div>
             <!-- Tooltip -->
             <div class="ability-tooltip" id="chainLightningTooltip">
-                <div class="tooltip-title">Chain Lightning</div>
+                <div class="tooltip-title">Thunderstorm</div>
                 <div class="tooltip-stats-row">
                     <div class="tooltip-stats-left">
-                        <span class="tooltip-stat-item mana"><span class="icon">*</span><span class="value">+1 Mana/hit</span></span>
-                        <span class="tooltip-stat-item cast"><span class="icon">></span><span class="value">0.4s Cast</span></span>
+                        <span class="tooltip-stat-item mana"><span class="icon">*</span><span class="value">2 Mana</span></span>
+                        <span class="tooltip-stat-item cast"><span class="icon">></span><span class="value">Instant</span></span>
                     </div>
-                    <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">20s CD</span></span>
+                    <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">30s CD</span></span>
                 </div>
                 <div class="tooltip-description">
-                    Zap up to <span class="tt-value">3</span> incoming enemy projectiles. Gain <span class="tt-value">+1 Mana</span> per projectile destroyed. <span class="tt-mechanic">Can proc instant cast.</span>
+                    Call down lightning to <span class="tt-mechanic">Zap</span> up to <span class="tt-value">3</span> incoming <span class="tt-enemy">Enemy</span> projectiles, destroying them.
                 </div>
             </div>
         </div>
@@ -347,6 +347,17 @@
     <script type="module" src="js/systems/game-systems.js"></script>
     <script type="module" src="js/main.js"></script>
     <script>
+        // Global error handler to debug doubles crash
+        window.onerror = function(msg, url, lineNo, columnNo, error) {
+            console.error('=== CRASH DEBUG ===');
+            console.error('Message:', msg);
+            console.error('Line:', lineNo, 'Column:', columnNo);
+            console.error('Stack:', error && error.stack);
+            console.error('isDoublesMode:', typeof isDoublesMode !== 'undefined' && isDoublesMode());
+            console.error('===================');
+            return false;
+        };
+
         // Game state
         let playerScore = 0;
         let aiScore = 0;
@@ -841,15 +852,15 @@
                     element: 'fire',
                     type: SPELL_TYPES.DAMAGE,
                     icon: '🔥',
-                    description: 'Channel a blazing fireball. Damage increases with each volley.',
-                    shortDesc: '+1 damage per 1-2 volleys',
+                    description: 'Hurl a <span class="tt-spell">Fireball</span> that deals <span class="tt-value">2</span> <span class="tt-fire">Fire</span> damage. Damage increases with <span class="tt-mechanic">Volleys</span>, up to <span class="tt-value">5</span>.',
+                    shortDesc: 'Volley scaling damage',
                     manaCost: 1,
-                    cooldown: 0,
+                    cooldown: 4,
                     castTime: 1.0,
                     castFn: 'castFireball',
                     unlocked: true,
                     stats: {
-                        damage: '1-3',
+                        damage: '2-5',
                         speed: 'Medium',
                         special: 'Volley scaling'
                     }
@@ -862,8 +873,8 @@
                     element: 'ice',
                     type: SPELL_TYPES.UTILITY,
                     icon: '❄️',
-                    description: 'Launch a piercing ice shard that freezes enemies on contact.',
-                    shortDesc: 'Freezes target for 1s',
+                    description: 'Launch a <span class="tt-spell">Frostbolt</span> that <span class="tt-frost">Freezes</span> the <span class="tt-enemy">Enemy</span> for <span class="tt-value">1</span> <span class="tt-duration">second</span>. <span class="tt-mechanic">Cancels</span> enemy projectiles on contact. Freeze stops <span class="tt-mana">Mana</span> regeneration and interrupts <span class="tt-mechanic">Casting</span>.',
+                    shortDesc: 'Freeze for 1s',
                     manaCost: 2,
                     cooldown: 14,
                     castFn: 'castFrostbolt',
@@ -880,29 +891,29 @@
                     element: 'ice',
                     type: SPELL_TYPES.DAMAGE,
                     icon: '⚪',
-                    description: 'Lob a snowball that rolls and grows on landing. Bigger = more damage. Can be parried but not blocked.',
-                    shortDesc: 'Rolls & grows, 3 charges',
-                    manaCost: 0.5,
-                    cooldown: 2,
-                    charges: 3,
+                    description: 'Lob a <span class="tt-spell">Snowball</span> in an arc that lands and rolls toward the <span class="tt-enemy">Enemy</span>, dealing <span class="tt-value">2</span> <span class="tt-frost">Ice</span> damage. Grows larger as it travels, increasing damage.',
+                    shortDesc: 'Arcing roll attack',
+                    manaCost: 1,
+                    cooldown: 4,
+                    castTime: 1.0,
                     castFn: 'castSnowball',
-                    unlocked: true,  // Implemented!
+                    unlocked: true,
                     stats: {
-                        damage: '1-2',
-                        speed: 'Fast',
-                        special: 'Arc, rolls, 3 charges'
+                        damage: '2+',
+                        speed: 'Medium',
+                        special: 'Grows on travel'
                     }
                 },
 
                 // ========== LIGHTNING SPELLS ==========
                 chain_lightning: {
                     id: 'chain_lightning',
-                    name: 'Chain Lightning',
+                    name: 'Thunderstorm',
                     element: 'lightning',
                     type: SPELL_TYPES.DEFENSIVE,
                     icon: '⚡',
-                    description: 'Zap incoming enemy projectiles, destroying them and recovering mana.',
-                    shortDesc: '+1 mana per projectile zapped',
+                    description: 'Call down lightning to <span class="tt-mechanic">Zap</span> up to <span class="tt-value">3</span> incoming <span class="tt-enemy">Enemy</span> projectiles, destroying them. Gain <span class="tt-value">1</span> <span class="tt-mana">Mana</span> for each projectile destroyed.',
+                    shortDesc: 'Destroy projectiles for Mana',
                     manaCost: 0,
                     cooldown: 20,
                     castTime: 0.4,
@@ -911,26 +922,26 @@
                     stats: {
                         damage: '0',
                         speed: '0.4s Cast',
-                        special: 'Mana recovery (can proc instant)'
+                        special: '+1 Mana per zap'
                     }
                 },
                 spark: {
                     id: 'spark',
-                    name: 'Spark',
+                    name: 'Chain Lightning',
                     element: 'lightning',
                     type: SPELL_TYPES.DAMAGE,
-                    icon: '✨',
-                    description: 'Launch a spark that chains through all projectiles on the field, gaining damage from each.',
-                    shortDesc: '+damage per projectile hit',
+                    icon: '⚡',
+                    description: 'While <span class="tt-mechanic">Casting</span>, lightning <span class="tt-mechanic">Chains</span> through all projectiles on the field. Release a <span class="tt-spell">Lightning Bolt</span> that deals <span class="tt-value">2</span> <span class="tt-lightning">Lightning</span> damage plus <span class="tt-value">1</span> per <span class="tt-mechanic">Chain</span>.',
+                    shortDesc: 'Chain for bonus damage',
                     manaCost: 1,
-                    cooldown: 0,
-                    castTime: 0.8,
+                    cooldown: 4,
+                    castTime: 1.0,
                     castFn: 'castSpark',
-                    unlocked: true,  // Implemented!
+                    unlocked: true,
                     stats: {
-                        damage: '1+',
+                        damage: '2 + chains',
                         speed: 'Fast',
-                        special: 'Conduit scaling'
+                        special: 'Goes straight'
                     }
                 },
 
@@ -1241,11 +1252,11 @@
                 boulder: 'boulder-icon'
             };
 
-            // Mana cost display (chain lightning shows +1 since it gains mana)
+            // Mana cost display
             const manaCostDisplay = {
                 fireball: '1',
                 frostbolt: '2',
-                chain_lightning: '+1',
+                chain_lightning: '2',
                 snowball: '½',
                 spark: '1',
                 boulder: '2'
@@ -1288,9 +1299,7 @@
                 // Update tooltip stats
                 const manaStatEl = slotEl.querySelector('.tooltip-stat-item.mana .value');
                 if (manaStatEl) {
-                    if (spellId === 'chain_lightning') {
-                        manaStatEl.textContent = '+1 Mana/hit';
-                    } else if (spellId === 'snowball') {
+                    if (spellId === 'snowball') {
                         manaStatEl.textContent = '½ Mana';
                     } else {
                         manaStatEl.textContent = spell.manaCost + ' Mana';
@@ -1317,10 +1326,37 @@
                     }
                 }
 
-                // Update tooltip description
+                // Update tooltip description (use innerHTML to render styled text)
                 const tooltipDesc = slotEl.querySelector('.tooltip-description');
                 if (tooltipDesc) {
-                    tooltipDesc.textContent = spell.description;
+                    tooltipDesc.innerHTML = spell.description;
+                }
+
+                // Handle charge notches for snowball
+                const existingNotches = slotEl.querySelector('.charge-notches');
+                if (spellId === 'snowball') {
+                    // Add charge notches if not present
+                    if (!existingNotches) {
+                        const notchesContainer = document.createElement('div');
+                        notchesContainer.className = 'charge-notches';
+                        notchesContainer.id = 'snowballChargeNotches';
+                        for (let i = 0; i < 3; i++) {
+                            const notch = document.createElement('div');
+                            notch.className = 'charge-notch filled'; // Start with all filled
+                            notch.setAttribute('data-notch-index', i);
+                            notchesContainer.appendChild(notch);
+                        }
+                        // Insert after ability-hex
+                        const abilityHex = slotEl.querySelector('.ability-hex');
+                        if (abilityHex) {
+                            abilityHex.parentNode.insertBefore(notchesContainer, abilityHex.nextSibling);
+                        }
+                    }
+                } else {
+                    // Remove charge notches for non-snowball abilities
+                    if (existingNotches) {
+                        existingNotches.remove();
+                    }
                 }
             });
         }
@@ -1379,6 +1415,11 @@
                 lightningShield: null,       // { charges, maxCharges, mesh, particles }
                 channelAura: null,           // Particle system during channel
                 lightningBolts: [],          // Active lightning bolt meshes
+
+                // Spark (Chain Lightning projectile)
+                sparkActiveChains: [],       // Active visual chain links
+                sparkChainProjs: [],         // Projectiles being chained through
+                sparkChainCount: 0,          // Count of projectiles in chain
 
                 // Snowball charges
                 snowballCharges: 3,          // Current charges
@@ -1749,52 +1790,47 @@
         }
 
         // Ability system (legacy - kept for backwards compatibility)
+        // Speed tiers: baseSpeed = initial launch speed, maxSpeed = cap after volleys/acceleration
         const abilities = {
             fireball: {
                 cooldown: 4,          // 4 second cooldown after cast completes
                 castTime: 1.0,        // 1 second cast time
-                speed: 12,
+                baseSpeed: 12,        // Initial speed
+                maxSpeed: 20,         // Max speed after volleys
                 damage: 1,
                 manaCost: 1           // mana cost
             },
             frostbolt: {
                 cooldown: 7,          // 7 second cooldown
-                speed: 24,            // 10% faster than before (was 22)
+                baseSpeed: 24,        // Fast - utility spell
+                maxSpeed: 24,         // No acceleration
                 freezeDuration: 1.0,  // seconds
                 manaCost: 2           // mana cost
             },
-            gravity: {
-                cooldown: 15,         // seconds - longer cooldown for powerful ability
-                barrierDuration: 2.5, // seconds barrier stays active
-                maxCapture: 3,        // max projectiles to capture
-                sphereSpeed: 10,      // slower but menacing
-                sphereDamage: 2,      // flat 2 damage per captured ball
-                slowRadius: 4,        // radius of slowing effect
-                slowFactor: 0.4,      // projectiles slowed to 40% speed in aura
-                manaCost: 3           // mana cost
-            },
             chain_lightning: {
-                cooldown: 20,         // 20 second cooldown
-                castTime: 0.4,        // 0.4 second cast time - fast and reactionary
-                manaCost: 0,          // Gains mana instead of costing
-                maxZaps: 3,           // Max projectiles to zap
-                manaPerZap: 1         // Mana gained per zap
+                cooldown: 30,         // 30 second cooldown
+                castTime: 0,          // Instant cast
+                manaCost: 2,          // 2 mana cost
+                maxZaps: 3            // Max projectiles to zap
             },
             snowball: {
-                cooldown: 2,          // 2 second cooldown per charge
-                speed: 18,            // Fast
-                damage: 1,            // Low damage
-                manaCost: 0.5,        // Half mana per throw
-                maxCharges: 3,        // 3 charges
-                chargeRegenTime: 4    // 4 seconds to regen a charge
+                cooldown: 4,          // 4 second cooldown per charge
+                castTime: 1.0,        // 1.0 second cast time (same as all damage spells)
+                baseSpeed: 10,        // Slow - telegraphed but spammable
+                maxSpeed: 14,         // Slower top speed than others
+                damage: 2,            // Base damage
+                manaCost: 1,          // 1 mana cost (same as all damage spells)
+                maxCharges: 3,        // Maximum 3 charges
+                chargeRegenTime: 4    // 4 seconds to regenerate each charge
             },
             spark: {
-                cooldown: 0,          // No cooldown, uses cast time
-                castTime: 0.8,        // 0.8 second cast time
-                speed: 16,            // Medium-fast
-                baseDamage: 1,        // Base damage
-                bonusDamagePerChain: 0.5,  // +0.5 damage per projectile chained through
-                manaCost: 1           // 1 mana cost
+                cooldown: 4,          // 4 second cooldown (same as all damage spells)
+                castTime: 1.0,        // 1.0 second cast time (same as all damage spells)
+                baseSpeed: 16,        // Medium-fast
+                maxSpeed: 22,         // Can get quite fast
+                baseDamage: 2,        // Base damage
+                bonusDamagePerChain: 1,  // +1 damage per projectile chained through
+                manaCost: 1           // 1 mana cost (same as all damage spells)
             }
         };
         window.abilities = abilities;  // Expose for loadout system
@@ -2148,7 +2184,7 @@
             // ========== CHAIN LIGHTNING ==========
             chain_lightning: {
                 id: 'chain_lightning',
-                name: 'Chain Lightning',
+                name: 'Thunderstorm',
                 description: 'Channel electric energy to zap enemy projectiles out of the air, gaining mana for each destroyed.',
                 icon: '⚡',
                 element: 'lightning',
@@ -2551,7 +2587,7 @@
             // === CHAIN LIGHTNING UPGRADES ===
             chain_lightning_base: {
                 id: 'chain_lightning_base',
-                name: 'Chain Lightning',
+                name: 'Thunderstorm',
                 baseAbility: 'chain_lightning',
                 tier: 1,
                 icon: '⚡',
@@ -3463,6 +3499,19 @@
             }).connect(aiCastPanner);
             synths.aiCastingLoop.volume.value = -8;
 
+            // Electric charge casting loops for Chain Lightning (spark)
+            synths.playerElectricLoop = new Tone.Player({
+                url: 'sfx/electric_charge.wav',
+                loop: true
+            }).connect(playerCastPanner);
+            synths.playerElectricLoop.volume.value = -6;
+
+            synths.aiElectricLoop = new Tone.Player({
+                url: 'sfx/electric_charge.wav',
+                loop: true
+            }).connect(aiCastPanner);
+            synths.aiElectricLoop.volume.value = -6;
+
             // Load each sample
             for (const [name, path] of Object.entries(sampleFiles)) {
                 try {
@@ -3890,6 +3939,33 @@
                 if (side === 'all' || side === 'ai') {
                     if (synths.aiCastingLoop) {
                         try { synths.aiCastingLoop.stop(); } catch (e) {}
+                    }
+                }
+            },
+
+            // Electric charge loop start - for Chain Lightning casting
+            electricStart: async (side = 'player') => {
+                if (!toneStarted) await initToneJS();
+                const loop = side === 'player' ? synths.playerElectricLoop : synths.aiElectricLoop;
+                if (loop && loop.loaded) {
+                    try {
+                        loop.start();
+                    } catch (e) {
+                        // Ignore if already playing
+                    }
+                }
+            },
+
+            // Electric charge loop stop
+            electricStop: async (side = 'all') => {
+                if (side === 'all' || side === 'player') {
+                    if (synths.playerElectricLoop) {
+                        try { synths.playerElectricLoop.stop(); } catch (e) {}
+                    }
+                }
+                if (side === 'all' || side === 'ai') {
+                    if (synths.aiElectricLoop) {
+                        try { synths.aiElectricLoop.stop(); } catch (e) {}
                     }
                 }
             },
@@ -7296,6 +7372,9 @@
             // Unified combatant 3D cast bar update
             window.combatantUpdate3DCastBar = (combatant, progress, visible) => {
                 if (!combatant || !combatant.castBar3D || !combatant.castFill3D) return;
+                // Additional safety check for disposed meshes or missing scaling
+                if (combatant.castFill3D.isDisposed && combatant.castFill3D.isDisposed()) return;
+                if (!combatant.castFill3D.scaling) return;
                 if (visible) {
                     combatant.castBar3D.visibility = 1;
                     combatant.castFill3D.visibility = 1;
@@ -9664,7 +9743,7 @@
                     velX: velX,
                     velZ: velZ,
                     velY: options.velY || 0,
-                    speed: abilities.fireball.speed,
+                    speed: abilities.fireball.baseSpeed,
                     isParried: false,
                     parriedBy: null,
                     volleyCount: 0,  // Track volleys for damage scaling
@@ -9868,7 +9947,7 @@
                     velX: velX,
                     velZ: velZ,
                     velY: 0,
-                    speed: abilities.frostbolt.speed,
+                    speed: abilities.frostbolt.baseSpeed,
                     isParried: false,
                     parriedBy: null,
                     volleyCount: 0,
@@ -10024,7 +10103,7 @@
                 // Court is ~28 units wide, half court is ~14 units
                 const lobHeight = 3;  // How high the arc peaks (units above start)
                 const halfCourt = 14;
-                const travelTime = halfCourt / abilities.snowball.speed;  // Rough time to cross half court
+                const travelTime = halfCourt / abilities.snowball.baseSpeed;  // Rough time to cross half court
                 const initialVelY = lobHeight / (travelTime * 0.5);  // Initial upward velocity for arc
 
                 const proj = {
@@ -10033,7 +10112,7 @@
                     velX: velX,
                     velZ: velZ,
                     velY: initialVelY,  // Lob arc - starts going up
-                    speed: abilities.snowball.speed,
+                    speed: abilities.snowball.baseSpeed,
                     damage: abilities.snowball.damage,
                     isParried: false,
                     parriedBy: null,
@@ -10120,38 +10199,411 @@
             };
 
             // ============================================================
-            // SPARK PROJECTILE (Lightning damage spell)
+            // SPARK PROJECTILE (Lightning damage spell - connect-the-dots style)
             // ============================================================
-            // Create spark material (electric blue/yellow)
+            // Create spark material (bright yellow lightning)
             const sparkCoreMat = new BABYLON.StandardMaterial("sparkCoreMat", scene);
-            sparkCoreMat.diffuseColor = new BABYLON.Color3(0.8, 0.9, 1);
-            sparkCoreMat.emissiveColor = new BABYLON.Color3(0.5, 0.7, 1);
-            sparkCoreMat.specularColor = new BABYLON.Color3(0, 0, 0);  // Flat/matte look
+            sparkCoreMat.diffuseColor = new BABYLON.Color3(1, 1, 0.8);
+            sparkCoreMat.emissiveColor = new BABYLON.Color3(1, 0.95, 0.5);
+            sparkCoreMat.specularColor = new BABYLON.Color3(0, 0, 0);
             sparkCoreMat.specularPower = 0;
 
+            // Create horizontal lightning bolt between two points (chain reaction visual)
+            window.createHorizontalLightningBolt = function(fromPos, toPos, duration = 350) {
+                if (!scene) return;
+
+                const segments = 6;
+                const points = [];
+
+                // Create sharp jagged lightning path (less jitter for cleaner look)
+                for (let i = 0; i <= segments; i++) {
+                    const t = i / segments;
+                    const pos = BABYLON.Vector3.Lerp(fromPos, toPos, t);
+
+                    // Subtle jitter for sharpness
+                    if (i > 0 && i < segments) {
+                        const jitterScale = Math.sin(t * Math.PI) * 0.2;
+                        pos.y += (Math.random() - 0.5) * jitterScale;
+                        pos.z += (Math.random() - 0.5) * jitterScale;
+                    }
+                    points.push(pos);
+                }
+
+                // Thin sharp bolt
+                const bolt = BABYLON.MeshBuilder.CreateTube("chainBolt_" + Date.now(), {
+                    path: points,
+                    radius: 0.035,
+                    tessellation: 4,
+                    cap: BABYLON.Mesh.CAP_ALL
+                }, scene);
+
+                const boltMat = new BABYLON.StandardMaterial("chainBoltMat_" + Date.now(), scene);
+                boltMat.emissiveColor = new BABYLON.Color3(1, 1, 0.95);
+                boltMat.disableLighting = true;
+                bolt.material = boltMat;
+
+                // Subtle glow
+                const glowBolt = BABYLON.MeshBuilder.CreateTube("chainBoltGlow_" + Date.now(), {
+                    path: points,
+                    radius: 0.07,
+                    tessellation: 4
+                }, scene);
+                const glowMat = new BABYLON.StandardMaterial("chainBoltGlowMat_" + Date.now(), scene);
+                glowMat.emissiveColor = new BABYLON.Color3(1, 0.95, 0.5);
+                glowMat.alpha = 0.4;
+                glowMat.disableLighting = true;
+                glowBolt.material = glowMat;
+
+                // Small flash at target point
+                const flash = BABYLON.MeshBuilder.CreateSphere("chainFlash_" + Date.now(), {
+                    diameter: 0.4,
+                    segments: 6
+                }, scene);
+                flash.position = toPos.clone();
+                const flashMat = new BABYLON.StandardMaterial("chainFlashMat_" + Date.now(), scene);
+                flashMat.emissiveColor = new BABYLON.Color3(1, 1, 0.8);
+                flashMat.alpha = 1.0;
+                flashMat.disableLighting = true;
+                flash.material = flashMat;
+
+                // Step fade variables
+                let currentStep = 0;  // 0 = full, 1 = 0.66, 2 = 0.33, 3 = gone
+                const stepDuration = duration / 4;
+                let elapsed = 0;
+
+                // Step fade out and dispose
+                const fadeInterval = setInterval(() => {
+                    elapsed += 16;
+
+                    // Check which step we're in
+                    const newStep = Math.floor(elapsed / stepDuration);
+                    if (newStep > currentStep) {
+                        currentStep = newStep;
+
+                        if (currentStep >= 4) {
+                            clearInterval(fadeInterval);
+                            bolt.dispose();
+                            glowBolt.dispose();
+                            flash.dispose();
+                            boltMat.dispose();
+                            glowMat.dispose();
+                            flashMat.dispose();
+                            return;
+                        }
+
+                        // Step alpha: 1.0 → 0.66 → 0.33 → 0
+                        const stepAlphas = [1.0, 0.66, 0.33, 0];
+                        const alpha = stepAlphas[currentStep];
+                        boltMat.alpha = alpha;
+                        glowMat.alpha = alpha * 0.4;
+                        flashMat.alpha = alpha;
+                    }
+                }, 16);
+
+                return { bolt, glowBolt, flash };
+            }
+
+            // Generate organic lightning path between two points
+            function generateLightningPath(fromPos, toPos, segments = 6) {
+                // Validate inputs - return simple line if invalid
+                if (!fromPos || !toPos || fromPos.x === undefined || toPos.x === undefined) {
+                    const defaultFrom = fromPos && fromPos.x !== undefined ? fromPos : new BABYLON.Vector3(0, 0, 0);
+                    const defaultTo = toPos && toPos.x !== undefined ? toPos : new BABYLON.Vector3(1, 0, 0);
+                    return [defaultFrom, defaultTo];
+                }
+
+                // Check for NaN values
+                if (isNaN(fromPos.x) || isNaN(fromPos.y) || isNaN(fromPos.z) ||
+                    isNaN(toPos.x) || isNaN(toPos.y) || isNaN(toPos.z)) {
+                    return [new BABYLON.Vector3(0, 0, 0), new BABYLON.Vector3(1, 0, 0)];
+                }
+
+                const points = [fromPos.clone()];
+                const direction = toPos.subtract(fromPos);
+                const length = direction.length();
+
+                // If points are too close, just return a simple line
+                if (length < 0.1) {
+                    return [fromPos.clone(), toPos.clone()];
+                }
+
+                const unitDir = direction.normalize();
+
+                // Get perpendicular vectors for offsets
+                let perpY = new BABYLON.Vector3(0, 1, 0);
+                let perpZ = BABYLON.Vector3.Cross(unitDir, perpY).normalize();
+                if (perpZ.length() < 0.1) {
+                    perpZ = new BABYLON.Vector3(0, 0, 1);
+                }
+                perpY = BABYLON.Vector3.Cross(perpZ, unitDir).normalize();
+
+                // Create organic lightning with random jags
+                let lastOffset = { y: 0, z: 0 };
+                for (let i = 1; i < segments; i++) {
+                    // Random progression along the path (not uniform spacing)
+                    const baseT = i / segments;
+                    const jitter = (Math.random() - 0.5) * 0.15;
+                    const t = Math.max(0.1, Math.min(0.9, baseT + jitter));
+
+                    const basePos = BABYLON.Vector3.Lerp(fromPos, toPos, t);
+
+                    // Random offset magnitude (bigger in middle, but with randomness)
+                    const midFactor = Math.sin(t * Math.PI);
+                    const offsetMag = (0.2 + Math.random() * 0.4) * midFactor * (length * 0.15);
+
+                    // Random direction - not just alternating, truly random with some continuity
+                    const yOffset = (Math.random() - 0.5) * offsetMag * 2;
+                    const zOffset = (Math.random() - 0.5) * offsetMag * 1.5;
+
+                    basePos.addInPlace(perpY.scale(yOffset));
+                    basePos.addInPlace(perpZ.scale(zOffset));
+
+                    points.push(basePos);
+                }
+                points.push(toPos.clone());
+                return points;
+            }
+
+            // Create a persistent lightning bolt that can be updated to follow targets
+            window.createPersistentLightningBolt = function(fromPos, toPos) {
+                if (!scene) return null;
+                // Validate positions
+                if (!fromPos || !toPos || fromPos.x === undefined || toPos.x === undefined) return null;
+                if (isNaN(fromPos.x) || isNaN(toPos.x)) return null;
+
+                const segments = 5 + Math.floor(Math.random() * 3);  // 5-7 segments, random
+                const points = generateLightningPath(fromPos, toPos, segments);
+                if (!points || points.length < 2) return null;
+
+                // Thin sharp bolt
+                const bolt = BABYLON.MeshBuilder.CreateTube("persistBolt_" + Date.now(), {
+                    path: points,
+                    radius: 0.03,
+                    tessellation: 4,
+                    cap: BABYLON.Mesh.CAP_ALL,
+                    updatable: true
+                }, scene);
+
+                const boltMat = new BABYLON.StandardMaterial("persistBoltMat_" + Date.now(), scene);
+                boltMat.emissiveColor = new BABYLON.Color3(1, 1, 0.95);
+                boltMat.disableLighting = true;
+                bolt.material = boltMat;
+
+                // Subtle glow
+                const glowBolt = BABYLON.MeshBuilder.CreateTube("persistBoltGlow_" + Date.now(), {
+                    path: points,
+                    radius: 0.06,
+                    tessellation: 4,
+                    updatable: true
+                }, scene);
+                const glowMat = new BABYLON.StandardMaterial("persistBoltGlowMat_" + Date.now(), scene);
+                glowMat.emissiveColor = new BABYLON.Color3(1, 0.95, 0.5);
+                glowMat.alpha = 0.4;
+                glowMat.disableLighting = true;
+                glowBolt.material = glowMat;
+
+                // Small flash at target point
+                const flash = BABYLON.MeshBuilder.CreateSphere("persistFlash_" + Date.now(), {
+                    diameter: 0.35,
+                    segments: 6
+                }, scene);
+                flash.position = toPos.clone();
+                const flashMat = new BABYLON.StandardMaterial("persistFlashMat_" + Date.now(), scene);
+                flashMat.emissiveColor = new BABYLON.Color3(1, 1, 0.8);
+                flashMat.alpha = 1.0;
+                flashMat.disableLighting = true;
+                flash.material = flashMat;
+
+                return {
+                    bolt,
+                    glowBolt,
+                    flash,
+                    boltMat,
+                    glowMat,
+                    flashMat,
+                    // Update the bolt path to new positions with fresh lightning
+                    update: function(newFromPos, newToPos) {
+                        // Validate positions before updating
+                        if (!newFromPos || !newToPos) return;
+                        if (newFromPos.x === undefined || newToPos.x === undefined) return;
+                        if (isNaN(newFromPos.x) || isNaN(newToPos.x)) return;
+
+                        const newPoints = generateLightningPath(newFromPos, newToPos, 5 + Math.floor(Math.random() * 3));
+                        if (!newPoints || newPoints.length < 2) return;
+
+                        // Dispose old meshes and create new ones (safer than using instance option)
+                        if (this.bolt && !this.bolt.isDisposed()) this.bolt.dispose();
+                        if (this.glowBolt && !this.glowBolt.isDisposed()) this.glowBolt.dispose();
+
+                        this.bolt = BABYLON.MeshBuilder.CreateTube("persistBolt", {
+                            path: newPoints,
+                            radius: 0.03,
+                            tessellation: 4,
+                            cap: BABYLON.Mesh.CAP_ALL
+                        }, scene);
+                        this.bolt.material = this.boltMat;
+
+                        this.glowBolt = BABYLON.MeshBuilder.CreateTube("persistBoltGlow", {
+                            path: newPoints,
+                            radius: 0.06,
+                            tessellation: 4
+                        }, scene);
+                        this.glowBolt.material = this.glowMat;
+
+                        this.flash.position = newToPos.clone();
+                    },
+                    dispose: function() {
+                        if (this.bolt && !this.bolt.isDisposed()) this.bolt.dispose();
+                        if (this.glowBolt && !this.glowBolt.isDisposed()) this.glowBolt.dispose();
+                        if (this.flash && !this.flash.isDisposed()) this.flash.dispose();
+                        if (this.boltMat) this.boltMat.dispose();
+                        if (this.glowMat) this.glowMat.dispose();
+                        if (this.flashMat) this.flashMat.dispose();
+                    }
+                };
+            }
+
+            // Update all active spark chains for a combatant
+            // Also checks for NEW projectiles that spawned mid-cast and adds them to the chain
+            window.updateSparkChains = function(c) {
+                if (!c || !c.sparkActiveChains) return;
+                if (!c.paddle) return;  // Safety check for doubles mode
+                if (!c.sparkChainProjs) c.sparkChainProjs = [];
+
+                const paddle = c.paddle;
+                const isLeft = c.side === 'left';
+                const playerPos = new BABYLON.Vector3(
+                    isLeft ? paddle.position.x + 1 : paddle.position.x - 1,
+                    0.7,
+                    paddle.position.z
+                );
+
+                // Check for NEW projectiles that weren't in the chain yet
+                const currentProjIds = new Set(c.sparkChainProjs.map(p => p && p.mesh ? p.mesh.uniqueId : null));
+
+                for (const proj of projectiles) {
+                    if (!proj || !proj.mesh || proj.mesh.isDisposed()) continue;
+                    if (proj.type === 'spark') continue;  // Don't chain through other chain lightning bolts
+
+                    // Skip if already in chain
+                    if (currentProjIds.has(proj.mesh.uniqueId)) continue;
+
+                    // New projectile found! Add it to the chain
+                    // Create visual chain for it (will be positioned below)
+                    const fromPos = proj.mesh.position.clone();
+                    const chain = window.createPersistentLightningBolt(fromPos, playerPos);
+
+                    // Only add if chain was created successfully
+                    if (chain) {
+                        c.sparkChainProjs.push(proj);
+                        c.sparkActiveChains.push(chain);
+
+                        // Update chain count
+                        c.sparkChainCount = c.sparkChainProjs.length;
+
+                        // Show chain notification
+                        showCombatText(isLeft, 'CHAIN ' + c.sparkChainCount, 'lightning');
+                    }
+                }
+
+                // Re-sort projectiles by distance (farthest first) so chain connects properly
+                const projWithChain = [];
+                for (let i = 0; i < c.sparkChainProjs.length; i++) {
+                    const proj = c.sparkChainProjs[i];
+                    const chain = c.sparkActiveChains[i];
+                    if (proj && proj.mesh && !proj.mesh.isDisposed()) {
+                        const dist = BABYLON.Vector3.Distance(proj.mesh.position, playerPos);
+                        projWithChain.push({ proj, chain, dist });
+                    } else if (chain) {
+                        // Projectile gone - hide and keep for cleanup
+                        if (chain.bolt) chain.bolt.isVisible = false;
+                        if (chain.glowBolt) chain.glowBolt.isVisible = false;
+                        if (chain.flash) chain.flash.isVisible = false;
+                    }
+                }
+
+                // Sort by distance (farthest first)
+                projWithChain.sort((a, b) => b.dist - a.dist);
+
+                // Rebuild arrays in sorted order
+                c.sparkChainProjs = projWithChain.map(x => x.proj);
+                c.sparkActiveChains = projWithChain.map(x => x.chain);
+                c.sparkChainCount = c.sparkChainProjs.length;
+
+                // Now update each chain segment's visual position
+                for (let i = 0; i < c.sparkActiveChains.length; i++) {
+                    const chain = c.sparkActiveChains[i];
+                    const proj = c.sparkChainProjs[i];
+                    if (!chain || !proj || !proj.mesh || proj.mesh.isDisposed()) continue;
+                    // Additional safety checks for chain components
+                    if (!chain.bolt || !chain.glowBolt || !chain.flash || !chain.update) continue;
+
+                    chain.bolt.isVisible = true;
+                    chain.glowBolt.isVisible = true;
+                    chain.flash.isVisible = true;
+
+                    const fromPos = proj.mesh.position.clone();
+                    let toPos;
+
+                    if (i < c.sparkChainProjs.length - 1) {
+                        // Chain to next projectile (closer one)
+                        const nextProj = c.sparkChainProjs[i + 1];
+                        if (nextProj && nextProj.mesh && !nextProj.mesh.isDisposed()) {
+                            toPos = nextProj.mesh.position.clone();
+                        } else {
+                            toPos = playerPos.clone();
+                        }
+                    } else {
+                        // Last projectile - chain to player
+                        toPos = playerPos.clone();
+                    }
+
+                    chain.update(fromPos, toPos);
+                }
+            }
+
+            // Cleanup all spark chains for a combatant
+            window.cleanupSparkChains = function(c) {
+                if (!c || !c.sparkActiveChains) return;
+                for (const chain of c.sparkActiveChains) {
+                    if (chain) chain.dispose();
+                }
+                c.sparkActiveChains = [];
+                c.sparkChainProjs = [];
+            }
+
             window.spawnSpark = (owner, startX, startZ, velX, velZ, chainCount = 0) => {
+                // Scale factor based on chain count (similar to Fireball volley scaling)
+                // 0 chains = base, scales up similar to fireball's 0.85 + volleyCount * 0.125
+                const scaleMultiplier = 0.85 + Math.min(chainCount, 4) * 0.125;  // 0.85 to 1.35
+                const speedMultiplier = 1.0 + Math.min(chainCount, 4) * 0.05;    // 1.0 to 1.2 (subtle speed increase)
+
                 const proj = {
                     owner: owner,
                     type: 'spark',
-                    velX: velX,
-                    velZ: velZ,
+                    velX: velX * speedMultiplier,
+                    velZ: 0,  // Always travels straight (no Z velocity)
                     velY: 0,
-                    speed: abilities.spark.speed,
+                    speed: abilities.spark.baseSpeed * speedMultiplier,
                     baseDamage: abilities.spark.baseDamage,
-                    chainCount: chainCount,  // How many projectiles it has chained through
+                    chainCount: chainCount,  // How many projectiles it zapped before launch
                     isParried: false,
                     parriedBy: null,
                     volleyCount: 0,
-                    time: 0,
-                    chainsHit: []  // Track which projectiles we've already chained through
+                    time: 0
                 };
 
-                // Calculate damage based on chain count
+                // Calculate damage based on chain count (same formula as before)
                 proj.damage = proj.baseDamage + (chainCount * abilities.spark.bonusDamagePerChain);
 
-                // Create electric spark mesh (small, bright)
+                // Base sizes scaled by chain count
+                const coreRadius = 0.22 * scaleMultiplier;
+                const glowRadius = 0.4 * scaleMultiplier;
+                const trailWidth = 0.15 * scaleMultiplier;
+
+                // Create lightning bolt core (bright yellow)
                 proj.mesh = BABYLON.MeshBuilder.CreateIcoSphere("spark_" + Date.now(), {
-                    radius: 0.18,
+                    radius: coreRadius,
                     subdivisions: 1,
                     flat: true
                 }, scene);
@@ -10164,66 +10616,226 @@
                     glow.addIncludedOnlyMesh(proj.mesh);
                 }
 
-                // Electric glow
-                proj.glow = BABYLON.MeshBuilder.CreateIcoSphere("sparkGlow_" + Date.now(), { radius: 0.35, subdivisions: 1, flat: true }, scene);
+                // Yellow lightning glow (scaled)
+                proj.glow = BABYLON.MeshBuilder.CreateIcoSphere("sparkGlow_" + Date.now(), { radius: glowRadius, subdivisions: 1, flat: true }, scene);
                 const glowMat = new BABYLON.StandardMaterial("sparkGlowMat_" + Date.now(), scene);
-                glowMat.emissiveColor = new BABYLON.Color3(0.4, 0.6, 1);
-                glowMat.alpha = 0.3;
+                glowMat.emissiveColor = new BABYLON.Color3(1, 0.9, 0.3);
+                glowMat.alpha = 0.35 + (chainCount * 0.05);  // Slightly more opaque with chains
                 glowMat.backFaceCulling = false;
                 proj.glow.material = glowMat;
                 proj.glow.parent = proj.mesh;
                 proj.glow.position = BABYLON.Vector3.Zero();
                 proj.glowMat = glowMat;
 
-                // Electric trail
-                proj.trailAnchor = BABYLON.MeshBuilder.CreateBox("sparkTrailAnchor_" + Date.now(), {size: 0.01}, scene);
-                proj.trailAnchor.isVisible = false;
-                proj.trailAnchor.position.copyFrom(proj.mesh.position);
+                // Zigzag lightning trail - stores recent positions and draws zigzag tubes
+                proj.trailPositions = [];
+                proj.trailSegments = [];  // Array of tube meshes
+                proj.trailMat = new BABYLON.StandardMaterial("sparkTrailMat_" + Date.now(), scene);
+                proj.trailMat.emissiveColor = new BABYLON.Color3(1, 0.95, 0.4);
+                proj.trailMat.diffuseColor = new BABYLON.Color3(0, 0, 0);
+                proj.trailMat.alpha = 0.7;
+                proj.trailMat.backFaceCulling = false;
+                proj.trailMat.disableLighting = true;
                 proj.lastTrailSamplePos = proj.mesh.position.clone();
-                proj.trail = new BABYLON.TrailMesh("sparkTrail_" + Date.now(), proj.trailAnchor, scene, 0.12, 25, true);
-                const trailMat = new BABYLON.StandardMaterial("sparkTrailMat_" + Date.now(), scene);
-                trailMat.emissiveColor = new BABYLON.Color3(0.5, 0.7, 1);
-                trailMat.diffuseColor = new BABYLON.Color3(0, 0, 0);
-                trailMat.alpha = 0.6;
-                trailMat.backFaceCulling = false;
-                proj.trail.material = trailMat;
-                proj.trailMat = trailMat;
+                proj.trailWidth = trailWidth;
+                proj.trailSampleTimer = 0;
 
-                // Electric light (flickering)
+                // Yellow lightning light (flickering, intensity scales with chains)
                 proj.light = new BABYLON.PointLight("sparkLight_" + Date.now(), new BABYLON.Vector3(0, 0.3, 0), scene);
-                proj.light.diffuse = new BABYLON.Color3(0.6, 0.8, 1);
-                proj.light.intensity = 0.8 + (chainCount * 0.2);  // Brighter with more chains
-                proj.light.range = 10;
+                proj.light.diffuse = new BABYLON.Color3(1, 0.95, 0.6);
+                proj.light.intensity = 1.0 + (chainCount * 0.3);  // Brighter with more chains
+                proj.light.range = 12 + (chainCount * 2);  // Larger light range with chains
                 proj.light.parent = proj.mesh;
-                proj.baseIntensity = 0.8 + (chainCount * 0.2);
+                proj.baseIntensity = 1.0 + (chainCount * 0.3);
 
-                // Electric particles
-                proj.particles = new BABYLON.ParticleSystem("sparkParticles_" + Date.now(), 50, scene);
+                // Yellow electric particles (scaled)
+                const particleScale = scaleMultiplier;
+                proj.particles = new BABYLON.ParticleSystem("sparkParticles_" + Date.now(), 60 + chainCount * 15, scene);
                 proj.particles.particleTexture = flareTexture;
                 proj.particles.emitter = proj.mesh;
-                proj.particles.minEmitBox = new BABYLON.Vector3(-0.05, -0.05, -0.05);
-                proj.particles.maxEmitBox = new BABYLON.Vector3(0.05, 0.05, 0.05);
-                proj.particles.color1 = new BABYLON.Color4(0.8, 0.9, 1, 1);
-                proj.particles.color2 = new BABYLON.Color4(0.4, 0.6, 1, 1);
-                proj.particles.colorDead = new BABYLON.Color4(0.2, 0.3, 0.6, 0);
-                proj.particles.minSize = 0.04;
-                proj.particles.maxSize = 0.1;
+                proj.particles.minEmitBox = new BABYLON.Vector3(-0.08 * particleScale, -0.08 * particleScale, -0.08 * particleScale);
+                proj.particles.maxEmitBox = new BABYLON.Vector3(0.08 * particleScale, 0.08 * particleScale, 0.08 * particleScale);
+                proj.particles.color1 = new BABYLON.Color4(1, 1, 0.8, 1);
+                proj.particles.color2 = new BABYLON.Color4(1, 0.9, 0.4, 1);
+                proj.particles.colorDead = new BABYLON.Color4(1, 0.7, 0.2, 0);
+                proj.particles.minSize = 0.05 * particleScale;
+                proj.particles.maxSize = 0.12 * particleScale;
                 proj.particles.minLifeTime = 0.05;
-                proj.particles.maxLifeTime = 0.15;
-                proj.particles.emitRate = 50;
+                proj.particles.maxLifeTime = 0.12;
+                proj.particles.emitRate = 60 + chainCount * 15;  // More particles with chains
                 proj.particles.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
                 proj.particles.direction1 = new BABYLON.Vector3(-0.5, -0.5, -0.5);
                 proj.particles.direction2 = new BABYLON.Vector3(0.5, 0.5, 0.5);
                 proj.particles.gravity = new BABYLON.Vector3(0, 0, 0);
-                proj.particles.minEmitPower = 1;
-                proj.particles.maxEmitPower = 2;
+                proj.particles.minEmitPower = 1.5;
+                proj.particles.maxEmitPower = 2.5;
                 proj.particles.start();
 
-                // Reuse chain lightning zap sound
-                playSound('frostboltCast', startX, 0.5);  // Placeholder sound
+                // Lightning spark arcs - small zigzag arcs that shoot out from the ball
+                proj.sparkArcs = [];
+                proj.sparkArcTimer = 0;
+                proj.sparkArcInterval = 0.08;  // Spawn new arc every 80ms
+                proj.chainCount = chainCount;  // Store for arc scaling
+
+                // Play lightning sound
+                if (window.ToneSFX && window.ToneSFX.lightning) {
+                    if (window.setTonePan) window.setTonePan(startX);
+                    window.ToneSFX.lightning();
+                }
 
                 projectiles.push(proj);
                 return proj;
+            };
+
+            // Create a mini lightning arc shooting out from a position
+            window.createSparkArc = function(centerPos, scale = 1.0) {
+                if (!scene) return null;
+                // Validate position
+                if (!centerPos || centerPos.x === undefined || isNaN(centerPos.x)) return null;
+
+                // Random direction for the arc
+                const angle = Math.random() * Math.PI * 2;
+                const elevation = (Math.random() - 0.5) * Math.PI * 0.7;
+                const arcLength = (0.4 + Math.random() * 0.5) * scale;
+
+                const endPos = new BABYLON.Vector3(
+                    centerPos.x + Math.cos(angle) * Math.cos(elevation) * arcLength,
+                    centerPos.y + Math.sin(elevation) * arcLength,
+                    centerPos.z + Math.sin(angle) * Math.cos(elevation) * arcLength
+                );
+
+                // Create organic lightning path (2-4 segments, random)
+                const segments = 2 + Math.floor(Math.random() * 3);
+                const points = [centerPos.clone()];
+
+                for (let i = 1; i < segments; i++) {
+                    // Non-uniform spacing along arc
+                    const baseT = i / segments;
+                    const t = baseT + (Math.random() - 0.5) * 0.2;
+                    const pos = BABYLON.Vector3.Lerp(centerPos, endPos, Math.max(0.1, Math.min(0.9, t)));
+
+                    // Random jagged offsets - not alternating
+                    const jag = 0.12 * scale * (0.5 + Math.random());
+                    pos.y += (Math.random() - 0.5) * jag * 2;
+                    pos.z += (Math.random() - 0.5) * jag;
+                    points.push(pos);
+                }
+                points.push(endPos);
+
+                // Create arc tube
+                const arc = BABYLON.MeshBuilder.CreateTube("sparkArc_" + Date.now(), {
+                    path: points,
+                    radius: 0.02 * scale,
+                    tessellation: 4,
+                    cap: BABYLON.Mesh.CAP_ALL
+                }, scene);
+
+                const arcMat = new BABYLON.StandardMaterial("sparkArcMat_" + Date.now(), scene);
+                arcMat.emissiveColor = new BABYLON.Color3(1, 1, 0.85);
+                arcMat.disableLighting = true;
+                arc.material = arcMat;
+
+                // Glow tube for visibility
+                const arcGlow = BABYLON.MeshBuilder.CreateTube("sparkArcGlow_" + Date.now(), {
+                    path: points,
+                    radius: 0.04 * scale,
+                    tessellation: 4
+                }, scene);
+                const glowMat = new BABYLON.StandardMaterial("sparkArcGlowMat_" + Date.now(), scene);
+                glowMat.emissiveColor = new BABYLON.Color3(1, 0.9, 0.3);
+                glowMat.alpha = 0.4;
+                glowMat.disableLighting = true;
+                arcGlow.material = glowMat;
+
+                // Auto-dispose after short lifetime
+                const lifetime = 50 + Math.random() * 70;
+                setTimeout(() => {
+                    if (arc && !arc.isDisposed()) arc.dispose();
+                    if (arcGlow && !arcGlow.isDisposed()) arcGlow.dispose();
+                    if (arcMat) arcMat.dispose();
+                    if (glowMat) glowMat.dispose();
+                }, lifetime);
+
+                return arc;
+            };
+
+            // Update spark projectile - lightning trail and arcs
+            window.updateSparkArcs = function(proj, dt) {
+                if (!proj || proj.type !== 'spark' || !proj.mesh) return;
+                // Validate mesh position
+                if (!proj.mesh.position || proj.mesh.position.x === undefined || isNaN(proj.mesh.position.x)) return;
+
+                // === LIGHTNING TRAIL UPDATE ===
+                proj.trailSampleTimer = (proj.trailSampleTimer || 0) + dt;
+                const sampleInterval = 0.025;  // Sample every 25ms
+
+                if (proj.trailSampleTimer >= sampleInterval) {
+                    proj.trailSampleTimer = 0;
+
+                    // Add current position to trail
+                    proj.trailPositions.push(proj.mesh.position.clone());
+
+                    // Keep only last 10 positions
+                    const maxPositions = 10;
+                    while (proj.trailPositions.length > maxPositions) {
+                        proj.trailPositions.shift();
+                    }
+
+                    // Dispose old trail segments
+                    for (const seg of proj.trailSegments) {
+                        if (seg && !seg.isDisposed()) seg.dispose();
+                    }
+                    proj.trailSegments = [];
+
+                    // Create organic lightning trail from positions
+                    if (proj.trailPositions.length >= 2) {
+                        const trailPoints = [];
+                        for (let i = 0; i < proj.trailPositions.length; i++) {
+                            const pos = proj.trailPositions[i].clone();
+                            // Add random lightning jitter (not uniform zigzag)
+                            if (i > 0 && i < proj.trailPositions.length - 1) {
+                                const jitter = 0.12 * (0.3 + Math.random() * 0.7);
+                                pos.y += (Math.random() - 0.5) * jitter * 2;
+                                pos.z += (Math.random() - 0.5) * jitter;
+                            }
+                            trailPoints.push(pos);
+                        }
+
+                        // Validate trail points before creating tube
+                        const validTrail = trailPoints.length >= 2 && trailPoints.every(p => p && !isNaN(p.x));
+                        if (validTrail) {
+                            // Create trail tube
+                            const trailTube = BABYLON.MeshBuilder.CreateTube("sparkTrailTube", {
+                                path: trailPoints,
+                                radius: proj.trailWidth * 0.7,
+                                tessellation: 4,
+                                cap: BABYLON.Mesh.CAP_ALL
+                            }, scene);
+                            trailTube.material = proj.trailMat;
+                            proj.trailSegments.push(trailTube);
+                        }
+                    }
+                }
+
+                // === SPARK ARCS UPDATE ===
+                proj.sparkArcTimer = (proj.sparkArcTimer || 0) + dt;
+                if (proj.sparkArcTimer >= proj.sparkArcInterval) {
+                    proj.sparkArcTimer = 0;
+
+                    // Spawn 1-3 arcs based on chain count
+                    const arcCount = 1 + Math.floor(Math.random() * 2) + Math.min(proj.chainCount || 0, 2);
+                    const scale = 0.85 + Math.min(proj.chainCount || 0, 4) * 0.125;
+
+                    for (let i = 0; i < arcCount; i++) {
+                        const arc = window.createSparkArc(proj.mesh.position.clone(), scale);
+                        if (arc) {
+                            proj.sparkArcs.push(arc);
+                        }
+                    }
+
+                    // Clean up disposed arcs from array
+                    proj.sparkArcs = proj.sparkArcs.filter(a => a && !a.isDisposed());
+                }
             };
 
             // Gravity barrier material
@@ -10323,7 +10935,7 @@
                     velX: velX,
                     velZ: velZ,
                     velY: 0,
-                    speed: abilities.gravity.sphereSpeed,
+                    speed: abilities.gravity.baseSpeed,
                     isParried: false,
                     parriedBy: null,
                     volleyCount: 0,
@@ -10498,6 +11110,21 @@
                 if (proj.flash) proj.flash.dispose();
                 if (proj.flashMat) proj.flashMat.dispose();
                 if (proj.trailAnchor) proj.trailAnchor.dispose();  // Distance-based trail anchor
+
+                // Clean up spark-specific visuals (zigzag trail segments and arcs)
+                if (proj.trailSegments) {
+                    for (const seg of proj.trailSegments) {
+                        if (seg && !seg.isDisposed()) seg.dispose();
+                    }
+                    proj.trailSegments = [];
+                }
+                if (proj.sparkArcs) {
+                    for (const arc of proj.sparkArcs) {
+                        if (arc && !arc.isDisposed()) arc.dispose();
+                    }
+                    proj.sparkArcs = [];
+                }
+
                 if (proj.mesh) proj.mesh.dispose();
             };
 
@@ -10505,6 +11132,74 @@
             window.clearAllProjectiles = () => {
                 while (projectiles.length > 0) {
                     destroyProjectile(projectiles[0]);
+                }
+                // Also clean up any orphaned particle systems
+                if (scene && scene.particleSystems) {
+                    const toDispose = [];
+                    for (const ps of scene.particleSystems) {
+                        if (ps && ps.name && (
+                            ps.name.startsWith('fireCore') ||
+                            ps.name.startsWith('fireOuter') ||
+                            ps.name.startsWith('iceCore') ||
+                            ps.name.startsWith('frostMist') ||
+                            ps.name.startsWith('iceSparkle') ||
+                            ps.name.startsWith('snowParticles') ||
+                            ps.name.startsWith('sparkParticles') ||
+                            ps.name.startsWith('gravParticles') ||
+                            ps.name.startsWith('gravSphere')
+                        )) {
+                            toDispose.push(ps);
+                        }
+                    }
+                    for (const ps of toDispose) {
+                        try { ps.dispose(); } catch(e) {}
+                    }
+                }
+            };
+
+            // Clear all lightning FX (spark chains, zap flashes, etc.)
+            // NOTE: This only clears visual effects, does NOT reset casting state
+            window.clearAllLightningFX = () => {
+                // Clear spark chains and lightning bolts for all combatants
+                const allCombatants = window.getAllCombatants ? getAllCombatants() : [combatants.left, combatants.right];
+                for (const c of allCombatants) {
+                    if (!c) continue;
+
+                    // Clean up spark chains
+                    if (window.cleanupSparkChains) {
+                        window.cleanupSparkChains(c);
+                    }
+
+                    // Clean up lightning bolts array
+                    if (c.lightningBolts && c.lightningBolts.length > 0) {
+                        for (const bolt of c.lightningBolts) {
+                            if (bolt && !bolt.isDisposed()) bolt.dispose();
+                        }
+                        c.lightningBolts = [];
+                    }
+
+                    // Reset spark-related state
+                    c.sparkActiveChains = [];
+                    c.sparkChainProjs = [];
+                    c.sparkChainCount = 0;
+                }
+
+                // Clear any lightning bolt meshes by name pattern (catch-all for any strays)
+                if (scene) {
+                    const toDispose = [];
+                    for (const mesh of scene.meshes) {
+                        if (mesh && mesh.name && (
+                            mesh.name.startsWith('persistBolt') ||
+                            mesh.name.startsWith('zapFlash') ||
+                            mesh.name.startsWith('sparkArc') ||
+                            mesh.name.startsWith('lightningBolt')
+                        )) {
+                            toDispose.push(mesh);
+                        }
+                    }
+                    for (const mesh of toDispose) {
+                        if (mesh && !mesh.isDisposed()) mesh.dispose();
+                    }
                 }
             };
 
@@ -11086,7 +11781,7 @@
 
             // ================== DOUBLES AI SYSTEM (Teammate Coordination) ==================
 
-            const TEAMMATE_THINK_INTERVAL = 0.15;  // Faster reactions for teammates (150ms)
+            const TEAMMATE_THINK_INTERVAL = 0.2;  // Teammate reaction time (200ms)
             let teammateLastThinkTime = { leftFront: 0, leftBack: 0, rightFront: 0, rightBack: 0 };
 
             // Find all incoming threats toward a side (for team coordination)
@@ -11109,7 +11804,8 @@
             }
 
             // Predict Z position for a projectile reaching a specific X position
-            function predictZAtX(proj, targetX) {
+            // AI prediction has some error to simulate human-like imperfection
+            function predictZAtX(proj, targetX, addError = true) {
                 const distX = Math.abs(targetX - proj.mesh.position.x);
                 const velX = Math.abs(proj.velX);
                 if (distX <= 0 || velX <= 0) return proj.mesh.position.z;
@@ -11122,6 +11818,14 @@
                 const wall = effectiveDepth/2 - 0.5;
                 if (z > wall) z = 2 * wall - z;
                 if (z < -wall) z = -2 * wall - z;
+
+                // Add prediction error based on distance (farther = more uncertain)
+                // This makes AI more human-like - they can misjudge fast/distant shots
+                if (addError && distX > 2) {
+                    const errorScale = Math.min(distX / 10, 1.5);  // Max ~1.5 units error at long range
+                    const error = (Math.random() - 0.5) * 2 * errorScale;
+                    z += error;
+                }
 
                 return Math.max(-wall, Math.min(wall, z));
             }
@@ -11329,7 +12033,7 @@
                 const casterKey = isLeftSide ? 'player' : 'ai';  // Use team's caster key for mana/cooldowns
                 const cooldown = combatant.cooldowns?.fireball || 0;
 
-                if (!isCasting && cooldown <= 0 && combatant.mana >= 1 && safeToStartCast && projectiles.length < 10) {
+                if (!isCasting && cooldown <= 0 && combatant.mana >= 1 && safeToStartCast) {
                     // Start casting - use paddle position for spawn point
                     startCastingForCombatant(combatant, 'fireball');
                 }
@@ -11378,7 +12082,17 @@
                                     // Determine caster string for executeChainLightning
                                     const casterStr = combatant.side === 'left' ? 'player' : 'ai';
                                     executeChainLightning(casterStr);
+                                } else if (castingSpell === 'spark') {
+                                    // Execute spark and cleanup chains
+                                    const casterStr = combatant.side === 'left' ? 'player' : 'ai';
+                                    if (window.executeSpark) window.executeSpark(casterStr);
                                 }
+
+                                // Clean up any spark chains before clearing casting state
+                                if (window.cleanupSparkChains) {
+                                    window.cleanupSparkChains(combatant);
+                                }
+
                                 combatant.casting = null;
                                 combatant.castProgress = 0;
 
@@ -11416,7 +12130,7 @@
                 combatant.cooldowns.fireball = ability.cooldown;
 
                 // Determine direction - left side shoots right, right side shoots left
-                const velX = isLeftSide ? ability.speed : -ability.speed;
+                const velX = isLeftSide ? ability.baseSpeed : -ability.baseSpeed;
 
                 // Create fireball at paddle position
                 const spawnX = paddle.position.x + (isLeftSide ? 0.5 : -0.5);
@@ -11722,6 +12436,11 @@
                     leftC.castProgress += dt;
                     playerCastProgress = leftC.castProgress; // Sync legacy
 
+                    // Update spark chain visuals to follow projectiles
+                    if (leftC.casting === 'spark' && window.updateSparkChains) {
+                        window.updateSparkChains(leftC);
+                    }
+
                     // Show upgrade name if active (e.g., "Magma Lob" instead of "Fireball")
                     const playerUpgrades = getActiveUpgrades(leftC.casting, 'player');
                     const playerAbility = getAbility(leftC.casting);
@@ -11741,6 +12460,11 @@
                 if (rightC && rightC.casting && roundActive) {
                     rightC.castProgress += dt;
                     aiCastProgress = rightC.castProgress; // Sync legacy
+
+                    // Update spark chain visuals to follow projectiles
+                    if (rightC.casting === 'spark' && window.updateSparkChains) {
+                        window.updateSparkChains(rightC);
+                    }
 
                     // Show upgrade name if active
                     const aiUpgrades = getActiveUpgrades(rightC.casting, 'ai');
@@ -11952,10 +12676,27 @@
                     // Process all projectiles
                     const toDestroy = [];
                     for (const proj of projectiles) {
-                        if (!proj.mesh) continue;
+                        // Clean up zombie projectiles (no mesh or disposed mesh)
+                        if (!proj.mesh || proj.mesh.isDisposed()) {
+                            toDestroy.push(proj);
+                            continue;
+                        }
 
                         // Check for projectiles marked for destruction (e.g., snowball after parry attempt)
                         if (proj.shouldDestroy) {
+                            toDestroy.push(proj);
+                            continue;
+                        }
+
+                        // Clean up stuck projectiles (near-zero velocity)
+                        const projSpeed = Math.sqrt(proj.velX * proj.velX + proj.velZ * proj.velZ);
+                        if (projSpeed < 1) {
+                            toDestroy.push(proj);
+                            continue;
+                        }
+
+                        // Clean up projectiles with orphaned/disposed emitter
+                        if (proj.particles && proj.particles.emitter && proj.particles.emitter.isDisposed && proj.particles.emitter.isDisposed()) {
                             toDestroy.push(proj);
                             continue;
                         }
@@ -11987,6 +12728,11 @@
                                 toDestroy.push(proj);
                                 continue;
                             }
+                        }
+
+                        // Update spark lightning arcs
+                        if (proj.type === 'spark' && window.updateSparkArcs) {
+                            window.updateSparkArcs(proj, dt);
                         }
 
                         // Fireball flickering animation
@@ -12070,23 +12816,9 @@
                             }
                         }
 
-                        // Snowball rolling and growing
+                        // Snowball stays at ground level while rolling (fixed size)
                         if (proj.type === 'snowball' && proj.isRolling) {
-                            // Grow while rolling
-                            proj.rollScale = (proj.rollScale || 1.0) + dt * 0.3;  // Slower growth
-                            const maxScale = 1.5;  // Smaller max size
-                            if (proj.rollScale > maxScale) proj.rollScale = maxScale;
-
-                            // Apply scale to mesh and glow
-                            const scale = proj.rollScale;
-                            proj.mesh.scaling.set(scale, scale, scale);
-                            if (proj.glow) proj.glow.scaling.set(scale, scale, scale);
-
-                            // Update hitbox radius
-                            proj.hitboxRadius = 0.25 * scale;
-
-                            // Keep at ground level (adjusted for size)
-                            proj.mesh.position.y = tableY + (0.25 * scale);
+                            proj.mesh.position.y = tableY + 0.25;
                         }
 
                         // Visual stretch disabled - was causing particle issues
@@ -12334,15 +13066,25 @@
                                 showFrozenText(!!(combatants.left && combatants.left.isLocalPlayer));
                                 toDestroy.push(proj);
                             } else {
-                                // Normal fireball behavior
+                                // Normal fireball behavior with Pong-style angling
                                 proj.mesh.position.x = playerPaddle.position.x + paddleHalfWidth + projRadius;
                                 if (proj.isParried && proj.parriedBy === 'ai') {
                                     resetProjParryState(proj);
                                 }
                                 proj.owner = 'player';
-                                proj.velX = -proj.velX;
+
+                                // Hit offset: -1 (bottom edge) to +1 (top edge)
                                 const hitOffset = (proj.mesh.position.z - playerPaddle.position.z) / paddleHalfDepth;
-                                proj.velZ += hitOffset * 5;
+
+                                // Pong-style angling: edge hits = sharp angles, center hits = straight
+                                const currentSpeed = Math.max(Math.sqrt(proj.velX * proj.velX + proj.velZ * proj.velZ), 10);
+                                const maxAngle = 0.7;  // ~45 degrees max deflection at edges
+                                const angleStrength = hitOffset * maxAngle;
+
+                                // Redirect velocity: more angle = less forward speed, more sideways
+                                proj.velX = currentSpeed * Math.cos(angleStrength) * (proj.velX > 0 ? -1 : 1);
+                                proj.velZ = currentSpeed * Math.sin(angleStrength) * Math.sign(hitOffset || 1);
+
                                 // Apply paddle momentum to ball trajectory
                                 if (window.playerPaddleVelZ) proj.velZ += window.playerPaddleVelZ * momentumFactor;
                                 proj.volleyCount++;
@@ -12415,9 +13157,18 @@
                                         }, 300);
                                     }
                                 } else {
-                                    proj.velX = -proj.velX;
+                                    // Hit offset: -1 (bottom edge) to +1 (top edge)
                                     const hitOffset = (proj.mesh.position.z - aiPaddle.position.z) / paddleHalfDepth;
-                                    proj.velZ += hitOffset * 5;
+
+                                    // Pong-style angling: edge hits = sharp angles, center hits = straight
+                                    const currentSpeed = Math.sqrt(proj.velX * proj.velX + proj.velZ * proj.velZ);
+                                    const maxAngle = 0.7;  // ~45 degrees max deflection at edges
+                                    const angleStrength = hitOffset * maxAngle;
+
+                                    // Redirect velocity: more angle = less forward speed, more sideways
+                                    proj.velX = currentSpeed * Math.cos(angleStrength) * (proj.velX > 0 ? -1 : 1);
+                                    proj.velZ = currentSpeed * Math.sin(angleStrength) * Math.sign(hitOffset || 1);
+
                                     // Apply paddle momentum to ball trajectory
                                     if (window.aiPaddleVelZ) proj.velZ += window.aiPaddleVelZ * momentumFactor;
                                     playSound('block', aiPaddle.position.x, 0.7);
@@ -12457,6 +13208,8 @@
                                         teams.left.front.freezeTime = abilities.frostbolt.freezeDuration;
                                         // Cancel casting if frozen
                                         if (teams.left.front.casting) {
+                                            // Clean up spark chains first
+                                            if (window.cleanupSparkChains) cleanupSparkChains(teams.left.front);
                                             teams.left.front.casting = null;
                                             teams.left.front.castProgress = 0;
                                             if (window.combatantUpdate3DCastBar) {
@@ -12476,9 +13229,19 @@
                                 } else {
                                     proj.mesh.position.x = playerFrontPaddle.position.x + paddleHalfWidth + frontProjRadius;
                                     proj.owner = 'player';
-                                    proj.velX = -proj.velX;
+
+                                    // Hit offset: -1 (bottom edge) to +1 (top edge)
                                     const hitOffset = (proj.mesh.position.z - playerFrontPaddle.position.z) / paddleHalfDepth;
-                                    proj.velZ += hitOffset * 5;
+
+                                    // Pong-style angling: edge hits = sharp angles, center hits = straight
+                                    const currentSpeed = Math.sqrt(proj.velX * proj.velX + proj.velZ * proj.velZ);
+                                    const maxAngle = 0.7;  // ~45 degrees max deflection at edges
+                                    const angleStrength = hitOffset * maxAngle;
+
+                                    // Redirect velocity: more angle = less forward speed, more sideways
+                                    proj.velX = currentSpeed * Math.cos(angleStrength) * (proj.velX > 0 ? -1 : 1);
+                                    proj.velZ = currentSpeed * Math.sin(angleStrength) * Math.sign(hitOffset || 1);
+
                                     proj.volleyCount++;
                                     if (window.updateFireballScale) window.updateFireballScale(proj);
                                     updateProjectileTier(proj);
@@ -12514,6 +13277,7 @@
                                         teams.right.front.freezeTime = abilities.frostbolt.freezeDuration;
                                         // Cancel casting if frozen
                                         if (teams.right.front.casting) {
+                                            if (window.cleanupSparkChains) cleanupSparkChains(teams.right.front);
                                             teams.right.front.casting = null;
                                             teams.right.front.castProgress = 0;
                                             if (window.combatantUpdate3DCastBar) {
@@ -12533,9 +13297,19 @@
                                 } else {
                                     proj.mesh.position.x = aiFrontPaddle.position.x - paddleHalfWidth - frontProjRadius;
                                     proj.owner = 'ai';
-                                    proj.velX = -proj.velX;
+
+                                    // Hit offset: -1 (bottom edge) to +1 (top edge)
                                     const hitOffset = (proj.mesh.position.z - aiFrontPaddle.position.z) / paddleHalfDepth;
-                                    proj.velZ += hitOffset * 5;
+
+                                    // Pong-style angling: edge hits = sharp angles, center hits = straight
+                                    const currentSpeed = Math.sqrt(proj.velX * proj.velX + proj.velZ * proj.velZ);
+                                    const maxAngle = 0.7;  // ~45 degrees max deflection at edges
+                                    const angleStrength = hitOffset * maxAngle;
+
+                                    // Redirect velocity: more angle = less forward speed, more sideways
+                                    proj.velX = currentSpeed * Math.cos(angleStrength) * (proj.velX > 0 ? -1 : 1);
+                                    proj.velZ = currentSpeed * Math.sin(angleStrength) * Math.sign(hitOffset || 1);
+
                                     proj.volleyCount++;
                                     if (window.updateFireballScale) window.updateFireballScale(proj);
                                     updateProjectileTier(proj);
@@ -12555,11 +13329,10 @@
                                     createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(0.5, 0.8, 1), 1.0);
                                 }
                             } else if (proj.type === 'snowball') {
-                                // Snowball damage scales with size from rolling
-                                const scale = proj.rollScale || 1.0;
-                                const damage = Math.floor(abilities.snowball.damage * scale);
+                                // Snowball deals fixed damage
+                                const damage = abilities.snowball.damage;
                                 if (window.createImpactFlash) {
-                                    createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(0.9, 0.95, 1), 1.0 + scale * 0.5);
+                                    createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(0.9, 0.95, 1), 1.5);
                                 }
                                 dealDamageToTower(isPlayerTower, damage, proj.mesh.position.z);
                             } else if (proj.type === 'gravitySphere') {
@@ -12586,11 +13359,10 @@
                                     createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(0.5, 0.8, 1), 1.0);
                                 }
                             } else if (proj.type === 'snowball') {
-                                // Snowball damage scales with size from rolling
-                                const scale = proj.rollScale || 1.0;
-                                const damage = Math.floor(abilities.snowball.damage * scale);
+                                // Snowball deals fixed damage
+                                const damage = abilities.snowball.damage;
                                 if (window.createImpactFlash) {
-                                    createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(0.9, 0.95, 1), 1.0 + scale * 0.5);
+                                    createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(0.9, 0.95, 1), 1.5);
                                 }
                                 dealDamageToTower(isPlayerTower, damage, proj.mesh.position.z);
                             } else if (proj.type === 'gravitySphere') {
@@ -13309,10 +14081,11 @@
                 StatTracker.increment('fireball_casts');
             }
 
-            const speed = abilities.fireball.speed;
+            const speed = abilities.fireball.baseSpeed;
 
             // Get combatant and use its paddle position
             const c = getCombatantLegacy(caster);
+            if (!c || !c.paddle) return;  // Safety check for doubles mode
             const paddle = c.paddle;
             const isLeft = c.side === 'left';
 
@@ -13353,10 +14126,11 @@
                 StatTracker.increment('frostbolt_casts');
             }
 
-            const speed = abilities.frostbolt.speed;
+            const speed = abilities.frostbolt.baseSpeed;
 
             // Get combatant and use its paddle position
             const c = getCombatantLegacy(caster);
+            if (!c || !c.paddle) return;  // Safety check for doubles mode
             const paddle = c.paddle;
             const isLeft = c.side === 'left';
 
@@ -13422,6 +14196,7 @@
 
             const c = getCombatantLegacy(caster);
             if (!c) return false;
+            if (!c.paddle) return false;  // Safety check for doubles mode
 
             // Check charges
             if (c.snowballCharges <= 0) return false;
@@ -13437,7 +14212,7 @@
                 StatTracker.increment('snowball_casts');
             }
 
-            const speed = abilities.snowball.speed;
+            const speed = abilities.snowball.baseSpeed;
             const paddle = c.paddle;
             const isLeft = c.side === 'left';
 
@@ -13489,14 +14264,19 @@
             // Can't cast while casting something else
             if (c.casting) return false;
 
-            // Start casting (has cast time)
+            const paddle = c.paddle;
+            const isLeft = c.side === 'left';
+
+            // Start casting
             c.casting = 'spark';
             c.castProgress = 0;
             c.castTime = abilities.spark.castTime;
             c.pendingManaCost = abilities.spark.manaCost;
 
-            // Play casting sound
-            if (window.ToneSFX) ToneSFX.castingStart(caster === 'player' ? 'player' : 'ai');
+            // Play electric charge casting sound (not regular mid-cast)
+            if (window.ToneSFX && ToneSFX.electricStart) {
+                ToneSFX.electricStart(caster === 'player' ? 'player' : 'ai');
+            }
 
             // Show cast bar
             if (caster === 'player') {
@@ -13507,49 +14287,80 @@
                 showAICastBar(true);
             }
 
+            // ============================================
+            // CHAIN VISUAL DURING CAST
+            // Initialize arrays - updateSparkChains() will dynamically detect
+            // and add ALL projectiles (including those spawned mid-cast)
+            // Chains persist and follow projectiles until cast completes
+            // ============================================
+            c.sparkActiveChains = [];
+            c.sparkChainProjs = [];
+            c.sparkChainCount = 0;
+
+            // The updateSparkChains function (called every frame during cast)
+            // will detect all projectiles and create chains for them dynamically.
+            // This allows projectiles spawned mid-cast to be captured too!
+
             return true;
         }
         window.castSpark = castSpark;
 
-        // Execute Spark after cast completes
+        // Execute Chain Lightning (Spark) after cast completes - fires bolt from player's hands
         function executeSpark(caster) {
             if (!window.spawnSpark) return;
 
             const c = getCombatantLegacy(caster);
             if (!c) return;
-
-            // Spend mana
-            if (!spendMana(caster, abilities.spark.manaCost)) return;
+            if (!c.paddle) return;  // Safety check for doubles mode
 
             // Track stat
             if (caster === 'player' || (c.isLocalPlayer)) {
                 StatTracker.increment('spark_casts');
             }
 
-            const speed = abilities.spark.speed;
+            const speed = abilities.spark.baseSpeed;
             const paddle = c.paddle;
             const isLeft = c.side === 'left';
-
-            const startX = isLeft ? paddle.position.x + 1 : paddle.position.x - 1;
+            const casterOwner = isLeft ? 'player' : 'ai';
             const velX = isLeft ? speed : -speed;
+
+            // Fire position (at caster's hands)
+            const startX = isLeft ? paddle.position.x + 1 : paddle.position.x - 1;
             const startZ = paddle.position.z;
 
-            // Aim based on movement
-            const aimDir = getCasterAimDir(caster, c);
-            const velZ = aimDir !== 0 ? (aimDir * speed * 0.2) : 0;
-
-            // Play sound
-            playSound('frostboltCast', startX, 0.6);
-
-            window.spawnSpark(caster, startX, startZ, velX, velZ, 0);
+            // Get chain count from cast (stored during castSpark)
+            const chainCount = c.sparkChainCount || 0;
 
             // Show floating spell name
-            showSpellCastText(caster === 'player', 'Spark', 'lightning');
+            showSpellCastText(caster === 'player', 'Chain Lightning', 'lightning');
+
+            // Fire the bolt from player's hands (always from hands, chains just add damage)
+            window.spawnSpark(casterOwner, startX, startZ, velX, 0, chainCount);
+
+            if (window.ToneSFX && window.ToneSFX.lightning) {
+                if (window.setTonePan) window.setTonePan(startX);
+                window.ToneSFX.lightning();
+            }
+
+            // Show damage bonus if we had chains
+            if (chainCount > 0) {
+                showCombatText(isLeft, 'x' + chainCount + ' POWER!', 'lightning');
+            }
+
+            // Set cooldown
+            c.cooldowns.spark = abilities.spark.cooldown;
+
+            // Clean up stored chain data and visual chains
+            c.sparkChainCount = 0;
+            if (window.cleanupSparkChains) {
+                window.cleanupSparkChains(c);
+            }
         }
 
         // Handle gravity spell input - two phase ability
         function handleGravityInput(caster) {
             const c = getCombatantLegacy(caster);
+            if (!c) return;  // Safety check for doubles mode
             const isPlayer = caster === 'player';
             const cooldown = isPlayer ? playerGravityCooldown : aiGravityCooldown;
 
@@ -13571,6 +14382,7 @@
             if (!window.createGravityBarrier) return;
 
             const c = getCombatantLegacy(caster);
+            if (!c) return;  // Safety check for doubles mode
             const isPlayer = caster === 'player';
             const barrier = createGravityBarrier(caster);
 
@@ -13597,6 +14409,7 @@
             if (!window.spawnGravitySphere) return;
 
             const c = getCombatantLegacy(caster);
+            if (!c) return;  // Safety check for doubles mode
             const isPlayer = caster === 'player';
 
             // Must have captured at least 1 ball to fire
@@ -13617,7 +14430,7 @@
 
             const captured = c.capturedBalls;
             const paddle = isPlayer ? playerPaddle : aiPaddle;
-            const speed = abilities.gravity.sphereSpeed;
+            const speed = abilities.gravity.baseSpeed;
             let startX, velX;
 
             // Reset state
@@ -13651,6 +14464,7 @@
         // Transition from barrier to sphere phase (called when barrier expires or max capture)
         function transitionToSpherePhase(caster) {
             const c = getCombatantLegacy(caster);
+            if (!c) return;  // Safety check for doubles mode
             const isPlayer = caster === 'player';
 
             // Clean up barrier
@@ -13756,6 +14570,7 @@
             gameOver = false;
             gameMode = 'single';
             if (window.clearAllProjectiles) clearAllProjectiles();
+            if (window.clearAllLightningFX) clearAllLightningFX();
 
             // Stop sounds and music
             if (window.ToneSFX) {
@@ -14225,7 +15040,7 @@
                             <span class="tooltip-stat-item mana"><span class="icon">*</span><span class="value">1 Mana</span></span>
                             <span class="tooltip-stat-item cast"><span class="icon">></span><span class="value">1s Cast</span></span>
                         </div>
-                        <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">5s CD</span></span>
+                        <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">4s CD</span></span>
                     </div>
                     <div class="tooltip-description">
                         Lob a <span class="tt-spell">Magma Bomb</span> in an arc. At the <span class="tt-mechanic">Midline</span>, it explodes into <span class="tt-value">2</span> bouncing bombs that deal <span class="tt-value">1</span> <span class="tt-fire">Fire</span> damage each.
@@ -14240,10 +15055,10 @@
                             <span class="tooltip-stat-item mana"><span class="icon">*</span><span class="value">1 Mana</span></span>
                             <span class="tooltip-stat-item cast"><span class="icon">></span><span class="value">1s Cast</span></span>
                         </div>
-                        <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">5s CD</span></span>
+                        <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">4s CD</span></span>
                     </div>
                     <div class="tooltip-description">
-                        Throw a <span class="tt-spell">Fireball</span> in front of you, dealing <span class="tt-value">2</span> <span class="tt-fire">Fire</span> damage, scaling up to <span class="tt-value">5</span> with <span class="tt-mechanic">Volleys</span>.
+                        Hurl a <span class="tt-spell">Fireball</span> that deals <span class="tt-value">2</span> <span class="tt-fire">Fire</span> damage. Damage increases with <span class="tt-mechanic">Volleys</span>, up to <span class="tt-value">5</span>.
                     </div>
                 `;
             }
@@ -14284,6 +15099,7 @@
             gameOver = false;
             gameMode = 'single';  // Reset to single player mode
             if (window.clearAllProjectiles) clearAllProjectiles();
+            if (window.clearAllLightningFX) clearAllLightningFX();
 
             // Stop any casting sounds and background music
             if (window.ToneSFX) {
@@ -15555,7 +16371,7 @@
                 combatant.cooldowns.frostbolt = ability.cooldown;
                 const side = combatant.side === 'left' ? 'player' : 'ai';
                 const paddle = combatant.side === 'left' ? playerPaddle : aiPaddle;
-                const velX = combatant.side === 'left' ? ability.speed : -ability.speed;
+                const velX = combatant.side === 'left' ? ability.baseSpeed : -ability.baseSpeed;
                 const startX = combatant.side === 'left' ? paddle.position.x + 1 : paddle.position.x - 1;
 
                 if (!isResimulating) {
@@ -15591,10 +16407,27 @@
             const goalX = 14;  // tableWidth/2 + 1 = 13 + 1
 
             for (const proj of projectiles) {
-                if (!proj.mesh) continue;
+                // Clean up zombie projectiles (no mesh or disposed mesh)
+                if (!proj.mesh || proj.mesh.isDisposed()) {
+                    toDestroy.push(proj);
+                    continue;
+                }
 
                 // Check for projectiles marked for destruction (e.g., snowball after parry attempt)
                 if (proj.shouldDestroy) {
+                    toDestroy.push(proj);
+                    continue;
+                }
+
+                // Clean up stuck projectiles (near-zero velocity)
+                const speed = Math.sqrt(proj.velX * proj.velX + proj.velZ * proj.velZ);
+                if (speed < 1) {
+                    toDestroy.push(proj);
+                    continue;
+                }
+
+                // Clean up projectiles with orphaned/disposed emitter
+                if (proj.particles && proj.particles.emitter && proj.particles.emitter.isDisposed && proj.particles.emitter.isDisposed()) {
                     toDestroy.push(proj);
                     continue;
                 }
@@ -15627,59 +16460,14 @@
                     }
                 }
 
-                // Snowball rolling and growing
+                // Snowball stays at ground level while rolling (fixed size)
                 if (proj.type === 'snowball' && proj.isRolling) {
-                    // Grow while rolling - gets bigger over time
-                    proj.rollScale = (proj.rollScale || 1.0) + dt * 0.3;  // Slower growth
-                    const maxScale = 1.5;  // Smaller max size
-                    if (proj.rollScale > maxScale) proj.rollScale = maxScale;
-
-                    // Apply scale to mesh and glow
-                    const scale = proj.rollScale;
-                    proj.mesh.scaling.set(scale, scale, scale);
-                    if (proj.glow) proj.glow.scaling.set(scale, scale, scale);
-
-                    // Update hitbox radius for collision detection
-                    proj.hitboxRadius = 0.25 * scale;
-
-                    // Keep at ground level
-                    proj.mesh.position.y = tableY + (0.25 * scale);
+                    proj.mesh.position.y = tableY + 0.25;
                 }
 
-                // Spark chaining logic - spark gains damage when passing through other projectiles
-                if (proj.type === 'spark') {
-                    for (const other of projectiles) {
-                        if (other === proj || !other.mesh || other.mesh.isDisposed()) continue;
-                        if (other.type === 'spark') continue;  // Don't chain through other sparks
-                        if (proj.chainsHit && proj.chainsHit.includes(other)) continue;  // Already chained
-
-                        const dist = BABYLON.Vector3.Distance(proj.mesh.position, other.mesh.position);
-                        if (dist < 1.5) {  // Chain range
-                            // Chain through this projectile
-                            if (!proj.chainsHit) proj.chainsHit = [];
-                            proj.chainsHit.push(other);
-                            proj.chainCount = (proj.chainCount || 0) + 1;
-                            proj.damage = abilities.spark.baseDamage + (proj.chainCount * abilities.spark.bonusDamagePerChain);
-
-                            // Visual effect - flash and grow
-                            if (proj.light) {
-                                proj.light.intensity = 0.8 + (proj.chainCount * 0.3);
-                            }
-                            if (proj.glow && proj.glowMat) {
-                                proj.glowMat.alpha = Math.min(0.6, 0.3 + (proj.chainCount * 0.1));
-                            }
-
-                            // Play chain sound
-                            if (!isResimulating) {
-                                playSound('frostboltCast', proj.mesh.position.x, 0.4);
-                            }
-
-                            // Show floating text for chain
-                            if (!isResimulating && proj.owner === 'player') {
-                                showCombatText(true, '+' + proj.chainCount, 'lightning');
-                            }
-                        }
-                    }
+                // Update spark lightning arcs
+                if (proj.type === 'spark' && window.updateSparkArcs) {
+                    window.updateSparkArcs(proj, dt);
                 }
 
                 // Wall collisions
@@ -15731,11 +16519,22 @@
                             if (!isResimulating) playSound('block', px, 0.5);
                             toDestroy.push(proj);
                         } else {
-                            // Bounce fireball
+                            // Bounce fireball with angle based on hit position
                             proj.mesh.position.x = px + paddleHalfWidth + projRadius;
-                            proj.velX = -proj.velX;
+
+                            // Hit offset: -1 (bottom edge) to +1 (top edge)
                             const hitOffset = (proj.mesh.position.z - pz) / paddleHalfDepth;
-                            proj.velZ += hitOffset * 5;
+
+                            // Pong-style angling: edge hits = sharp angles, center hits = straight
+                            // Use the current speed to maintain momentum but redirect it (min speed 10)
+                            const currentSpeed = Math.max(Math.sqrt(proj.velX * proj.velX + proj.velZ * proj.velZ), 10);
+                            const maxAngle = 0.7;  // ~45 degrees max deflection at edges
+                            const angleStrength = hitOffset * maxAngle;
+
+                            // Redirect velocity: more angle = less forward speed, more sideways
+                            proj.velX = currentSpeed * Math.cos(angleStrength) * (proj.velX > 0 ? -1 : 1);
+                            proj.velZ = currentSpeed * Math.sin(angleStrength) * Math.sign(hitOffset || 1);
+
                             proj.owner = 'player';
                             proj.volleyCount++;
                             if (window.updateFireballScale) window.updateFireballScale(proj);  // Scale up with damage
@@ -15776,11 +16575,22 @@
                             if (!isResimulating) playSound('block', px, 0.5);
                             toDestroy.push(proj);
                         } else {
-                            // Bounce fireball
+                            // Bounce fireball with angle based on hit position
                             proj.mesh.position.x = px - paddleHalfWidth - projRadius;
-                            proj.velX = -proj.velX;
+
+                            // Hit offset: -1 (bottom edge) to +1 (top edge)
                             const hitOffset = (proj.mesh.position.z - pz) / paddleHalfDepth;
-                            proj.velZ += hitOffset * 5;
+
+                            // Pong-style angling: edge hits = sharp angles, center hits = straight
+                            // Use the current speed to maintain momentum but redirect it (min speed 10)
+                            const currentSpeed = Math.max(Math.sqrt(proj.velX * proj.velX + proj.velZ * proj.velZ), 10);
+                            const maxAngle = 0.7;  // ~45 degrees max deflection at edges
+                            const angleStrength = hitOffset * maxAngle;
+
+                            // Redirect velocity: more angle = less forward speed, more sideways
+                            proj.velX = currentSpeed * Math.cos(angleStrength) * (proj.velX > 0 ? -1 : 1);
+                            proj.velZ = currentSpeed * Math.sin(angleStrength) * Math.sign(hitOffset || 1);
+
                             proj.owner = 'ai';
                             proj.volleyCount++;
                             if (window.updateFireballScale) window.updateFireballScale(proj);  // Scale up with damage
@@ -15798,9 +16608,8 @@
                     if (proj.type !== 'frostbolt') {
                         let damage;
                         if (proj.type === 'snowball') {
-                            // Snowball damage scales with size from rolling
-                            const scale = proj.rollScale || 1.0;
-                            damage = Math.floor(abilities.snowball.damage * scale);
+                            // Snowball deals fixed damage
+                            damage = abilities.snowball.damage;
                         } else if (proj.type === 'spark') {
                             damage = proj.damage || abilities.spark.baseDamage;  // Use calculated damage with chain bonus
                         } else {
@@ -15815,9 +16624,8 @@
                     if (proj.type !== 'frostbolt') {
                         let damage;
                         if (proj.type === 'snowball') {
-                            // Snowball damage scales with size from rolling
-                            const scale = proj.rollScale || 1.0;
-                            damage = Math.floor(abilities.snowball.damage * scale);
+                            // Snowball deals fixed damage
+                            damage = abilities.snowball.damage;
                         } else if (proj.type === 'spark') {
                             damage = proj.damage || abilities.spark.baseDamage;  // Use calculated damage with chain bonus
                         } else {
@@ -16421,22 +17229,75 @@
                     if (slot && cdText && sweep) {
                         const charges = combatants.left.snowballCharges;
                         const maxCharges = abilities.snowball.maxCharges || 3;
+                        const regenProgress = (combatants.left.snowballChargeTimer || 0) / abilities.snowball.chargeRegenTime;
 
-                        // Always show charge count for snowball (even if 0)
-                        cdText.textContent = charges;
-                        cdText.style.color = charges > 0 ? '#88ccff' : '#666';  // Ice blue when available, gray when empty
+                        // Hide the charge count number - we show notches instead
+                        cdText.textContent = '';
+                        cdText.style.color = charges > 0 ? '#88ccff' : '#666';
+
+                        // Update charge notches
+                        const notchesContainer = slot.querySelector('.charge-notches');
+                        if (notchesContainer) {
+                            const notches = notchesContainer.querySelectorAll('.charge-notch');
+                            notches.forEach((notch, index) => {
+                                notch.classList.remove('filled', 'recharging');
+                                if (index < charges) {
+                                    // This notch is filled
+                                    notch.classList.add('filled');
+                                } else if (index === charges && charges < maxCharges) {
+                                    // This is the next notch being recharged
+                                    notch.classList.add('recharging');
+                                    notch.style.setProperty('--recharge-progress', regenProgress);
+                                }
+                                // Else: empty notch (no class added, shows empty)
+                            });
+                        }
 
                         if (charges > 0) {
                             slot.classList.remove('on-cooldown');
                             slot.classList.add('ready');
                             sweep.style.setProperty('--sweep-angle', '0deg');
                         } else {
-                            // No charges - show recharge progress
+                            // No charges - show recharge progress on sweep
                             slot.classList.remove('ready');
                             slot.classList.add('on-cooldown');
-                            const regenProgress = (combatants.left.snowballChargeTimer || 0) / abilities.snowball.chargeRegenTime;
                             const sweepAngle = (1 - regenProgress) * 360;
                             sweep.style.setProperty('--sweep-angle', sweepAngle + 'deg');
+                        }
+                    }
+                }
+
+                // Spark (Chain Lightning) cooldown display - show for whichever slot has spark equipped
+                const sparkSlotIndex = loadout.indexOf('spark');
+                if (sparkSlotIndex !== -1) {
+                    const slotIds = ['fireballSlot', 'frostboltSlot', 'chainLightningSlot'];
+                    const cdTextIds = ['fireballCDText', 'frostboltCDText', 'chainLightningCDText'];
+                    const sweepIds = ['fireballSweep', 'frostboltSweep', 'chainLightningSweep'];
+
+                    const slot = document.getElementById(slotIds[sparkSlotIndex]);
+                    const cdText = document.getElementById(cdTextIds[sparkSlotIndex]);
+                    const sweep = document.getElementById(sweepIds[sparkSlotIndex]);
+
+                    if (slot && cdText && sweep) {
+                        const sparkCooldown = localCooldowns.spark || 0;
+                        const sparkManaCost = abilities.spark.manaCost;
+
+                        if (sparkCooldown > 0) {
+                            slot.classList.remove('ready');
+                            slot.classList.add('on-cooldown');
+                            cdText.textContent = Math.ceil(sparkCooldown);
+                            const sweepAngle = (sparkCooldown / abilities.spark.cooldown) * 360;
+                            sweep.style.setProperty('--sweep-angle', sweepAngle + 'deg');
+                        } else if (mana < sparkManaCost) {
+                            slot.classList.remove('on-cooldown');
+                            slot.classList.remove('ready');
+                            cdText.textContent = '';
+                            sweep.style.setProperty('--sweep-angle', '0deg');
+                        } else {
+                            slot.classList.remove('on-cooldown');
+                            slot.classList.add('ready');
+                            cdText.textContent = '';
+                            sweep.style.setProperty('--sweep-angle', '0deg');
                         }
                     }
                 }
@@ -16539,6 +17400,7 @@
         // Gain mana (capped at territorial max)
         function gainMana(caster, amount) {
             const c = getCombatantLegacy(caster);
+            if (!c) return;  // Safety check for doubles mode
             const cMaxMana = getMaxMana(c.side);
             c.mana = Math.min(cMaxMana, c.mana + amount);
             updateCombatantManaUI(c);
@@ -16549,6 +17411,7 @@
         // Spend mana (returns true if successful)
         function spendMana(caster, amount) {
             const c = getCombatantLegacy(caster);
+            if (!c) return false;  // Safety check for doubles mode
             if (c.mana >= amount) {
                 c.mana -= amount;
                 updateCombatantManaUI(c);
@@ -16570,6 +17433,7 @@
 
             // Get combatant
             const c = getCombatantLegacy(caster);
+            if (!c) return false;  // Safety check for doubles mode
 
             // Get upgrades early for stat overrides
             const activeUpgrades = getActiveUpgrades(abilityId, caster);
@@ -16641,7 +17505,19 @@
         // Cancel casting (e.g., if stunned or interrupted)
         function cancelCasting(caster, refundMana = false) {
             const c = getCombatantLegacy(caster);
+            if (!c) return;  // Safety check for doubles mode
             const isPlayer = caster === 'player';
+
+            // Clean up spark chains if casting spark
+            if (c.casting === 'spark') {
+                if (window.cleanupSparkChains) {
+                    window.cleanupSparkChains(c);
+                }
+                // Stop electric charge sound
+                if (window.ToneSFX && ToneSFX.electricStop) {
+                    ToneSFX.electricStop(isPlayer ? 'player' : 'ai');
+                }
+            }
 
             // Clear pending mana cost (mana was never spent, so no refund needed)
             c.pendingManaCost = 0;
@@ -16777,41 +17653,31 @@
         // ============================================================
         // CHAIN LIGHTNING SYSTEM - Mana Recovery
         // ============================================================
-        // Press 3 to gain +2 mana instantly. 20 second cooldown.
+        // Thunderstorm - Zap up to 3 enemy projectiles. 2 mana, 30s cooldown.
         // Lightning strikes from the sky!
 
-        const CHAIN_LIGHTNING_COOLDOWN = 20;  // 20 second cooldown
-        const CHAIN_LIGHTNING_MANA_PER_ZAP = 1;  // Gain 1 mana per projectile zapped
+        const CHAIN_LIGHTNING_COOLDOWN = 30;  // 30 second cooldown
         const CHAIN_LIGHTNING_MAX_ZAPS = 3;  // Max 3 projectiles per cast
-        const CHAIN_LIGHTNING_CAST_TIME = 0.4;  // 0.4 second cast time - fast and reactionary
-
-        // Start casting Chain Lightning (has cast time now, WoW-style)
+        // Cast Chain Lightning (instant cast, costs 2 mana)
         function castChainLightning(caster) {
             const c = getCombatantLegacy(caster);
+            if (!c) return false;  // Safety check for doubles mode
             const isPlayer = caster === 'player';
 
             // Check cooldown
             if (c.cooldowns.chain_lightning > 0) return false;
             // Can't cast while casting something else
             if (c.casting) return false;
+            // Check mana
+            if (c.mana < abilities.chain_lightning.manaCost) return false;
 
-            // Start the cast
-            c.casting = 'chain_lightning';
-            c.castProgress = 0;
-            c.castTime = CHAIN_LIGHTNING_CAST_TIME;
-            c.pendingManaCost = 0;  // Chain lightning costs no mana
+            // Spend mana
+            c.mana -= abilities.chain_lightning.manaCost;
+            if (isPlayer) playerMana = c.mana;
+            else aiMana = c.mana;
 
-            // Play casting loop sound
-            if (window.ToneSFX) ToneSFX.castingStart(isPlayer ? 'player' : 'ai');
-
-            // Show cast bar
-            if (isPlayer) {
-                playerCasting = 'chain_lightning';
-                showCastBar(true);
-            } else {
-                aiCasting = 'chain_lightning';
-                showAICastBar(true);
-            }
+            // Execute immediately (instant cast)
+            executeChainLightning(caster);
 
             return true;
         }
@@ -16867,18 +17733,10 @@
                 }, delay);
             }
 
-            // Gain mana (+1 per zap)
-            const maxMana = getMaxMana(isPlayer ? 'left' : 'right');
-            const manaGained = Math.min(zapsToPerform * CHAIN_LIGHTNING_MANA_PER_ZAP, maxMana - c.mana);
-            c.mana = Math.min(maxMana, c.mana + manaGained);
-            if (isPlayer) playerMana = c.mana;
-            else aiMana = c.mana;
-
             // Track stats (only for local player)
             if (isPlayer || c.isLocalPlayer) {
                 StatTracker.increment('chain_lightning_casts');
                 StatTracker.increment('projectiles_zapped', zapsToPerform);
-                StatTracker.increment('mana_from_zaps', manaGained);
             }
 
             // Play lightning sound (location-based on average position)
@@ -16894,7 +17752,7 @@
             }
 
             // Show combat text
-            showCombatText(isPlayer, 'ZAP x' + zapsToPerform + ' +' + Math.ceil(manaGained) + ' MANA', 'lightning');
+            showCombatText(isPlayer, 'Thunderstorm x' + zapsToPerform, 'lightning');
 
             // Start cooldown
             c.cooldowns.chain_lightning = CHAIN_LIGHTNING_COOLDOWN;
@@ -17191,13 +18049,26 @@
                 proj.loopSound.dispose();
             }
 
+            // Clean up spark-specific visuals
+            if (proj.trailSegments) {
+                for (const seg of proj.trailSegments) {
+                    if (seg && !seg.isDisposed()) seg.dispose();
+                }
+            }
+            if (proj.sparkArcs) {
+                for (const arc of proj.sparkArcs) {
+                    if (arc && !arc.isDisposed()) arc.dispose();
+                }
+            }
+            if (proj.trailMat) proj.trailMat.dispose();
+
             projectiles.splice(idx, 1);
         }
 
         // Complete casting and fire the spell
         function completeCasting(caster) {
             const c = getCombatantLegacy(caster);
-            if (!c.casting) return;
+            if (!c || !c.casting) return;  // Safety check for doubles mode
 
             const abilityId = c.casting;
             const isPlayer = caster === 'player';
@@ -17239,15 +18110,21 @@
                 showSpellCastText(isPlayer, spellName, 'fire');
             } else if (abilityId === 'chain_lightning') {
                 executeChainLightning(caster);
-                showSpellCastText(isPlayer, 'Chain Lightning', 'lightning');
+                showSpellCastText(isPlayer, 'Thunderstorm', 'lightning');
             } else if (abilityId === 'spark') {
                 executeSpark(caster);
-                showSpellCastText(isPlayer, 'Spark', 'lightning');
+                // Note: executeSpark already shows spell text
+                // Stop electric charge loop (spark uses different sound)
+                if (window.ToneSFX && ToneSFX.electricStop) {
+                    ToneSFX.electricStop(isPlayer ? 'player' : 'ai');
+                }
             }
             // Add other cast-time abilities here
 
-            // Stop isochronic casting sound for the correct side
-            if (window.ToneSFX) ToneSFX.castingStop(isPlayer ? 'player' : 'ai');
+            // Stop isochronic casting sound for the correct side (for non-spark abilities)
+            if (abilityId !== 'spark' && window.ToneSFX) {
+                ToneSFX.castingStop(isPlayer ? 'player' : 'ai');
+            }
 
             // Reset casting state (don't play idle again, animation handles it)
             if (isPlayer) {
@@ -17285,10 +18162,11 @@
         function fireFireball(caster) {
             if (!window.spawnFireball) return;
 
-            const speed = abilities.fireball.speed;
+            const speed = abilities.fireball.baseSpeed;
 
             // Get combatant and use its paddle position
             const c = getCombatantLegacy(caster);
+            if (!c || !c.paddle) return;  // Safety check for doubles mode
             const paddle = c.paddle;
             const isLeft = c.side === 'left';
 
@@ -17800,6 +18678,11 @@
             // Clear all projectiles
             if (window.clearAllProjectiles) {
                 clearAllProjectiles();
+            }
+
+            // Clear all lightning FX (spark chains, zap flashes, etc.)
+            if (window.clearAllLightningFX) {
+                clearAllLightningFX();
             }
 
             // Winner is whoever destroyed the gate
