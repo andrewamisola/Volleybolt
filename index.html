@@ -13917,6 +13917,8 @@
             if (window.gameEngine) window.gameEngine.stopRenderLoop();
 
             document.getElementById('talentScreen').classList.remove('visible');
+            // Wire up Babylon GUI lobby buttons (one-shot, safe to call repeatedly)
+            if (typeof wireLobbyButtons === 'function') wireLobbyButtons();
             // Show Babylon GUI lobby
             showMultiplayerLobbyGUI();
         }
@@ -13980,76 +13982,106 @@
             return code;
         }
 
-        // GUI Buttons wiring
-        const gLobby = window.guiElements || {};
-        const gMode = gLobby.lobbyModeButtons || {};
-        const gHost = gLobby.lobbyHost || {};
-        const gJoin = gLobby.lobbyJoin || {};
-        const gConn = gLobby.lobbyConnected || {};
+        // GUI Buttons wiring — deferred until GUI exists. Called lazily from showMultiplayerLobby().
+        let lobbyButtonsWired = false;
+        function wireLobbyButtons() {
+            if (lobbyButtonsWired) return;
+            const gLobby = window.guiElements || {};
+            const gMode = gLobby.lobbyModeButtons || {};
+            const gHost = gLobby.lobbyHost || {};
+            const gJoin = gLobby.lobbyJoin || {};
+            const gConn = gLobby.lobbyConnected || {};
+            // Bail if GUI hasn't been created yet — caller will retry next time lobby opens.
+            if (!gMode.btnHostGame || !gMode.btnJoinGame) return;
+            lobbyButtonsWired = true;
 
-        // Host Game button
-        if (gMode.btnHostGame) gMode.btnHostGame.onPointerClickObservable.add(() => {
-            isHost = true;
-            const roomCode = generateRoomCode();
-            initializePeer(roomCode.toLowerCase());
-            showLobbyView('lobbyHostView');
-            if (gHost.hostCode) gHost.hostCode.text = roomCode;
-            if (gHost.hostStatus) gHost.hostStatus.text = 'Waiting for opponent...';
-        });
+            // Host Game button
+            gMode.btnHostGame.onPointerClickObservable.add(() => {
+                isHost = true;
+                const roomCode = generateRoomCode();
+                initializePeer(roomCode.toLowerCase());
+                showLobbyView('lobbyHostView');
+                if (gHost.hostCode) gHost.hostCode.text = roomCode;
+                if (gHost.hostStatus) gHost.hostStatus.text = 'Waiting for opponent...';
+            });
 
-        // Join Game button
-        if (gMode.btnJoinGame) gMode.btnJoinGame.onPointerClickObservable.add(() => {
-            showLobbyView('lobbyJoinView');
-            if (gJoin.joinInput) gJoin.joinInput.text = '';
-            if (gJoin.joinStatus) gJoin.joinStatus.text = '';
-            if (gJoin.joinInput && gJoin.joinInput.focus) gJoin.joinInput.focus();
-        });
+            // Join Game button
+            gMode.btnJoinGame.onPointerClickObservable.add(() => {
+                showLobbyView('lobbyJoinView');
+                if (gJoin.joinInput) gJoin.joinInput.text = '';
+                if (gJoin.joinStatus) gJoin.joinStatus.text = '';
+                if (gJoin.joinInput && gJoin.joinInput.focus) gJoin.joinInput.focus();
+            });
 
-        // Back to main menu
-        if (gMode.btnBackMenu) gMode.btnBackMenu.onPointerClickObservable.add(() => {
-            hideMultiplayerLobby();
-            showTalentScreen();
-        });
+            // Back to main menu
+            if (gMode.btnBackMenu) gMode.btnBackMenu.onPointerClickObservable.add(() => {
+                hideMultiplayerLobby();
+                showTalentScreen();
+            });
 
-        // Connect button (in join view)
-        const connectJoinHandler = () => {
-            const code = (gJoin.joinInput ? gJoin.joinInput.text : '').toUpperCase().trim();
-            if (code.length >= 4) {
-                isHost = false;
-                if (gJoin.joinStatus) gJoin.joinStatus.text = 'Connecting...';
-                initializePeer(null, code.toLowerCase());
-            } else {
-                if (gJoin.joinStatus) gJoin.joinStatus.text = 'Enter a valid room code';
+            // Connect button (in join view)
+            const connectJoinHandler = () => {
+                const code = (gJoin.joinInput ? gJoin.joinInput.text : '').toUpperCase().trim();
+                if (code.length >= 4) {
+                    isHost = false;
+                    if (gJoin.joinStatus) gJoin.joinStatus.text = 'Connecting...';
+                    initializePeer(null, code.toLowerCase());
+                } else {
+                    if (gJoin.joinStatus) gJoin.joinStatus.text = 'Enter a valid room code';
+                }
+            };
+            if (gJoin.btnConnect) gJoin.btnConnect.onPointerClickObservable.add(connectJoinHandler);
+            // Enter key in join input
+            if (gJoin.joinInput) {
+                gJoin.joinInput.onKeyboardEventProcessedObservable.add((kbInfo) => {
+                    if (kbInfo.type === BABYLON.GUI.KeyboardEventTypes.KEYUP && kbInfo.event.key === 'Enter') {
+                        connectJoinHandler();
+                    }
+                });
             }
-        };
-        if (gJoin.btnConnect) gJoin.btnConnect.onPointerClickObservable.add(connectJoinHandler);
-        // Enter key in join input
-        if (gJoin.joinInput) {
-            gJoin.joinInput.onKeyboardEventProcessedObservable.add((kbInfo) => {
-                if (kbInfo.type === BABYLON.GUI.KeyboardEventTypes.KEYUP && kbInfo.event.key === 'Enter') {
-                    connectJoinHandler();
+
+            // Cancel host
+            if (gHost.btnCancelHost) gHost.btnCancelHost.onPointerClickObservable.add(() => {
+                cleanupPeer();
+                showLobbyView('lobbyModeSelect');
+            });
+
+            // Cancel join
+            if (gJoin.btnCancelJoin) gJoin.btnCancelJoin.onPointerClickObservable.add(() => {
+                cleanupPeer();
+                showLobbyView('lobbyModeSelect');
+            });
+
+            // Disconnect (from connected lobby view) — notify opponent before tearing down
+            if (gConn.btnDisconnect) gConn.btnDisconnect.onPointerClickObservable.add(() => {
+                sendLeaveMessage('Opponent left the lobby');
+                cleanupPeer();
+                showLobbyView('lobbyModeSelect');
+            });
+
+            // Ready toggle button
+            if (gConn.btnReady) gConn.btnReady.onPointerClickObservable.add(() => {
+                localReady = !localReady;
+                if (conn && conn.open) {
+                    conn.send({ type: 'PLAYER_READY', ready: localReady });
+                }
+                refreshReadyUI();
+            });
+
+            // Start Match button (host only, gated on both-ready)
+            if (gConn.btnStartMatch) gConn.btnStartMatch.onPointerClickObservable.add(async () => {
+                if (!localReady || !remoteReady) return;  // Belt-and-suspenders gate
+                await initToneJS();
+                if (isHost && conn && conn.open) {
+                    const sharedSeed = Date.now() % 2147483647;
+                    const upgradeToShare = selectedUpgrade || 'default';
+                    startMultiplayerMatch(sharedSeed, upgradeToShare);
+                    const startHash = (typeof hashStartState === 'function') ? hashStartState() : 0;
+                    conn.send({ type: 'START_MATCH', seed: sharedSeed, upgrade: upgradeToShare, hash: startHash });
                 }
             });
         }
-
-        // Cancel host
-        if (gHost.btnCancelHost) gHost.btnCancelHost.onPointerClickObservable.add(() => {
-            cleanupPeer();
-            showLobbyView('lobbyModeSelect');
-        });
-
-        // Cancel join
-        if (gJoin.btnCancelJoin) gJoin.btnCancelJoin.onPointerClickObservable.add(() => {
-            cleanupPeer();
-            showLobbyView('lobbyModeSelect');
-        });
-
-        // Disconnect (from connected lobby view) — notify opponent before tearing down
-        if (gConn.btnDisconnect) gConn.btnDisconnect.onPointerClickObservable.add(() => {
-            sendLeaveMessage('Opponent left the lobby');
-            cleanupPeer();
-            showLobbyView('lobbyModeSelect');
-        });
+        window.wireLobbyButtons = wireLobbyButtons;
 
         // Send a LEAVE message to the opponent (best-effort; ignore errors)
         function sendLeaveMessage(reason) {
@@ -14109,28 +14141,6 @@
             remoteReady = false;
             refreshReadyUI();
         }
-
-        // Ready toggle button
-        if (gConn.btnReady) gConn.btnReady.onPointerClickObservable.add(() => {
-            localReady = !localReady;
-            if (conn && conn.open) {
-                conn.send({ type: 'PLAYER_READY', ready: localReady });
-            }
-            refreshReadyUI();
-        });
-
-        // Start Match button (host only, gated on both-ready)
-        if (gConn.btnStartMatch) gConn.btnStartMatch.onPointerClickObservable.add(async () => {
-            if (!localReady || !remoteReady) return;  // Belt-and-suspenders gate
-            await initToneJS();
-            if (isHost && conn && conn.open) {
-                const sharedSeed = Date.now() % 2147483647;
-                const upgradeToShare = selectedUpgrade || 'default';
-                startMultiplayerMatch(sharedSeed, upgradeToShare);
-                const startHash = (typeof hashStartState === 'function') ? hashStartState() : 0;
-                conn.send({ type: 'START_MATCH', seed: sharedSeed, upgrade: upgradeToShare, hash: startHash });
-            }
-        });
 
         // Initialize PeerJS
         function initializePeer(roomCode, connectTo = null) {
