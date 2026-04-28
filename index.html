@@ -885,25 +885,6 @@
                         special: 'Freeze (1s)'
                     }
                 },
-                snowball: {
-                    id: 'snowball',
-                    name: 'Snowball',
-                    element: 'ice',
-                    type: SPELL_TYPES.DAMAGE,
-                    icon: '⚪',
-                    description: 'Lob a <span class="tt-spell">Snowball</span> in an arc that lands and rolls toward the <span class="tt-enemy">Enemy</span>, dealing <span class="tt-value">2</span> <span class="tt-frost">Ice</span> damage. Grows larger as it travels, increasing damage.',
-                    shortDesc: 'Arcing roll attack',
-                    manaCost: 1,
-                    cooldown: 4,
-                    castTime: 1.0,
-                    castFn: 'castSnowball',
-                    unlocked: true,
-                    stats: {
-                        damage: '2+',
-                        speed: 'Medium',
-                        special: 'Grows on travel'
-                    }
-                },
 
                 // ========== LIGHTNING SPELLS ==========
                 chain_lightning: {
@@ -923,46 +904,6 @@
                         damage: '0',
                         speed: '0.4s Cast',
                         special: '+1 Mana per zap'
-                    }
-                },
-                spark: {
-                    id: 'spark',
-                    name: 'Chain Lightning',
-                    element: 'lightning',
-                    type: SPELL_TYPES.DAMAGE,
-                    icon: '⚡',
-                    description: 'While <span class="tt-mechanic">Casting</span>, lightning <span class="tt-mechanic">Chains</span> through all projectiles on the field. Release a <span class="tt-spell">Lightning Bolt</span> that deals <span class="tt-value">2</span> <span class="tt-lightning">Lightning</span> damage plus <span class="tt-value">1</span> per <span class="tt-mechanic">Chain</span>.',
-                    shortDesc: 'Chain for bonus damage',
-                    manaCost: 1,
-                    cooldown: 4,
-                    castTime: 1.0,
-                    castFn: 'castSpark',
-                    unlocked: true,
-                    stats: {
-                        damage: '2 + chains',
-                        speed: 'Fast',
-                        special: 'Goes straight'
-                    }
-                },
-
-                // ========== EARTH SPELLS (Future) ==========
-                boulder: {
-                    id: 'boulder',
-                    name: 'Boulder',
-                    element: 'earth',
-                    type: SPELL_TYPES.DAMAGE,
-                    icon: '🪨',
-                    description: 'Hurl a massive boulder. Slow but devastating.',
-                    shortDesc: 'High damage, slow speed',
-                    manaCost: 2,
-                    cooldown: 0,
-                    castTime: 1.5,
-                    castFn: 'castBoulder',
-                    unlocked: false,
-                    stats: {
-                        damage: '3',
-                        speed: 'Slow',
-                        special: 'Knockback'
                     }
                 }
             };
@@ -1132,8 +1073,8 @@
                 return window[spell.castFn] || null;
             }
 
-            // Initialize on load
-            load();
+            // Loadout is fixed to DEFAULT_LOADOUT (Spellbook UI removed).
+            // Skip load() so stale localStorage entries don't override defaults.
 
             return {
                 SLOT_COUNT,
@@ -1186,24 +1127,6 @@
                     getManaCost: () => 0,  // Chain lightning doesn't cost mana
                     canCast: () => !c.casting,
                     cast: () => window.castChainLightning ? window.castChainLightning(caster) : false
-                },
-                snowball: {
-                    cooldownKey: 'snowball',
-                    getManaCost: () => 0.5,
-                    canCast: () => c.snowballCharges > 0,  // Need charges to cast
-                    cast: () => window.castSnowball ? window.castSnowball(caster) : false
-                },
-                spark: {
-                    cooldownKey: 'spark',
-                    getManaCost: () => 1,
-                    canCast: () => !c.casting,
-                    cast: () => window.castSpark ? window.castSpark(caster) : false
-                },
-                boulder: {
-                    cooldownKey: 'boulder',
-                    getManaCost: () => 2,
-                    canCast: () => !c.casting,
-                    cast: () => window.castBoulder ? window.castBoulder(caster) : false
                 }
             };
 
@@ -1234,6 +1157,23 @@
         // ============================================================
         // Updates the HTML ability bar to reflect current loadout
         // ============================================================
+
+        // Brief flash on an ability slot — used as instant-cast feedback
+        // for spells without a radial cast sweep (Frostbolt, Thunderstorm).
+        window.flashAbilitySlot = (abilityId) => {
+            const map = {
+                fireball: 'fireballSlot',
+                frostbolt: 'frostboltSlot',
+                chain_lightning: 'chainLightningSlot'
+            };
+            const el = document.getElementById(map[abilityId]);
+            if (!el) return;
+            el.classList.remove('cast-fired');
+            // Force reflow so re-adding the class restarts the animation
+            void el.offsetWidth;
+            el.classList.add('cast-fired');
+            setTimeout(() => el.classList.remove('cast-fired'), 320);
+        };
 
         function updateAbilityBarFromLoadout() {
             const slotElements = [
@@ -1299,11 +1239,7 @@
                 // Update tooltip stats
                 const manaStatEl = slotEl.querySelector('.tooltip-stat-item.mana .value');
                 if (manaStatEl) {
-                    if (spellId === 'snowball') {
-                        manaStatEl.textContent = '½ Mana';
-                    } else {
-                        manaStatEl.textContent = spell.manaCost + ' Mana';
-                    }
+                    manaStatEl.textContent = spell.manaCost + ' Mana';
                 }
 
                 const castStatEl = slotEl.querySelector('.tooltip-stat-item.cast .value');
@@ -1317,9 +1253,7 @@
 
                 const cdStatEl = slotEl.querySelector('.tooltip-stat-item.cooldown .value');
                 if (cdStatEl) {
-                    if (spellId === 'snowball') {
-                        cdStatEl.textContent = '3 Charges';
-                    } else if (spell.cooldown) {
+                    if (spell.cooldown) {
                         cdStatEl.textContent = spell.cooldown + 's CD';
                     } else {
                         cdStatEl.textContent = 'No CD';
@@ -1330,33 +1264,6 @@
                 const tooltipDesc = slotEl.querySelector('.tooltip-description');
                 if (tooltipDesc) {
                     tooltipDesc.innerHTML = spell.description;
-                }
-
-                // Handle charge notches for snowball
-                const existingNotches = slotEl.querySelector('.charge-notches');
-                if (spellId === 'snowball') {
-                    // Add charge notches if not present
-                    if (!existingNotches) {
-                        const notchesContainer = document.createElement('div');
-                        notchesContainer.className = 'charge-notches';
-                        notchesContainer.id = 'snowballChargeNotches';
-                        for (let i = 0; i < 3; i++) {
-                            const notch = document.createElement('div');
-                            notch.className = 'charge-notch filled'; // Start with all filled
-                            notch.setAttribute('data-notch-index', i);
-                            notchesContainer.appendChild(notch);
-                        }
-                        // Insert after ability-hex
-                        const abilityHex = slotEl.querySelector('.ability-hex');
-                        if (abilityHex) {
-                            abilityHex.parentNode.insertBefore(notchesContainer, abilityHex.nextSibling);
-                        }
-                    }
-                } else {
-                    // Remove charge notches for non-snowball abilities
-                    if (existingNotches) {
-                        existingNotches.remove();
-                    }
                 }
             });
         }
@@ -1395,7 +1302,7 @@
                 freezeTime: 0,
 
                 // Cooldowns (keyed by ability ID)
-                cooldowns: { fireball: 0, frostbolt: 0, gravity: 0, chain_lightning: 0, snowball: 0, spark: 0 },
+                cooldowns: { fireball: 0, frostbolt: 0, chain_lightning: 0 },
 
                 // Casting
                 casting: null,                   // ability ID or null
@@ -1415,15 +1322,6 @@
                 lightningShield: null,       // { charges, maxCharges, mesh, particles }
                 channelAura: null,           // Particle system during channel
                 lightningBolts: [],          // Active lightning bolt meshes
-
-                // Spark (Chain Lightning projectile)
-                sparkActiveChains: [],       // Active visual chain links
-                sparkChainProjs: [],         // Projectiles being chained through
-                sparkChainCount: 0,          // Count of projectiles in chain
-
-                // Snowball charges
-                snowballCharges: 3,          // Current charges
-                snowballChargeTimer: 0,      // Timer for charge regeneration
 
                 // Upgrades
                 upgrades: [],
@@ -1812,25 +1710,6 @@
                 castTime: 0,          // Instant cast
                 manaCost: 2,          // 2 mana cost
                 maxZaps: 3            // Max projectiles to zap
-            },
-            snowball: {
-                cooldown: 4,          // 4 second cooldown per charge
-                castTime: 1.0,        // 1.0 second cast time (same as all damage spells)
-                baseSpeed: 10,        // Slow - telegraphed but spammable
-                maxSpeed: 14,         // Slower top speed than others
-                damage: 2,            // Base damage
-                manaCost: 1,          // 1 mana cost (same as all damage spells)
-                maxCharges: 3,        // Maximum 3 charges
-                chargeRegenTime: 4    // 4 seconds to regenerate each charge
-            },
-            spark: {
-                cooldown: 4,          // 4 second cooldown (same as all damage spells)
-                castTime: 1.0,        // 1.0 second cast time (same as all damage spells)
-                baseSpeed: 16,        // Medium-fast
-                maxSpeed: 22,         // Can get quite fast
-                baseDamage: 2,        // Base damage
-                bonusDamagePerChain: 1,  // +1 damage per projectile chained through
-                manaCost: 1           // 1 mana cost (same as all damage spells)
             }
         };
         window.abilities = abilities;  // Expose for loadout system
@@ -2105,78 +1984,6 @@
                         'Freezes enemy for <span class="highlight">1 second</span>',
                         'Destroyed on paddle contact',
                         'Does not damage towers'
-                    ]
-                }
-            },
-
-            // ========== GRAVITY WELL ==========
-            gravity: {
-                id: 'gravity',
-                name: 'Gravity Well',
-                description: 'Create a gravity barrier that captures incoming projectiles. Press again to launch them back as a devastating sphere.',
-                icon: '🌀',
-                element: 'arcane',
-
-                manaCost: 3,
-                cooldown: 15,
-
-                // Special ability - two-phase
-                abilityType: 'twoPhase',
-                phases: {
-                    barrier: {
-                        duration: 2.5,
-                        maxCapture: 3,
-                        slowRadius: 4,
-                        slowFactor: 0.4
-                    },
-                    sphere: {
-                        speed: 10,
-                        damagePerBall: 2,
-                        canParry: false,
-                        canBlock: false
-                    }
-                },
-
-                visuals: {
-                    barrier: {
-                        color: { r: 0.4, g: 0.1, b: 0.5 },
-                        pulseSpeed: 2
-                    },
-                    sphere: {
-                        coreColor: { r: 0.2, g: 0.05, b: 0.3 },
-                        glowColor: { r: 0.6, g: 0.2, b: 0.8 }
-                    }
-                },
-
-                sounds: {
-                    cast: 'gravityCast',
-                    capture: 'gravityCapture',
-                    release: 'gravityRelease'
-                },
-
-                effects: [
-                    {
-                        type: 'capture',
-                        maxCount: 3,
-                        description: 'Captures up to 3 projectiles'
-                    },
-                    {
-                        type: 'unblockable',
-                        description: 'Sphere cannot be blocked or parried'
-                    }
-                ],
-
-                tooltip: {
-                    stats: [
-                        { icon: '💥', label: 'Damage', value: '2/ball', type: 'damage' },
-                        { icon: '💧', label: 'Mana', value: '3', type: 'mana' },
-                        { icon: '⏱️', label: 'Cooldown', value: '15s', type: 'cooldown' },
-                        { icon: '⏳', label: 'Duration', value: '2.5s', type: 'duration' }
-                    ],
-                    effects: [
-                        'Captures up to <span class="highlight">3 projectiles</span>',
-                        'Two-phase ability: Barrier → Sphere',
-                        'Sphere cannot be blocked or parried'
                     ]
                 }
             },
@@ -4485,6 +4292,38 @@
                 }
             };
 
+            // Apply / clear "client perspective" — joiner in PvP plays as
+            // combatants.right, so we flip camera 180° AND swap the screen-
+            // space HUD elements so the local player's bars stay on visual
+            // left. Pass `true` for joiner, `false` to reset (host/SP).
+            window.applyClientPerspective = (isClient) => {
+                // DOM cast bars (handled via CSS class)
+                if (document.body) {
+                    document.body.classList.toggle('flipped-view', !!isClient);
+                }
+                // Babylon GUI: swap health and mana panel sides
+                const swap = (panel, defaultAlign, defaultLeft) => {
+                    if (!panel) return;
+                    if (isClient) {
+                        panel.horizontalAlignment = defaultAlign === BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT
+                            ? BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT
+                            : BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+                        // Mirror the offset (e.g. "20px" -> "-20px")
+                        panel.left = defaultLeft.startsWith('-') ? defaultLeft.slice(1) : '-' + defaultLeft;
+                    } else {
+                        panel.horizontalAlignment = defaultAlign;
+                        panel.left = defaultLeft;
+                    }
+                };
+                const g = window.guiElements || {};
+                const LEFT  = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+                const RIGHT = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
+                swap(g.playerHealthPanel,    LEFT,  '20px');
+                swap(g.aiHealthPanel,        RIGHT, '-20px');
+                swap(g.playerManaContainer,  LEFT,  '20px');
+                swap(g.aiManaContainer,      RIGHT, '-20px');
+            };
+
             // ============================================================
             // BABYLON.JS GUI - Fullscreen UI for proper screen-space positioning
             // Trade-off: UI won't have CRT effect, but positioning is correct
@@ -5155,6 +4994,29 @@
             hostCode.shadowOffsetY = 3;
             hostStack.addControl(hostCode);
 
+            // Copy-to-clipboard button under the code
+            const btnCopyCode = BABYLON.GUI.Button.CreateSimpleButton("btnCopyCode", "Copy Code");
+            btnCopyCode.width = "160px";
+            btnCopyCode.height = "44px";
+            btnCopyCode.color = "#fff";
+            btnCopyCode.background = "#3d3528";
+            btnCopyCode.cornerRadius = 6;
+            btnCopyCode.thickness = 2;
+            btnCopyCode.fontFamily = "'Esthetique', 'Cinzel', serif";
+            btnCopyCode.fontSize = 18;
+            hostStack.addControl(btnCopyCode);
+            btnCopyCode.onPointerClickObservable.add(() => {
+                const code = hostCode.text || '';
+                if (!code || code === '------') return;
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(code).then(() => {
+                        const original = btnCopyCode.textBlock.text;
+                        btnCopyCode.textBlock.text = 'Copied!';
+                        setTimeout(() => { btnCopyCode.textBlock.text = original; }, 1200);
+                    }).catch(() => {});
+                }
+            });
+
             const hostStatus = new BABYLON.GUI.TextBlock();
             hostStatus.text = "Waiting for opponent...";
             hostStatus.color = "#cfc5b0";
@@ -5199,6 +5061,11 @@
             joinInput.placeholderText = "ABC123";
             joinInput.textAlign = "center";
             joinInput.textWrapping = false;
+            // Auto-uppercase as user types so what they see matches what's sent
+            joinInput.onTextChangedObservable.add(() => {
+                const upper = (joinInput.text || '').toUpperCase();
+                if (joinInput.text !== upper) joinInput.text = upper;
+            });
             joinStack.addControl(joinInput);
 
             const btnConnect = createStoneButton("Connect");
@@ -5240,8 +5107,28 @@
             connectedPing.fontSize = 18;
             connectedStack.addControl(connectedPing);
 
+            // Ready-state status: shows both players' ready state
+            const readyStatusYou = new BABYLON.GUI.TextBlock();
+            readyStatusYou.text = "You: Not Ready";
+            readyStatusYou.color = "#cfc5b0";
+            readyStatusYou.fontFamily = "'Crimson Text', serif";
+            readyStatusYou.fontSize = 18;
+            connectedStack.addControl(readyStatusYou);
+
+            const readyStatusOpponent = new BABYLON.GUI.TextBlock();
+            readyStatusOpponent.text = "Opponent: Not Ready";
+            readyStatusOpponent.color = "#cfc5b0";
+            readyStatusOpponent.fontFamily = "'Crimson Text', serif";
+            readyStatusOpponent.fontSize = 18;
+            connectedStack.addControl(readyStatusOpponent);
+
+            // Ready toggle button (visible to both host and joiner)
+            const btnReady = createStoneButton("Ready Up");
+            connectedStack.addControl(btnReady);
+
             const btnStartMatch = createStoneButton("Start Match");
             btnStartMatch.isVisible = false;
+            btnStartMatch.isEnabled = false;
             connectedStack.addControl(btnStartMatch);
 
             const waitingForHost = new BABYLON.GUI.TextBlock();
@@ -5259,7 +5146,7 @@
             window.guiElements.lobbyModeButtons = { btnHostGame, btnJoinGame, btnBackMenu };
             window.guiElements.lobbyHost = { hostStack, hostPrompt, hostCode, hostStatus, btnCancelHost };
             window.guiElements.lobbyJoin = { joinStack, joinPrompt, joinInput, btnConnect, joinStatus, btnCancelJoin };
-            window.guiElements.lobbyConnected = { connectedStack, connectedMsg, connectedPing, btnStartMatch, waitingForHost, btnDisconnect };
+            window.guiElements.lobbyConnected = { connectedStack, connectedMsg, connectedPing, readyStatusYou, readyStatusOpponent, btnReady, btnStartMatch, waitingForHost, btnDisconnect };
 
             // Helper to create stone-styled menu button
             function createMenuButton(text, onClick) {
@@ -5349,25 +5236,6 @@
             spacer1.background = "transparent";
             menuContainer.addControl(spacer1);
 
-            // Spellbook button - opens loadout configuration
-            const btnSpellbook = createMenuButton("Spellbook", () => {
-                if (window.guiElements && window.guiElements.spellbookOverlay) {
-                    menuContainer.isVisible = false;
-                    if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 0;
-                    if (window.guiElements.menuLeftPanel) window.guiElements.menuLeftPanel.isVisible = false;
-                    window.guiElements.spellbookOverlay.isVisible = true;
-                    if (window.refreshSpellbookUI) window.refreshSpellbookUI();
-                }
-            });
-            menuContainer.addControl(btnSpellbook);
-
-            // Spacer
-            const spacer2 = new BABYLON.GUI.Rectangle();
-            spacer2.height = "20px";
-            spacer2.thickness = 0;
-            spacer2.background = "transparent";
-            menuContainer.addControl(spacer2);
-
             // Multiplayer button
             const btnMultiplayer = createMenuButton("Multiplayer", () => {
                 showMultiplayerLobbyGUI();
@@ -5375,7 +5243,6 @@
             menuContainer.addControl(btnMultiplayer);
 
             window.guiElements.btnStartBattle = btnStartBattle;
-            window.guiElements.btnSpellbook = btnSpellbook;
             window.guiElements.btnMultiplayer = btnMultiplayer;
 
             // --- MODE SELECTION OVERLAY (for Start Battle) ---
@@ -5500,259 +5367,6 @@
             });
             modeSelectPanel.addControl(btnModeBack);
 
-            // --- SPELLBOOK OVERLAY ---
-            // Allows players to configure their spell loadout (3 slots)
-            const spellbookOverlay = new BABYLON.GUI.Rectangle();
-            spellbookOverlay.width = 1;
-            spellbookOverlay.height = 1;
-            spellbookOverlay.thickness = 0;
-            spellbookOverlay.background = "transparent";
-            spellbookOverlay.isVisible = false;
-            spellbookOverlay.zIndex = 500;
-            spellbookOverlay.isPointerBlocker = true;
-            guiTexture.addControl(spellbookOverlay);
-            window.guiElements.spellbookOverlay = spellbookOverlay;
-
-            // Dark background
-            const spellbookBg = new BABYLON.GUI.Rectangle();
-            spellbookBg.width = "100%";
-            spellbookBg.height = "100%";
-            spellbookBg.thickness = 0;
-            spellbookBg.background = "rgba(0, 0, 0, 0.85)";
-            spellbookBg.isHitTestVisible = false;
-            spellbookOverlay.addControl(spellbookBg);
-
-            // Main container
-            const spellbookContainer = new BABYLON.GUI.StackPanel();
-            spellbookContainer.width = "800px";
-            spellbookContainer.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
-            spellbookContainer.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
-            spellbookContainer.spacing = 20;
-            spellbookContainer.isPointerBlocker = true;
-            spellbookOverlay.addControl(spellbookContainer);
-
-            // Title
-            const spellbookTitle = new BABYLON.GUI.TextBlock();
-            spellbookTitle.text = "SPELLBOOK";
-            spellbookTitle.color = "#d8c278";
-            spellbookTitle.fontFamily = "'Esthetique', 'Cinzel', serif";
-            spellbookTitle.fontSize = 56;
-            spellbookTitle.fontWeight = "800";
-            spellbookTitle.height = "70px";
-            spellbookTitle.shadowColor = "#000";
-            spellbookTitle.shadowOffsetX = 3;
-            spellbookTitle.shadowOffsetY = 3;
-            spellbookContainer.addControl(spellbookTitle);
-
-            // Subtitle
-            const spellbookSubtitle = new BABYLON.GUI.TextBlock();
-            spellbookSubtitle.text = "Click a slot, then select a spell to equip";
-            spellbookSubtitle.color = "#a89060";
-            spellbookSubtitle.fontFamily = "'Esthetique', 'Cinzel', serif";
-            spellbookSubtitle.fontSize = 22;
-            spellbookSubtitle.height = "30px";
-            spellbookContainer.addControl(spellbookSubtitle);
-
-            // Current loadout slots (horizontal)
-            const loadoutRow = new BABYLON.GUI.StackPanel();
-            loadoutRow.isVertical = false;
-            loadoutRow.height = "140px";
-            loadoutRow.spacing = 20;
-            loadoutRow.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
-            spellbookContainer.addControl(loadoutRow);
-
-            // Track selected slot for assignment
-            let selectedSlotIndex = -1;
-            const slotButtons = [];
-
-            // Create slot button
-            function createSlotButton(slotIndex) {
-                const container = new BABYLON.GUI.StackPanel();
-                container.width = "160px";
-                container.height = "140px";
-                container.spacing = 5;
-
-                // Key label
-                const keyLabel = new BABYLON.GUI.TextBlock();
-                keyLabel.text = "[ " + (slotIndex + 1) + " ]";
-                keyLabel.color = "#888";
-                keyLabel.fontSize = 18;
-                keyLabel.height = "24px";
-                keyLabel.fontFamily = "'Esthetique', 'Cinzel', serif";
-                container.addControl(keyLabel);
-
-                // Slot button
-                const btn = BABYLON.GUI.Button.CreateSimpleButton("slot_" + slotIndex, "");
-                btn.width = "120px";
-                btn.height = "100px";
-                btn.thickness = 3;
-                btn.color = "#5a4a32";
-                btn.background = "#1a1408";
-                btn.cornerRadius = 8;
-                btn.isPointerBlocker = true;
-
-                // Spell icon
-                const iconText = new BABYLON.GUI.TextBlock();
-                iconText.name = "slotIcon_" + slotIndex;
-                iconText.fontSize = 48;
-                iconText.color = "#fff";
-                iconText.top = "-8px";
-                btn.addControl(iconText);
-
-                // Spell name
-                const nameText = new BABYLON.GUI.TextBlock();
-                nameText.name = "slotName_" + slotIndex;
-                nameText.fontSize = 14;
-                nameText.color = "#d8c278";
-                nameText.top = "35px";
-                nameText.fontFamily = "'Esthetique', 'Cinzel', serif";
-                btn.addControl(nameText);
-
-                btn.onPointerClickObservable.add(() => {
-                    // Deselect others, select this one
-                    selectedSlotIndex = slotIndex;
-                    slotButtons.forEach((sb, i) => {
-                        sb.btn.thickness = i === slotIndex ? 4 : 3;
-                        sb.btn.color = i === slotIndex ? "#d8c278" : "#5a4a32";
-                    });
-                });
-
-                container.addControl(btn);
-                return { container, btn, iconText, nameText, keyLabel };
-            }
-
-            // Create 3 slots
-            for (let i = 0; i < 3; i++) {
-                const slot = createSlotButton(i);
-                slotButtons.push(slot);
-                loadoutRow.addControl(slot.container);
-            }
-
-            // Available spells section
-            const availableLabel = new BABYLON.GUI.TextBlock();
-            availableLabel.text = "Available Spells";
-            availableLabel.color = "#a89060";
-            availableLabel.fontFamily = "'Esthetique', 'Cinzel', serif";
-            availableLabel.fontSize = 28;
-            availableLabel.height = "40px";
-            availableLabel.paddingTop = "20px";
-            spellbookContainer.addControl(availableLabel);
-
-            // Spells grid (horizontal row for now)
-            const spellsRow = new BABYLON.GUI.StackPanel();
-            spellsRow.isVertical = false;
-            spellsRow.height = "120px";
-            spellsRow.spacing = 15;
-            spellsRow.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
-            spellbookContainer.addControl(spellsRow);
-
-            const spellButtons = [];
-
-            // Create spell button
-            function createSpellButton(spell) {
-                const btn = BABYLON.GUI.Button.CreateSimpleButton("spell_" + spell.id, "");
-                btn.width = "100px";
-                btn.height = "110px";
-                btn.thickness = 2;
-                btn.color = spell.unlocked ? "#5a4a32" : "#333";
-                btn.background = spell.unlocked ? "#1a1408" : "#0a0804";
-                btn.cornerRadius = 8;
-                btn.isPointerBlocker = true;
-                btn.alpha = spell.unlocked ? 1.0 : 0.5;
-
-                // Element color accent
-                const elementColors = {
-                    fire: "#ff6030",
-                    ice: "#60a0ff",
-                    lightning: "#ffff60",
-                    earth: "#90a060"
-                };
-
-                // Icon
-                const icon = new BABYLON.GUI.TextBlock();
-                icon.text = spell.icon;
-                icon.fontSize = 36;
-                icon.top = "-15px";
-                btn.addControl(icon);
-
-                // Name
-                const name = new BABYLON.GUI.TextBlock();
-                name.text = spell.name;
-                name.fontSize = 12;
-                name.color = elementColors[spell.element] || "#d8c278";
-                name.top = "25px";
-                name.fontFamily = "'Esthetique', 'Cinzel', serif";
-                btn.addControl(name);
-
-                // Type indicator
-                const typeText = new BABYLON.GUI.TextBlock();
-                typeText.text = spell.type.toUpperCase();
-                typeText.fontSize = 9;
-                typeText.color = "#666";
-                typeText.top = "42px";
-                btn.addControl(typeText);
-
-                if (spell.unlocked) {
-                    btn.onPointerEnterObservable.add(() => {
-                        btn.thickness = 3;
-                        btn.color = elementColors[spell.element] || "#d8c278";
-                    });
-                    btn.onPointerOutObservable.add(() => {
-                        btn.thickness = 2;
-                        btn.color = "#5a4a32";
-                    });
-                    btn.onPointerClickObservable.add(() => {
-                        if (selectedSlotIndex >= 0) {
-                            PlayerLoadout.setSlot(selectedSlotIndex, spell.id);
-                            refreshSpellbookUI();
-                        }
-                    });
-                }
-
-                return btn;
-            }
-
-            // Add all spells to the grid
-            const allSpells = Object.values(SpellRegistry.getAll());
-            allSpells.forEach(spell => {
-                const btn = createSpellButton(spell);
-                spellButtons.push({ spell, btn });
-                spellsRow.addControl(btn);
-            });
-
-            // Refresh UI to show current loadout
-            function refreshSpellbookUI() {
-                const loadout = PlayerLoadout.getLoadout();
-                loadout.forEach((spellId, i) => {
-                    const spell = SpellRegistry.get(spellId);
-                    if (spell && slotButtons[i]) {
-                        slotButtons[i].iconText.text = spell.icon;
-                        slotButtons[i].nameText.text = spell.name;
-                    }
-                });
-            }
-            window.refreshSpellbookUI = refreshSpellbookUI;
-
-            // Initial refresh
-            refreshSpellbookUI();
-
-            // Back button
-            const spellbookBack = createModeButton("Back");
-            spellbookBack.color = "#1a120e";
-            spellbookBack.width = "200px";
-            spellbookBack.onPointerClickObservable.add(() => {
-                spellbookOverlay.isVisible = false;
-                selectedSlotIndex = -1;
-                slotButtons.forEach(sb => {
-                    sb.btn.thickness = 3;
-                    sb.btn.color = "#5a4a32";
-                });
-                menuContainer.isVisible = true;
-                if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 1;
-                if (window.guiElements.menuLeftPanel) window.guiElements.menuLeftPanel.isVisible = true;
-            });
-            spellbookContainer.addControl(spellbookBack);
-
             // --- MANA BARS ---
             // Player mana bar (below player health bar)
             const playerManaContainer = new BABYLON.GUI.StackPanel();
@@ -5843,6 +5457,116 @@
             aiManaContainer.isVisible = false;  // Start hidden (menu state)
             guiTexture.addControl(aiManaContainer);
             window.guiElements.aiManaContainer = aiManaContainer;
+
+            // ============================================================
+            // IN-GAME PING / NETWORK QUALITY INDICATOR (PvP only)
+            // ============================================================
+            const netStatusText = new BABYLON.GUI.TextBlock();
+            netStatusText.text = "";
+            netStatusText.color = "#6ad26a";
+            netStatusText.fontFamily = "'Crimson Text', serif";
+            netStatusText.fontSize = 16;
+            netStatusText.height = "20px";
+            netStatusText.width = "120px";
+            netStatusText.top = "10px";
+            netStatusText.left = "-10px";
+            netStatusText.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
+            netStatusText.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+            netStatusText.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
+            netStatusText.shadowColor = "#000";
+            netStatusText.shadowOffsetX = 1;
+            netStatusText.shadowOffsetY = 1;
+            netStatusText.isVisible = false;  // Hidden until PvP starts
+            guiTexture.addControl(netStatusText);
+            window.guiElements.netStatusText = netStatusText;
+
+            // Helper: color-code a ping value (returns CSS color string)
+            window.pingColor = (ms) => {
+                if (ms < 80) return '#6ad26a';   // green: smooth
+                if (ms < 150) return '#e6c84a';  // yellow: playable
+                return '#e74c4c';                 // red: rough
+            };
+            // Helper: refresh the in-game indicator from current netPing
+            window.refreshNetStatus = () => {
+                const el = window.guiElements && window.guiElements.netStatusText;
+                if (!el) return;
+                if (gameMode === 'pvp' && typeof netPing === 'number') {
+                    el.text = netPing + ' ms';
+                    el.color = window.pingColor(netPing);
+                    el.isVisible = true;
+                } else {
+                    el.isVisible = false;
+                }
+            };
+
+            // ============================================================
+            // MID-MATCH DISCONNECT OVERLAY
+            // Replaces the auto-timeout toast for in-PvP disconnects so
+            // players see what happened and acknowledge before menu.
+            // ============================================================
+            const dcOverlay = new BABYLON.GUI.Rectangle();
+            dcOverlay.width = 1;
+            dcOverlay.height = 1;
+            dcOverlay.thickness = 0;
+            dcOverlay.background = "rgba(0, 0, 0, 0.78)";
+            dcOverlay.isVisible = false;
+            dcOverlay.zIndex = 600;
+            dcOverlay.isPointerBlocker = true;
+            guiTexture.addControl(dcOverlay);
+
+            const dcStack = new BABYLON.GUI.StackPanel();
+            dcStack.spacing = 18;
+            dcStack.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
+            dcStack.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
+            dcOverlay.addControl(dcStack);
+
+            const dcTitle = new BABYLON.GUI.TextBlock();
+            dcTitle.text = "OPPONENT DISCONNECTED";
+            dcTitle.color = "#e74c4c";
+            dcTitle.fontFamily = "'Esthetique', 'Cinzel', serif";
+            dcTitle.fontSize = 42;
+            dcTitle.height = "60px";
+            dcTitle.shadowColor = "#000";
+            dcTitle.shadowOffsetX = 3;
+            dcTitle.shadowOffsetY = 3;
+            dcStack.addControl(dcTitle);
+
+            const dcReason = new BABYLON.GUI.TextBlock();
+            dcReason.text = "";
+            dcReason.color = "#cfc5b0";
+            dcReason.fontFamily = "'Crimson Text', serif";
+            dcReason.fontSize = 20;
+            dcReason.height = "30px";
+            dcStack.addControl(dcReason);
+
+            const dcBtn = BABYLON.GUI.Button.CreateSimpleButton("dcReturnBtn", "Return to Menu");
+            dcBtn.width = "240px";
+            dcBtn.height = "60px";
+            dcBtn.color = "#fff";
+            dcBtn.background = "#3d3528";
+            dcBtn.cornerRadius = 6;
+            dcBtn.thickness = 2;
+            dcBtn.fontFamily = "'Esthetique', 'Cinzel', serif";
+            dcBtn.fontSize = 22;
+            dcStack.addControl(dcBtn);
+
+            window.guiElements.dcOverlay = dcOverlay;
+            window.guiElements.dcReason = dcReason;
+            window.guiElements.dcBtn = dcBtn;
+
+            window.showDisconnectOverlay = (reason) => {
+                dcReason.text = reason || 'Connection lost';
+                dcOverlay.isVisible = true;
+            };
+            window.hideDisconnectOverlay = () => {
+                dcOverlay.isVisible = false;
+            };
+
+            dcBtn.onPointerClickObservable.add(() => {
+                window.hideDisconnectOverlay();
+                if (typeof resetGame === 'function') resetGame();
+                if (typeof showTalentScreen === 'function') showTalentScreen();
+            });
 
             window.guiElements.aiManaSegments = [];
             window.guiElements.aiManaBgs = [];  // Store backgrounds for visibility control
@@ -10088,762 +9812,6 @@
                 return proj;
             };
 
-            // ============================================================
-            // SNOWBALL PROJECTILE
-            // ============================================================
-            // Create snowball material (white/icy)
-            const snowCoreMat = new BABYLON.StandardMaterial("snowCoreMat", scene);
-            snowCoreMat.diffuseColor = new BABYLON.Color3(0.95, 0.95, 1);
-            snowCoreMat.emissiveColor = new BABYLON.Color3(0.8, 0.85, 0.9);
-            snowCoreMat.specularColor = new BABYLON.Color3(0, 0, 0);  // Flat/matte look
-            snowCoreMat.specularPower = 0;
-
-            window.spawnSnowball = (owner, startX, startZ, velX, velZ) => {
-                // Calculate lob arc - gentle arc that can skip over projectiles
-                // Court is ~28 units wide, half court is ~14 units
-                const lobHeight = 3;  // How high the arc peaks (units above start)
-                const halfCourt = 14;
-                const travelTime = halfCourt / abilities.snowball.baseSpeed;  // Rough time to cross half court
-                const initialVelY = lobHeight / (travelTime * 0.5);  // Initial upward velocity for arc
-
-                const proj = {
-                    owner: owner,
-                    type: 'snowball',
-                    velX: velX,
-                    velZ: velZ,
-                    velY: initialVelY,  // Lob arc - starts going up
-                    speed: abilities.snowball.baseSpeed,
-                    damage: abilities.snowball.damage,
-                    isParried: false,
-                    parriedBy: null,
-                    volleyCount: 0,
-                    time: 0,
-                    bounceCount: 0  // Track bounces for gravity system
-                };
-
-                // Create chunky snowball mesh
-                proj.mesh = BABYLON.MeshBuilder.CreateIcoSphere("snowball_" + Date.now(), {
-                    radius: 0.25,
-                    subdivisions: 1,
-                    flat: true
-                }, scene);
-                proj.mesh.position.set(startX, 0.9, startZ);  // Start slightly higher for lob
-                proj.mesh.material = snowCoreMat;
-                proj.mesh.rotationQuaternion = BABYLON.Quaternion.Identity();
-                shadowGenerator.addShadowCaster(proj.mesh);
-
-                if (glow) {
-                    glow.addIncludedOnlyMesh(proj.mesh);
-                }
-
-                // Outer white glow
-                proj.glow = BABYLON.MeshBuilder.CreateIcoSphere("snowGlow_" + Date.now(), { radius: 0.4, subdivisions: 1, flat: true }, scene);
-                const glowMat = new BABYLON.StandardMaterial("snowGlowMat_" + Date.now(), scene);
-                glowMat.emissiveColor = new BABYLON.Color3(0.9, 0.9, 1);
-                glowMat.alpha = 0.2;
-                glowMat.backFaceCulling = false;
-                proj.glow.material = glowMat;
-                proj.glow.parent = proj.mesh;
-                proj.glow.position = BABYLON.Vector3.Zero();
-                proj.glowMat = glowMat;
-
-                // Snow trail
-                proj.trailAnchor = BABYLON.MeshBuilder.CreateBox("snowTrailAnchor_" + Date.now(), {size: 0.01}, scene);
-                proj.trailAnchor.isVisible = false;
-                proj.trailAnchor.position.copyFrom(proj.mesh.position);
-                proj.lastTrailSamplePos = proj.mesh.position.clone();
-                proj.trail = new BABYLON.TrailMesh("snowTrail_" + Date.now(), proj.trailAnchor, scene, 0.15, 20, true);
-                const trailMat = new BABYLON.StandardMaterial("snowTrailMat_" + Date.now(), scene);
-                trailMat.emissiveColor = new BABYLON.Color3(0.9, 0.9, 1);
-                trailMat.diffuseColor = new BABYLON.Color3(0, 0, 0);
-                trailMat.alpha = 0.4;
-                trailMat.backFaceCulling = false;
-                proj.trail.material = trailMat;
-                proj.trailMat = trailMat;
-
-                // Soft white light
-                proj.light = new BABYLON.PointLight("snowLight_" + Date.now(), new BABYLON.Vector3(0, 0.3, 0), scene);
-                proj.light.diffuse = new BABYLON.Color3(0.95, 0.95, 1);
-                proj.light.intensity = 0.6;
-                proj.light.range = 8;
-                proj.light.parent = proj.mesh;
-                proj.baseIntensity = 0.6;
-
-                // Snow particles
-                proj.particles = new BABYLON.ParticleSystem("snowParticles_" + Date.now(), 40, scene);
-                proj.particles.particleTexture = flareTexture;
-                proj.particles.emitter = proj.mesh;
-                proj.particles.minEmitBox = new BABYLON.Vector3(-0.05, -0.05, -0.05);
-                proj.particles.maxEmitBox = new BABYLON.Vector3(0.05, 0.05, 0.05);
-                proj.particles.color1 = new BABYLON.Color4(1, 1, 1, 1);
-                proj.particles.color2 = new BABYLON.Color4(0.9, 0.95, 1, 1);
-                proj.particles.colorDead = new BABYLON.Color4(0.8, 0.85, 0.9, 0);
-                proj.particles.minSize = 0.05;
-                proj.particles.maxSize = 0.12;
-                proj.particles.minLifeTime = 0.1;
-                proj.particles.maxLifeTime = 0.2;
-                proj.particles.emitRate = 40;
-                proj.particles.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
-                proj.particles.direction1 = new BABYLON.Vector3(-0.3, -0.3, -0.3);
-                proj.particles.direction2 = new BABYLON.Vector3(0.3, 0.3, 0.3);
-                proj.particles.gravity = new BABYLON.Vector3(0, -1, 0);
-                proj.particles.minEmitPower = 0.5;
-                proj.particles.maxEmitPower = 1;
-                proj.particles.start();
-
-                // Reuse frostbolt sound for now
-                proj.loopSound = createLoopingSound('frostboltLoop', startX, 0.08);
-
-                projectiles.push(proj);
-                return proj;
-            };
-
-            // ============================================================
-            // SPARK PROJECTILE (Lightning damage spell - connect-the-dots style)
-            // ============================================================
-            // Create spark material (bright yellow lightning)
-            const sparkCoreMat = new BABYLON.StandardMaterial("sparkCoreMat", scene);
-            sparkCoreMat.diffuseColor = new BABYLON.Color3(1, 1, 0.8);
-            sparkCoreMat.emissiveColor = new BABYLON.Color3(1, 0.95, 0.5);
-            sparkCoreMat.specularColor = new BABYLON.Color3(0, 0, 0);
-            sparkCoreMat.specularPower = 0;
-
-            // Create horizontal lightning bolt between two points (chain reaction visual)
-            window.createHorizontalLightningBolt = function(fromPos, toPos, duration = 350) {
-                if (!scene) return;
-
-                const segments = 6;
-                const points = [];
-
-                // Create sharp jagged lightning path (less jitter for cleaner look)
-                for (let i = 0; i <= segments; i++) {
-                    const t = i / segments;
-                    const pos = BABYLON.Vector3.Lerp(fromPos, toPos, t);
-
-                    // Subtle jitter for sharpness
-                    if (i > 0 && i < segments) {
-                        const jitterScale = Math.sin(t * Math.PI) * 0.2;
-                        pos.y += (Math.random() - 0.5) * jitterScale;
-                        pos.z += (Math.random() - 0.5) * jitterScale;
-                    }
-                    points.push(pos);
-                }
-
-                // Thin sharp bolt
-                const bolt = BABYLON.MeshBuilder.CreateTube("chainBolt_" + Date.now(), {
-                    path: points,
-                    radius: 0.035,
-                    tessellation: 4,
-                    cap: BABYLON.Mesh.CAP_ALL
-                }, scene);
-
-                const boltMat = new BABYLON.StandardMaterial("chainBoltMat_" + Date.now(), scene);
-                boltMat.emissiveColor = new BABYLON.Color3(1, 1, 0.95);
-                boltMat.disableLighting = true;
-                bolt.material = boltMat;
-
-                // Subtle glow
-                const glowBolt = BABYLON.MeshBuilder.CreateTube("chainBoltGlow_" + Date.now(), {
-                    path: points,
-                    radius: 0.07,
-                    tessellation: 4
-                }, scene);
-                const glowMat = new BABYLON.StandardMaterial("chainBoltGlowMat_" + Date.now(), scene);
-                glowMat.emissiveColor = new BABYLON.Color3(1, 0.95, 0.5);
-                glowMat.alpha = 0.4;
-                glowMat.disableLighting = true;
-                glowBolt.material = glowMat;
-
-                // Small flash at target point
-                const flash = BABYLON.MeshBuilder.CreateSphere("chainFlash_" + Date.now(), {
-                    diameter: 0.4,
-                    segments: 6
-                }, scene);
-                flash.position = toPos.clone();
-                const flashMat = new BABYLON.StandardMaterial("chainFlashMat_" + Date.now(), scene);
-                flashMat.emissiveColor = new BABYLON.Color3(1, 1, 0.8);
-                flashMat.alpha = 1.0;
-                flashMat.disableLighting = true;
-                flash.material = flashMat;
-
-                // Step fade variables
-                let currentStep = 0;  // 0 = full, 1 = 0.66, 2 = 0.33, 3 = gone
-                const stepDuration = duration / 4;
-                let elapsed = 0;
-
-                // Step fade out and dispose
-                const fadeInterval = setInterval(() => {
-                    elapsed += 16;
-
-                    // Check which step we're in
-                    const newStep = Math.floor(elapsed / stepDuration);
-                    if (newStep > currentStep) {
-                        currentStep = newStep;
-
-                        if (currentStep >= 4) {
-                            clearInterval(fadeInterval);
-                            bolt.dispose();
-                            glowBolt.dispose();
-                            flash.dispose();
-                            boltMat.dispose();
-                            glowMat.dispose();
-                            flashMat.dispose();
-                            return;
-                        }
-
-                        // Step alpha: 1.0 → 0.66 → 0.33 → 0
-                        const stepAlphas = [1.0, 0.66, 0.33, 0];
-                        const alpha = stepAlphas[currentStep];
-                        boltMat.alpha = alpha;
-                        glowMat.alpha = alpha * 0.4;
-                        flashMat.alpha = alpha;
-                    }
-                }, 16);
-
-                return { bolt, glowBolt, flash };
-            }
-
-            // Generate organic lightning path between two points
-            function generateLightningPath(fromPos, toPos, segments = 6) {
-                // Validate inputs - return simple line if invalid
-                if (!fromPos || !toPos || fromPos.x === undefined || toPos.x === undefined) {
-                    const defaultFrom = fromPos && fromPos.x !== undefined ? fromPos : new BABYLON.Vector3(0, 0, 0);
-                    const defaultTo = toPos && toPos.x !== undefined ? toPos : new BABYLON.Vector3(1, 0, 0);
-                    return [defaultFrom, defaultTo];
-                }
-
-                // Check for NaN values
-                if (isNaN(fromPos.x) || isNaN(fromPos.y) || isNaN(fromPos.z) ||
-                    isNaN(toPos.x) || isNaN(toPos.y) || isNaN(toPos.z)) {
-                    return [new BABYLON.Vector3(0, 0, 0), new BABYLON.Vector3(1, 0, 0)];
-                }
-
-                const points = [fromPos.clone()];
-                const direction = toPos.subtract(fromPos);
-                const length = direction.length();
-
-                // If points are too close, just return a simple line
-                if (length < 0.1) {
-                    return [fromPos.clone(), toPos.clone()];
-                }
-
-                const unitDir = direction.normalize();
-
-                // Get perpendicular vectors for offsets
-                let perpY = new BABYLON.Vector3(0, 1, 0);
-                let perpZ = BABYLON.Vector3.Cross(unitDir, perpY).normalize();
-                if (perpZ.length() < 0.1) {
-                    perpZ = new BABYLON.Vector3(0, 0, 1);
-                }
-                perpY = BABYLON.Vector3.Cross(perpZ, unitDir).normalize();
-
-                // Create organic lightning with random jags
-                let lastOffset = { y: 0, z: 0 };
-                for (let i = 1; i < segments; i++) {
-                    // Random progression along the path (not uniform spacing)
-                    const baseT = i / segments;
-                    const jitter = (Math.random() - 0.5) * 0.15;
-                    const t = Math.max(0.1, Math.min(0.9, baseT + jitter));
-
-                    const basePos = BABYLON.Vector3.Lerp(fromPos, toPos, t);
-
-                    // Random offset magnitude (bigger in middle, but with randomness)
-                    const midFactor = Math.sin(t * Math.PI);
-                    const offsetMag = (0.2 + Math.random() * 0.4) * midFactor * (length * 0.15);
-
-                    // Random direction - not just alternating, truly random with some continuity
-                    const yOffset = (Math.random() - 0.5) * offsetMag * 2;
-                    const zOffset = (Math.random() - 0.5) * offsetMag * 1.5;
-
-                    basePos.addInPlace(perpY.scale(yOffset));
-                    basePos.addInPlace(perpZ.scale(zOffset));
-
-                    points.push(basePos);
-                }
-                points.push(toPos.clone());
-                return points;
-            }
-
-            // Create a persistent lightning bolt that can be updated to follow targets
-            window.createPersistentLightningBolt = function(fromPos, toPos) {
-                if (!scene) return null;
-                // Validate positions
-                if (!fromPos || !toPos || fromPos.x === undefined || toPos.x === undefined) return null;
-                if (isNaN(fromPos.x) || isNaN(toPos.x)) return null;
-
-                const segments = 5 + Math.floor(Math.random() * 3);  // 5-7 segments, random
-                const points = generateLightningPath(fromPos, toPos, segments);
-                if (!points || points.length < 2) return null;
-
-                // Thin sharp bolt
-                const bolt = BABYLON.MeshBuilder.CreateTube("persistBolt_" + Date.now(), {
-                    path: points,
-                    radius: 0.03,
-                    tessellation: 4,
-                    cap: BABYLON.Mesh.CAP_ALL,
-                    updatable: true
-                }, scene);
-
-                const boltMat = new BABYLON.StandardMaterial("persistBoltMat_" + Date.now(), scene);
-                boltMat.emissiveColor = new BABYLON.Color3(1, 1, 0.95);
-                boltMat.disableLighting = true;
-                bolt.material = boltMat;
-
-                // Subtle glow
-                const glowBolt = BABYLON.MeshBuilder.CreateTube("persistBoltGlow_" + Date.now(), {
-                    path: points,
-                    radius: 0.06,
-                    tessellation: 4,
-                    updatable: true
-                }, scene);
-                const glowMat = new BABYLON.StandardMaterial("persistBoltGlowMat_" + Date.now(), scene);
-                glowMat.emissiveColor = new BABYLON.Color3(1, 0.95, 0.5);
-                glowMat.alpha = 0.4;
-                glowMat.disableLighting = true;
-                glowBolt.material = glowMat;
-
-                // Small flash at target point
-                const flash = BABYLON.MeshBuilder.CreateSphere("persistFlash_" + Date.now(), {
-                    diameter: 0.35,
-                    segments: 6
-                }, scene);
-                flash.position = toPos.clone();
-                const flashMat = new BABYLON.StandardMaterial("persistFlashMat_" + Date.now(), scene);
-                flashMat.emissiveColor = new BABYLON.Color3(1, 1, 0.8);
-                flashMat.alpha = 1.0;
-                flashMat.disableLighting = true;
-                flash.material = flashMat;
-
-                return {
-                    bolt,
-                    glowBolt,
-                    flash,
-                    boltMat,
-                    glowMat,
-                    flashMat,
-                    // Update the bolt path to new positions with fresh lightning
-                    update: function(newFromPos, newToPos) {
-                        // Validate positions before updating
-                        if (!newFromPos || !newToPos) return;
-                        if (newFromPos.x === undefined || newToPos.x === undefined) return;
-                        if (isNaN(newFromPos.x) || isNaN(newToPos.x)) return;
-
-                        const newPoints = generateLightningPath(newFromPos, newToPos, 5 + Math.floor(Math.random() * 3));
-                        if (!newPoints || newPoints.length < 2) return;
-
-                        // Dispose old meshes and create new ones (safer than using instance option)
-                        if (this.bolt && !this.bolt.isDisposed()) this.bolt.dispose();
-                        if (this.glowBolt && !this.glowBolt.isDisposed()) this.glowBolt.dispose();
-
-                        this.bolt = BABYLON.MeshBuilder.CreateTube("persistBolt", {
-                            path: newPoints,
-                            radius: 0.03,
-                            tessellation: 4,
-                            cap: BABYLON.Mesh.CAP_ALL
-                        }, scene);
-                        this.bolt.material = this.boltMat;
-
-                        this.glowBolt = BABYLON.MeshBuilder.CreateTube("persistBoltGlow", {
-                            path: newPoints,
-                            radius: 0.06,
-                            tessellation: 4
-                        }, scene);
-                        this.glowBolt.material = this.glowMat;
-
-                        this.flash.position = newToPos.clone();
-                    },
-                    dispose: function() {
-                        if (this.bolt && !this.bolt.isDisposed()) this.bolt.dispose();
-                        if (this.glowBolt && !this.glowBolt.isDisposed()) this.glowBolt.dispose();
-                        if (this.flash && !this.flash.isDisposed()) this.flash.dispose();
-                        if (this.boltMat) this.boltMat.dispose();
-                        if (this.glowMat) this.glowMat.dispose();
-                        if (this.flashMat) this.flashMat.dispose();
-                    }
-                };
-            }
-
-            // Update all active spark chains for a combatant
-            // Also checks for NEW projectiles that spawned mid-cast and adds them to the chain
-            window.updateSparkChains = function(c) {
-                if (!c || !c.sparkActiveChains) return;
-                if (!c.paddle) return;  // Safety check for doubles mode
-                if (!c.sparkChainProjs) c.sparkChainProjs = [];
-
-                const paddle = c.paddle;
-                const isLeft = c.side === 'left';
-                const playerPos = new BABYLON.Vector3(
-                    isLeft ? paddle.position.x + 1 : paddle.position.x - 1,
-                    0.7,
-                    paddle.position.z
-                );
-
-                // Check for NEW projectiles that weren't in the chain yet
-                const currentProjIds = new Set(c.sparkChainProjs.map(p => p && p.mesh ? p.mesh.uniqueId : null));
-
-                for (const proj of projectiles) {
-                    if (!proj || !proj.mesh || proj.mesh.isDisposed()) continue;
-                    if (proj.type === 'spark') continue;  // Don't chain through other chain lightning bolts
-
-                    // Skip if already in chain
-                    if (currentProjIds.has(proj.mesh.uniqueId)) continue;
-
-                    // New projectile found! Add it to the chain
-                    // Create visual chain for it (will be positioned below)
-                    const fromPos = proj.mesh.position.clone();
-                    const chain = window.createPersistentLightningBolt(fromPos, playerPos);
-
-                    // Only add if chain was created successfully
-                    if (chain) {
-                        c.sparkChainProjs.push(proj);
-                        c.sparkActiveChains.push(chain);
-
-                        // Update chain count
-                        c.sparkChainCount = c.sparkChainProjs.length;
-
-                        // Show chain notification
-                        showCombatText(isLeft, 'CHAIN ' + c.sparkChainCount, 'lightning');
-                    }
-                }
-
-                // Re-sort projectiles by distance (farthest first) so chain connects properly
-                const projWithChain = [];
-                for (let i = 0; i < c.sparkChainProjs.length; i++) {
-                    const proj = c.sparkChainProjs[i];
-                    const chain = c.sparkActiveChains[i];
-                    if (proj && proj.mesh && !proj.mesh.isDisposed()) {
-                        const dist = BABYLON.Vector3.Distance(proj.mesh.position, playerPos);
-                        projWithChain.push({ proj, chain, dist });
-                    } else if (chain) {
-                        // Projectile gone - hide and keep for cleanup
-                        if (chain.bolt) chain.bolt.isVisible = false;
-                        if (chain.glowBolt) chain.glowBolt.isVisible = false;
-                        if (chain.flash) chain.flash.isVisible = false;
-                    }
-                }
-
-                // Sort by distance (farthest first)
-                projWithChain.sort((a, b) => b.dist - a.dist);
-
-                // Rebuild arrays in sorted order
-                c.sparkChainProjs = projWithChain.map(x => x.proj);
-                c.sparkActiveChains = projWithChain.map(x => x.chain);
-                c.sparkChainCount = c.sparkChainProjs.length;
-
-                // Now update each chain segment's visual position
-                for (let i = 0; i < c.sparkActiveChains.length; i++) {
-                    const chain = c.sparkActiveChains[i];
-                    const proj = c.sparkChainProjs[i];
-                    if (!chain || !proj || !proj.mesh || proj.mesh.isDisposed()) continue;
-                    // Additional safety checks for chain components
-                    if (!chain.bolt || !chain.glowBolt || !chain.flash || !chain.update) continue;
-
-                    chain.bolt.isVisible = true;
-                    chain.glowBolt.isVisible = true;
-                    chain.flash.isVisible = true;
-
-                    const fromPos = proj.mesh.position.clone();
-                    let toPos;
-
-                    if (i < c.sparkChainProjs.length - 1) {
-                        // Chain to next projectile (closer one)
-                        const nextProj = c.sparkChainProjs[i + 1];
-                        if (nextProj && nextProj.mesh && !nextProj.mesh.isDisposed()) {
-                            toPos = nextProj.mesh.position.clone();
-                        } else {
-                            toPos = playerPos.clone();
-                        }
-                    } else {
-                        // Last projectile - chain to player
-                        toPos = playerPos.clone();
-                    }
-
-                    chain.update(fromPos, toPos);
-                }
-            }
-
-            // Cleanup all spark chains for a combatant
-            window.cleanupSparkChains = function(c) {
-                if (!c || !c.sparkActiveChains) return;
-                for (const chain of c.sparkActiveChains) {
-                    if (chain) chain.dispose();
-                }
-                c.sparkActiveChains = [];
-                c.sparkChainProjs = [];
-            }
-
-            window.spawnSpark = (owner, startX, startZ, velX, velZ, chainCount = 0) => {
-                // Scale factor based on chain count (similar to Fireball volley scaling)
-                // 0 chains = base, scales up similar to fireball's 0.85 + volleyCount * 0.125
-                const scaleMultiplier = 0.85 + Math.min(chainCount, 4) * 0.125;  // 0.85 to 1.35
-                const speedMultiplier = 1.0 + Math.min(chainCount, 4) * 0.05;    // 1.0 to 1.2 (subtle speed increase)
-
-                const proj = {
-                    owner: owner,
-                    type: 'spark',
-                    velX: velX * speedMultiplier,
-                    velZ: 0,  // Always travels straight (no Z velocity)
-                    velY: 0,
-                    speed: abilities.spark.baseSpeed * speedMultiplier,
-                    baseDamage: abilities.spark.baseDamage,
-                    chainCount: chainCount,  // How many projectiles it zapped before launch
-                    isParried: false,
-                    parriedBy: null,
-                    volleyCount: 0,
-                    time: 0
-                };
-
-                // Calculate damage based on chain count (same formula as before)
-                proj.damage = proj.baseDamage + (chainCount * abilities.spark.bonusDamagePerChain);
-
-                // Base sizes scaled by chain count
-                const coreRadius = 0.22 * scaleMultiplier;
-                const glowRadius = 0.4 * scaleMultiplier;
-                const trailWidth = 0.15 * scaleMultiplier;
-
-                // Create lightning bolt core (bright yellow)
-                proj.mesh = BABYLON.MeshBuilder.CreateIcoSphere("spark_" + Date.now(), {
-                    radius: coreRadius,
-                    subdivisions: 1,
-                    flat: true
-                }, scene);
-                proj.mesh.position.set(startX, 0.7, startZ);
-                proj.mesh.material = sparkCoreMat;
-                proj.mesh.rotationQuaternion = BABYLON.Quaternion.Identity();
-                shadowGenerator.addShadowCaster(proj.mesh);
-
-                if (glow) {
-                    glow.addIncludedOnlyMesh(proj.mesh);
-                }
-
-                // Yellow lightning glow (scaled)
-                proj.glow = BABYLON.MeshBuilder.CreateIcoSphere("sparkGlow_" + Date.now(), { radius: glowRadius, subdivisions: 1, flat: true }, scene);
-                const glowMat = new BABYLON.StandardMaterial("sparkGlowMat_" + Date.now(), scene);
-                glowMat.emissiveColor = new BABYLON.Color3(1, 0.9, 0.3);
-                glowMat.alpha = 0.35 + (chainCount * 0.05);  // Slightly more opaque with chains
-                glowMat.backFaceCulling = false;
-                proj.glow.material = glowMat;
-                proj.glow.parent = proj.mesh;
-                proj.glow.position = BABYLON.Vector3.Zero();
-                proj.glowMat = glowMat;
-
-                // Zigzag lightning trail - stores recent positions and draws zigzag tubes
-                proj.trailPositions = [];
-                proj.trailSegments = [];  // Array of tube meshes
-                proj.trailMat = new BABYLON.StandardMaterial("sparkTrailMat_" + Date.now(), scene);
-                proj.trailMat.emissiveColor = new BABYLON.Color3(1, 0.95, 0.4);
-                proj.trailMat.diffuseColor = new BABYLON.Color3(0, 0, 0);
-                proj.trailMat.alpha = 0.7;
-                proj.trailMat.backFaceCulling = false;
-                proj.trailMat.disableLighting = true;
-                proj.lastTrailSamplePos = proj.mesh.position.clone();
-                proj.trailWidth = trailWidth;
-                proj.trailSampleTimer = 0;
-
-                // Yellow lightning light (flickering, intensity scales with chains)
-                proj.light = new BABYLON.PointLight("sparkLight_" + Date.now(), new BABYLON.Vector3(0, 0.3, 0), scene);
-                proj.light.diffuse = new BABYLON.Color3(1, 0.95, 0.6);
-                proj.light.intensity = 1.0 + (chainCount * 0.3);  // Brighter with more chains
-                proj.light.range = 12 + (chainCount * 2);  // Larger light range with chains
-                proj.light.parent = proj.mesh;
-                proj.baseIntensity = 1.0 + (chainCount * 0.3);
-
-                // Yellow electric particles (scaled)
-                const particleScale = scaleMultiplier;
-                proj.particles = new BABYLON.ParticleSystem("sparkParticles_" + Date.now(), 60 + chainCount * 15, scene);
-                proj.particles.particleTexture = flareTexture;
-                proj.particles.emitter = proj.mesh;
-                proj.particles.minEmitBox = new BABYLON.Vector3(-0.08 * particleScale, -0.08 * particleScale, -0.08 * particleScale);
-                proj.particles.maxEmitBox = new BABYLON.Vector3(0.08 * particleScale, 0.08 * particleScale, 0.08 * particleScale);
-                proj.particles.color1 = new BABYLON.Color4(1, 1, 0.8, 1);
-                proj.particles.color2 = new BABYLON.Color4(1, 0.9, 0.4, 1);
-                proj.particles.colorDead = new BABYLON.Color4(1, 0.7, 0.2, 0);
-                proj.particles.minSize = 0.05 * particleScale;
-                proj.particles.maxSize = 0.12 * particleScale;
-                proj.particles.minLifeTime = 0.05;
-                proj.particles.maxLifeTime = 0.12;
-                proj.particles.emitRate = 60 + chainCount * 15;  // More particles with chains
-                proj.particles.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
-                proj.particles.direction1 = new BABYLON.Vector3(-0.5, -0.5, -0.5);
-                proj.particles.direction2 = new BABYLON.Vector3(0.5, 0.5, 0.5);
-                proj.particles.gravity = new BABYLON.Vector3(0, 0, 0);
-                proj.particles.minEmitPower = 1.5;
-                proj.particles.maxEmitPower = 2.5;
-                proj.particles.start();
-
-                // Lightning spark arcs - small zigzag arcs that shoot out from the ball
-                proj.sparkArcs = [];
-                proj.sparkArcTimer = 0;
-                proj.sparkArcInterval = 0.08;  // Spawn new arc every 80ms
-                proj.chainCount = chainCount;  // Store for arc scaling
-
-                // Play lightning sound
-                if (window.ToneSFX && window.ToneSFX.lightning) {
-                    if (window.setTonePan) window.setTonePan(startX);
-                    window.ToneSFX.lightning();
-                }
-
-                projectiles.push(proj);
-                return proj;
-            };
-
-            // Create a mini lightning arc shooting out from a position
-            window.createSparkArc = function(centerPos, scale = 1.0) {
-                if (!scene) return null;
-                // Validate position
-                if (!centerPos || centerPos.x === undefined || isNaN(centerPos.x)) return null;
-
-                // Random direction for the arc
-                const angle = Math.random() * Math.PI * 2;
-                const elevation = (Math.random() - 0.5) * Math.PI * 0.7;
-                const arcLength = (0.4 + Math.random() * 0.5) * scale;
-
-                const endPos = new BABYLON.Vector3(
-                    centerPos.x + Math.cos(angle) * Math.cos(elevation) * arcLength,
-                    centerPos.y + Math.sin(elevation) * arcLength,
-                    centerPos.z + Math.sin(angle) * Math.cos(elevation) * arcLength
-                );
-
-                // Create organic lightning path (2-4 segments, random)
-                const segments = 2 + Math.floor(Math.random() * 3);
-                const points = [centerPos.clone()];
-
-                for (let i = 1; i < segments; i++) {
-                    // Non-uniform spacing along arc
-                    const baseT = i / segments;
-                    const t = baseT + (Math.random() - 0.5) * 0.2;
-                    const pos = BABYLON.Vector3.Lerp(centerPos, endPos, Math.max(0.1, Math.min(0.9, t)));
-
-                    // Random jagged offsets - not alternating
-                    const jag = 0.12 * scale * (0.5 + Math.random());
-                    pos.y += (Math.random() - 0.5) * jag * 2;
-                    pos.z += (Math.random() - 0.5) * jag;
-                    points.push(pos);
-                }
-                points.push(endPos);
-
-                // Create arc tube
-                const arc = BABYLON.MeshBuilder.CreateTube("sparkArc_" + Date.now(), {
-                    path: points,
-                    radius: 0.02 * scale,
-                    tessellation: 4,
-                    cap: BABYLON.Mesh.CAP_ALL
-                }, scene);
-
-                const arcMat = new BABYLON.StandardMaterial("sparkArcMat_" + Date.now(), scene);
-                arcMat.emissiveColor = new BABYLON.Color3(1, 1, 0.85);
-                arcMat.disableLighting = true;
-                arc.material = arcMat;
-
-                // Glow tube for visibility
-                const arcGlow = BABYLON.MeshBuilder.CreateTube("sparkArcGlow_" + Date.now(), {
-                    path: points,
-                    radius: 0.04 * scale,
-                    tessellation: 4
-                }, scene);
-                const glowMat = new BABYLON.StandardMaterial("sparkArcGlowMat_" + Date.now(), scene);
-                glowMat.emissiveColor = new BABYLON.Color3(1, 0.9, 0.3);
-                glowMat.alpha = 0.4;
-                glowMat.disableLighting = true;
-                arcGlow.material = glowMat;
-
-                // Auto-dispose after short lifetime
-                const lifetime = 50 + Math.random() * 70;
-                setTimeout(() => {
-                    if (arc && !arc.isDisposed()) arc.dispose();
-                    if (arcGlow && !arcGlow.isDisposed()) arcGlow.dispose();
-                    if (arcMat) arcMat.dispose();
-                    if (glowMat) glowMat.dispose();
-                }, lifetime);
-
-                return arc;
-            };
-
-            // Update spark projectile - lightning trail and arcs
-            window.updateSparkArcs = function(proj, dt) {
-                if (!proj || proj.type !== 'spark' || !proj.mesh) return;
-                // Validate mesh position
-                if (!proj.mesh.position || proj.mesh.position.x === undefined || isNaN(proj.mesh.position.x)) return;
-
-                // === LIGHTNING TRAIL UPDATE ===
-                proj.trailSampleTimer = (proj.trailSampleTimer || 0) + dt;
-                const sampleInterval = 0.025;  // Sample every 25ms
-
-                if (proj.trailSampleTimer >= sampleInterval) {
-                    proj.trailSampleTimer = 0;
-
-                    // Add current position to trail
-                    proj.trailPositions.push(proj.mesh.position.clone());
-
-                    // Keep only last 10 positions
-                    const maxPositions = 10;
-                    while (proj.trailPositions.length > maxPositions) {
-                        proj.trailPositions.shift();
-                    }
-
-                    // Dispose old trail segments
-                    for (const seg of proj.trailSegments) {
-                        if (seg && !seg.isDisposed()) seg.dispose();
-                    }
-                    proj.trailSegments = [];
-
-                    // Create organic lightning trail from positions
-                    if (proj.trailPositions.length >= 2) {
-                        const trailPoints = [];
-                        for (let i = 0; i < proj.trailPositions.length; i++) {
-                            const pos = proj.trailPositions[i].clone();
-                            // Add random lightning jitter (not uniform zigzag)
-                            if (i > 0 && i < proj.trailPositions.length - 1) {
-                                const jitter = 0.12 * (0.3 + Math.random() * 0.7);
-                                pos.y += (Math.random() - 0.5) * jitter * 2;
-                                pos.z += (Math.random() - 0.5) * jitter;
-                            }
-                            trailPoints.push(pos);
-                        }
-
-                        // Validate trail points before creating tube
-                        const validTrail = trailPoints.length >= 2 && trailPoints.every(p => p && !isNaN(p.x));
-                        if (validTrail) {
-                            // Create trail tube
-                            const trailTube = BABYLON.MeshBuilder.CreateTube("sparkTrailTube", {
-                                path: trailPoints,
-                                radius: proj.trailWidth * 0.7,
-                                tessellation: 4,
-                                cap: BABYLON.Mesh.CAP_ALL
-                            }, scene);
-                            trailTube.material = proj.trailMat;
-                            proj.trailSegments.push(trailTube);
-                        }
-                    }
-                }
-
-                // === SPARK ARCS UPDATE ===
-                proj.sparkArcTimer = (proj.sparkArcTimer || 0) + dt;
-                if (proj.sparkArcTimer >= proj.sparkArcInterval) {
-                    proj.sparkArcTimer = 0;
-
-                    // Spawn 1-3 arcs based on chain count
-                    const arcCount = 1 + Math.floor(Math.random() * 2) + Math.min(proj.chainCount || 0, 2);
-                    const scale = 0.85 + Math.min(proj.chainCount || 0, 4) * 0.125;
-
-                    for (let i = 0; i < arcCount; i++) {
-                        const arc = window.createSparkArc(proj.mesh.position.clone(), scale);
-                        if (arc) {
-                            proj.sparkArcs.push(arc);
-                        }
-                    }
-
-                    // Clean up disposed arcs from array
-                    proj.sparkArcs = proj.sparkArcs.filter(a => a && !a.isDisposed());
-                }
-            };
-
-            // Gravity barrier material
-            const gravityMat = new BABYLON.StandardMaterial("gravityMat", scene);
-            gravityMat.diffuseColor = new BABYLON.Color3(0.3, 0.1, 0.4);
-            gravityMat.emissiveColor = new BABYLON.Color3(0.4, 0.1, 0.5);
-            gravityMat.alpha = 0.6;
-
             // Gravity sphere material (darker, more intense)
             const gravitySphereMat = new BABYLON.StandardMaterial("gravitySphereMat", scene);
             gravitySphereMat.diffuseColor = new BABYLON.Color3(0.1, 0.05, 0.15);
@@ -12305,24 +11273,6 @@
                         if (c.cooldowns.chain_lightning <= 0) {
                             c.cooldowns.chain_lightning = 0;
                         }
-                    }
-
-                    // Snowball charge regeneration
-                    if (c.snowballCharges < abilities.snowball.maxCharges) {
-                        c.snowballChargeTimer += dt;
-                        if (c.snowballChargeTimer >= abilities.snowball.chargeRegenTime) {
-                            c.snowballChargeTimer = 0;
-                            c.snowballCharges++;
-                            if (roundActive && isLocal) {
-                                playSound('spellReady', paddle.position.x, 0.1);
-                            }
-                        }
-                    }
-
-                    // Spark cooldown (no cooldown, just uses cast time)
-                    if (c.cooldowns.spark > 0) {
-                        c.cooldowns.spark -= dt;
-                        if (c.cooldowns.spark <= 0) c.cooldowns.spark = 0;
                     }
 
                     // Update Chain Lightning channeling
@@ -14121,6 +13071,12 @@
             // Check and spend mana
             if (!spendMana(caster, abilities.frostbolt.manaCost)) return;
 
+            // Visual feedback for the local player only
+            const _fbC = getCombatantLegacy(caster);
+            if ((caster === 'player' || (_fbC && _fbC.isLocalPlayer)) && window.flashAbilitySlot) {
+                window.flashAbilitySlot('frostbolt');
+            }
+
             // Track stat (only for local player)
             if (caster === 'player' || (getCombatantLegacy(caster)?.isLocalPlayer)) {
                 StatTracker.increment('frostbolt_casts');
@@ -14186,175 +13142,6 @@
             const upgrade = combatant.upgrades ? combatant.upgrades.find(u => u.baseAbility === 'frostbolt') : null;
             const spellName = upgrade ? UpgradeRegistry[upgrade.id].name : 'Frostbolt';
             showSpellCastText(isPlayer, spellName, 'frost');
-        }
-
-        // ============================================================
-        // SNOWBALL - Ice damage spell with 3 charges
-        // ============================================================
-        function castSnowball(caster) {
-            if (!window.spawnSnowball) return false;
-
-            const c = getCombatantLegacy(caster);
-            if (!c) return false;
-            if (!c.paddle) return false;  // Safety check for doubles mode
-
-            // Check charges
-            if (c.snowballCharges <= 0) return false;
-
-            // Check and spend mana (half mana per throw)
-            if (!spendMana(caster, abilities.snowball.manaCost)) return false;
-
-            // Consume a charge
-            c.snowballCharges--;
-
-            // Track stat
-            if (caster === 'player' || (c.isLocalPlayer)) {
-                StatTracker.increment('snowball_casts');
-            }
-
-            const speed = abilities.snowball.baseSpeed;
-            const paddle = c.paddle;
-            const isLeft = c.side === 'left';
-
-            const startX = isLeft ? paddle.position.x + 1 : paddle.position.x - 1;
-            const velX = isLeft ? speed : -speed;
-            const startZ = paddle.position.z;
-
-            // Aim based on movement
-            const aimDir = getCasterAimDir(caster, c);
-            const velZ = aimDir !== 0 ? (aimDir * speed * 0.25) : 0;
-
-            // Play sound (reuse frostbolt sound)
-            playSound('frostboltCast', startX, 0.5);
-
-            // Play cast_release animation
-            const playAnim = caster === 'player' ? window.playPlayerAnim : window.playAIAnim;
-            const combatant = caster === 'player' ? combatants.left : combatants.right;
-            if (playAnim && combatant) {
-                const anim = combatant.animations['cast_release'];
-                if (anim) anim.onAnimationGroupEndObservable.clear();
-                playAnim('cast_release', false, 0);
-                if (anim) {
-                    anim.onAnimationGroupEndObservable.addOnce(() => {
-                        if (combatant.currentAnim === 'cast_release' && !combatant.casting) {
-                            playAnim('idle', true);
-                        }
-                    });
-                }
-            }
-
-            window.spawnSnowball(caster, startX, startZ, velX, velZ);
-
-            // Show floating spell name
-            showSpellCastText(caster === 'player', 'Snowball', 'frost');
-
-            return true;
-        }
-        window.castSnowball = castSnowball;
-
-        // ============================================================
-        // SPARK - Lightning damage spell that chains through projectiles
-        // ============================================================
-        function castSpark(caster) {
-            const c = getCombatantLegacy(caster);
-            if (!c) return false;
-
-            // Check cooldown
-            if (c.cooldowns.spark > 0) return false;
-            // Can't cast while casting something else
-            if (c.casting) return false;
-
-            const paddle = c.paddle;
-            const isLeft = c.side === 'left';
-
-            // Start casting
-            c.casting = 'spark';
-            c.castProgress = 0;
-            c.castTime = abilities.spark.castTime;
-            c.pendingManaCost = abilities.spark.manaCost;
-
-            // Play electric charge casting sound (not regular mid-cast)
-            if (window.ToneSFX && ToneSFX.electricStart) {
-                ToneSFX.electricStart(caster === 'player' ? 'player' : 'ai');
-            }
-
-            // Show cast bar
-            if (caster === 'player') {
-                playerCasting = 'spark';
-                showCastBar(true);
-            } else {
-                aiCasting = 'spark';
-                showAICastBar(true);
-            }
-
-            // ============================================
-            // CHAIN VISUAL DURING CAST
-            // Initialize arrays - updateSparkChains() will dynamically detect
-            // and add ALL projectiles (including those spawned mid-cast)
-            // Chains persist and follow projectiles until cast completes
-            // ============================================
-            c.sparkActiveChains = [];
-            c.sparkChainProjs = [];
-            c.sparkChainCount = 0;
-
-            // The updateSparkChains function (called every frame during cast)
-            // will detect all projectiles and create chains for them dynamically.
-            // This allows projectiles spawned mid-cast to be captured too!
-
-            return true;
-        }
-        window.castSpark = castSpark;
-
-        // Execute Chain Lightning (Spark) after cast completes - fires bolt from player's hands
-        function executeSpark(caster) {
-            if (!window.spawnSpark) return;
-
-            const c = getCombatantLegacy(caster);
-            if (!c) return;
-            if (!c.paddle) return;  // Safety check for doubles mode
-
-            // Track stat
-            if (caster === 'player' || (c.isLocalPlayer)) {
-                StatTracker.increment('spark_casts');
-            }
-
-            const speed = abilities.spark.baseSpeed;
-            const paddle = c.paddle;
-            const isLeft = c.side === 'left';
-            const casterOwner = isLeft ? 'player' : 'ai';
-            const velX = isLeft ? speed : -speed;
-
-            // Fire position (at caster's hands)
-            const startX = isLeft ? paddle.position.x + 1 : paddle.position.x - 1;
-            const startZ = paddle.position.z;
-
-            // Get chain count from cast (stored during castSpark)
-            const chainCount = c.sparkChainCount || 0;
-
-            // Show floating spell name
-            showSpellCastText(caster === 'player', 'Chain Lightning', 'lightning');
-
-            // Fire the bolt from player's hands (always from hands, chains just add damage)
-            window.spawnSpark(casterOwner, startX, startZ, velX, 0, chainCount);
-
-            if (window.ToneSFX && window.ToneSFX.lightning) {
-                if (window.setTonePan) window.setTonePan(startX);
-                window.ToneSFX.lightning();
-            }
-
-            // Show damage bonus if we had chains
-            if (chainCount > 0) {
-                showCombatText(isLeft, 'x' + chainCount + ' POWER!', 'lightning');
-            }
-
-            // Set cooldown
-            c.cooldowns.spark = abilities.spark.cooldown;
-
-            // Clean up stored chain data and visual chains
-            c.sparkChainCount = 0;
-            if (window.cleanupSparkChains) {
-                window.cleanupSparkChains(c);
-            }
         }
 
         // Handle gravity spell input - two phase ability
@@ -14571,6 +13358,12 @@
             gameMode = 'single';
             if (window.clearAllProjectiles) clearAllProjectiles();
             if (window.clearAllLightningFX) clearAllLightningFX();
+
+            // Reset client perspective in case we're returning from a flipped PvP match
+            if (window.applyClientPerspective) window.applyClientPerspective(false);
+            // Hide any leftover multiplayer overlays
+            if (window.hideDisconnectOverlay) window.hideDisconnectOverlay();
+            if (window.refreshNetStatus) window.refreshNetStatus();
 
             // Stop sounds and music
             if (window.ToneSFX) {
@@ -15251,20 +14044,91 @@
             showLobbyView('lobbyModeSelect');
         });
 
-        // Disconnect
+        // Disconnect (from connected lobby view) — notify opponent before tearing down
         if (gConn.btnDisconnect) gConn.btnDisconnect.onPointerClickObservable.add(() => {
+            sendLeaveMessage('Opponent left the lobby');
             cleanupPeer();
             showLobbyView('lobbyModeSelect');
         });
 
-        // Start Match button (host only)
+        // Send a LEAVE message to the opponent (best-effort; ignore errors)
+        function sendLeaveMessage(reason) {
+            try {
+                if (conn && conn.open) {
+                    conn.send({ type: 'LEAVE', reason: reason });
+                }
+            } catch (e) {
+                // Connection may already be torn down; nothing to do
+            }
+        }
+
+        // Tab close / refresh: try to notify opponent so they get a clear reason
+        // instead of waiting for the heartbeat timeout to fire.
+        window.addEventListener('beforeunload', () => {
+            sendLeaveMessage('Opponent closed the game');
+        });
+
+        // Ready-up state (both peers track local + remote)
+        let localReady = false;
+        let remoteReady = false;
+
+        function refreshReadyUI() {
+            const c = window.guiElements?.lobbyConnected;
+            if (!c) return;
+            if (c.readyStatusYou) {
+                c.readyStatusYou.text = 'You: ' + (localReady ? 'Ready ✓' : 'Not Ready');
+                c.readyStatusYou.color = localReady ? '#6ad26a' : '#cfc5b0';
+            }
+            if (c.readyStatusOpponent) {
+                c.readyStatusOpponent.text = 'Opponent: ' + (remoteReady ? 'Ready ✓' : 'Not Ready');
+                c.readyStatusOpponent.color = remoteReady ? '#6ad26a' : '#cfc5b0';
+            }
+            if (c.btnReady && c.btnReady.textBlock) {
+                c.btnReady.textBlock.text = localReady ? 'Cancel Ready' : 'Ready Up';
+            }
+            // Host's Start Match button only enables when both ready
+            if (isHost && c.btnStartMatch) {
+                const both = localReady && remoteReady;
+                c.btnStartMatch.isEnabled = both;
+                c.btnStartMatch.alpha = both ? 1.0 : 0.5;
+            }
+            // Joiner's waiting label updates with host's status
+            if (!isHost && c.waitingForHost) {
+                if (localReady && remoteReady) {
+                    c.waitingForHost.text = 'Waiting for host to start match...';
+                } else if (!localReady) {
+                    c.waitingForHost.text = 'Press Ready when you\'re set.';
+                } else {
+                    c.waitingForHost.text = 'Waiting for host to ready up...';
+                }
+            }
+        }
+
+        function resetReadyState() {
+            localReady = false;
+            remoteReady = false;
+            refreshReadyUI();
+        }
+
+        // Ready toggle button
+        if (gConn.btnReady) gConn.btnReady.onPointerClickObservable.add(() => {
+            localReady = !localReady;
+            if (conn && conn.open) {
+                conn.send({ type: 'PLAYER_READY', ready: localReady });
+            }
+            refreshReadyUI();
+        });
+
+        // Start Match button (host only, gated on both-ready)
         if (gConn.btnStartMatch) gConn.btnStartMatch.onPointerClickObservable.add(async () => {
+            if (!localReady || !remoteReady) return;  // Belt-and-suspenders gate
             await initToneJS();
             if (isHost && conn && conn.open) {
                 const sharedSeed = Date.now() % 2147483647;
                 const upgradeToShare = selectedUpgrade || 'default';
-                conn.send({ type: 'START_MATCH', seed: sharedSeed, upgrade: upgradeToShare });
                 startMultiplayerMatch(sharedSeed, upgradeToShare);
+                const startHash = (typeof hashStartState === 'function') ? hashStartState() : 0;
+                conn.send({ type: 'START_MATCH', seed: sharedSeed, upgrade: upgradeToShare, hash: startHash });
             }
         });
 
@@ -15333,6 +14197,14 @@
                     if (gConn.waitingForHost) gConn.waitingForHost.isVisible = true;
                 }
 
+                // Fresh connection: both players start un-ready
+                resetReadyState();
+
+                // Audio cue so the host doesn't have to stare at the lobby
+                if (window.playSound) {
+                    try { playSound('spellReady', 0, 0.25); } catch (e) {}
+                }
+
                 // Start ping measurement
                 startPingMeasurement();
             });
@@ -15362,40 +14234,59 @@
             }
             myPeerId = null;
             stopPingMeasurement();
+            resetReadyState();
         }
 
         function handleDisconnect(reason) {
             console.log('Disconnected:', reason);
 
-            // Reset camera to default view
+            // Reset camera + HUD perspective to default view
             if (window.resetCameraToDefault) window.resetCameraToDefault();
+            if (window.applyClientPerspective) window.applyClientPerspective(false);
 
-            // If in game, show message and return to menu
+            // If in game, show overlay and let player acknowledge.
+            // The overlay's button handles resetGame + showTalentScreen.
             if (gameMode === 'pvp') {
                 gameMode = 'single';
                 gameOver = true;
-                showMessage(reason || 'Disconnected');
-                setTimeout(() => {
-                    resetGame();
-                    showTalentScreen();
-                }, 2000);
+                if (window.showDisconnectOverlay) {
+                    window.showDisconnectOverlay(reason || 'Connection lost');
+                } else {
+                    // Fallback if overlay isn't available
+                    showMessage(reason || 'Disconnected');
+                    setTimeout(() => {
+                        resetGame();
+                        showTalentScreen();
+                    }, 2000);
+                }
             } else {
-                // Still in lobby
+                // Still in lobby — return to mode select
                 showLobbyView('lobbyModeSelect');
             }
 
             cleanupPeer();
         }
 
-        // Ping measurement
+        // Ping measurement + heartbeat-based disconnect detection
         let pingInterval = null;
         let pingSentTime = 0;
+        let lastPongTime = 0;
+        const PONG_TIMEOUT_MS = 5000;  // Treat as disconnected if no PONG in 5s
 
         function startPingMeasurement() {
+            // Seed lastPongTime so we don't trigger an immediate timeout
+            lastPongTime = performance.now();
             pingInterval = setInterval(() => {
                 if (conn && conn.open) {
                     pingSentTime = performance.now();
                     conn.send({ type: 'PING', time: pingSentTime });
+
+                    // Heartbeat: if it's been too long since the last PONG,
+                    // the link is silently dead — fire disconnect explicitly.
+                    if (lastPongTime && (performance.now() - lastPongTime) > PONG_TIMEOUT_MS) {
+                        console.warn('[Multiplayer] PONG timeout — treating as disconnected');
+                        handleDisconnect('Connection lost');
+                    }
                 }
             }, 1000);
         }
@@ -15420,14 +14311,38 @@
                 case 'PONG':
                     // Calculate RTT
                     netPing = Math.round(performance.now() - data.time);
+                    lastPongTime = performance.now();
                     const gPing = window.guiElements?.lobbyConnected?.connectedPing;
-                    if (gPing) gPing.text = 'Ping: ' + netPing + 'ms';
+                    if (gPing) {
+                        gPing.text = 'Ping: ' + netPing + 'ms';
+                        if (window.pingColor) gPing.color = window.pingColor(netPing);
+                    }
+                    if (window.refreshNetStatus) window.refreshNetStatus();
+                    break;
+
+                case 'PLAYER_READY':
+                    remoteReady = !!data.ready;
+                    refreshReadyUI();
+                    break;
+
+                case 'LEAVE':
+                    // Opponent intentionally left (clicked Disconnect or closed tab).
+                    // Show clearer reason than the generic "Connection lost".
+                    handleDisconnect(data.reason || 'Opponent left the match');
                     break;
 
                 case 'START_MATCH':
                     // Guest receives start signal
                     if (!isHost) {
                         startMultiplayerMatch(data.seed, data.upgrade || 'default');
+                        // Validate state hash to detect early divergence
+                        if (typeof hashStartState === 'function' && typeof data.hash === 'number') {
+                            const localHash = hashStartState();
+                            if (localHash !== data.hash) {
+                                console.warn('[Multiplayer] Start state hash mismatch — host:', data.hash, 'local:', localHash);
+                                showMessage('Sync warning: starting state mismatch');
+                            }
+                        }
                     }
                     break;
 
@@ -15443,6 +14358,33 @@
             }
         }
 
+        // FNV-1a hash of canonical starting state. Both peers should produce the
+        // same value after startMultiplayerMatch + startRound. Used to detect
+        // silent desync at match start (init order bugs, future code drift).
+        function hashStartState() {
+            const cl = combatants && combatants.left;
+            const cr = combatants && combatants.right;
+            if (!cl || !cr) return 0;
+            const round = (n) => Math.round((n || 0) * 1000);
+            const fields = [
+                round(cl.towerHealth), round(cr.towerHealth),
+                round(cl.mana),        round(cr.mana),
+                round(cl.score),       round(cr.score),
+                round(cl.paddle && cl.paddle.position ? cl.paddle.position.x : 0),
+                round(cl.paddle && cl.paddle.position ? cl.paddle.position.z : 0),
+                round(cr.paddle && cr.paddle.position ? cr.paddle.position.x : 0),
+                round(cr.paddle && cr.paddle.position ? cr.paddle.position.z : 0),
+                projectiles ? projectiles.length : 0,
+                currentFrame | 0
+            ];
+            let h = 2166136261 >>> 0;
+            for (const v of fields) {
+                h = (h ^ ((v | 0) & 0xffffffff)) >>> 0;
+                h = Math.imul(h, 16777619) >>> 0;
+            }
+            return h >>> 0;
+        }
+
         // Start the multiplayer match
         function startMultiplayerMatch(seed, upgradeId = selectedUpgrade) {
             console.log('Starting multiplayer match with seed:', seed);
@@ -15454,6 +14396,9 @@
             gameMode = 'pvp';
             gameState = 'playing';
             doublesConfig = null;
+
+            // Show in-game ping/quality indicator
+            if (window.refreshNetStatus) window.refreshNetStatus();
 
             // Hide doubles paddles for 1v1
             if (window.setDoublesPaddlesVisible) window.setDoublesPaddlesVisible(false);
@@ -15478,9 +14423,9 @@
                 combatants.left.isLocalPlayer = true;
                 combatants.right.inputSource = 'network';
                 combatants.right.isLocalPlayer = false;
-                // Host sees normal view
+                // Host sees canonical view (combatants.left on screen left)
                 if (window.resetCameraToDefault) window.resetCameraToDefault();
-                // Reset UI labels
+                if (window.applyClientPerspective) window.applyClientPerspective(false);
                 if (window.guiElements.playerHealthLabel) window.guiElements.playerHealthLabel.text = "BLUE TOWER";
                 if (window.guiElements.aiHealthLabel) window.guiElements.aiHealthLabel.text = "RED TOWER";
             } else {
@@ -15488,8 +14433,12 @@
                 combatants.left.isLocalPlayer = false;
                 combatants.right.inputSource = 'local';
                 combatants.right.isLocalPlayer = true;
-                // Keep canonical camera/view (no flip); labels stay Blue left / Red right
-                if (window.resetCameraToDefault) window.resetCameraToDefault();
+                // Joiner: flip camera + swap HUD sides so they see themselves
+                // on the visual left of the screen. Simulation/state stays canonical.
+                if (window.flipCameraForClient) window.flipCameraForClient();
+                if (window.applyClientPerspective) window.applyClientPerspective(true);
+                // After HUD swap: visual-left panel now shows combatants.right (red),
+                // visual-right panel shows combatants.left (blue). Labels follow data.
                 if (window.guiElements.playerHealthLabel) window.guiElements.playerHealthLabel.text = "BLUE TOWER";
                 if (window.guiElements.aiHealthLabel) window.guiElements.aiHealthLabel.text = "RED TOWER";
             }
@@ -16259,16 +15208,6 @@
                 if (c.cooldowns.frostbolt > 0) c.cooldowns.frostbolt -= dt;
                 if (c.cooldowns.gravity > 0) c.cooldowns.gravity -= dt;
                 if (c.cooldowns.chain_lightning > 0) c.cooldowns.chain_lightning -= dt;
-                if (c.cooldowns.spark > 0) c.cooldowns.spark -= dt;
-
-                // Snowball charge regeneration
-                if (c.snowballCharges < abilities.snowball.maxCharges) {
-                    c.snowballChargeTimer += dt;
-                    if (c.snowballChargeTimer >= abilities.snowball.chargeRegenTime) {
-                        c.snowballChargeTimer = 0;
-                        c.snowballCharges++;
-                    }
-                }
 
                 // Update Chain Lightning channeling
                 if (c.casting === 'chain_lightning') {
@@ -17213,95 +16152,6 @@
                 }
             }
 
-            // Snowball charge display - show charges for whichever slot has snowball equipped
-            if (typeof PlayerLoadout !== 'undefined' && combatants.left) {
-                const loadout = PlayerLoadout.getLoadout();
-                const snowballSlotIndex = loadout.indexOf('snowball');
-                if (snowballSlotIndex !== -1) {
-                    const slotIds = ['fireballSlot', 'frostboltSlot', 'chainLightningSlot'];
-                    const cdTextIds = ['fireballCDText', 'frostboltCDText', 'chainLightningCDText'];
-                    const sweepIds = ['fireballSweep', 'frostboltSweep', 'chainLightningSweep'];
-
-                    const slot = document.getElementById(slotIds[snowballSlotIndex]);
-                    const cdText = document.getElementById(cdTextIds[snowballSlotIndex]);
-                    const sweep = document.getElementById(sweepIds[snowballSlotIndex]);
-
-                    if (slot && cdText && sweep) {
-                        const charges = combatants.left.snowballCharges;
-                        const maxCharges = abilities.snowball.maxCharges || 3;
-                        const regenProgress = (combatants.left.snowballChargeTimer || 0) / abilities.snowball.chargeRegenTime;
-
-                        // Hide the charge count number - we show notches instead
-                        cdText.textContent = '';
-                        cdText.style.color = charges > 0 ? '#88ccff' : '#666';
-
-                        // Update charge notches
-                        const notchesContainer = slot.querySelector('.charge-notches');
-                        if (notchesContainer) {
-                            const notches = notchesContainer.querySelectorAll('.charge-notch');
-                            notches.forEach((notch, index) => {
-                                notch.classList.remove('filled', 'recharging');
-                                if (index < charges) {
-                                    // This notch is filled
-                                    notch.classList.add('filled');
-                                } else if (index === charges && charges < maxCharges) {
-                                    // This is the next notch being recharged
-                                    notch.classList.add('recharging');
-                                    notch.style.setProperty('--recharge-progress', regenProgress);
-                                }
-                                // Else: empty notch (no class added, shows empty)
-                            });
-                        }
-
-                        if (charges > 0) {
-                            slot.classList.remove('on-cooldown');
-                            slot.classList.add('ready');
-                            sweep.style.setProperty('--sweep-angle', '0deg');
-                        } else {
-                            // No charges - show recharge progress on sweep
-                            slot.classList.remove('ready');
-                            slot.classList.add('on-cooldown');
-                            const sweepAngle = (1 - regenProgress) * 360;
-                            sweep.style.setProperty('--sweep-angle', sweepAngle + 'deg');
-                        }
-                    }
-                }
-
-                // Spark (Chain Lightning) cooldown display - show for whichever slot has spark equipped
-                const sparkSlotIndex = loadout.indexOf('spark');
-                if (sparkSlotIndex !== -1) {
-                    const slotIds = ['fireballSlot', 'frostboltSlot', 'chainLightningSlot'];
-                    const cdTextIds = ['fireballCDText', 'frostboltCDText', 'chainLightningCDText'];
-                    const sweepIds = ['fireballSweep', 'frostboltSweep', 'chainLightningSweep'];
-
-                    const slot = document.getElementById(slotIds[sparkSlotIndex]);
-                    const cdText = document.getElementById(cdTextIds[sparkSlotIndex]);
-                    const sweep = document.getElementById(sweepIds[sparkSlotIndex]);
-
-                    if (slot && cdText && sweep) {
-                        const sparkCooldown = localCooldowns.spark || 0;
-                        const sparkManaCost = abilities.spark.manaCost;
-
-                        if (sparkCooldown > 0) {
-                            slot.classList.remove('ready');
-                            slot.classList.add('on-cooldown');
-                            cdText.textContent = Math.ceil(sparkCooldown);
-                            const sweepAngle = (sparkCooldown / abilities.spark.cooldown) * 360;
-                            sweep.style.setProperty('--sweep-angle', sweepAngle + 'deg');
-                        } else if (mana < sparkManaCost) {
-                            slot.classList.remove('on-cooldown');
-                            slot.classList.remove('ready');
-                            cdText.textContent = '';
-                            sweep.style.setProperty('--sweep-angle', '0deg');
-                        } else {
-                            slot.classList.remove('on-cooldown');
-                            slot.classList.add('ready');
-                            cdText.textContent = '';
-                            sweep.style.setProperty('--sweep-angle', '0deg');
-                        }
-                    }
-                }
-            }
 
             // Update mana availability indicators on abilities
             updateManaAvailability();
@@ -17676,6 +16526,11 @@
             if (isPlayer) playerMana = c.mana;
             else aiMana = c.mana;
 
+            // Visual feedback for the local player only
+            if ((isPlayer || c.isLocalPlayer) && window.flashAbilitySlot) {
+                window.flashAbilitySlot('chain_lightning');
+            }
+
             // Execute immediately (instant cast)
             executeChainLightning(caster);
 
@@ -17712,24 +16567,24 @@
             // Calculate how many we can zap (up to max)
             const zapsToPerform = Math.min(CHAIN_LIGHTNING_MAX_ZAPS, enemyProjs.length);
 
-            // Zap projectiles with staggered lightning strikes
+            // Zap projectiles. State mutation (destroy) happens immediately so
+            // a rollback can't leave queued destruction in flight; the visual
+            // stagger is purely cosmetic and stays in setTimeout.
             for (let i = 0; i < zapsToPerform; i++) {
                 const proj = enemyProjs[i];
-                const delay = i * 100;  // Stagger strikes by 100ms
+                if (!proj.mesh || proj.mesh.isDisposed()) continue;
 
+                // Snapshot position before destroying
+                const targetPos = proj.mesh.position.clone();
+
+                // State mutation NOW
+                destroyProjectileSilent(proj);
+
+                // Cinematic visual stagger (no state mutation inside)
+                const delay = i * 100;
                 setTimeout(() => {
-                    if (!proj.mesh || proj.mesh.isDisposed()) return;
-
-                    const targetPos = proj.mesh.position.clone();
-
-                    // Create lightning from sky
                     createSkyLightningStrike(targetPos);
-
-                    // Zap flash at impact
                     createZapFlash(targetPos);
-
-                    // Destroy projectile
-                    destroyProjectileSilent(proj);
                 }, delay);
             }
 
@@ -18111,18 +16966,11 @@
             } else if (abilityId === 'chain_lightning') {
                 executeChainLightning(caster);
                 showSpellCastText(isPlayer, 'Thunderstorm', 'lightning');
-            } else if (abilityId === 'spark') {
-                executeSpark(caster);
-                // Note: executeSpark already shows spell text
-                // Stop electric charge loop (spark uses different sound)
-                if (window.ToneSFX && ToneSFX.electricStop) {
-                    ToneSFX.electricStop(isPlayer ? 'player' : 'ai');
-                }
             }
             // Add other cast-time abilities here
 
-            // Stop isochronic casting sound for the correct side (for non-spark abilities)
-            if (abilityId !== 'spark' && window.ToneSFX) {
+            // Stop isochronic casting sound for the correct side
+            if (window.ToneSFX) {
                 ToneSFX.castingStop(isPlayer ? 'player' : 'ai');
             }
 
@@ -18629,14 +17477,13 @@
                 window.createImpactDecal({ x: gateX, z: hitZ }, 'burn');
             }
 
-            // Destroy bricks based on damage amount
+            // Destroy bricks based on damage amount. Done immediately (no
+            // setTimeout stagger) so rollback can't leave queued mutations
+            // in flight. Visual impact reads as one bigger explosion.
             if (window.destroyBrickAt) {
                 for (let i = 0; i < damage; i++) {
-                    // Slight delay between each brick for visual effect
-                    setTimeout(() => {
-                        const offset = (deterministicValue(hitZ + i) - 0.5) * 2;
-                        window.destroyBrickAt(isPlayerTower, hitZ + offset);
-                    }, i * 80);
+                    const offset = (deterministicValue(hitZ + i) - 0.5) * 2;
+                    window.destroyBrickAt(isPlayerTower, hitZ + offset);
                 }
             }
         }

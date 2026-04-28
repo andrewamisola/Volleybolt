@@ -18,7 +18,7 @@
 
 // Config
 import { SCORING, PHYSICS, PARRY, MANA, MOVEMENT, NETCODE } from './config/game-config.js';
-import { AbilityRegistry, getAbility, calculateDamage } from './config/ability-registry.js';
+// Ability data lives in window.AbilityRegistry (defined inline in index.html).
 
 // Audio
 import {
@@ -88,7 +88,7 @@ console.log('%c=== VOLLEYBOLT MODULAR BUILD ===', 'color: #c9a44a; font-weight: 
 console.log('%cModules loaded:', 'color: #58D854;');
 
 // Verify config
-const configLoaded = SCORING && PHYSICS && PARRY && MANA && MOVEMENT && NETCODE && AbilityRegistry;
+const configLoaded = SCORING && PHYSICS && PARRY && MANA && MOVEMENT && NETCODE;
 console.log(`  - Config: ${configLoaded ? 'OK' : 'MISSING'}`);
 
 // Verify audio
@@ -124,7 +124,9 @@ console.log(`  - Winning Score: ${SCORING.winningScore}`);
 console.log(`  - Max Tower Health: ${SCORING.maxTowerHealth}`);
 console.log(`  - Max Mana: ${MANA.max}`);
 console.log(`  - Parry Window: ${PARRY.window}s`);
-console.log(`  - Abilities: ${Object.keys(AbilityRegistry).join(', ')}`);
+if (window.AbilityRegistry) {
+    console.log(`  - Abilities: ${Object.keys(window.AbilityRegistry).join(', ')}`);
+}
 
 // ============================================================
 // EXPORTS (for potential future use)
@@ -133,7 +135,6 @@ console.log(`  - Abilities: ${Object.keys(AbilityRegistry).join(', ')}`);
 export {
     // Config
     SCORING, PHYSICS, PARRY, MANA, MOVEMENT, NETCODE,
-    AbilityRegistry, getAbility, calculateDamage,
 
     // Audio
     initAudioContext, playSound, loadAllSounds, initToneJS, ToneSFX, IsochronicGenerator,

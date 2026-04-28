@@ -487,15 +487,11 @@ export const abilities = {
         freezeDuration: 1.0,
         manaCost: 2
     },
-    gravity: {
-        cooldown: 15,
-        barrierDuration: 2.5,
-        maxCapture: 3,
-        sphereSpeed: 10,
-        sphereDamage: 2,
-        slowRadius: 4,
-        slowFactor: 0.4,
-        manaCost: 3
+    chain_lightning: {
+        cooldown: 30,
+        castTime: 0,
+        manaCost: 2,
+        maxZaps: 3
     }
 };
 

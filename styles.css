@@ -909,6 +909,17 @@ html, body {
     pointer-events: none;
 }
 
+/* When client perspective is flipped (joiner in PvP), swap cast bar sides
+   so the local player's cast bar stays on the visual left of their screen. */
+body.flipped-view #castBarContainer {
+    left: auto;
+    right: 120px;
+}
+body.flipped-view #aiCastBarContainer {
+    right: auto;
+    left: 120px;
+}
+
 #castBarContainer.casting {
     opacity: 1;
 }
@@ -1105,6 +1116,17 @@ html, body {
 /* Pressed state for abilities and parry */
 .ability-slot.pressed .ability-hex {
     transform: scale(0.95);
+}
+
+/* Brief flash when an instant cast fires (Frostbolt, Thunderstorm).
+   Fireball already has the radial cast sweep so it doesn't need this. */
+@keyframes cast-fired-flash {
+    0%   { box-shadow: 0 0 0px 0px rgba(255, 255, 255, 0.0); filter: brightness(1); }
+    25%  { box-shadow: 0 0 16px 6px rgba(255, 255, 255, 0.85); filter: brightness(1.6); }
+    100% { box-shadow: 0 0 0px 0px rgba(255, 255, 255, 0.0); filter: brightness(1); }
+}
+.ability-slot.cast-fired .ability-hex {
+    animation: cast-fired-flash 280ms ease-out;
 }
 
 #parryButton.pressed .parry-hex {
