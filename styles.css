@@ -40,28 +40,7 @@
         0 0 2px rgba(100, 100, 100, 0.3);
 }
 
-/* CRT curvature vignette */
-.crt-screen::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    border-radius: 20px;
-    pointer-events: none;
-    z-index: 9998;
-    background: radial-gradient(
-        ellipse 80% 80% at 50% 50%,
-        transparent 0%,
-        transparent 60%,
-        rgba(0, 0, 0, 0.3) 80%,
-        rgba(0, 0, 0, 0.7) 95%,
-        rgba(0, 0, 0, 0.9) 100%
-    );
-}
-
-/* CRT effects handled by #gameContainer::before/after - no duplicate here */
+/* CRT vignette/scanlines now owned by #crtOverlay (single global layer). */
 
 * { margin: 0; padding: 0; }
 html, body {
@@ -88,26 +67,7 @@ html, body {
         0 0 2px rgba(100, 100, 100, 0.3);
 }
 
-/* CRT screen curvature overlay - darkens edges like a curved tube */
-#gameContainer::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    border-radius: 20px;
-    pointer-events: none;
-    z-index: 9998;
-    background: radial-gradient(
-        ellipse 80% 80% at 50% 50%,
-        transparent 0%,
-        transparent 60%,
-        rgba(0, 0, 0, 0.3) 80%,
-        rgba(0, 0, 0, 0.7) 95%,
-        rgba(0, 0, 0, 0.9) 100%
-    );
-}
+/* CRT vignette now owned by #crtOverlay (single global layer). Glass reflection stays. */
 
 /* CRT glass reflection */
 #gameContainer::after {
@@ -1805,4 +1765,328 @@ body.flipped-view #aiCastBarContainer {
 
 #stageTransitionText.visible {
     opacity: 1;
+}
+
+/* ============================================================
+   Canonical button — used by lobby, menu, anywhere we need a
+   "stone slab" call-to-action. Matches the D2/parchment vibe
+   of #startBattleBtn but extracted as a reusable class.
+   ============================================================ */
+.game-btn {
+    display: inline-block;
+    min-width: 220px;
+    padding: 14px 32px;
+    font-family: 'Esthetique', 'Cinzel', serif;
+    font-size: 22px;
+    letter-spacing: 2px;
+    color: var(--gold-light);
+    text-shadow: 2px 2px 0 #000;
+    background: linear-gradient(180deg, var(--brown) 0%, var(--brown-dark) 100%);
+    border: 3px solid var(--brown-light);
+    border-top-color: #6a4a3a;
+    border-left-color: #6a4a3a;
+    border-bottom-color: #1a0a05;
+    border-right-color: #1a0a05;
+    cursor: pointer;
+    transition: transform 0.1s ease, border-color 0.15s ease, color 0.15s ease;
+    box-shadow: inset 1px 1px 0 rgba(255,255,255,0.08), 4px 4px 0 #000;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.game-btn:hover:not(:disabled) {
+    border-color: var(--gold);
+    border-top-color: var(--gold-light);
+    border-left-color: var(--gold-light);
+    border-bottom-color: var(--gold-dark);
+    border-right-color: var(--gold-dark);
+    color: #fff;
+    transform: translateY(-2px);
+}
+
+.game-btn:active:not(:disabled) {
+    transform: translateY(1px);
+    box-shadow: inset 1px 1px 0 rgba(255,255,255,0.08), 2px 2px 0 #000;
+}
+
+.game-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.game-btn-small {
+    min-width: 140px;
+    padding: 8px 20px;
+    font-size: 16px;
+    font-family: 'Crimson Text', Georgia, serif;
+}
+
+.game-btn-ghost {
+    color: var(--parchment-dark);
+    font-size: 18px;
+    min-width: 160px;
+    padding: 10px 24px;
+}
+
+.game-btn-ghost:hover:not(:disabled) {
+    color: var(--parchment);
+}
+
+/* ============================================================
+   Multiplayer Lobby — DOM-owned overlay
+   ============================================================ */
+#multiplayerLobby {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(8, 5, 3, 0.78);
+    pointer-events: auto;
+    z-index: 9999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+}
+
+#multiplayerLobby.visible {
+    display: flex;
+}
+
+.lobby-panel {
+    background: linear-gradient(180deg, #1c130c 0%, #0c0805 100%);
+    border: 4px solid var(--brown-light);
+    border-top-color: #6a4a3a;
+    border-left-color: #6a4a3a;
+    border-bottom-color: #0a0503;
+    border-right-color: #0a0503;
+    box-shadow: 0 0 60px rgba(0,0,0,0.9), inset 0 0 40px rgba(0,0,0,0.6);
+    padding: 36px 48px 32px;
+    min-width: 460px;
+    max-width: 560px;
+    text-align: center;
+}
+
+.lobby-title {
+    font-family: 'Esthetique', 'Cinzel', serif;
+    font-size: 48px;
+    color: var(--gold-light);
+    text-shadow: 3px 3px 0 #000, -1px -1px 0 var(--gold-dark);
+    margin: 0 0 6px 0;
+    letter-spacing: 6px;
+}
+
+.lobby-subtitle {
+    font-family: 'Crimson Text', Georgia, serif;
+    font-size: 18px;
+    color: var(--parchment-dark);
+    margin: 0 0 28px 0;
+    text-shadow: 1px 1px 0 #000;
+    font-style: italic;
+}
+
+.lobby-view {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+}
+
+.lobby-prompt {
+    font-family: 'Esthetique', 'Cinzel', serif;
+    font-size: 20px;
+    color: var(--parchment);
+    text-shadow: 2px 2px 0 #000;
+    margin: 0;
+}
+
+.lobby-code {
+    font-family: 'Rajdhani', monospace;
+    font-size: 56px;
+    font-weight: 700;
+    letter-spacing: 10px;
+    color: var(--gold-light);
+    text-shadow: 3px 3px 0 #000;
+    background: rgba(0,0,0,0.4);
+    border: 2px solid var(--brown-light);
+    padding: 8px 24px;
+    margin: 4px 0;
+}
+
+.lobby-status {
+    font-family: 'Crimson Text', Georgia, serif;
+    font-size: 16px;
+    color: var(--parchment-dark);
+    margin: 4px 0;
+    min-height: 1.2em;
+    text-shadow: 1px 1px 0 #000;
+}
+
+.lobby-input {
+    width: 280px;
+    height: 56px;
+    font-family: 'Rajdhani', monospace;
+    font-size: 32px;
+    font-weight: 600;
+    letter-spacing: 8px;
+    text-align: center;
+    color: var(--gold-light);
+    background: #1a110b;
+    border: 3px solid var(--brown-light);
+    border-top-color: #1a0a05;
+    border-left-color: #1a0a05;
+    border-bottom-color: #6a4a3a;
+    border-right-color: #6a4a3a;
+    padding: 4px 8px;
+    text-transform: uppercase;
+    outline: none;
+    text-shadow: 2px 2px 0 #000;
+}
+
+.lobby-input:focus {
+    border-color: var(--gold);
+    box-shadow: 0 0 12px rgba(212,168,73,0.4);
+}
+
+.lobby-connected-msg {
+    font-family: 'Esthetique', 'Cinzel', serif;
+    font-size: 28px;
+    color: #6ad26a;
+    text-shadow: 2px 2px 0 #000;
+    margin: 0;
+}
+
+.lobby-ready-line {
+    font-family: 'Crimson Text', Georgia, serif;
+    font-size: 18px;
+    margin: 2px 0;
+    text-shadow: 1px 1px 0 #000;
+}
+
+.lobby-ready-line.ready {
+    color: #6ad26a;
+}
+
+.lobby-ready-line.not-ready {
+    color: var(--parchment-dark);
+}
+
+/* ============================================================
+   Main Menu (DOM) — overlays the dancing wizard, left-aligned
+   ============================================================ */
+#domMenu {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 200;
+    display: none;
+}
+
+#domMenu.visible {
+    display: block;
+}
+
+#domMenuLeftPanel {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 50%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+}
+
+#domMenuContent {
+    position: absolute;
+    left: 18%;
+    top: 120px;
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 22px;
+}
+
+#domMenuTitle {
+    font-family: 'Esthetique', 'Cinzel', serif;
+    font-size: 72px;
+    font-weight: 700;
+    color: #c9a44a;
+    text-shadow: 5px 5px 0 #000;
+    letter-spacing: 4px;
+    margin: 0;
+    line-height: 1;
+}
+
+#domMenuButtons {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-top: 80px;
+}
+
+#domMenuButtons .game-btn {
+    min-width: 320px;
+    text-align: center;
+}
+
+/* ============================================================
+   Unified CRT Overlay — one layer above scene + UI.
+   Scanlines + vignette + subtle flicker. pointer-events: none
+   so it never interferes with input.
+   ============================================================ */
+#crtOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    pointer-events: none;
+    mix-blend-mode: multiply;
+    /* Scanlines: tight 2px-period horizontal stripes */
+    background-image: repeating-linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 0.18) 0px,
+        rgba(0, 0, 0, 0.18) 1px,
+        rgba(255, 255, 255, 0.0) 1px,
+        rgba(255, 255, 255, 0.0) 2px
+    );
+}
+
+#crtOverlay::before {
+    /* Vignette — darkens the edges to simulate CRT corner falloff */
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+        ellipse at center,
+        rgba(0, 0, 0, 0.0) 55%,
+        rgba(0, 0, 0, 0.45) 95%,
+        rgba(0, 0, 0, 0.7) 100%
+    );
+    mix-blend-mode: multiply;
+    pointer-events: none;
+}
+
+#crtOverlay::after {
+    /* Subtle flicker — barely-perceptible global brightness wobble */
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.015);
+    mix-blend-mode: overlay;
+    animation: crt-flicker 6s steps(60) infinite;
+    pointer-events: none;
+}
+
+@keyframes crt-flicker {
+    0%   { opacity: 0.20; }
+    13%  { opacity: 0.55; }
+    27%  { opacity: 0.30; }
+    41%  { opacity: 0.70; }
+    58%  { opacity: 0.40; }
+    74%  { opacity: 0.55; }
+    89%  { opacity: 0.30; }
+    100% { opacity: 0.20; }
 }

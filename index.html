@@ -16,6 +16,11 @@
     <!-- Hidden font loader - ensures Esthetique is loaded -->
     <div style="font-family: 'Esthetique'; position: absolute; left: -9999px;">.</div>
 
+    <!-- Unified CRT overlay — sits above everything (scene + UI), pointer-events: none.
+         One layer owns scanlines + vignette + subtle flicker so the whole game
+         feels like it's behind a single CRT pane. -->
+    <div id="crtOverlay"></div>
+
     <!-- SVG Filters for retro effects -->
     <svg style="display:none">
         <filter id="posterize">
@@ -38,13 +43,67 @@
         </div>
     </div>
 
-    <!-- Multiplayer Lobby Overlay -->
-    <div id="multiplayerLobby" class="crt-screen" style="display: none;"></div>
+    <!-- Multiplayer Lobby Overlay (DOM-owned) -->
+    <div id="multiplayerLobby" class="crt-screen" style="display: none;">
+        <div class="lobby-panel">
+            <h1 class="lobby-title">MULTIPLAYER</h1>
+            <p class="lobby-subtitle" id="lobbySubtitle">Challenge a friend to battle!</p>
+
+            <!-- Mode select -->
+            <div class="lobby-view" id="lobbyModeView">
+                <button class="game-btn" id="btnHostGame">Host Game</button>
+                <button class="game-btn" id="btnJoinGame">Join Game</button>
+                <button class="game-btn game-btn-ghost" id="btnBackMenu">Back</button>
+            </div>
+
+            <!-- Host view -->
+            <div class="lobby-view" id="lobbyHostView" style="display:none">
+                <p class="lobby-prompt">Share this code with your opponent:</p>
+                <div class="lobby-code" id="hostCode">------</div>
+                <button class="game-btn game-btn-small" id="btnCopyCode">Copy Code</button>
+                <p class="lobby-status" id="hostStatus">Waiting for opponent...</p>
+                <button class="game-btn game-btn-ghost" id="btnCancelHost">Cancel</button>
+            </div>
+
+            <!-- Join view -->
+            <div class="lobby-view" id="lobbyJoinView" style="display:none">
+                <p class="lobby-prompt">Enter host's room code:</p>
+                <input type="text" class="lobby-input" id="joinInput" placeholder="ABC123" maxlength="6" autocomplete="off" autocapitalize="characters" />
+                <button class="game-btn" id="btnConnect">Connect</button>
+                <p class="lobby-status" id="joinStatus"></p>
+                <button class="game-btn game-btn-ghost" id="btnCancelJoin">Cancel</button>
+            </div>
+
+            <!-- Connected / ready view -->
+            <div class="lobby-view" id="lobbyConnectedView" style="display:none">
+                <p class="lobby-connected-msg">Connected!</p>
+                <p class="lobby-status" id="connectedPing">Ping: --ms</p>
+                <p class="lobby-ready-line" id="readyStatusYou">You: Not Ready</p>
+                <p class="lobby-ready-line" id="readyStatusOpponent">Opponent: Not Ready</p>
+                <button class="game-btn" id="btnReady">Ready Up</button>
+                <button class="game-btn" id="btnStartMatch" style="display:none" disabled>Start Match</button>
+                <p class="lobby-status" id="waitingForHost">Waiting for host to start...</p>
+                <button class="game-btn game-btn-ghost" id="btnDisconnect">Disconnect</button>
+            </div>
+        </div>
+    </div>
 
     <div id="gameContainer">
     <canvas id="canvas"></canvas>
 
-    <!-- Main Menu - overlays 3D scene -->
+    <!-- Main Menu (DOM) - overlays 3D scene, left-aligned over the dancing wizard -->
+    <div id="domMenu" class="crt-screen">
+        <div id="domMenuLeftPanel"></div>
+        <div id="domMenuContent">
+            <h1 id="domMenuTitle">VOLLEYBOLT</h1>
+            <div id="domMenuButtons">
+                <button class="game-btn" id="domBtnStartBattle">Start Battle</button>
+                <button class="game-btn" id="domBtnMultiplayer">Multiplayer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Talent Screen (legacy) -->
     <div id="talentScreen" class="crt-screen">
         <div id="talentTitle">VOLLEYBOLT</div>
         <div id="talentButtons">
@@ -213,67 +272,6 @@
                 </div>
             </div>
         </div>
-        <!-- GRAVITY WELL - COMMENTED OUT FOR REWORK
-        <div id="gravitySlot" class="ability-slot ready" data-ability="gravity">
-            <div class="mana-cost">3</div>
-            <div class="ability-hex gravity-hex">
-                <div class="shine-effect gravity-shine"></div>
-                <span class="ability-icon" id="gravityIcon">🌀</span>
-                <div class="cooldown-sweep" id="gravitySweep"></div>
-                <div class="capture-count" id="captureCount"></div>
-            </div>
-            <div class="cooldown-overlay">
-                <span class="cooldown-text" id="gravityCDText">0</span>
-            </div>
-            <div class="ability-key">3</div>
-            <div class="ability-tooltip" id="gravityTooltip">
-                <div class="tooltip-header">
-                    <span class="tooltip-icon">🌀</span>
-                    <span class="tooltip-title">Gravity Well</span>
-                    <span class="tooltip-element arcane">Arcane</span>
-                </div>
-                <div class="tooltip-description">
-                    Create a gravity barrier that captures incoming projectiles. Press again to launch them back as a devastating sphere.
-                </div>
-                <div class="tooltip-stats">
-                    <div class="tooltip-stat">
-                        <span class="tooltip-stat-icon">💥</span>
-                        <span class="tooltip-stat-label">Damage:</span>
-                        <span class="tooltip-stat-value damage">2/ball</span>
-                    </div>
-                    <div class="tooltip-stat">
-                        <span class="tooltip-stat-icon">💧</span>
-                        <span class="tooltip-stat-label">Mana:</span>
-                        <span class="tooltip-stat-value mana">3</span>
-                    </div>
-                    <div class="tooltip-stat">
-                        <span class="tooltip-stat-icon">⏱️</span>
-                        <span class="tooltip-stat-label">Cooldown:</span>
-                        <span class="tooltip-stat-value cooldown">15s</span>
-                    </div>
-                    <div class="tooltip-stat">
-                        <span class="tooltip-stat-icon">⏳</span>
-                        <span class="tooltip-stat-label">Duration:</span>
-                        <span class="tooltip-stat-value duration">2.5s</span>
-                    </div>
-                </div>
-                <div class="tooltip-effects">
-                    <div class="tooltip-effect">
-                        <span class="tooltip-effect-icon">▸</span>
-                        <span class="tooltip-effect-text">Captures up to <span class="highlight">3 projectiles</span></span>
-                    </div>
-                    <div class="tooltip-effect">
-                        <span class="tooltip-effect-icon">▸</span>
-                        <span class="tooltip-effect-text">Two-phase ability: Barrier → Sphere</span>
-                    </div>
-                    <div class="tooltip-effect">
-                        <span class="tooltip-effect-icon">▸</span>
-                        <span class="tooltip-effect-text">Sphere cannot be blocked or parried</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-        -->
     </div>
 
     <!-- Parry Button - Hexagon style -->
@@ -4798,6 +4796,8 @@
             menuLeftPanel.thickness = 0;
             menuLeftPanel.background = "rgba(0, 0, 0, 0.5)";  // 50% black tint
             menuLeftPanel.zIndex = 400;  // Behind title/buttons but above scene
+            menuLeftPanel.isVisible = false;  // DOM menu owns this view
+            menuLeftPanel.isHitTestVisible = false;
             guiTexture.addControl(menuLeftPanel);
             window.guiElements.menuLeftPanel = menuLeftPanel;
 
@@ -4817,7 +4817,7 @@
             menuTitle.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
             menuTitle.left = "18%";  // Percentage to account for letterboxing
             menuTitle.top = "120px";
-            menuTitle.alpha = 1;
+            menuTitle.alpha = 0;  // DOM menu owns this view
             menuTitle.zIndex = 500;  // High zIndex to be on top
             guiTexture.addControl(menuTitle);
             window.guiElements.menuTitle = menuTitle;
@@ -4831,322 +4831,15 @@
             menuContainer.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
             menuContainer.left = "18%";  // Match title alignment
             menuContainer.top = "220px";  // Below title
-            menuContainer.isVisible = true;
+            menuContainer.isVisible = false;  // DOM menu owns this view
             menuContainer.zIndex = 500;  // High zIndex to be on top
-            menuContainer.isPointerBlocker = true;  // Block clicks from falling through
-            menuContainer.isHitTestVisible = true;
+            menuContainer.isPointerBlocker = false;  // DOM owns clicks
+            menuContainer.isHitTestVisible = false;
             guiTexture.addControl(menuContainer);
             window.guiElements.menuContainer = menuContainer;
+            // DOM menu is the canonical menu now — show it on initial boot.
+            if (window.setDOMMenuVisible) window.setDOMMenuVisible(true);
 
-            // --- MULTIPLAYER LOBBY GUI (Babylon GUI, matches main menu) ---
-            const lobbyOverlay = new BABYLON.GUI.Rectangle();
-            lobbyOverlay.width = 1;
-            lobbyOverlay.height = 1;
-            lobbyOverlay.thickness = 0;
-            lobbyOverlay.background = "transparent";
-            lobbyOverlay.isVisible = false;
-            lobbyOverlay.zIndex = 550;
-            lobbyOverlay.isPointerBlocker = true;
-            guiTexture.addControl(lobbyOverlay);
-            window.guiElements.lobbyOverlay = lobbyOverlay;
-
-            const lobbyPanel = new BABYLON.GUI.StackPanel();
-            lobbyPanel.isVertical = true;
-            lobbyPanel.width = "820px";
-            lobbyPanel.height = "620px";
-            lobbyPanel.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
-            lobbyPanel.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
-            lobbyPanel.isPointerBlocker = true;
-            lobbyPanel.paddingTop = "10px";
-            lobbyPanel.paddingBottom = "10px";
-            lobbyPanel.isHitTestVisible = true;
-            lobbyOverlay.addControl(lobbyPanel);
-            window.guiElements.lobbyPanel = lobbyPanel;
-
-            const lobbyBg = new BABYLON.GUI.Rectangle();
-            lobbyBg.width = "100%";
-            lobbyBg.height = "100%";
-            lobbyBg.thickness = 6;
-            lobbyBg.color = "#2f2620";
-            lobbyBg.background = "#0f0a08";
-            lobbyBg.paddingLeft = "12px";
-            lobbyBg.paddingRight = "12px";
-            lobbyBg.paddingTop = "12px";
-            lobbyBg.paddingBottom = "12px";
-            lobbyBg.shadowOffsetX = 8;
-            lobbyBg.shadowOffsetY = 8;
-            lobbyBg.shadowColor = "#000";
-            lobbyBg.shadowBlur = 0;
-            lobbyPanel.addControl(lobbyBg);
-            lobbyBg.zIndex = 0;
-
-            const lobbyContent = new BABYLON.GUI.StackPanel();
-            lobbyContent.isVertical = true;
-            lobbyContent.width = "100%";
-            lobbyContent.height = "100%";
-            lobbyContent.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
-            lobbyContent.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
-            lobbyContent.spacing = 16;
-            lobbyBg.addControl(lobbyContent);
-            lobbyContent.zIndex = 1;
-
-            // Title
-            const lobbyTitle = new BABYLON.GUI.TextBlock();
-            lobbyTitle.text = "MULTIPLAYER";
-            lobbyTitle.color = "#d8c278";
-            lobbyTitle.fontFamily = "'Esthetique', 'Cinzel', serif";
-            lobbyTitle.fontSize = 64;
-            lobbyTitle.fontWeight = "800";
-            lobbyTitle.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
-            lobbyTitle.shadowColor = "#000";
-            lobbyTitle.shadowOffsetX = 4;
-            lobbyTitle.shadowOffsetY = 4;
-            lobbyTitle.zIndex = 2;
-            lobbyContent.addControl(lobbyTitle);
-            window.guiElements.lobbyTitle = lobbyTitle;
-
-            // Subtitle
-            const lobbySubtitle = new BABYLON.GUI.TextBlock();
-            lobbySubtitle.text = "Challenge a friend to battle!";
-            lobbySubtitle.color = "#e8e0d0";
-            lobbySubtitle.fontFamily = "'Esthetique', 'Cinzel', serif";
-            lobbySubtitle.fontSize = 22;
-            lobbySubtitle.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
-            lobbySubtitle.shadowColor = "#000";
-            lobbySubtitle.shadowOffsetX = 2;
-            lobbySubtitle.shadowOffsetY = 2;
-            lobbySubtitle.zIndex = 2;
-            lobbyContent.addControl(lobbySubtitle);
-            window.guiElements.lobbySubtitle = lobbySubtitle;
-
-            // Helper to build stone-styled Babylon GUI button
-            function createStoneButton(label) {
-                const btn = BABYLON.GUI.Button.CreateSimpleButton("lobby_" + label, label);
-                btn.width = "360px";
-                btn.height = "96px";
-                btn.color = "#000000b3";
-                btn.fontSize = 32;
-                btn.fontFamily = "'Esthetique', 'Cinzel', serif";
-                btn.fontWeight = "900";
-                btn.thickness = 0;
-                btn.background = "#3d3528";
-                btn.paddingTop = "6px";
-                btn.paddingBottom = "6px";
-                btn.shadowOffsetX = 6;
-                btn.shadowOffsetY = 6;
-                btn.shadowColor = "#000";
-                btn.shadowBlur = 0;
-
-                // Texture background via image child
-                const bgImg = new BABYLON.GUI.Image("lobby_img_" + label, "textures/ui.png");
-                bgImg.stretch = BABYLON.GUI.Image.STRETCH_FILL;
-                bgImg.alpha = 0.9;
-                bgImg.isHitTestVisible = false;
-                bgImg.zIndex = 0;
-                btn.addControl(bgImg);
-                btn.textBlock.zIndex = 1;
-
-                // Hover / press
-                btn.onPointerEnterObservable.add(() => { bgImg.alpha = 1.0; });
-                btn.onPointerOutObservable.add(() => { bgImg.alpha = 0.9; });
-                btn.onPointerDownObservable.add(() => { bgImg.alpha = 0.8; btn.top = "3px"; });
-                btn.onPointerUpObservable.add(() => { bgImg.alpha = 1.0; btn.top = "0px"; });
-                return btn;
-            }
-
-            // Host/Join/Back buttons for multiplayer lobby
-            const btnHostGame = createStoneButton("Host Game");
-            const btnJoinGame = createStoneButton("Join Game");
-            const btnBackMenu = createStoneButton("Back");
-            btnBackMenu.color = "#1a120e";
-            btnBackMenu.alpha = 0.95;
-            lobbyContent.addControl(btnHostGame);
-            lobbyContent.addControl(btnJoinGame);
-            lobbyContent.addControl(btnBackMenu);
-
-            // Host view
-            const hostStack = new BABYLON.GUI.StackPanel();
-            hostStack.isVisible = false;
-            hostStack.spacing = 12;
-            hostStack.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
-            hostStack.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
-            lobbyContent.addControl(hostStack);
-
-            const hostPrompt = new BABYLON.GUI.TextBlock();
-            hostPrompt.text = "Share this code with your opponent:";
-            hostPrompt.color = "#e8e0d0";
-            hostPrompt.fontFamily = "'Esthetique', 'Cinzel', serif";
-            hostPrompt.fontSize = 22;
-            hostPrompt.shadowColor = "#000";
-            hostPrompt.shadowOffsetX = 2;
-            hostPrompt.shadowOffsetY = 2;
-            hostStack.addControl(hostPrompt);
-
-            const hostCode = new BABYLON.GUI.TextBlock();
-            hostCode.text = "------";
-            hostCode.color = "#d8c278";
-            hostCode.fontFamily = "'Rajdhani', monospace";
-            hostCode.fontSize = 56;
-            hostCode.fontWeight = "700";
-            hostCode.letterSpacing = "10px";
-            hostCode.shadowColor = "#000";
-            hostCode.shadowOffsetX = 3;
-            hostCode.shadowOffsetY = 3;
-            hostStack.addControl(hostCode);
-
-            // Copy-to-clipboard button under the code
-            const btnCopyCode = BABYLON.GUI.Button.CreateSimpleButton("btnCopyCode", "Copy Code");
-            btnCopyCode.width = "160px";
-            btnCopyCode.height = "44px";
-            btnCopyCode.color = "#fff";
-            btnCopyCode.background = "#3d3528";
-            btnCopyCode.cornerRadius = 6;
-            btnCopyCode.thickness = 2;
-            btnCopyCode.fontFamily = "'Esthetique', 'Cinzel', serif";
-            btnCopyCode.fontSize = 18;
-            hostStack.addControl(btnCopyCode);
-            btnCopyCode.onPointerClickObservable.add(() => {
-                const code = hostCode.text || '';
-                if (!code || code === '------') return;
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(code).then(() => {
-                        const original = btnCopyCode.textBlock.text;
-                        btnCopyCode.textBlock.text = 'Copied!';
-                        setTimeout(() => { btnCopyCode.textBlock.text = original; }, 1200);
-                    }).catch(() => {});
-                }
-            });
-
-            const hostStatus = new BABYLON.GUI.TextBlock();
-            hostStatus.text = "Waiting for opponent...";
-            hostStatus.color = "#cfc5b0";
-            hostStatus.fontFamily = "'Crimson Text', serif";
-            hostStatus.fontSize = 18;
-            hostStack.addControl(hostStatus);
-
-            const btnCancelHost = createStoneButton("Cancel");
-            btnCancelHost.color = "#1a120e";
-            hostStack.addControl(btnCancelHost);
-
-            // Join view
-            const joinStack = new BABYLON.GUI.StackPanel();
-            joinStack.isVisible = false;
-            joinStack.spacing = 12;
-            joinStack.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
-            joinStack.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
-            lobbyContent.addControl(joinStack);
-
-            const joinPrompt = new BABYLON.GUI.TextBlock();
-            joinPrompt.text = "Enter host's room code:";
-            joinPrompt.color = "#e8e0d0";
-            joinPrompt.fontFamily = "'Esthetique', 'Cinzel', serif";
-            joinPrompt.fontSize = 22;
-            joinPrompt.shadowColor = "#000";
-            joinPrompt.shadowOffsetX = 2;
-            joinPrompt.shadowOffsetY = 2;
-            joinStack.addControl(joinPrompt);
-
-            const joinInput = new BABYLON.GUI.InputText();
-            joinInput.width = "260px";
-            joinInput.height = "60px";
-            joinInput.maxWidth = "300px";
-            joinInput.background = "#2a211c";
-            joinInput.color = "#d8c278";
-            joinInput.focusedBackground = "#362b24";
-            joinInput.thickness = 3;
-            joinInput.fontSize = 32;
-            joinInput.fontFamily = "'Rajdhani', monospace";
-            joinInput.maxLength = 6;
-            joinInput.text = "";
-            joinInput.placeholderText = "ABC123";
-            joinInput.textAlign = "center";
-            joinInput.textWrapping = false;
-            // Auto-uppercase as user types so what they see matches what's sent
-            joinInput.onTextChangedObservable.add(() => {
-                const upper = (joinInput.text || '').toUpperCase();
-                if (joinInput.text !== upper) joinInput.text = upper;
-            });
-            joinStack.addControl(joinInput);
-
-            const btnConnect = createStoneButton("Connect");
-            joinStack.addControl(btnConnect);
-
-            const joinStatus = new BABYLON.GUI.TextBlock();
-            joinStatus.text = "";
-            joinStatus.color = "#cfc5b0";
-            joinStatus.fontFamily = "'Crimson Text', serif";
-            joinStatus.fontSize = 18;
-            joinStack.addControl(joinStatus);
-
-            const btnCancelJoin = createStoneButton("Cancel");
-            btnCancelJoin.color = "#1a120e";
-            joinStack.addControl(btnCancelJoin);
-
-            // Connected view
-            const connectedStack = new BABYLON.GUI.StackPanel();
-            connectedStack.isVisible = false;
-            connectedStack.spacing = 12;
-            connectedStack.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
-            connectedStack.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
-            lobbyContent.addControl(connectedStack);
-
-            const connectedMsg = new BABYLON.GUI.TextBlock();
-            connectedMsg.text = "Connected!";
-            connectedMsg.color = "#6ad26a";
-            connectedMsg.fontFamily = "'Esthetique', 'Cinzel', serif";
-            connectedMsg.fontSize = 28;
-            connectedMsg.shadowColor = "#000";
-            connectedMsg.shadowOffsetX = 2;
-            connectedMsg.shadowOffsetY = 2;
-            connectedStack.addControl(connectedMsg);
-
-            const connectedPing = new BABYLON.GUI.TextBlock();
-            connectedPing.text = "Ping: --ms";
-            connectedPing.color = "#cfc5b0";
-            connectedPing.fontFamily = "'Crimson Text', serif";
-            connectedPing.fontSize = 18;
-            connectedStack.addControl(connectedPing);
-
-            // Ready-state status: shows both players' ready state
-            const readyStatusYou = new BABYLON.GUI.TextBlock();
-            readyStatusYou.text = "You: Not Ready";
-            readyStatusYou.color = "#cfc5b0";
-            readyStatusYou.fontFamily = "'Crimson Text', serif";
-            readyStatusYou.fontSize = 18;
-            connectedStack.addControl(readyStatusYou);
-
-            const readyStatusOpponent = new BABYLON.GUI.TextBlock();
-            readyStatusOpponent.text = "Opponent: Not Ready";
-            readyStatusOpponent.color = "#cfc5b0";
-            readyStatusOpponent.fontFamily = "'Crimson Text', serif";
-            readyStatusOpponent.fontSize = 18;
-            connectedStack.addControl(readyStatusOpponent);
-
-            // Ready toggle button (visible to both host and joiner)
-            const btnReady = createStoneButton("Ready Up");
-            connectedStack.addControl(btnReady);
-
-            const btnStartMatch = createStoneButton("Start Match");
-            btnStartMatch.isVisible = false;
-            btnStartMatch.isEnabled = false;
-            connectedStack.addControl(btnStartMatch);
-
-            const waitingForHost = new BABYLON.GUI.TextBlock();
-            waitingForHost.text = "Waiting for host to start...";
-            waitingForHost.color = "#cfc5b0";
-            waitingForHost.fontFamily = "'Crimson Text', serif";
-            waitingForHost.fontSize = 18;
-            connectedStack.addControl(waitingForHost);
-
-            const btnDisconnect = createStoneButton("Disconnect");
-            btnDisconnect.color = "#1a120e";
-            connectedStack.addControl(btnDisconnect);
-
-            // Store references
-            window.guiElements.lobbyModeButtons = { btnHostGame, btnJoinGame, btnBackMenu };
-            window.guiElements.lobbyHost = { hostStack, hostPrompt, hostCode, hostStatus, btnCancelHost };
-            window.guiElements.lobbyJoin = { joinStack, joinPrompt, joinInput, btnConnect, joinStatus, btnCancelJoin };
-            window.guiElements.lobbyConnected = { connectedStack, connectedMsg, connectedPing, readyStatusYou, readyStatusOpponent, btnReady, btnStartMatch, waitingForHost, btnDisconnect };
 
             // Helper to create stone-styled menu button
             function createMenuButton(text, onClick) {
@@ -5224,6 +4917,7 @@
                     menuContainer.isVisible = false;
                     if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 0;
                     if (window.guiElements.menuLeftPanel) window.guiElements.menuLeftPanel.isVisible = false;
+                    if (window.setDOMMenuVisible) window.setDOMMenuVisible(false);
                     window.guiElements.modeSelectOverlay.isVisible = true;
                 }
             });
@@ -5238,7 +4932,7 @@
 
             // Multiplayer button
             const btnMultiplayer = createMenuButton("Multiplayer", () => {
-                showMultiplayerLobbyGUI();
+                showMultiplayerLobby();
             });
             menuContainer.addControl(btnMultiplayer);
 
@@ -5364,6 +5058,7 @@
                 menuContainer.isVisible = true;
                 if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 1;
                 if (window.guiElements.menuLeftPanel) window.guiElements.menuLeftPanel.isVisible = true;
+                if (window.setDOMMenuVisible) window.setDOMMenuVisible(true);
             });
             modeSelectPanel.addControl(btnModeBack);
 
@@ -13419,6 +13114,7 @@
                 if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 1;
                 if (window.guiElements.menuContainer) window.guiElements.menuContainer.isVisible = true;
                 if (window.guiElements.menuLeftPanel) window.guiElements.menuLeftPanel.isVisible = true;
+                if (window.setDOMMenuVisible) window.setDOMMenuVisible(true);
 
                 // Hide gameplay UI
                 if (window.guiElements.scorePanel) window.guiElements.scorePanel.isVisible = false;
@@ -13496,6 +13192,7 @@
                 if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 0;
                 if (window.guiElements.menuContainer) window.guiElements.menuContainer.isVisible = false;
                 if (window.guiElements.menuLeftPanel) window.guiElements.menuLeftPanel.isVisible = false;
+                if (window.setDOMMenuVisible) window.setDOMMenuVisible(false);
             }
 
             // Reset game state for new match
@@ -13721,6 +13418,7 @@
                     if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 1;
                     if (window.guiElements.menuContainer) window.guiElements.menuContainer.isVisible = true;
                     if (window.guiElements.menuLeftPanel) window.guiElements.menuLeftPanel.isVisible = true;
+                    if (window.setDOMMenuVisible) window.setDOMMenuVisible(true);
 
                     // Hide gameplay UI
                     if (window.guiElements.stageNameText) window.guiElements.stageNameText.isVisible = false;
@@ -13756,39 +13454,6 @@
         }
 
         // Show multiplayer lobby (Babylon GUI)
-        function showMultiplayerLobbyGUI() {
-            // Hide menu GUI
-            if (window.guiElements && window.guiElements.menuContainer) {
-                window.guiElements.menuContainer.isVisible = false;
-            }
-            if (window.guiElements && window.guiElements.menuTitle) {
-                window.guiElements.menuTitle.alpha = 0;
-            }
-            if (window.guiElements && window.guiElements.menuLeftPanel) {
-                window.guiElements.menuLeftPanel.isVisible = false;
-            }
-            // Show Babylon GUI lobby and hide HTML fallback
-            const lobby = document.getElementById('multiplayerLobby');
-            if (lobby) lobby.style.display = 'none';
-            if (window.guiElements && window.guiElements.lobbyOverlay) {
-                window.guiElements.lobbyOverlay.isVisible = true;
-                // Default state: show Host/Join buttons
-                const mode = window.guiElements.lobbyModeButtons || {};
-                const host = window.guiElements.lobbyHost || {};
-                const join = window.guiElements.lobbyJoin || {};
-                const connected = window.guiElements.lobbyConnected || {};
-                // Show host/join buttons
-                if (mode.btnHostGame) mode.btnHostGame.isVisible = true;
-                if (mode.btnJoinGame) mode.btnJoinGame.isVisible = true;
-                if (mode.btnBackMenu) mode.btnBackMenu.isVisible = true;
-                // Hide other stacks
-                if (host.hostStack) host.hostStack.isVisible = false;
-                if (join.joinStack) join.joinStack.isVisible = false;
-                if (connected.connectedStack) connected.connectedStack.isVisible = false;
-                if (window.guiElements.lobbySubtitle) window.guiElements.lobbySubtitle.text = "Challenge a friend to battle!";
-            }
-        }
-
         function hideTalentScreen() {
             const talentScreen = document.getElementById('talentScreen');
             talentScreen.classList.remove('visible');
@@ -13909,62 +13574,36 @@
                 }
             }
 
-            // Hide the game container entirely
-            const gameContainer = document.getElementById('gameContainer');
-            if (gameContainer) gameContainer.style.display = 'none';
-
-            // Stop the render loop to pause the game completely
-            if (window.gameEngine) window.gameEngine.stopRenderLoop();
-
             document.getElementById('talentScreen').classList.remove('visible');
-            // Wire up Babylon GUI lobby buttons (one-shot, safe to call repeatedly)
-            if (typeof wireLobbyButtons === 'function') wireLobbyButtons();
-            // Show Babylon GUI lobby
-            showMultiplayerLobbyGUI();
+
+            // Wire up DOM lobby buttons (one-shot) and show the lobby.
+            if (typeof wireDOMLobby === 'function') wireDOMLobby();
+            showLobbyView('lobbyModeView');
+            const lobby = document.getElementById('multiplayerLobby');
+            if (lobby) lobby.classList.add('visible');
         }
 
         function hideMultiplayerLobby() {
             const lobby = document.getElementById('multiplayerLobby');
-            if (lobby) lobby.style.display = 'none';
-            if (window.guiElements && window.guiElements.lobbyOverlay) {
-                window.guiElements.lobbyOverlay.isVisible = false;
-            }
-            // Show the game container and restart the render loop
-            const gameContainer = document.getElementById('gameContainer');
-            if (gameContainer) gameContainer.style.display = 'block';
-            if (window.gameEngine && window.gameRenderLoop) {
-                window.gameEngine.runRenderLoop(window.gameRenderLoop);
-            }
+            if (lobby) lobby.classList.remove('visible');
         }
 
         function showLobbyView(viewId) {
-            const g = window.guiElements || {};
-            const mode = g.lobbyModeButtons || {};
-            const host = g.lobbyHost || {};
-            const join = g.lobbyJoin || {};
-            const connected = g.lobbyConnected || {};
+            // Accept legacy 'lobbyModeSelect' alias for the mode-select view
+            if (viewId === 'lobbyModeSelect') viewId = 'lobbyModeView';
 
-            if (mode.btnHostGame) mode.btnHostGame.isVisible = false;
-            if (mode.btnJoinGame) mode.btnJoinGame.isVisible = false;
-            if (mode.btnBackMenu) mode.btnBackMenu.isVisible = false;
-            if (host.hostStack) host.hostStack.isVisible = false;
-            if (join.joinStack) join.joinStack.isVisible = false;
-            if (connected.connectedStack) connected.connectedStack.isVisible = false;
+            const views = ['lobbyModeView', 'lobbyHostView', 'lobbyJoinView', 'lobbyConnectedView'];
+            for (const id of views) {
+                const el = document.getElementById(id);
+                if (el) el.style.display = (id === viewId) ? 'flex' : 'none';
+            }
 
-            if (viewId === 'lobbyModeSelect') {
-                if (mode.btnHostGame) mode.btnHostGame.isVisible = true;
-                if (mode.btnJoinGame) mode.btnJoinGame.isVisible = true;
-                if (mode.btnBackMenu) mode.btnBackMenu.isVisible = true;
-                if (g.lobbySubtitle) g.lobbySubtitle.text = "Challenge a friend to battle!";
-            } else if (viewId === 'lobbyHostView') {
-                if (host.hostStack) host.hostStack.isVisible = true;
-                if (g.lobbySubtitle) g.lobbySubtitle.text = "Share your room code";
-            } else if (viewId === 'lobbyJoinView') {
-                if (join.joinStack) join.joinStack.isVisible = true;
-                if (g.lobbySubtitle) g.lobbySubtitle.text = "Enter host code";
-            } else if (viewId === 'lobbyConnectedView') {
-                if (connected.connectedStack) connected.connectedStack.isVisible = true;
-                if (g.lobbySubtitle) g.lobbySubtitle.text = "Connected";
+            const subtitle = document.getElementById('lobbySubtitle');
+            if (subtitle) {
+                if (viewId === 'lobbyModeView')      subtitle.textContent = 'Challenge a friend to battle!';
+                else if (viewId === 'lobbyHostView') subtitle.textContent = 'Share your room code';
+                else if (viewId === 'lobbyJoinView') subtitle.textContent = 'Enter host code';
+                else if (viewId === 'lobbyConnectedView') subtitle.textContent = 'Connected';
             }
         }
 
@@ -13982,85 +13621,90 @@
             return code;
         }
 
-        // GUI Buttons wiring — deferred until GUI exists. Called lazily from showMultiplayerLobby().
+        // DOM Lobby wiring — one-shot, called from showMultiplayerLobby().
         let lobbyButtonsWired = false;
-        function wireLobbyButtons() {
+        function wireDOMLobby() {
             if (lobbyButtonsWired) return;
-            const gLobby = window.guiElements || {};
-            const gMode = gLobby.lobbyModeButtons || {};
-            const gHost = gLobby.lobbyHost || {};
-            const gJoin = gLobby.lobbyJoin || {};
-            const gConn = gLobby.lobbyConnected || {};
-            // Bail if GUI hasn't been created yet — caller will retry next time lobby opens.
-            if (!gMode.btnHostGame || !gMode.btnJoinGame) return;
+            const $ = (id) => document.getElementById(id);
+            const btnHost = $('btnHostGame'),    btnJoin = $('btnJoinGame'),    btnBack = $('btnBackMenu');
+            const btnConnect = $('btnConnect'),  joinInput = $('joinInput'),    joinStatus = $('joinStatus');
+            const hostCode = $('hostCode'),      hostStatus = $('hostStatus'),  btnCopy = $('btnCopyCode');
+            const btnCancelHost = $('btnCancelHost'),  btnCancelJoin = $('btnCancelJoin');
+            const btnReady = $('btnReady'),      btnStart = $('btnStartMatch'), btnDisconnect = $('btnDisconnect');
+            if (!btnHost || !btnJoin) return;  // DOM not ready
             lobbyButtonsWired = true;
 
-            // Host Game button
-            gMode.btnHostGame.onPointerClickObservable.add(() => {
+            btnHost.addEventListener('click', () => {
                 isHost = true;
-                const roomCode = generateRoomCode();
-                initializePeer(roomCode.toLowerCase());
+                const code = generateRoomCode();
+                initializePeer(code.toLowerCase());
                 showLobbyView('lobbyHostView');
-                if (gHost.hostCode) gHost.hostCode.text = roomCode;
-                if (gHost.hostStatus) gHost.hostStatus.text = 'Waiting for opponent...';
+                if (hostCode) hostCode.textContent = code;
+                if (hostStatus) hostStatus.textContent = 'Waiting for opponent...';
             });
 
-            // Join Game button
-            gMode.btnJoinGame.onPointerClickObservable.add(() => {
+            btnJoin.addEventListener('click', () => {
                 showLobbyView('lobbyJoinView');
-                if (gJoin.joinInput) gJoin.joinInput.text = '';
-                if (gJoin.joinStatus) gJoin.joinStatus.text = '';
-                if (gJoin.joinInput && gJoin.joinInput.focus) gJoin.joinInput.focus();
+                if (joinInput) { joinInput.value = ''; joinInput.focus(); }
+                if (joinStatus) joinStatus.textContent = '';
             });
 
-            // Back to main menu
-            if (gMode.btnBackMenu) gMode.btnBackMenu.onPointerClickObservable.add(() => {
+            btnBack.addEventListener('click', () => {
                 hideMultiplayerLobby();
                 showTalentScreen();
             });
 
-            // Connect button (in join view)
             const connectJoinHandler = () => {
-                const code = (gJoin.joinInput ? gJoin.joinInput.text : '').toUpperCase().trim();
+                const code = (joinInput ? joinInput.value : '').toUpperCase().trim();
                 if (code.length >= 4) {
                     isHost = false;
-                    if (gJoin.joinStatus) gJoin.joinStatus.text = 'Connecting...';
+                    if (joinStatus) joinStatus.textContent = 'Connecting...';
                     initializePeer(null, code.toLowerCase());
                 } else {
-                    if (gJoin.joinStatus) gJoin.joinStatus.text = 'Enter a valid room code';
+                    if (joinStatus) joinStatus.textContent = 'Enter a valid room code';
                 }
             };
-            if (gJoin.btnConnect) gJoin.btnConnect.onPointerClickObservable.add(connectJoinHandler);
-            // Enter key in join input
-            if (gJoin.joinInput) {
-                gJoin.joinInput.onKeyboardEventProcessedObservable.add((kbInfo) => {
-                    if (kbInfo.type === BABYLON.GUI.KeyboardEventTypes.KEYUP && kbInfo.event.key === 'Enter') {
-                        connectJoinHandler();
-                    }
+            if (btnConnect) btnConnect.addEventListener('click', connectJoinHandler);
+
+            if (joinInput) {
+                joinInput.addEventListener('input', () => {
+                    const upper = joinInput.value.toUpperCase();
+                    if (joinInput.value !== upper) joinInput.value = upper;
+                });
+                joinInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); connectJoinHandler(); }
                 });
             }
 
-            // Cancel host
-            if (gHost.btnCancelHost) gHost.btnCancelHost.onPointerClickObservable.add(() => {
-                cleanupPeer();
-                showLobbyView('lobbyModeSelect');
+            if (btnCopy) btnCopy.addEventListener('click', () => {
+                const code = hostCode ? hostCode.textContent : '';
+                if (!code || code === '------') return;
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(code).then(() => {
+                        const original = btnCopy.textContent;
+                        btnCopy.textContent = 'Copied!';
+                        setTimeout(() => { btnCopy.textContent = original; }, 1200);
+                    }).catch(() => {});
+                }
             });
 
-            // Cancel join
-            if (gJoin.btnCancelJoin) gJoin.btnCancelJoin.onPointerClickObservable.add(() => {
+            if (btnCancelHost) btnCancelHost.addEventListener('click', () => {
                 cleanupPeer();
-                showLobbyView('lobbyModeSelect');
+                showLobbyView('lobbyModeView');
             });
 
-            // Disconnect (from connected lobby view) — notify opponent before tearing down
-            if (gConn.btnDisconnect) gConn.btnDisconnect.onPointerClickObservable.add(() => {
+            if (btnCancelJoin) btnCancelJoin.addEventListener('click', () => {
+                cleanupPeer();
+                showLobbyView('lobbyModeView');
+            });
+
+            if (btnDisconnect) btnDisconnect.addEventListener('click', () => {
                 sendLeaveMessage('Opponent left the lobby');
                 cleanupPeer();
-                showLobbyView('lobbyModeSelect');
+                showLobbyView('lobbyModeView');
             });
 
-            // Ready toggle button
-            if (gConn.btnReady) gConn.btnReady.onPointerClickObservable.add(() => {
+            if (btnReady) btnReady.addEventListener('click', () => {
                 localReady = !localReady;
                 if (conn && conn.open) {
                     conn.send({ type: 'PLAYER_READY', ready: localReady });
@@ -14068,9 +13712,8 @@
                 refreshReadyUI();
             });
 
-            // Start Match button (host only, gated on both-ready)
-            if (gConn.btnStartMatch) gConn.btnStartMatch.onPointerClickObservable.add(async () => {
-                if (!localReady || !remoteReady) return;  // Belt-and-suspenders gate
+            if (btnStart) btnStart.addEventListener('click', async () => {
+                if (!localReady || !remoteReady) return;
                 await initToneJS();
                 if (isHost && conn && conn.open) {
                     const sharedSeed = Date.now() % 2147483647;
@@ -14081,7 +13724,47 @@
                 }
             });
         }
-        window.wireLobbyButtons = wireLobbyButtons;
+        window.wireDOMLobby = wireDOMLobby;
+
+        // -------------------------------------------------------
+        // DOM Main Menu — replaces the Babylon GUI menu (title + buttons)
+        // -------------------------------------------------------
+        let domMenuWired = false;
+        function wireDOMMenu() {
+            if (domMenuWired) return;
+            const btnStart = document.getElementById('domBtnStartBattle');
+            const btnMP = document.getElementById('domBtnMultiplayer');
+            if (!btnStart || !btnMP) return;
+            domMenuWired = true;
+
+            btnStart.addEventListener('click', () => {
+                // Same flow as the legacy Babylon Start Battle button:
+                // hide the DOM menu, surface the mode-selection overlay (still Babylon GUI for now).
+                setDOMMenuVisible(false);
+                if (window.guiElements && window.guiElements.modeSelectOverlay) {
+                    window.guiElements.modeSelectOverlay.isVisible = true;
+                }
+            });
+
+            btnMP.addEventListener('click', () => {
+                showMultiplayerLobby();
+            });
+        }
+        window.wireDOMMenu = wireDOMMenu;
+
+        function setDOMMenuVisible(show) {
+            // Wire on first show in case initGame hasn't reached that point yet.
+            if (show && !domMenuWired) wireDOMMenu();
+            const el = document.getElementById('domMenu');
+            if (el) el.classList.toggle('visible', !!show);
+            // Keep the legacy Babylon GUI menu permanently hidden — DOM owns this view now.
+            if (window.guiElements) {
+                if (window.guiElements.menuContainer) window.guiElements.menuContainer.isVisible = false;
+                if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 0;
+                if (window.guiElements.menuLeftPanel) window.guiElements.menuLeftPanel.isVisible = false;
+            }
+        }
+        window.setDOMMenuVisible = setDOMMenuVisible;
 
         // Send a LEAVE message to the opponent (best-effort; ignore errors)
         function sendLeaveMessage(reason) {
@@ -14105,33 +13788,37 @@
         let remoteReady = false;
 
         function refreshReadyUI() {
-            const c = window.guiElements?.lobbyConnected;
-            if (!c) return;
-            if (c.readyStatusYou) {
-                c.readyStatusYou.text = 'You: ' + (localReady ? 'Ready ✓' : 'Not Ready');
-                c.readyStatusYou.color = localReady ? '#6ad26a' : '#cfc5b0';
+            const youEl = document.getElementById('readyStatusYou');
+            const oppEl = document.getElementById('readyStatusOpponent');
+            const btnReady = document.getElementById('btnReady');
+            const btnStart = document.getElementById('btnStartMatch');
+            const waitingEl = document.getElementById('waitingForHost');
+
+            if (youEl) {
+                youEl.textContent = 'You: ' + (localReady ? 'Ready ✓' : 'Not Ready');
+                youEl.classList.toggle('ready', localReady);
+                youEl.classList.toggle('not-ready', !localReady);
             }
-            if (c.readyStatusOpponent) {
-                c.readyStatusOpponent.text = 'Opponent: ' + (remoteReady ? 'Ready ✓' : 'Not Ready');
-                c.readyStatusOpponent.color = remoteReady ? '#6ad26a' : '#cfc5b0';
+            if (oppEl) {
+                oppEl.textContent = 'Opponent: ' + (remoteReady ? 'Ready ✓' : 'Not Ready');
+                oppEl.classList.toggle('ready', remoteReady);
+                oppEl.classList.toggle('not-ready', !remoteReady);
             }
-            if (c.btnReady && c.btnReady.textBlock) {
-                c.btnReady.textBlock.text = localReady ? 'Cancel Ready' : 'Ready Up';
-            }
-            // Host's Start Match button only enables when both ready
-            if (isHost && c.btnStartMatch) {
-                const both = localReady && remoteReady;
-                c.btnStartMatch.isEnabled = both;
-                c.btnStartMatch.alpha = both ? 1.0 : 0.5;
-            }
-            // Joiner's waiting label updates with host's status
-            if (!isHost && c.waitingForHost) {
-                if (localReady && remoteReady) {
-                    c.waitingForHost.text = 'Waiting for host to start match...';
-                } else if (!localReady) {
-                    c.waitingForHost.text = 'Press Ready when you\'re set.';
-                } else {
-                    c.waitingForHost.text = 'Waiting for host to ready up...';
+            if (btnReady) btnReady.textContent = localReady ? 'Cancel Ready' : 'Ready Up';
+
+            if (isHost) {
+                if (btnStart) {
+                    const both = localReady && remoteReady;
+                    btnStart.disabled = !both;
+                }
+                if (waitingEl) waitingEl.style.display = 'none';
+            } else {
+                if (btnStart) btnStart.style.display = 'none';
+                if (waitingEl) {
+                    waitingEl.style.display = '';
+                    if (localReady && remoteReady) waitingEl.textContent = 'Waiting for host to start match...';
+                    else if (!localReady) waitingEl.textContent = 'Press Ready when you\'re set.';
+                    else waitingEl.textContent = 'Waiting for host to ready up...';
                 }
             }
         }
@@ -14180,13 +13867,15 @@
 
             peer.on('error', (err) => {
                 console.error('PeerJS error:', err);
+                const joinStatus = document.getElementById('joinStatus');
+                const hostStatus = document.getElementById('hostStatus');
                 if (err.type === 'peer-unavailable') {
-                    if (gJoin.joinStatus) gJoin.joinStatus.text = 'Room not found. Check the code.';
+                    if (joinStatus) joinStatus.textContent = 'Room not found. Check the code.';
                 } else if (err.type === 'network' || err.type === 'disconnected') {
                     handleDisconnect('Connection error');
                 } else {
-                    const statusEl = isHost ? gHost.hostStatus : gJoin.joinStatus;
-                    if (statusEl) statusEl.text = 'Error: ' + err.type;
+                    const statusEl = isHost ? hostStatus : joinStatus;
+                    if (statusEl) statusEl.textContent = 'Error: ' + err.type;
                 }
             });
         }
@@ -14198,13 +13887,15 @@
                 console.log('Connection established');
                 showLobbyView('lobbyConnectedView');
 
-                // Host shows start button, guest waits
+                // Host shows Start Match (gated by ready); guest sees waiting label.
+                const btnStart = document.getElementById('btnStartMatch');
+                const waitingEl = document.getElementById('waitingForHost');
                 if (isHost) {
-                    if (gConn.btnStartMatch) gConn.btnStartMatch.isVisible = true;
-                    if (gConn.waitingForHost) gConn.waitingForHost.isVisible = false;
+                    if (btnStart) btnStart.style.display = '';
+                    if (waitingEl) waitingEl.style.display = 'none';
                 } else {
-                    if (gConn.btnStartMatch) gConn.btnStartMatch.isVisible = false;
-                    if (gConn.waitingForHost) gConn.waitingForHost.isVisible = true;
+                    if (btnStart) btnStart.style.display = 'none';
+                    if (waitingEl) waitingEl.style.display = '';
                 }
 
                 // Fresh connection: both players start un-ready
@@ -14322,10 +14013,10 @@
                     // Calculate RTT
                     netPing = Math.round(performance.now() - data.time);
                     lastPongTime = performance.now();
-                    const gPing = window.guiElements?.lobbyConnected?.connectedPing;
-                    if (gPing) {
-                        gPing.text = 'Ping: ' + netPing + 'ms';
-                        if (window.pingColor) gPing.color = window.pingColor(netPing);
+                    const pingEl = document.getElementById('connectedPing');
+                    if (pingEl) {
+                        pingEl.textContent = 'Ping: ' + netPing + 'ms';
+                        if (window.pingColor) pingEl.style.color = window.pingColor(netPing);
                     }
                     if (window.refreshNetStatus) window.refreshNetStatus();
                     break;
@@ -14482,6 +14173,7 @@
                 if (window.guiElements.menuContainer) window.guiElements.menuContainer.isVisible = false;
                 if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 0;
                 if (window.guiElements.menuLeftPanel) window.guiElements.menuLeftPanel.isVisible = false;
+                if (window.setDOMMenuVisible) window.setDOMMenuVisible(false);
             }
 
             // Show ability bar and parry button
@@ -15752,6 +15444,7 @@
             if (window.guiElements.menuContainer) window.guiElements.menuContainer.isVisible = false;
             if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 0;
             if (window.guiElements.menuLeftPanel) window.guiElements.menuLeftPanel.isVisible = false;
+            if (window.setDOMMenuVisible) window.setDOMMenuVisible(false);
 
             // Hide gameplay UI
             if (window.guiElements.playerHealthPanel) window.guiElements.playerHealthPanel.isVisible = false;
