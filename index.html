@@ -13419,6 +13419,13 @@
             }
             startGameInProgress = true;
 
+            // Cover the screen with black BEFORE the menu overlay drops, so the swap
+            // to the gameplay view happens entirely under black (no menu-angle / HUD flash).
+            if (window.guiElements && window.guiElements.transitionOverlay) {
+                window.guiElements.transitionOverlay.isVisible = true;
+                window.guiElements.transitionOverlay.alpha = 1;
+            }
+
             // Update ability bar to match loadout
             if (window.updateAbilityBarFromLoadout) {
                 updateAbilityBarFromLoadout();
@@ -13512,11 +13519,19 @@
                 update();
             }
 
-            // Step 1: Fade to black (300ms)
-            animateAlpha(overlay, 0, 1, 300, () => {
+            // Step 1: already black (startGame set the overlay opaque up front so the
+            // menu->game swap was hidden). Hold a beat, then continue under black.
+            overlay.alpha = 1;
+            animateAlpha(overlay, 1, 1, 16, () => {
                 // Step 2: Snap camera to gameplay position (instant, hidden by black)
                 if (window.gameCamera) {
                     const cam = window.gameCamera;
+                    // Stop the menu camera animation that resetGame() started, or it would
+                    // keep dragging the camera back toward the menu position over its 1s run.
+                    if (cam.getScene) {
+                        cam.getScene().stopAnimation(cam);
+                        cam.getScene().stopAnimation(cam.target);
+                    }
                     cam.alpha = GAME_CAMERA.alpha;
                     cam.beta = GAME_CAMERA.beta;
                     cam.radius = GAME_CAMERA.radius;
