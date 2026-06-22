@@ -10,7 +10,7 @@
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css?v=17">
+    <link rel="stylesheet" href="styles.css?v=18">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -13520,9 +13520,9 @@
             }
 
             // Step 1: already black (startGame set the overlay opaque up front so the
-            // menu->game swap was hidden). Hold a beat, then continue under black.
+            // menu->game swap was hidden). Hold black a beat for a ceremonial lead-in.
             overlay.alpha = 1;
-            animateAlpha(overlay, 1, 1, 16, () => {
+            animateAlpha(overlay, 1, 1, 700, () => {
                 // Step 2: Snap camera to gameplay position (instant, hidden by black)
                 if (window.gameCamera) {
                     const cam = window.gameCamera;
@@ -13552,32 +13552,32 @@
                 // Hide the stage name message that resetRound shows (we're showing Ready/Go instead)
                 hideMessage();
 
-                // Step 3: Show "Ready" (fade in 200ms)
-                text.text = "READY";
-                animateAlpha(text, 0, 1, 200, () => {
-                    // Hold "Ready" for 800ms
+                // Step 3: Show "Ready" (slow, weighty fade in)
+                text.text = "READY...";
+                animateAlpha(text, 0, 1, 450, () => {
+                    // Hold "Ready" for a beat
                     setTimeout(() => {
-                        // Step 4: Fade out "Ready" (150ms)
-                        animateAlpha(text, 1, 0, 150, () => {
-                            // Step 5: Show "GO!" (fade in 150ms)
+                        // Step 4: Fade out "Ready"
+                        animateAlpha(text, 1, 0, 250, () => {
+                            // Step 5: Show "GO!"
                             text.text = "GO!";
-                            animateAlpha(text, 0, 1, 150, () => {
-                                // Step 6: Fade out overlay while "GO!" still visible (400ms)
-                                animateAlpha(overlay, 1, 0, 400, () => {
-                                    // Step 7: Fade out "GO!" (300ms)
+                            animateAlpha(text, 0, 1, 250, () => {
+                                // Step 6: Slow, dramatic reveal of the arena while "GO!" holds
+                                animateAlpha(overlay, 1, 0, 1300, () => {
+                                    // Step 7: Fade out "GO!"
                                     setTimeout(() => {
-                                        animateAlpha(text, 1, 0, 300, () => {
+                                        animateAlpha(text, 1, 0, 400, () => {
                                             text.text = "";
                                             // Hide transition elements when done
                                             overlay.isVisible = false;
                                             text.isVisible = false;
                                             if (callback) callback();
                                         });
-                                    }, 200);
+                                    }, 600);
                                 });
                             });
                         });
-                    }, 800);
+                    }, 1300);
                 });
             });
         }
@@ -13997,7 +13997,15 @@
         function setDOMModeSelectVisible(show) {
             if (show && !domModeSelectWired) wireDOMModeSelect();
             const el = document.getElementById('domModeSelect');
-            if (el) el.classList.toggle('visible', !!show);
+            if (!el) return;
+            if (show) {
+                el.style.opacity = '';
+                el.classList.add('visible');
+            } else {
+                // Fade out (revealing the black transition overlay) instead of an instant cut
+                el.style.opacity = '0';
+                setTimeout(() => { el.classList.remove('visible'); el.style.opacity = ''; }, 300);
+            }
         }
         window.setDOMModeSelectVisible = setDOMModeSelectVisible;
 

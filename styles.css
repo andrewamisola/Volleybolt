@@ -1996,6 +1996,7 @@ body.flipped-view #aiCastBarContainer {
     pointer-events: none;
     z-index: 200;
     display: none;
+    transition: opacity 0.3s ease;   /* smooth fade when dismissing into the game */
 }
 
 .arcane-overlay.visible {
