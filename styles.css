@@ -1777,34 +1777,33 @@ body.flipped-view #aiCastBarContainer {
     font-family: 'FF9UI', 'Cinzel', serif;
     font-size: 22px;
     letter-spacing: 2px;
-    color: var(--gold-light);
-    text-shadow: 2px 2px 0 #000;
-    background: linear-gradient(180deg, var(--brown) 0%, var(--brown-dark) 100%);
-    border: 3px solid var(--brown-light);
-    border-top-color: #6a4a3a;
-    border-left-color: #6a4a3a;
-    border-bottom-color: #1a0a05;
-    border-right-color: #1a0a05;
+    color: #eef2fa;                          /* FF9 cream-white */
+    text-shadow: 2px 2px 0 #2a2f3a;          /* hard grey shadow */
+    /* FF9 steel window: brushed grain over steel gradient + beveled light rim */
+    background:
+        repeating-linear-gradient(118deg, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px, rgba(0,0,0,0.05) 1px, rgba(0,0,0,0.05) 2px, transparent 2px, transparent 4px),
+        linear-gradient(180deg, rgba(86,98,120,0.95) 0%, rgba(44,54,72,0.97) 100%);
+    border: 2px solid #e0e6f0;
+    border-radius: 11px;
     cursor: pointer;
     transition: transform 0.1s ease, border-color 0.15s ease, color 0.15s ease;
-    box-shadow: inset 1px 1px 0 rgba(255,255,255,0.08), 4px 4px 0 #000;
+    box-shadow:
+        inset 0 0 0 1px rgba(16,24,40,0.7),
+        inset 0 2px 3px rgba(255,255,255,0.18),
+        inset 0 -3px 4px rgba(0,0,0,0.35),
+        5px 5px 0 rgba(0,0,0,0.5);
     user-select: none;
     -webkit-user-select: none;
 }
 
 .game-btn:hover:not(:disabled) {
-    border-color: var(--gold);
-    border-top-color: var(--gold-light);
-    border-left-color: var(--gold-light);
-    border-bottom-color: var(--gold-dark);
-    border-right-color: var(--gold-dark);
-    color: #fff;
+    border-color: #ffffff;
+    color: #fff4c2;                          /* warm cream highlight (FF9 selected) */
     transform: translateY(-2px);
 }
 
 .game-btn:active:not(:disabled) {
     transform: translateY(1px);
-    box-shadow: inset 1px 1px 0 rgba(255,255,255,0.08), 2px 2px 0 #000;
 }
 
 .game-btn:disabled {
@@ -2144,8 +2143,8 @@ body.flipped-view #aiCastBarContainer {
     top: 0;
     bottom: 0;
     width: 4px;
-    background: linear-gradient(180deg, var(--gold-light), var(--gold-dark));
-    box-shadow: 0 0 10px rgba(240, 192, 80, 0.7);
+    background: linear-gradient(180deg, #eef2fa, #9aa6c0);
+    box-shadow: 0 0 10px rgba(220, 230, 245, 0.6);
     transform: scaleY(0);
     transition: transform 0.2s ease;
 }
@@ -2154,22 +2153,26 @@ body.flipped-view #aiCastBarContainer {
 .menu-btn .menu-btn-glyph {
     font-size: 22px;
     line-height: 1;
-    color: var(--gold);
-    filter: drop-shadow(0 0 6px rgba(212, 168, 73, 0.5));
+    color: #dbe2f0;
+    filter: drop-shadow(0 0 6px rgba(200, 215, 240, 0.45));
     transition: transform 0.2s ease, color 0.2s ease;
 }
-.menu-btn:hover .menu-btn-glyph { color: var(--gold-light); transform: scale(1.15); }
+.menu-btn:hover .menu-btn-glyph { color: #fff4c2; transform: scale(1.15); }
 
 .menu-btn:hover {
-    box-shadow: inset 1px 1px 0 rgba(255,255,255,0.08), 4px 4px 0 #000, 0 0 22px rgba(212, 168, 73, 0.4);
+    box-shadow:
+        inset 0 0 0 1px rgba(16,24,40,0.7),
+        inset 0 2px 3px rgba(255,255,255,0.22),
+        5px 5px 0 rgba(0,0,0,0.5),
+        0 0 20px rgba(200, 215, 240, 0.3);
 }
 
 /* Slow breathing glow to draw the eye to the primary action */
 .menu-btn.is-primary { animation: menuPrimaryBreath 2.8s ease-in-out infinite; }
 .menu-btn.is-primary:hover { animation: none; }
 @keyframes menuPrimaryBreath {
-    0%, 100% { box-shadow: inset 1px 1px 0 rgba(255,255,255,0.08), 4px 4px 0 #000, 0 0 8px rgba(212, 168, 73, 0.15); }
-    50%      { box-shadow: inset 1px 1px 0 rgba(255,255,255,0.08), 4px 4px 0 #000, 0 0 20px rgba(212, 168, 73, 0.45); }
+    0%, 100% { box-shadow: inset 0 0 0 1px rgba(16,24,40,0.7), 5px 5px 0 rgba(0,0,0,0.5), 0 0 8px rgba(200, 215, 240, 0.12); }
+    50%      { box-shadow: inset 0 0 0 1px rgba(16,24,40,0.7), 5px 5px 0 rgba(0,0,0,0.5), 0 0 18px rgba(200, 215, 240, 0.4); }
 }
 
 /* Lesser-priority action (e.g. Back) — smaller, muted, no breathing glow */
