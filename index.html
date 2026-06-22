@@ -1259,63 +1259,49 @@
                 const slotEl = slotElements[index];
                 if (!slotEl) return;
 
+                // Prefer the canonical ABILITY_REGISTRY; fall back to SpellRegistry
+                // for placeholder spells not yet in the registry (snowball/spark/boulder).
+                const reg = ABILITY_REGISTRY[spellId];
                 const spell = SpellRegistry.get(spellId);
-                if (!spell) return;
+                if (!reg && !spell) return;
+
+                const uiName     = reg ? reg.ui.name         : spell.name;
+                const uiIcon     = reg ? reg.ui.iconClass    : iconClasses[spellId];
+                const uiMana     = reg ? reg.ui.manaCostLabel : (manaCostDisplay[spellId] || String(spell.manaCost));
+                const uiManaStat = reg ? (reg.gameplay.manaCost + ' Mana') : (spell.manaCost + ' Mana');
+                const uiCast     = reg ? reg.ui.castLabel     : (spell.castTime ? spell.castTime + 's Cast' : 'Instant');
+                const uiCD       = reg ? reg.ui.cooldownLabel : (spell.cooldown ? spell.cooldown + 's CD' : 'No CD');
+                const uiDesc     = reg ? reg.ui.description   : spell.description;
 
                 // Update icon
                 const iconEl = slotEl.querySelector('.ability-icon');
                 if (iconEl) {
-                    // Remove all spell icon classes
                     Object.values(iconClasses).forEach(cls => iconEl.classList.remove(cls));
-                    // Add the correct one
-                    const newClass = iconClasses[spellId];
-                    if (newClass) iconEl.classList.add(newClass);
+                    if (uiIcon) iconEl.classList.add(uiIcon);
                 }
 
-                // Update mana cost
+                // Update mana cost badge
                 const manaCostEl = slotEl.querySelector('.mana-cost');
-                if (manaCostEl) {
-                    manaCostEl.textContent = manaCostDisplay[spellId] || spell.manaCost;
-                }
+                if (manaCostEl) manaCostEl.textContent = uiMana;
 
                 // Update data-ability attribute
                 slotEl.setAttribute('data-ability', spellId);
 
-                // Update tooltip title
+                // Update tooltip (canonical values - no longer lies)
                 const tooltipTitle = slotEl.querySelector('.tooltip-title');
-                if (tooltipTitle) {
-                    tooltipTitle.textContent = spell.name;
-                }
+                if (tooltipTitle) tooltipTitle.textContent = uiName;
 
-                // Update tooltip stats
                 const manaStatEl = slotEl.querySelector('.tooltip-stat-item.mana .value');
-                if (manaStatEl) {
-                    manaStatEl.textContent = spell.manaCost + ' Mana';
-                }
+                if (manaStatEl) manaStatEl.textContent = uiManaStat;
 
                 const castStatEl = slotEl.querySelector('.tooltip-stat-item.cast .value');
-                if (castStatEl) {
-                    if (spell.castTime) {
-                        castStatEl.textContent = spell.castTime + 's Cast';
-                    } else {
-                        castStatEl.textContent = 'Instant';
-                    }
-                }
+                if (castStatEl) castStatEl.textContent = uiCast;
 
                 const cdStatEl = slotEl.querySelector('.tooltip-stat-item.cooldown .value');
-                if (cdStatEl) {
-                    if (spell.cooldown) {
-                        cdStatEl.textContent = spell.cooldown + 's CD';
-                    } else {
-                        cdStatEl.textContent = 'No CD';
-                    }
-                }
+                if (cdStatEl) cdStatEl.textContent = uiCD;
 
-                // Update tooltip description (use innerHTML to render styled text)
                 const tooltipDesc = slotEl.querySelector('.tooltip-description');
-                if (tooltipDesc) {
-                    tooltipDesc.innerHTML = spell.description;
-                }
+                if (tooltipDesc) tooltipDesc.innerHTML = uiDesc;
             });
         }
 
@@ -1740,29 +1726,46 @@
 
         // Ability system (legacy - kept for backwards compatibility)
         // Speed tiers: baseSpeed = initial launch speed, maxSpeed = cap after volleys/acceleration
-        const abilities = {
+        // ============================================================
+        // ABILITY_REGISTRY - SINGLE SOURCE OF TRUTH for ability data.
+        // All consumers (casting, UI/tooltips, damage, spawn) derive from
+        // this. Canonical cooldowns are the live gameplay values.
+        //   gameplay = deterministic stats read at cast/spawn (sim-safe)
+        //   ui       = display strings (name/key/icon/labels/description)
+        // UpgradeRegistry stays separate, linked by ability id.
+        // ============================================================
+        const ABILITY_REGISTRY = {
             fireball: {
-                cooldown: 4,          // 4 second cooldown after cast completes
-                castTime: 1.0,        // 1 second cast time
-                baseSpeed: 12,        // Initial speed
-                maxSpeed: 20,         // Max speed after volleys
-                damage: 1,
-                manaCost: 1           // mana cost
+                gameplay: { cooldown: 4, castTime: 1.0, baseSpeed: 12, maxSpeed: 20, damage: 1, manaCost: 1 },
+                ui: {
+                    name: 'Fireball', key: '1', iconClass: 'fireball-icon', manaCostLabel: '1',
+                    castLabel: '1s Cast', cooldownLabel: '4s CD',
+                    description: 'Hurl a <span class="tt-spell">Fireball</span> that deals <span class="tt-value">2</span> <span class="tt-fire">Fire</span> damage. Damage increases with <span class="tt-mechanic">Volleys</span>, up to <span class="tt-value">5</span>.'
+                }
             },
             frostbolt: {
-                cooldown: 7,          // 7 second cooldown
-                baseSpeed: 24,        // Fast - utility spell
-                maxSpeed: 24,         // No acceleration
-                freezeDuration: 1.0,  // seconds
-                manaCost: 2           // mana cost
+                gameplay: { cooldown: 7, castTime: 0, baseSpeed: 24, maxSpeed: 24, freezeDuration: 1.0, manaCost: 2 },
+                ui: {
+                    name: 'Frostbolt', key: '2', iconClass: 'frostbolt-icon', manaCostLabel: '2',
+                    castLabel: 'Instant', cooldownLabel: '7s CD',
+                    description: 'Launch a <span class="tt-spell">Frostbolt</span> that <span class="tt-mechanic">Freezes</span> the Enemy for <span class="tt-value">1</span> second. Cancels enemy projectiles on contact. Freeze stops Mana regeneration and interrupts Casting.'
+                }
             },
             chain_lightning: {
-                cooldown: 30,         // 30 second cooldown
-                castTime: 0,          // Instant cast
-                manaCost: 2,          // 2 mana cost
-                maxZaps: 3            // Max projectiles to zap
+                gameplay: { cooldown: 30, castTime: 0.4, manaCost: 2, maxZaps: 3 },
+                ui: {
+                    name: 'Thunderstorm', key: '3', iconClass: 'chainlightning-icon', manaCostLabel: '2',
+                    castLabel: '0.4s Cast', cooldownLabel: '30s CD',
+                    description: 'Call down lightning to <span class="tt-mechanic">Zap</span> up to <span class="tt-value">3</span> incoming Enemy projectiles, destroying them. Gain <span class="tt-value">1</span> Mana for each projectile destroyed.'
+                }
             }
         };
+        window.ABILITY_REGISTRY = ABILITY_REGISTRY;
+
+        // Legacy `abilities` shape, DERIVED from the registry so existing casting
+        // code (abilities.fireball.cooldown, etc.) keeps working off one source.
+        const abilities = {};
+        for (const _id in ABILITY_REGISTRY) abilities[_id] = { ...ABILITY_REGISTRY[_id].gameplay };
         window.abilities = abilities;  // Expose for loadout system
 
         // ============================================================
