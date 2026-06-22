@@ -2484,3 +2484,55 @@ body.flipped-view #aiCastBarContainer {
     text-shadow: 1px 1px 0 rgba(8,12,26,0.8);
     pointer-events: none;
 }
+
+/* --- Tall FF-style serif logo + light bloom behind it --- */
+.arcane-title {
+    font-family: 'Cormorant Garamond', 'Cinzel', serif;
+    font-size: 108px;
+    font-weight: 700;
+    letter-spacing: 8px;
+}
+.arcane-title-wrap {
+    position: relative;
+    isolation: isolate;          /* contains the bloom behind the text */
+}
+.arcane-title-wrap::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 48%;
+    transform: translate(-50%, -50%);
+    width: 780px;
+    height: 360px;
+    background: radial-gradient(ellipse at center,
+        rgba(190,212,255,0.42) 0%,
+        rgba(115,155,238,0.22) 32%,
+        rgba(70,100,200,0.08) 56%,
+        transparent 72%);
+    filter: blur(16px);
+    z-index: -1;
+    pointer-events: none;
+    animation: titleBloom 5s ease-in-out infinite;
+}
+@keyframes titleBloom {
+    0%, 100% { opacity: 0.7; transform: translate(-50%, -50%) scale(1); }
+    50%      { opacity: 1;   transform: translate(-50%, -50%) scale(1.07); }
+}
+
+/* --- Stylized menu items: tall serif, gold-cream gradient + glow --- */
+.arcane-buttons .menu-btn .menu-btn-label {
+    font-family: 'Cormorant Garamond', 'Cinzel', serif;
+    font-size: 40px;
+    font-weight: 600;
+    letter-spacing: 4px;
+    background: linear-gradient(180deg, #fffefb 0%, #f3e6c0 45%, #d9bd7e 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(2px 2px 0 rgba(8,12,26,0.5)) drop-shadow(0 0 8px rgba(220,200,150,0.25));
+    transition: filter 0.12s ease;
+}
+.arcane-buttons .menu-btn:hover .menu-btn-label {
+    filter: drop-shadow(2px 2px 0 rgba(8,12,26,0.5)) drop-shadow(0 0 16px rgba(255,240,190,0.65));
+}
