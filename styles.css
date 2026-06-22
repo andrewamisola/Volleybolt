@@ -2400,3 +2400,87 @@ body.flipped-view #aiCastBarContainer {
 .ability-slot.no-mana { opacity: 0.45; }
 .ability-slot.on-cooldown::before,
 .ability-slot.no-mana::before { opacity: 0 !important; }
+
+/* ============================================================
+   FF9 TITLE-SCREEN main menu - dark backdrop (no live 3D),
+   centered logo + simple text menu with hand pointer + copyright.
+   Overrides the old arcane scrim/ember menu.
+   ============================================================ */
+.arcane-overlay {
+    /* dark FF9 title backdrop with a faint center glow - covers the 3D scene */
+    background: radial-gradient(ellipse 72% 62% at 50% 42%, #1b2233 0%, #0a0d16 56%, #04050a 100%);
+}
+.arcane-overlay.visible {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+.arcane-scrim,
+.arcane-embers { display: none !important; }
+
+.arcane-content {
+    position: static;
+    left: auto;
+    top: auto;
+    transform: none;
+    align-items: center;
+    gap: 88px;
+}
+.arcane-title-wrap { align-items: center; }
+.arcane-divider,
+.arcane-tagline { display: none; }   /* keep it simple - logo only */
+
+.arcane-buttons { align-items: center; gap: 12px; }
+
+/* Menu items: plain centered text + FF9 hand pointer (no steel box here) */
+.arcane-buttons .menu-btn {
+    background: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none !important;
+    animation: none !important;
+    min-width: 0;
+    padding: 6px 18px 6px 48px;   /* room for the hand on the left */
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    color: #e7ecf6;
+    text-shadow: 2px 2px 0 rgba(8,12,26,0.9);
+    position: relative;
+}
+.arcane-buttons .menu-btn:hover { transform: none; color: #fff4c2; border: none; }
+.arcane-buttons .menu-btn .menu-btn-accent,
+.arcane-buttons .menu-btn .menu-btn-glyph { display: none; }
+.arcane-buttons .menu-btn .menu-btn-label { font-size: 28px; letter-spacing: 2px; }
+.arcane-buttons .menu-btn::before {
+    content: '';
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0; height: 0;
+    border-top: 8px solid transparent;
+    border-bottom: 8px solid transparent;
+    border-left: 13px solid #f4f7ff;
+    filter: drop-shadow(2px 2px 0 rgba(8,12,26,0.85));
+    opacity: 0;
+    transition: opacity 0.08s ease;
+}
+.arcane-buttons .menu-btn:hover::before { opacity: 1; }
+
+/* Copyright footer */
+.arcane-overlay::after {
+    content: '\00A9 2026 VOLLEYBOLT';
+    position: absolute;
+    bottom: 26px;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-size: 14px;
+    letter-spacing: 2px;
+    color: #aab2c4;
+    text-shadow: 1px 1px 0 rgba(8,12,26,0.8);
+    pointer-events: none;
+}
