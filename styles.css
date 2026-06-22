@@ -10,6 +10,14 @@
     font-style: normal;
 }
 
+/* FF9-style UI font (from user's Drive) */
+@font-face {
+    font-family: 'FF9UI';
+    src: url('fonts/ff9ui.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+}
+
 :root {
     /* Retro color palette - muted, earthy, classic game colors */
     --gold: #d4a849;
@@ -401,12 +409,17 @@ html, body {
     padding: 12px 18px;
     z-index: 200;
     pointer-events: auto;
-    /* Transparent - background rendered in Babylon GUI */
-    background: transparent;
-    border: none;
-    border-radius: 0;
-    /* No box shadow - clean overlay */
-    box-shadow: none;
+    /* FF9 PS1-style window: steel blue-grey translucent gradient, light beveled
+       rounded border + dark inner line */
+    background: linear-gradient(180deg, rgba(84,96,118,0.90) 0%, rgba(42,52,70,0.93) 100%);
+    border: 2px solid #e4e9f3;          /* light outer rim */
+    border-radius: 13px;                 /* softer FF9 rounding */
+    box-shadow:
+        inset 0 0 0 1px rgba(16,24,40,0.75),       /* dark inner line -> double border */
+        inset 0 2px 3px rgba(255,255,255,0.22),    /* top bevel highlight */
+        inset 0 -3px 4px rgba(0,0,0,0.38),         /* bottom bevel shade */
+        0 0 0 1px rgba(110,130,165,0.45),          /* faint outer edge */
+        0 4px 14px rgba(0,0,0,0.55);               /* drop shadow */
 }
 
 .ability-slot {
@@ -423,26 +436,20 @@ html, body {
     position: absolute;
     width: 90px;
     height: 90px;
-    /* Warm storybook stone recessed background */
+    /* FF9-style recessed steel cell */
     background:
         linear-gradient(180deg,
-            rgba(40, 31, 22, 1) 0%,
-            rgba(55, 43, 30, 1) 40%,
-            rgba(48, 38, 28, 1) 100%);
+            rgba(70, 82, 102, 0.55) 0%,
+            rgba(34, 42, 58, 0.6) 100%);
     clip-path: none;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: all 0.1s ease;
     overflow: hidden;
-    /* Warm inset border */
-    border: 2px solid #3a2e20;
-    border-top-color: #281f15;
-    border-left-color: #281f15;
-    box-shadow:
-        inset 2px 2px 4px rgba(0, 0, 0, 0.6),
-        inset -1px -1px 2px rgba(255, 255, 255, 0.05);
-    border-radius: 2px;
+    border: 1px solid rgba(206, 214, 230, 0.45);
+    box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.45);
+    border-radius: 5px;
 }
 
 /* Gold border glow when ready */
@@ -461,31 +468,40 @@ html, body {
 }
 
 .ability-slot.ready .ability-hex {
-    border-color: #5a4a32;
-    border-bottom-color: #7a6542;
-    border-right-color: #7a6542;
+    border-color: #eef2fa;
     background:
         linear-gradient(180deg,
-            rgba(52, 40, 26, 1) 0%,
-            rgba(68, 53, 35, 1) 40%,
-            rgba(60, 47, 32, 1) 100%);
+            rgba(104, 118, 142, 0.62) 0%,
+            rgba(52, 62, 84, 0.66) 100%);
 }
 
 .ability-slot.ready .ability-hex::before {
-    border-color: #c9a44a;
-    box-shadow: 0 0 8px rgba(201, 164, 74, 0.4);
+    border-color: #e6ecf6;
+    box-shadow: 0 0 8px rgba(210, 220, 238, 0.45);
 }
 
 .ability-icon {
-    width: 70px;
-    height: 70px;
+    width: 84px;
+    height: 84px;
     z-index: 1;
-    filter: url(#posterize) drop-shadow(2px 2px 3px #000);
     transition: all 0.1s ease;
-    background-size: contain;
-    background-position: center;
-    background-repeat: no-repeat;
-    image-rendering: pixelated;
+    /* FF9-style coded text label - clean white sans (no image asset) */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 3px;
+    box-sizing: border-box;
+    font-family: 'FF9UI', 'Cabin', 'Segoe UI', sans-serif;
+    font-size: 15px;
+    font-weight: normal;
+    line-height: 1.12;
+    letter-spacing: 0.3px;
+    color: #f4f7ff;
+    text-shadow: 1px 1px 0 rgba(10,16,30,0.85);
+    background: none;
+    filter: none;
+    image-rendering: auto;
 }
 
 .ability-icon.fireball-icon {

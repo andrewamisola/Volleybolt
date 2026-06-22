@@ -6,11 +6,11 @@
     <!-- Preload custom font -->
     <link rel="preload" href="fonts/esthetique.otf" as="font" type="font/otf" crossorigin>
     <!-- Retro Game Fonts - Classic 90s/2000s style + NES font -->
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&family=Press+Start+2P&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&family=Press+Start+2P&family=Rajdhani:wght@400;500;600;700&family=Cabin:wght@500;600;700&display=swap" rel="stylesheet">
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css?v=3">
+    <link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -1276,8 +1276,9 @@
                 // Update icon
                 const iconEl = slotEl.querySelector('.ability-icon');
                 if (iconEl) {
+                    // FF9-style coded text label instead of an image icon
                     Object.values(iconClasses).forEach(cls => iconEl.classList.remove(cls));
-                    if (uiIcon) iconEl.classList.add(uiIcon);
+                    iconEl.textContent = uiName;
                 }
 
                 // Update mana cost badge
@@ -5565,6 +5566,7 @@
             abilityBarBg.width = "100%";
             abilityBarBg.height = "100%";
             abilityBarBg.stretch = BABYLON.GUI.Image.STRETCH_FILL;
+            abilityBarBg.isVisible = false;  // Frame now drawn in code (FF9-style CSS box on #abilityBar)
             mainLayer.addControl(abilityBarBg);
 
             window.guiElements.abilityBarBg = abilityBarContainer2;
@@ -6601,11 +6603,65 @@
                 dirtMat.opacityTexture.getAlphaFromRGB = true;
 
                 const lane = BABYLON.MeshBuilder.CreateGround("lanePath", { width: tableWidth + 0.2, height: tableDepth + 0.2 }, scene);
-                lane.position.y = 0.012;   // hair above the grass floor (top at y=0) to avoid z-fighting
+                lane.position.y = 0.06;    // clear of the grass floor (top at y=0) to avoid z-fighting flicker
                 lane.material = dirtMat;
+                dirtMat.zOffset = -2;       // polygon offset: render the decal in front of the floor, no z-fight
                 lane.receiveShadows = true;
                 lane.isPickable = false;
                 window.lanePath = lane;
+            })();
+
+            // ============================================================
+            // JUNGLE / BRUSH PROPS - real low-poly foliage clumps that frame
+            // the lane along the grass flanks (storybook MOBA, not billboards).
+            // Placed along the far/near edges, kept short so they don't occlude
+            // the play area. Purely cosmetic (built once at scene setup).
+            // ============================================================
+            (function buildFoliage() {
+                const bushMats = [
+                    new BABYLON.StandardMaterial("bushMatA", scene),
+                    new BABYLON.StandardMaterial("bushMatB", scene),
+                    new BABYLON.StandardMaterial("bushMatC", scene)
+                ];
+                const greens = [[0.26, 0.45, 0.18], [0.19, 0.36, 0.15], [0.34, 0.5, 0.22]];
+                bushMats.forEach((m, i) => {
+                    m.diffuseColor = new BABYLON.Color3(...greens[i]);
+                    m.specularColor = BABYLON.Color3.Black();
+                    m.emissiveColor = new BABYLON.Color3(greens[i][0] * 0.25, greens[i][1] * 0.25, greens[i][2] * 0.25);
+                });
+
+                // One bush clump = a few squashed low-poly icospheres
+                const makeBush = (x, z, scale) => {
+                    const blobs = 2 + Math.floor(Math.random() * 3);
+                    for (let i = 0; i < blobs; i++) {
+                        const r = (0.38 + Math.random() * 0.3) * scale;
+                        const blob = BABYLON.MeshBuilder.CreateIcoSphere("bush", { radius: r, subdivisions: 1 }, scene);
+                        blob.position.x = x + (Math.random() - 0.5) * 0.9 * scale;
+                        blob.position.z = z + (Math.random() - 0.5) * 0.7 * scale;
+                        blob.position.y = r * 0.62;
+                        blob.scaling.y = 0.7;
+                        blob.material = bushMats[Math.floor(Math.random() * bushMats.length)];
+                        blob.receiveShadows = false;  // decor only - stepped shadows on dozens of blobs caused flicker
+                        blob.isPickable = false;
+                    }
+                };
+
+                const halfW = tableWidth / 2;      // 13
+                const halfD = tableDepth / 2;       // 7
+                const farZ = halfD - 0.7;           // back flank (away from camera)
+                const nearZ = -(halfD - 0.7);       // near flank (toward camera) - keep short/sparse
+                // Far flank: denser, slightly taller clumps frame the top of the lane
+                for (let x = -halfW + 2; x <= halfW - 2; x += 1.7 + Math.random() * 0.8) {
+                    makeBush(x, farZ + (Math.random() - 0.5) * 0.5, 0.9 + Math.random() * 0.5);
+                }
+                // Near flank: shorter and sparser so they don't block the play area
+                for (let x = -halfW + 2.5; x <= halfW - 2.5; x += 2.6 + Math.random() * 1.0) {
+                    makeBush(x, nearZ + (Math.random() - 0.5) * 0.4, 0.65 + Math.random() * 0.3);
+                }
+                // A few taller "tree" clumps at the corners for silhouette variety
+                [[-halfW + 1, farZ], [halfW - 1, farZ]].forEach(([cx, cz]) => {
+                    makeBush(cx, cz, 1.6 + Math.random() * 0.4);
+                });
             })();
 
             // === ARENA BORDER WALLS ===
