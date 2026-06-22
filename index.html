@@ -13552,32 +13552,31 @@
                 // Hide the stage name message that resetRound shows (we're showing Ready/Go instead)
                 hideMessage();
 
-                // Step 3: Show "Ready" (slow, weighty fade in)
+                // Step 3: Show "READY..." AND reveal the arena at the same time, so the
+                // player can see the map and get oriented while "Ready" holds.
                 text.text = "READY...";
-                animateAlpha(text, 0, 1, 450, () => {
-                    // Hold "Ready" for a beat
+                animateAlpha(text, 0, 1, 500, null);
+                // Dramatic fade-up of the arena during "Ready"
+                animateAlpha(overlay, 1, 0, 1000, () => {
+                    // Arena fully visible - hold "Ready" a beat so the player orients
                     setTimeout(() => {
                         // Step 4: Fade out "Ready"
                         animateAlpha(text, 1, 0, 250, () => {
-                            // Step 5: Show "GO!"
+                            // Step 5: "GO!" - the actual start
                             text.text = "GO!";
                             animateAlpha(text, 0, 1, 250, () => {
-                                // Step 6: Slow, dramatic reveal of the arena while "GO!" holds
-                                animateAlpha(overlay, 1, 0, 1300, () => {
-                                    // Step 7: Fade out "GO!"
-                                    setTimeout(() => {
-                                        animateAlpha(text, 1, 0, 400, () => {
-                                            text.text = "";
-                                            // Hide transition elements when done
-                                            overlay.isVisible = false;
-                                            text.isVisible = false;
-                                            if (callback) callback();
-                                        });
-                                    }, 600);
-                                });
+                                // Step 6: hold "GO!" then fade it out
+                                setTimeout(() => {
+                                    animateAlpha(text, 1, 0, 400, () => {
+                                        text.text = "";
+                                        overlay.isVisible = false;
+                                        text.isVisible = false;
+                                        if (callback) callback();
+                                    });
+                                }, 650);
                             });
                         });
-                    }, 1300);
+                    }, 1000);
                 });
             });
         }
