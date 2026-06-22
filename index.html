@@ -1752,7 +1752,7 @@
                 }
             },
             chain_lightning: {
-                gameplay: { cooldown: 30, castTime: 0.4, manaCost: 2, maxZaps: 3 },
+                gameplay: { cooldown: 30, castTime: 0, manaCost: 2, maxZaps: 3 },  // castTime here matches legacy `abilities` (unused); real 0.4s cast is governed by AbilityRegistry/startCasting and shown in ui.castLabel
                 ui: {
                     name: 'Thunderstorm', key: '3', iconClass: 'chainlightning-icon', manaCostLabel: '2',
                     castLabel: '0.4s Cast', cooldownLabel: '30s CD',
