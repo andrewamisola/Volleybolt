@@ -47,7 +47,7 @@ html, body {
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background: #000;  /* Black letterbox bars */
+    background: #15121b;  /* Warm dusk letterbox bars (was dead black) */
     font-family: 'Crimson Text', Georgia, serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -58,7 +58,7 @@ html, body {
 /* 4:3 CRT aspect ratio container */
 #gameContainer {
     position: relative;
-    background: #000;
+    background: #15121b;
     /* Calculated by JS to maintain 4:3 */
     border-radius: 20px;
     overflow: hidden;
@@ -442,22 +442,22 @@ html, body {
     position: absolute;
     width: 90px;
     height: 90px;
-    /* Dark stone recessed background */
+    /* Warm storybook stone recessed background */
     background:
         linear-gradient(180deg,
-            rgba(20, 18, 15, 1) 0%,
-            rgba(35, 30, 25, 1) 40%,
-            rgba(30, 25, 22, 1) 100%);
+            rgba(40, 31, 22, 1) 0%,
+            rgba(55, 43, 30, 1) 40%,
+            rgba(48, 38, 28, 1) 100%);
     clip-path: none;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: all 0.1s ease;
     overflow: hidden;
-    /* Metallic inset border */
-    border: 2px solid #2a2420;
-    border-top-color: #1a1815;
-    border-left-color: #1a1815;
+    /* Warm inset border */
+    border: 2px solid #3a2e20;
+    border-top-color: #281f15;
+    border-left-color: #281f15;
     box-shadow:
         inset 2px 2px 4px rgba(0, 0, 0, 0.6),
         inset -1px -1px 2px rgba(255, 255, 255, 0.05);
@@ -485,9 +485,9 @@ html, body {
     border-right-color: #7a6542;
     background:
         linear-gradient(180deg,
-            rgba(30, 25, 20, 1) 0%,
-            rgba(45, 38, 30, 1) 40%,
-            rgba(40, 33, 28, 1) 100%);
+            rgba(52, 40, 26, 1) 0%,
+            rgba(68, 53, 35, 1) 40%,
+            rgba(60, 47, 32, 1) 100%);
 }
 
 .ability-slot.ready .ability-hex::before {
@@ -1974,7 +1974,12 @@ body.flipped-view #aiCastBarContainer {
 /* ============================================================
    Main Menu (DOM) — overlays the dancing wizard, left-aligned
    ============================================================ */
-#domMenu {
+/* ============================================================
+   Arcane menu system — shared by the main menu (#domMenu) and the
+   Start Battle mode-select (#domModeSelect). Class-based so both
+   surfaces get the identical scrim / title / button treatment.
+   ============================================================ */
+.arcane-overlay {
     position: fixed;
     top: 0;
     left: 0;
@@ -1985,52 +1990,202 @@ body.flipped-view #aiCastBarContainer {
     display: none;
 }
 
-#domMenu.visible {
+.arcane-overlay.visible {
     display: block;
 }
 
-#domMenuLeftPanel {
+/* Gradient scrim: opaque at the left edge, fading toward center so the
+   dancing wizard on the right blends in instead of a hard 50% cut. */
+.arcane-scrim {
     position: absolute;
     left: 0;
     top: 0;
-    width: 50%;
+    width: 64%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.5);
+    background: linear-gradient(90deg,
+        rgba(8, 5, 3, 0.93) 0%,
+        rgba(10, 6, 4, 0.84) 32%,
+        rgba(12, 8, 5, 0.55) 62%,
+        rgba(0, 0, 0, 0) 100%);
     pointer-events: none;
+    overflow: hidden;
 }
 
-#domMenuContent {
+/* Drifting embers rising through the left panel */
+.arcane-embers { position: absolute; inset: 0; pointer-events: none; }
+.arcane-embers .ember {
     position: absolute;
-    left: 18%;
-    top: 120px;
+    bottom: -12px;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--gold-light);
+    box-shadow: 0 0 6px 1px rgba(240, 192, 80, 0.8);
+    opacity: 0;
+    animation: emberRise linear infinite;
+}
+.arcane-embers .ember:nth-child(1) { left: 8%;  width: 3px; height: 3px; animation-duration: 9s;    animation-delay: 0s;   }
+.arcane-embers .ember:nth-child(2) { left: 16%; width: 2px; height: 2px; animation-duration: 11s;   animation-delay: 1.5s; }
+.arcane-embers .ember:nth-child(3) { left: 24%; width: 4px; height: 4px; animation-duration: 8s;    animation-delay: 3s;   }
+.arcane-embers .ember:nth-child(4) { left: 31%; width: 3px; height: 3px; animation-duration: 12s;   animation-delay: 0.8s; }
+.arcane-embers .ember:nth-child(5) { left: 39%; width: 2px; height: 2px; animation-duration: 10s;   animation-delay: 2.2s; }
+.arcane-embers .ember:nth-child(6) { left: 12%; width: 3px; height: 3px; animation-duration: 13s;   animation-delay: 4s;   }
+.arcane-embers .ember:nth-child(7) { left: 28%; width: 2px; height: 2px; animation-duration: 9.5s;  animation-delay: 5.5s; }
+.arcane-embers .ember:nth-child(8) { left: 20%; width: 4px; height: 4px; animation-duration: 11.5s; animation-delay: 6.5s; }
+.arcane-embers .ember:nth-child(9) { left: 35%; width: 3px; height: 3px; animation-duration: 10.5s; animation-delay: 3.7s; }
+
+@keyframes emberRise {
+    0%   { transform: translateY(0); opacity: 0; }
+    10%  { opacity: 0.9; }
+    85%  { opacity: 0.55; }
+    100% { transform: translateY(-82vh); opacity: 0; }
+}
+
+.arcane-content {
+    position: absolute;
+    left: 11%;
+    top: 50%;
+    transform: translateY(-50%);
     pointer-events: auto;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 22px;
+    gap: 46px;
 }
 
-#domMenuTitle {
-    font-family: 'Esthetique', 'Cinzel', serif;
-    font-size: 72px;
-    font-weight: 700;
-    color: #c9a44a;
-    text-shadow: 5px 5px 0 #000;
-    letter-spacing: 4px;
-    margin: 0;
-    line-height: 1;
-}
-
-#domMenuButtons {
+/* ---- Title block ---- */
+.arcane-title-wrap {
     display: flex;
     flex-direction: column;
-    gap: 16px;
-    margin-top: 80px;
+    align-items: flex-start;
+    gap: 10px;
+    opacity: 0;
+}
+.arcane-overlay.visible .arcane-title-wrap { animation: menuRise 0.6s ease 0.05s forwards; }
+
+.arcane-title {
+    position: relative;
+    font-family: 'Esthetique', 'Cinzel', serif;
+    font-size: 84px;
+    font-weight: 700;
+    letter-spacing: 6px;
+    line-height: 1;
+    margin: 0;
+    background: linear-gradient(180deg, #ffe9a8 0%, var(--gold-light) 40%, var(--gold) 64%, var(--gold-dark) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(4px 4px 0 #000) drop-shadow(0 0 16px rgba(212, 168, 73, 0.3));
+}
+/* Shimmer sweep — a moving white band clipped to the same glyphs */
+.arcane-title::before {
+    content: attr(data-text);
+    position: absolute;
+    left: 0;
+    top: 0;
+    letter-spacing: 6px;
+    background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.85) 50%, transparent 70%);
+    background-size: 220% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    animation: titleShimmer 5s ease-in-out infinite;
+    pointer-events: none;
+}
+@keyframes titleShimmer {
+    0%   { background-position: 200% 0; opacity: 0; }
+    12%  { opacity: 1; }
+    42%  { background-position: -60% 0; opacity: 0; }
+    100% { background-position: -60% 0; opacity: 0; }
 }
 
-#domMenuButtons .game-btn {
-    min-width: 320px;
-    text-align: center;
+.arcane-divider {
+    width: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--gold) 0%, var(--gold-dark) 70%, transparent 100%);
+    box-shadow: 0 0 8px rgba(212, 168, 73, 0.5);
+    margin-top: 2px;
+}
+.arcane-overlay.visible .arcane-divider { animation: dividerGrow 0.7s ease 0.3s forwards; }
+@keyframes dividerGrow { to { width: 340px; } }
+
+.arcane-tagline {
+    font-family: 'Rajdhani', 'Cinzel', serif;
+    font-size: 16px;
+    letter-spacing: 7px;
+    text-transform: uppercase;
+    color: var(--parchment-dark);
+    text-shadow: 1px 1px 0 #000;
+    padding-left: 3px;
+}
+
+/* ---- Buttons ---- */
+.arcane-buttons {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 18px;
+    opacity: 0;
+}
+.arcane-overlay.visible .arcane-buttons { animation: menuRise 0.6s ease 0.22s forwards; }
+
+.menu-btn {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-width: 340px;
+    padding: 16px 30px;
+    text-align: left;
+}
+.menu-btn .menu-btn-accent {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: linear-gradient(180deg, var(--gold-light), var(--gold-dark));
+    box-shadow: 0 0 10px rgba(240, 192, 80, 0.7);
+    transform: scaleY(0);
+    transition: transform 0.2s ease;
+}
+.menu-btn:hover .menu-btn-accent { transform: scaleY(1); }
+
+.menu-btn .menu-btn-glyph {
+    font-size: 22px;
+    line-height: 1;
+    color: var(--gold);
+    filter: drop-shadow(0 0 6px rgba(212, 168, 73, 0.5));
+    transition: transform 0.2s ease, color 0.2s ease;
+}
+.menu-btn:hover .menu-btn-glyph { color: var(--gold-light); transform: scale(1.15); }
+
+.menu-btn:hover {
+    box-shadow: inset 1px 1px 0 rgba(255,255,255,0.08), 4px 4px 0 #000, 0 0 22px rgba(212, 168, 73, 0.4);
+}
+
+/* Slow breathing glow to draw the eye to the primary action */
+.menu-btn.is-primary { animation: menuPrimaryBreath 2.8s ease-in-out infinite; }
+.menu-btn.is-primary:hover { animation: none; }
+@keyframes menuPrimaryBreath {
+    0%, 100% { box-shadow: inset 1px 1px 0 rgba(255,255,255,0.08), 4px 4px 0 #000, 0 0 8px rgba(212, 168, 73, 0.15); }
+    50%      { box-shadow: inset 1px 1px 0 rgba(255,255,255,0.08), 4px 4px 0 #000, 0 0 20px rgba(212, 168, 73, 0.45); }
+}
+
+/* Lesser-priority action (e.g. Back) — smaller, muted, no breathing glow */
+.menu-btn.menu-btn-ghost {
+    min-width: 200px;
+    padding: 12px 26px;
+    opacity: 0.8;
+}
+.menu-btn.menu-btn-ghost:hover { opacity: 1; }
+.menu-btn.menu-btn-ghost .menu-btn-label { font-size: 18px; }
+
+@keyframes menuRise {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 
 /* ============================================================
@@ -2039,6 +2194,9 @@ body.flipped-view #aiCastBarContainer {
    so it never interferes with input.
    ============================================================ */
 #crtOverlay {
+    /* Disabled for the clean storybook look - the low-res 3D render carries the
+       retro feel without scanlines/vignette/flicker stacked on top. */
+    display: none;
     position: fixed;
     inset: 0;
     z-index: 99999;

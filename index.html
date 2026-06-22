@@ -92,13 +92,66 @@
     <canvas id="canvas"></canvas>
 
     <!-- Main Menu (DOM) - overlays 3D scene, left-aligned over the dancing wizard -->
-    <div id="domMenu" class="crt-screen">
-        <div id="domMenuLeftPanel"></div>
-        <div id="domMenuContent">
-            <h1 id="domMenuTitle">VOLLEYBOLT</h1>
-            <div id="domMenuButtons">
-                <button class="game-btn" id="domBtnStartBattle">Start Battle</button>
-                <button class="game-btn" id="domBtnMultiplayer">Multiplayer</button>
+    <div id="domMenu" class="arcane-overlay crt-screen">
+        <div id="domMenuLeftPanel" class="arcane-scrim">
+            <div id="domMenuEmbers" class="arcane-embers" aria-hidden="true">
+                <span class="ember"></span><span class="ember"></span><span class="ember"></span>
+                <span class="ember"></span><span class="ember"></span><span class="ember"></span>
+                <span class="ember"></span><span class="ember"></span><span class="ember"></span>
+            </div>
+        </div>
+        <div id="domMenuContent" class="arcane-content">
+            <div id="domMenuTitleWrap" class="arcane-title-wrap">
+                <h1 id="domMenuTitle" class="arcane-title" data-text="VOLLEYBOLT">VOLLEYBOLT</h1>
+                <div id="domMenuDivider" class="arcane-divider"></div>
+                <div id="domMenuTagline" class="arcane-tagline">ARCANE VOLLEY COMBAT</div>
+            </div>
+            <div id="domMenuButtons" class="arcane-buttons">
+                <button class="game-btn menu-btn is-primary" id="domBtnStartBattle">
+                    <span class="menu-btn-accent" aria-hidden="true"></span>
+                    <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
+                    <span class="menu-btn-label">Start Battle</span>
+                </button>
+                <button class="game-btn menu-btn" id="domBtnMultiplayer">
+                    <span class="menu-btn-accent" aria-hidden="true"></span>
+                    <span class="menu-btn-glyph" aria-hidden="true">&#9889;</span>
+                    <span class="menu-btn-label">Multiplayer</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mode Select (Start Battle sub-menu) — DOM, shares the arcane-menu system -->
+    <div id="domModeSelect" class="arcane-overlay crt-screen">
+        <div class="arcane-scrim">
+            <div class="arcane-embers" aria-hidden="true">
+                <span class="ember"></span><span class="ember"></span><span class="ember"></span>
+                <span class="ember"></span><span class="ember"></span><span class="ember"></span>
+                <span class="ember"></span><span class="ember"></span><span class="ember"></span>
+            </div>
+        </div>
+        <div class="arcane-content">
+            <div class="arcane-title-wrap">
+                <h1 class="arcane-title" data-text="SELECT MODE">SELECT MODE</h1>
+                <div class="arcane-divider"></div>
+                <div class="arcane-tagline">CHOOSE YOUR BATTLE</div>
+            </div>
+            <div class="arcane-buttons">
+                <button class="game-btn menu-btn is-primary" id="domBtnDuel">
+                    <span class="menu-btn-accent" aria-hidden="true"></span>
+                    <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
+                    <span class="menu-btn-label">1v1 Duel</span>
+                </button>
+                <button class="game-btn menu-btn" id="domBtn2v2">
+                    <span class="menu-btn-accent" aria-hidden="true"></span>
+                    <span class="menu-btn-glyph" aria-hidden="true">&#9884;</span>
+                    <span class="menu-btn-label">2v2 (AI Partner)</span>
+                </button>
+                <button class="game-btn menu-btn menu-btn-ghost" id="domBtnModeBack">
+                    <span class="menu-btn-accent" aria-hidden="true"></span>
+                    <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
+                    <span class="menu-btn-label">Back</span>
+                </button>
             </div>
         </div>
     </div>
@@ -4099,26 +4152,14 @@
             console.log("FPS capped at 60 inside render loop for consistent gameplay");
 
             // ============================================================
-            // D2-STYLE RETRO RESOLUTION - Fixed internal res, upscaled crisp
+            // NATIVE / SCALABLE RESOLUTION - render crisp at full device res.
+            // The PS1/storybook feel is sold through low-poly geometry and
+            // stylized textures, NOT a forced low internal resolution.
             // ============================================================
-            // Slightly higher base res for clearer visuals while keeping retro feel
-            const BASE_W = 960, BASE_H = 720;  // 4:3, between 800x600 and 1024x768
-
             function applyRetroResolution() {
-                const cw = canvas.clientWidth;
-                const ch = canvas.clientHeight;
-
-                // Choose limiting scale to preserve 4:3 and not exceed either axis
-                const scaleW = cw / BASE_W;
-                const scaleH = ch / BASE_H;
-                const scale = Math.max(1, Math.floor(Math.min(scaleW, scaleH)));  // Integer upscale
-
-                // renderWidth = cw / hardwareScalingLevel
-                const targetW = BASE_W * scale;
-                const targetH = BASE_H * scale;
-
-                const hsl = Math.max(cw / targetW, ch / targetH);
-                engine.setHardwareScalingLevel(hsl);
+                // Render at full device pixels for a crisp, scalable image.
+                const dpr = window.devicePixelRatio || 1;
+                engine.setHardwareScalingLevel(1 / dpr);
             }
             applyRetroResolution();
 
@@ -4174,8 +4215,8 @@
             // GRAYBOX PALETTE - Now using NES colors
             // ============================================================
             const GRAY = {
-                // Environment - NES dungeon/cave feel
-                ground:     NES.black,           // Deep black ground
+                // Environment - warm storybook earth (was NES dungeon/cave feel)
+                ground:     BABYLON.Color3.FromHexString("#2b2520"),  // Warm dark earth (was deep black)
                 lane:       NES.darkGray,        // Stone floor
                 laneLight:  NES.gray,            // Stone accent
                 wall:       NES.darkBrown,       // Brown walls
@@ -5999,8 +6040,8 @@
                 blurRatio: 1.0       // Full res blur for smooth edges
             }, [camera]);
             ssaoPipeline.radius = 1.5;           // How far to sample
-            ssaoPipeline.totalStrength = 1.2;    // Overall darkness intensity
-            ssaoPipeline.base = 0.3;             // Minimum light level (prevents pure black)
+            ssaoPipeline.totalStrength = 0.55;   // Gentle contact depth - grounds objects (was 1.2)
+            ssaoPipeline.base = 0.5;             // Floor keeps occlusion soft, not black (was 0.3)
             ssaoPipeline.samples = 16;           // Quality (8-32 range)
             ssaoPipeline.maxZ = 50;              // Max depth to consider
             ssaoPipeline.minZAspect = 0.2;       // Aspect ratio correction
@@ -6071,7 +6112,11 @@
                 effect.setFloat("levels", 24);  // Subtler than before (was 16)
                 effect.setFloat("edgeThreshold", 0.12);
             };
-            console.log("Posterize shader loaded (subtle banding, 24 levels)");
+            // Disabled: the low internal resolution already bands color cleanly.
+            // Stacking posterize on top was part of the "moshposh" of competing filters.
+            posterizePostProcess.enabled = false;
+            window.posterizePostProcess = posterizePostProcess;
+            console.log("Posterize shader loaded (disabled - low-res render handles banding)");
 
             // --- Optional Film Grain Post-Process (disabled by default) ---
             // Very light grain for D2/HL1 grit without muddying clarity
@@ -6182,15 +6227,22 @@
                     engine.getRenderHeight()
                 ));
             };
-            console.log("CRT filter loaded (subtle scanlines + curvature)");
+            // Disabled: the CRT layer simulates the TV the PS1 plugged into, not the
+            // console itself. With the low-res render carrying the retro feel, stacking
+            // scanlines + curvature + vignette just muddied the image. (CSS #crtOverlay
+            // is also disabled in styles.css.)
+            crtPostProcess.enabled = false;
+            window.crtPostProcess = crtPostProcess;
+            console.log("CRT filter loaded (disabled for clean storybook look)");
 
             // ============================================================
             // GRAYBOX RENDERING - Clean visibility for blocking out environment
             // League of Legends / MOBA style lane environment
             // ============================================================
 
-            // Sky - NES black background
-            scene.clearColor = new BABYLON.Color4(NES.black.r, NES.black.g, NES.black.b, 1);
+            // Sky - warm dusk backdrop instead of a dead-black void, so the frame
+            // around the arena feels inviting (storybook), not empty.
+            scene.clearColor = new BABYLON.Color4(0.27, 0.21, 0.30, 1);
 
             // ============================================================
             // LIGHTING - Diablo 2 style (dark, warm, high contrast)
@@ -6204,8 +6256,8 @@
 
             const sunLight = new BABYLON.DirectionalLight("sun", sunDir, scene);
             sunLight.position = sunPos;
-            sunLight.intensity = 2.2; // Higher contrast against the dark ambient
-            sunLight.diffuse = new BABYLON.Color3(1, 0.9, 0.7); // Warm sunlight
+            sunLight.intensity = 2.1; // Strong warm key for form & depth (storybook, not grim)
+            sunLight.diffuse = new BABYLON.Color3(1.0, 0.92, 0.76); // Warm golden sunlight
             sunLight.specular = new BABYLON.Color3(0.1, 0.1, 0.1); // Low specular
 
             // 2. FIX MISSING SHADOWS (BOUNDS):
@@ -6216,18 +6268,18 @@
             sunLight.orthoBottom = -30;
             sunLight.autoCalcShadowZBounds = true;
 
-            // Ambient - Keep low for "Pretty Dark" everywhere else
+            // Ambient - raised and warmed for an approachable, lit storybook world
             const ambient = new BABYLON.HemisphericLight("ambient", new BABYLON.Vector3(0, 1, 0), scene);
-            ambient.intensity = 0.2; // Very dark shadows
-            ambient.diffuse = new BABYLON.Color3(0.2, 0.2, 0.3); // Cold dark blue tint for shadows
-            ambient.groundColor = new BABYLON.Color3(0.05, 0.05, 0.05); // Pitch black ground
+            ambient.intensity = 0.58; // Warm fill - bright enough, depth comes from the sun key (was 0.2)
+            ambient.diffuse = new BABYLON.Color3(0.55, 0.5, 0.46); // Warm soft fill (was cold blue)
+            ambient.groundColor = new BABYLON.Color3(0.26, 0.22, 0.18); // Warm bounce light (was pitch black)
 
             // 3. SHADOW GENERATOR CONFIG
             const shadowGenerator = new BABYLON.ShadowGenerator(2048, sunLight);
 
             // FIX INVISIBLE SHADOWS:
             // 0.0 = Pitch Black, 1.0 = Invisible.
-            shadowGenerator.darkness = 0.1;
+            shadowGenerator.darkness = 0.32;  // Defined but not pitch-black (was 0.1)
 
             // Sharp, crisp shadows (Diablo style) instead of blurry soft ones
             shadowGenerator.useExponentialShadowMap = false;
@@ -6242,11 +6294,11 @@
             window.shadowGenerator = shadowGenerator;
             window.sunLight = sunLight;
 
-            // D2 style post-processing - vivid, high contrast
+            // Storybook grade - softer contrast, lifted shadows, gentle warmth
             scene.imageProcessingConfiguration.toneMappingEnabled = false;
-            scene.imageProcessingConfiguration.exposure = 1.0;  // Normal exposure for deep blacks
-            scene.imageProcessingConfiguration.contrast = 1.4;  // High contrast D2 style
-            scene.imageProcessingConfiguration.saturation = 1.2;  // More vivid colors
+            scene.imageProcessingConfiguration.exposure = 1.12;  // Bright & inviting, not washed (was 1.0)
+            scene.imageProcessingConfiguration.contrast = 1.18;  // Pop & depth without crushing (was 1.4)
+            scene.imageProcessingConfiguration.saturation = 1.12;  // Vivid but harmonized (was 1.2)
 
             // ============================================================
             // GLOW LAYER - Diablo 2 style (soft, warm, no HDR bloom)
@@ -6387,13 +6439,13 @@
 
             // === DISTANCE FOG (classic technique) ===
             scene.fogMode = BABYLON.Scene.FOGMODE_LINEAR;
-            scene.fogColor = NES.black;  // Match NES black sky
+            scene.fogColor = new BABYLON.Color3(0.27, 0.21, 0.30);  // Warm dusk - matches clearColor (was fade-to-black)
             scene.fogStart = 25;
             scene.fogEnd = 60;
 
             // === MATERIALS (solid colors for now - add textures later) ===
-            const floorMat = createClassicMaterial("floorMat", "textures/stage2.png", 4, 2, new BABYLON.Color3(0.65, 0.7, 0.55));  // Dimmer but saturated
-            floorMat.emissiveColor = new BABYLON.Color3(0.25, 0.28, 0.2);  // Lift black point - flatter, D2-style
+            const floorMat = createClassicMaterial("floorMat", "textures/grass_field.png", 4, 2, new BABYLON.Color3(1.0, 0.98, 0.9));  // Tiling storybook grass ground (real material, not a baked top-down map)
+            floorMat.emissiveColor = new BABYLON.Color3(0.16, 0.16, 0.12);  // Gentle black-point lift
 
             // Optional bump/normal map - disabled (created outline artifacts, not D2 style)
             // Uncomment to re-enable:
@@ -6487,6 +6539,69 @@
             table.edgesWidth = 2.0;
             table.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
             window.arenaFloor = table;  // Store reference for resizing
+
+            // ============================================================
+            // MOBA LANE PATH - a worn dirt road down the lane, with patchy
+            // organic edges that blend into the grass. Real overlay-ground
+            // mesh + tiling dirt texture + a procedurally-generated patchy
+            // opacity mask (NOT a painted top-down map).
+            // ============================================================
+            (function buildLanePath() {
+                const dirtMat = new BABYLON.StandardMaterial("lanePathMat", scene);
+                const dirtTex = new BABYLON.Texture("textures/dirt_road.png", scene, false, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
+                dirtTex.uScale = 6;  dirtTex.vScale = 3;   // tile for surface detail
+                dirtMat.diffuseTexture = dirtTex;
+                dirtMat.specularColor = BABYLON.Color3.Black();
+                dirtMat.emissiveColor = new BABYLON.Color3(0.12, 0.10, 0.07);  // match grass black-point lift
+
+                // --- Procedural patchy mask: white = road shows, black = grass shows through ---
+                const MW = 1024, MH = 512;
+                const mask = new BABYLON.DynamicTexture("lanePathMask", { width: MW, height: MH }, scene, false);
+                const ctx = mask.getContext();
+                ctx.fillStyle = "black";
+                ctx.fillRect(0, 0, MW, MH);
+                const cy = MH * 0.5, half = MH * 0.34;  // central band covering ~68% of court depth
+                ctx.fillStyle = "white";
+                ctx.beginPath();
+                ctx.moveTo(0, cy - half);
+                for (let x = 0; x <= MW; x += 6) {
+                    const n = Math.sin(x * 0.012) * 16 + Math.sin(x * 0.045 + 1.3) * 9 + Math.sin(x * 0.11) * 4;
+                    ctx.lineTo(x, cy - half + n);
+                }
+                for (let x = MW; x >= 0; x -= 6) {
+                    const n = Math.sin(x * 0.013 + 2.1) * 16 + Math.sin(x * 0.05 + 0.7) * 9 + Math.sin(x * 0.12) * 4;
+                    ctx.lineTo(x, cy + half + n);
+                }
+                ctx.closePath();
+                ctx.fill();
+                // Patchiness: dirt blobs reaching into grass (white) + grass biting into road (black)
+                ctx.fillStyle = "white";
+                for (let i = 0; i < 38; i++) {
+                    const x = Math.random() * MW;
+                    const y = (Math.random() < 0.5 ? cy - half : cy + half) + (Math.random() - 0.5) * 70;
+                    ctx.beginPath(); ctx.arc(x, y, 6 + Math.random() * 24, 0, Math.PI * 2); ctx.fill();
+                }
+                ctx.fillStyle = "black";
+                for (let i = 0; i < 28; i++) {
+                    const x = Math.random() * MW;
+                    const y = (Math.random() < 0.5 ? cy - half + 18 : cy + half - 18) + (Math.random() - 0.5) * 40;
+                    ctx.beginPath(); ctx.arc(x, y, 5 + Math.random() * 18, 0, Math.PI * 2); ctx.fill();
+                }
+                // Soften the whole mask so road edges blend organically into grass
+                ctx.filter = "blur(5px)";
+                ctx.drawImage(ctx.canvas, 0, 0);
+                ctx.filter = "none";
+                mask.update();
+                dirtMat.opacityTexture = mask;
+                dirtMat.opacityTexture.getAlphaFromRGB = true;
+
+                const lane = BABYLON.MeshBuilder.CreateGround("lanePath", { width: tableWidth + 0.2, height: tableDepth + 0.2 }, scene);
+                lane.position.y = 0.012;   // hair above the grass floor (top at y=0) to avoid z-fighting
+                lane.material = dirtMat;
+                lane.receiveShadows = true;
+                lane.isPickable = false;
+                window.lanePath = lane;
+            })();
 
             // === ARENA BORDER WALLS ===
             const borderHeight = 0.5;
@@ -8713,7 +8828,7 @@
             let aiButtressMat = null;
 
             const loadGateTextures = () => {
-                const wallTex = new BABYLON.Texture("textures/castle_wall.png", scene, false, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE,
+                const wallTex = new BABYLON.Texture("textures/stone_wall.png", scene, false, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE,
                     () => {
                         // Scale texture to cover wall (6 wide × 4.5 tall)
                         wallTex.uScale = 2;  // Tile twice across width
@@ -8764,7 +8879,7 @@
 
             // Darker material for recesses/details
             const darkStoneMat = new BABYLON.StandardMaterial("darkStoneMat", scene);
-            darkStoneMat.diffuseColor = new BABYLON.Color3(0.15, 0.12, 0.1);
+            darkStoneMat.diffuseColor = new BABYLON.Color3(0.34, 0.29, 0.24);  // Warm storybook stone (was near-black)
             darkStoneMat.specularColor = BABYLON.Color3.Black();
 
             // Store bricks for destruction
@@ -13044,7 +13159,7 @@
         let selectedUpgrade = null;
 
         // Switch to menu state
-        function showTalentScreen() {
+        function showTalentScreen(instantCamera = false) {
             gameState = "menu";
 
             // Stop any running game
@@ -13088,25 +13203,34 @@
             hideMessage();
             selectedUpgrade = 'default';
 
-            // Animate camera to menu position
+            // Move camera to menu position
             if (window.gameCamera) {
                 const cam = window.gameCamera;
                 // Set ortho bounds for menu
                 if (window.setOrthoForMenu) window.setOrthoForMenu();
-                // Smooth transition to menu camera
-                BABYLON.Animation.CreateAndStartAnimation("menuCamAlpha", cam, "alpha", 30, 30,
-                    cam.alpha, MENU_CAMERA.alpha, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
-                BABYLON.Animation.CreateAndStartAnimation("menuCamBeta", cam, "beta", 30, 30,
-                    cam.beta, MENU_CAMERA.beta, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
-                BABYLON.Animation.CreateAndStartAnimation("menuCamRadius", cam, "radius", 30, 30,
-                    cam.radius, MENU_CAMERA.radius, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
-                // Animate target to player close-up position
-                BABYLON.Animation.CreateAndStartAnimation("menuCamTargetX", cam.target, "x", 30, 30,
-                    cam.target.x, -10, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
-                BABYLON.Animation.CreateAndStartAnimation("menuCamTargetY", cam.target, "y", 30, 30,
-                    cam.target.y, 1.5, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
-                BABYLON.Animation.CreateAndStartAnimation("menuCamTargetZ", cam.target, "z", 30, 30,
-                    cam.target.z, 0, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+                if (instantCamera) {
+                    // Instant snap (used while the screen is faded to black during a transition)
+                    if (cam.getScene) cam.getScene().stopAnimation(cam);
+                    cam.alpha = MENU_CAMERA.alpha;
+                    cam.beta = MENU_CAMERA.beta;
+                    cam.radius = MENU_CAMERA.radius;
+                    cam.target.set(-10, 1.5, 0);  // Menu target - centered on player
+                } else {
+                    // Smooth transition to menu camera
+                    BABYLON.Animation.CreateAndStartAnimation("menuCamAlpha", cam, "alpha", 30, 30,
+                        cam.alpha, MENU_CAMERA.alpha, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+                    BABYLON.Animation.CreateAndStartAnimation("menuCamBeta", cam, "beta", 30, 30,
+                        cam.beta, MENU_CAMERA.beta, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+                    BABYLON.Animation.CreateAndStartAnimation("menuCamRadius", cam, "radius", 30, 30,
+                        cam.radius, MENU_CAMERA.radius, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+                    // Animate target to player close-up position
+                    BABYLON.Animation.CreateAndStartAnimation("menuCamTargetX", cam.target, "x", 30, 30,
+                        cam.target.x, -10, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+                    BABYLON.Animation.CreateAndStartAnimation("menuCamTargetY", cam.target, "y", 30, 30,
+                        cam.target.y, 1.5, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+                    BABYLON.Animation.CreateAndStartAnimation("menuCamTargetZ", cam.target, "z", 30, 30,
+                        cam.target.z, 0, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+                }
             }
 
             // Show GUI menu elements
@@ -13360,18 +13484,18 @@
 
             // Step 1: Fade to black (400ms)
             animateAlpha(overlay, 0, 1, 400, () => {
-                // Step 2: While black, reset everything
+                // Step 2: While black, do a full canonical reset to the main menu.
+                // resetGame() clears all match state (score, stage, gates, talents, round);
+                // showTalentScreen(true) applies the EXACT same menu setup as a fresh menu
+                // entry (state reset, menu UI shown, gameplay UI hidden, both combatants
+                // reset, wizard dancing, music) but with an instant camera snap since the
+                // screen is black. This replaces ~80 lines of drift-prone duplicate logic.
                 hideVictoryScreen();
                 resetGame();
-                // Clear any stage/gameplay text that resetRound may have shown
-                hideMessage();
-                gameState = "menu";
-                startGameInProgress = false;  // Reset so Start button works again
+                showTalentScreen(true);
+                startGameInProgress = false;  // Reset so the Start button works again
 
-                // Clear any held keys
-                Object.keys(keys).forEach(k => delete keys[k]);
-
-                // Force-hide all cast UI (DOM + Babylon GUI) so nothing lingers in menu
+                // Belt-and-suspenders: force-hide cast UI that menu setup doesn't touch
                 const castBar = document.getElementById('castBarContainer');
                 if (castBar) { castBar.classList.remove('casting'); castBar.style.display = 'none'; }
                 const aiCastBar = document.getElementById('aiCastBarContainer');
@@ -13382,68 +13506,12 @@
                     if (window.guiElements.playerCastLabel) window.guiElements.playerCastLabel.text = "";
                     if (window.guiElements.aiCastLabel) window.guiElements.aiCastLabel.text = "";
                 }
-                // Hide 3D cast bars if they exist
                 if (combatants.left && combatants.left.castBar3D) combatants.left.castBar3D.visibility = 0;
                 if (combatants.left && combatants.left.castFill3D) combatants.left.castFill3D.visibility = 0;
                 if (combatants.right && combatants.right.castBar3D) combatants.right.castBar3D.visibility = 0;
                 if (combatants.right && combatants.right.castFill3D) combatants.right.castFill3D.visibility = 0;
 
-                // Step 3: Snap camera to menu position (instant, hidden by black)
-                if (window.gameCamera) {
-                    const cam = window.gameCamera;
-                    cam.alpha = MENU_CAMERA.alpha;
-                    cam.beta = MENU_CAMERA.beta;
-                    cam.radius = MENU_CAMERA.radius;
-                    cam.target.set(-10, 1.5, 0);  // Menu target position - centered on player
-                    // Set ortho bounds for menu
-                    if (window.setOrthoForMenu) window.setOrthoForMenu();
-                }
-
-                // Step 4: Set up menu state (wizard dancing, UI visible)
-                // Set wizard to dance animation - robust version
-                if (combatants.left) {
-                    combatants.left.animLocked = false;  // Clear any lock
-                    combatants.left.currentAnim = null;  // Clear current so any anim can play
-                }
-                if (combatants.left && combatants.left.animations && combatants.left.animations['victory']) {
-                    // Stop all other animations first
-                    Object.values(combatants.left.animations).forEach(a => { if (a && a.stop) a.stop(); });
-                    // Play victory/dance directly
-                    combatants.left.animations['victory'].start(true, 1.0);
-                    combatants.left.currentAnim = 'victory';
-                }
-
-                // Show menu GUI elements and hide gameplay UI
-                if (window.guiElements) {
-                    if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 1;
-                    if (window.guiElements.menuContainer) window.guiElements.menuContainer.isVisible = true;
-                    if (window.guiElements.menuLeftPanel) window.guiElements.menuLeftPanel.isVisible = true;
-                    if (window.setDOMMenuVisible) window.setDOMMenuVisible(true);
-
-                    // Hide gameplay UI
-                    if (window.guiElements.stageNameText) window.guiElements.stageNameText.isVisible = false;
-                    if (window.guiElements.stageGrid) window.guiElements.stageGrid.isVisible = false;
-                    if (window.guiElements.scorePanel) window.guiElements.scorePanel.isVisible = false;
-                    if (window.guiElements.scoreText) window.guiElements.scoreText.alpha = 0;
-                    if (window.guiElements.playerHealthPanel) window.guiElements.playerHealthPanel.isVisible = false;
-                    if (window.guiElements.aiHealthPanel) window.guiElements.aiHealthPanel.isVisible = false;
-                    if (window.guiElements.playerManaContainer) window.guiElements.playerManaContainer.isVisible = false;
-                    if (window.guiElements.aiManaContainer) window.guiElements.aiManaContainer.isVisible = false;
-                    if (window.guiElements.abilityBarBg) window.guiElements.abilityBarBg.isVisible = false;
-                }
-
-                // Hide HTML ability bar and parry button
-                const abilityBar = document.getElementById('abilityBar');
-                if (abilityBar) abilityBar.style.display = 'none';
-                const parryButton = document.getElementById('parryButton');
-                if (parryButton) parryButton.style.display = 'none';
-
-                // Play music
-                if (window.ToneSFX) {
-                    ToneSFX.musicStart();
-                }
-
-                // Step 5: Fade back in (400ms)
+                // Step 3: Fade back in (400ms)
                 setTimeout(() => {
                     animateAlpha(overlay, 1, 0, 400, () => {
                         // Hide overlay when done
@@ -13738,12 +13806,9 @@
             domMenuWired = true;
 
             btnStart.addEventListener('click', () => {
-                // Same flow as the legacy Babylon Start Battle button:
-                // hide the DOM menu, surface the mode-selection overlay (still Babylon GUI for now).
+                // Hide the main menu and surface the DOM mode-select sub-menu.
                 setDOMMenuVisible(false);
-                if (window.guiElements && window.guiElements.modeSelectOverlay) {
-                    window.guiElements.modeSelectOverlay.isVisible = true;
-                }
+                setDOMModeSelectVisible(true);
             });
 
             btnMP.addEventListener('click', () => {
@@ -13752,11 +13817,69 @@
         }
         window.wireDOMMenu = wireDOMMenu;
 
+        // ---- Mode Select (Start Battle sub-menu), DOM version ----
+        let domModeSelectWired = false;
+        function wireDOMModeSelect() {
+            if (domModeSelectWired) return;
+            const btnDuel = document.getElementById('domBtnDuel');
+            const btn2v2 = document.getElementById('domBtn2v2');
+            const btnBack = document.getElementById('domBtnModeBack');
+            if (!btnDuel || !btn2v2 || !btnBack) return;
+            domModeSelectWired = true;
+
+            // 1v1 Duel — mirrors the original Babylon "1v1 Duel" handler exactly.
+            btnDuel.addEventListener('click', () => {
+                setDOMModeSelectVisible(false);
+                gameMode = 'single';
+                doublesConfig = null;
+                maxTowerHealth = SINGLES_MAX_HEALTH;
+                playerTowerHealth = maxTowerHealth;
+                aiTowerHealth = maxTowerHealth;
+                if (combatants.left) combatants.left.towerHealth = maxTowerHealth;
+                if (combatants.right) combatants.right.towerHealth = maxTowerHealth;
+                if (window.setDoublesPaddlesVisible) window.setDoublesPaddlesVisible(false);
+                if (window.resizeStageForMode) window.resizeStageForMode();
+                startGame();
+            });
+
+            // 2v2 (AI Partner) — mirrors the original Babylon "2v2" handler exactly.
+            btn2v2.addEventListener('click', () => {
+                setDOMModeSelectVisible(false);
+                gameMode = 'doubles_ai';
+                doublesConfig = { enabled: true, rotation: 'after_round' };
+                initDoublesCombatants();
+                if (window.assignDoublesPaddles) window.assignDoublesPaddles();
+                if (window.loadDoublesCharacters) window.loadDoublesCharacters();
+                if (window.createFrontCastBars) window.createFrontCastBars();
+                if (window.resizeStageForMode) window.resizeStageForMode();
+                startGame();
+            });
+
+            // Back — return to the main menu.
+            btnBack.addEventListener('click', () => {
+                setDOMModeSelectVisible(false);
+                setDOMMenuVisible(true);
+            });
+        }
+        window.wireDOMModeSelect = wireDOMModeSelect;
+
+        function setDOMModeSelectVisible(show) {
+            if (show && !domModeSelectWired) wireDOMModeSelect();
+            const el = document.getElementById('domModeSelect');
+            if (el) el.classList.toggle('visible', !!show);
+        }
+        window.setDOMModeSelectVisible = setDOMModeSelectVisible;
+
         function setDOMMenuVisible(show) {
             // Wire on first show in case initGame hasn't reached that point yet.
             if (show && !domMenuWired) wireDOMMenu();
             const el = document.getElementById('domMenu');
             if (el) el.classList.toggle('visible', !!show);
+            // Showing the main menu always means we're not in mode-select.
+            if (show) {
+                const ms = document.getElementById('domModeSelect');
+                if (ms) ms.classList.remove('visible');
+            }
             // Keep the legacy Babylon GUI menu permanently hidden — DOM owns this view now.
             if (window.guiElements) {
                 if (window.guiElements.menuContainer) window.guiElements.menuContainer.isVisible = false;
