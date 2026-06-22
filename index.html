@@ -10,7 +10,7 @@
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=3">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -4396,7 +4396,7 @@
             playerHealthLabel.text = "BLUE TOWER";
             playerHealthLabel.color = "#c9a44a";
             playerHealthLabel.fontSize = 24;
-            playerHealthLabel.fontFamily = "'Esthetique', 'Cinzel', serif";
+            playerHealthLabel.fontFamily = "'Cinzel', 'Georgia', serif";
             playerHealthLabel.fontWeight = "700";
             playerHealthLabel.shadowColor = "#000";
             playerHealthLabel.shadowBlur = 0;  // Pixel shadow, no blur
@@ -4419,8 +4419,8 @@
             const playerHealthBg = new BABYLON.GUI.Rectangle();
             playerHealthBg.width = "240px";
             playerHealthBg.height = "24px";
-            playerHealthBg.background = "#1a1a1a";
-            playerHealthBg.color = "#333";
+            playerHealthBg.background = "#241b12";
+            playerHealthBg.color = "#5a4326";
             playerHealthBg.thickness = 3;
             playerHealthBg.cornerRadius = 2;
             playerHealthRow.addControl(playerHealthBg);
@@ -4473,7 +4473,7 @@
             aiHealthLabel.text = "RED TOWER";
             aiHealthLabel.color = "#c9a44a";
             aiHealthLabel.fontSize = 24;
-            aiHealthLabel.fontFamily = "'Esthetique', 'Cinzel', serif";
+            aiHealthLabel.fontFamily = "'Cinzel', 'Georgia', serif";
             aiHealthLabel.fontWeight = "700";
             aiHealthLabel.shadowColor = "#000";
             aiHealthLabel.shadowBlur = 0;  // Pixel shadow, no blur
@@ -4509,8 +4509,8 @@
             const aiHealthBg = new BABYLON.GUI.Rectangle();
             aiHealthBg.width = "240px";
             aiHealthBg.height = "24px";
-            aiHealthBg.background = "#1a1a1a";
-            aiHealthBg.color = "#333";
+            aiHealthBg.background = "#241b12";
+            aiHealthBg.color = "#5a4326";
             aiHealthBg.thickness = 3;
             aiHealthBg.cornerRadius = 2;
             aiHealthRow.addControl(aiHealthBg);
@@ -4539,8 +4539,8 @@
             scorePanel.width = "180px";
             scorePanel.height = "60px";
             scorePanel.top = "15px";  // Top center
-            scorePanel.background = "rgba(40, 34, 28, 0.85)";
-            scorePanel.color = "#4a3c2a";
+            scorePanel.background = "rgba(40, 34, 28, 0.9)";
+            scorePanel.color = "#8a6a38";  // Gilded plaque border
             scorePanel.thickness = 3;
             scorePanel.cornerRadius = 4;
             scorePanel.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
@@ -4589,8 +4589,8 @@
                 const stageBg = new BABYLON.GUI.Rectangle();
                 stageBg.width = "34px";
                 stageBg.height = "24px";
-                stageBg.background = "#1a1a1a";
-                stageBg.color = "#333";
+                stageBg.background = "#241b12";
+                stageBg.color = "#5a4326";
                 stageBg.thickness = 2;
                 stageGrid.addControl(stageBg, 0, i);
 
@@ -4598,7 +4598,7 @@
                 const stageFill = new BABYLON.GUI.Rectangle();
                 stageFill.width = "100%";
                 stageFill.height = "100%";
-                stageFill.background = i === currentStage ? "#c9a44a" : "#2a2a2a";
+                stageFill.background = i === currentStage ? "#c9a44a" : "#2e2418";
                 stageFill.color = "transparent";
                 stageFill.thickness = 0;
                 stageBg.addControl(stageFill);
@@ -4648,9 +4648,9 @@
                         seg.fill.background = "#e74c3c";
                         seg.bg.color = "#ff6b5b";
                     } else {
-                        // Future/unplayed - dim
-                        seg.fill.background = "#2a2a2a";
-                        seg.bg.color = "#333";
+                        // Future/unplayed - dim warm
+                        seg.fill.background = "#2e2418";
+                        seg.bg.color = "#5a4326";
                     }
                 }
 
@@ -4705,7 +4705,7 @@
             transitionText.text = "";
             transitionText.color = "#f0c050";
             transitionText.fontSize = 42;
-            transitionText.fontFamily = "'Esthetique', 'Cinzel', serif";
+            transitionText.fontFamily = "'Cinzel', 'Georgia', serif";
             transitionText.fontWeight = "700";
             transitionText.shadowColor = "#000";
             transitionText.shadowBlur = 0;
@@ -4724,7 +4724,7 @@
             messageText.text = "";
             messageText.color = "#f0c050";
             messageText.fontSize = 48;
-            messageText.fontFamily = "'Esthetique', 'Cinzel', serif";
+            messageText.fontFamily = "'Cinzel', 'Georgia', serif";
             messageText.fontWeight = "700";
             messageText.shadowColor = "#000";
             messageText.shadowBlur = 0;  // Pixel shadow
@@ -4755,7 +4755,7 @@
             victoryTitle.text = "VICTORY!";
             victoryTitle.color = "#ffd700";  // Gold
             victoryTitle.fontSize = 96;
-            victoryTitle.fontFamily = "'Esthetique', 'Cinzel', serif";
+            victoryTitle.fontFamily = "'Cinzel', 'Georgia', serif";
             victoryTitle.fontWeight = "700";
             victoryTitle.shadowColor = "#000";
             victoryTitle.shadowBlur = 0;
@@ -4772,7 +4772,7 @@
             victorySubtitle.text = "You have conquered the arena!";
             victorySubtitle.color = "#e0d0a0";
             victorySubtitle.fontSize = 24;
-            victorySubtitle.fontFamily = "'Esthetique', 'Cinzel', serif";
+            victorySubtitle.fontFamily = "'Cinzel', 'Georgia', serif";
             victorySubtitle.fontWeight = "400";
             victorySubtitle.shadowColor = "#000";
             victorySubtitle.shadowBlur = 0;
@@ -4790,7 +4790,7 @@
             continueBtn.height = "60px";
             continueBtn.color = "#d4c4a0";
             continueBtn.fontSize = 24;
-            continueBtn.fontFamily = "'Esthetique', 'Cinzel', serif";
+            continueBtn.fontFamily = "'Cinzel', 'Georgia', serif";
             continueBtn.background = "#3d3528";
             continueBtn.cornerRadius = 6;
             continueBtn.thickness = 3;
@@ -4847,7 +4847,7 @@
             menuTitle.text = "VOLLEYBOLT";
             menuTitle.color = "#c9a44a";
             menuTitle.fontSize = 72;
-            menuTitle.fontFamily = "'Esthetique', 'Cinzel', serif";
+            menuTitle.fontFamily = "'Cinzel', 'Georgia', serif";
             menuTitle.fontWeight = "700";
             menuTitle.shadowColor = "#000";
             menuTitle.shadowBlur = 0;
@@ -4889,7 +4889,7 @@
                 btn.height = "90px";
                 btn.color = "#000000b3";  // 70% black text
                 btn.fontSize = 40;
-                btn.fontFamily = "'Esthetique', 'Cinzel', serif";
+                btn.fontFamily = "'Cinzel', 'Georgia', serif";
                 btn.fontWeight = "900";
                 btn.textBlock.lineSpacing = "8px";
                 btn.textBlock.letterSpacing = "2px";
@@ -5014,7 +5014,7 @@
             const modeSelectTitle = new BABYLON.GUI.TextBlock();
             modeSelectTitle.text = "SELECT MODE";
             modeSelectTitle.color = "#d8c278";
-            modeSelectTitle.fontFamily = "'Esthetique', 'Cinzel', serif";
+            modeSelectTitle.fontFamily = "'Cinzel', 'Georgia', serif";
             modeSelectTitle.fontSize = 48;
             modeSelectTitle.fontWeight = "800";
             modeSelectTitle.height = "60px";
@@ -5030,7 +5030,7 @@
                 btn.height = "80px";
                 btn.color = "#000000b3";
                 btn.fontSize = 28;
-                btn.fontFamily = "'Esthetique', 'Cinzel', serif";
+                btn.fontFamily = "'Cinzel', 'Georgia', serif";
                 btn.fontWeight = "900";
                 btn.thickness = 0;
                 btn.background = "#3d3528";
@@ -5259,7 +5259,7 @@
             const dcTitle = new BABYLON.GUI.TextBlock();
             dcTitle.text = "OPPONENT DISCONNECTED";
             dcTitle.color = "#e74c4c";
-            dcTitle.fontFamily = "'Esthetique', 'Cinzel', serif";
+            dcTitle.fontFamily = "'Cinzel', 'Georgia', serif";
             dcTitle.fontSize = 42;
             dcTitle.height = "60px";
             dcTitle.shadowColor = "#000";
@@ -5282,7 +5282,7 @@
             dcBtn.background = "#3d3528";
             dcBtn.cornerRadius = 6;
             dcBtn.thickness = 2;
-            dcBtn.fontFamily = "'Esthetique', 'Cinzel', serif";
+            dcBtn.fontFamily = "'Cinzel', 'Georgia', serif";
             dcBtn.fontSize = 22;
             dcStack.addControl(dcBtn);
 
@@ -5385,7 +5385,7 @@
             playerCastLabel.text = "Fireball";
             playerCastLabel.color = "#f0c050";
             playerCastLabel.fontSize = 18;
-            playerCastLabel.fontFamily = "'Esthetique', 'Cinzel', serif";
+            playerCastLabel.fontFamily = "'Cinzel', 'Georgia', serif";
             playerCastLabel.fontWeight = "700";
             playerCastLabel.shadowColor = "#000";
             playerCastLabel.shadowBlur = 0;  // Pixel shadow
@@ -5438,7 +5438,7 @@
             aiCastLabel.text = "Fireball";
             aiCastLabel.color = "#e76e55";
             aiCastLabel.fontSize = 18;
-            aiCastLabel.fontFamily = "'Esthetique', 'Cinzel', serif";
+            aiCastLabel.fontFamily = "'Cinzel', 'Georgia', serif";
             aiCastLabel.fontWeight = "700";
             aiCastLabel.shadowColor = "#000";
             aiCastLabel.shadowBlur = 0;  // Pixel shadow
@@ -5502,6 +5502,7 @@
             shadowLayer.background = "transparent";
             shadowLayer.color = "transparent";
             shadowLayer.thickness = 0;
+            shadowLayer.isVisible = false;  // Bevel hack not needed - new panel is already ornate
             abilityBarContainer2.addControl(shadowLayer);
 
             const shadowTex = new BABYLON.GUI.Image("shadowTex", "textures/ui.png");
@@ -5529,6 +5530,7 @@
             highlightLayer.background = "transparent";
             highlightLayer.color = "transparent";
             highlightLayer.thickness = 0;
+            highlightLayer.isVisible = false;  // Bevel hack not needed - new panel is already ornate
             abilityBarContainer2.addControl(highlightLayer);
 
             const highlightTex = new BABYLON.GUI.Image("highlightTex", "textures/ui.png");
@@ -5556,7 +5558,7 @@
             mainLayer.thickness = 0;
             abilityBarContainer2.addControl(mainLayer);
 
-            const abilityBarBg = new BABYLON.GUI.Image("abilityBarBg", "textures/ui.png");
+            const abilityBarBg = new BABYLON.GUI.Image("abilityBarBg", "textures/ability_panel.png");
             abilityBarBg.width = "100%";
             abilityBarBg.height = "100%";
             abilityBarBg.stretch = BABYLON.GUI.Image.STRETCH_FILL;

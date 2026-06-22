@@ -33,11 +33,9 @@
 .crt-screen {
     position: relative;
     image-rendering: pixelated;
-    border-radius: 20px;
+    border-radius: 0;            /* squared off - no CRT screen curve */
     overflow: hidden;
-    box-shadow:
-        0 0 80px rgba(0, 0, 0, 0.9),
-        0 0 2px rgba(100, 100, 100, 0.3);
+    box-shadow: none;            /* no CRT edge-glow vignette */
 }
 
 /* CRT vignette/scanlines now owned by #crtOverlay (single global layer). */
@@ -60,33 +58,16 @@ html, body {
     position: relative;
     background: #15121b;
     /* Calculated by JS to maintain 4:3 */
-    border-radius: 20px;
+    border-radius: 0;            /* squared off - no CRT screen curve */
     overflow: hidden;
-    box-shadow:
-        0 0 80px rgba(0, 0, 0, 0.9),
-        0 0 2px rgba(100, 100, 100, 0.3);
+    box-shadow: none;            /* no CRT edge-glow vignette */
 }
 
 /* CRT vignette now owned by #crtOverlay (single global layer). Glass reflection stays. */
 
-/* CRT glass reflection */
+/* CRT glass reflection - removed (de-CRT) */
 #gameContainer::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    border-radius: 20px;
-    pointer-events: none;
-    z-index: 9999;
-    background: linear-gradient(
-        135deg,
-        rgba(255, 255, 255, 0.03) 0%,
-        transparent 40%,
-        transparent 60%,
-        rgba(255, 255, 255, 0.01) 100%
-    );
+    content: none;
 }
 #canvas {
     width: 100%;
@@ -144,7 +125,7 @@ html, body {
 
 /* Tower labels */
 .tower-label {
-    font-family: 'Esthetique', 'Cinzel', serif;
+    font-family: 'Cinzel', 'Georgia', serif;
     font-size: 26px;
     font-weight: 700;
     color: #c9a44a;
@@ -167,7 +148,7 @@ html, body {
     top: 22px;
     left: 50%;
     transform: translateX(-50%);
-    font-family: 'Esthetique', 'Cinzel', serif;
+    font-family: 'Cinzel', 'Georgia', serif;
     font-size: 48px;
     font-weight: 700;
     color: #c9a44a;
@@ -179,7 +160,7 @@ html, body {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-family: 'Esthetique', 'Cinzel', serif;
+    font-family: 'Cinzel', 'Georgia', serif;
     font-size: 56px;
     font-weight: 700;
     color: #f0c050;
@@ -745,7 +726,7 @@ html, body {
 
 /* Title row */
 .tooltip-title {
-    font-family: 'Esthetique', 'Cinzel', serif;
+    font-family: 'Cinzel', 'Georgia', serif;
     font-size: 18px;
     color: #c9a44a;
     margin-bottom: 10px;
@@ -1270,7 +1251,7 @@ body.flipped-view #aiCastBarContainer {
     font-size: 28px;
 }
 .talent-panel-title {
-    font-family: 'Esthetique', 'Cinzel', serif;
+    font-family: 'Cinzel', 'Georgia', serif;
     font-size: 20px;
     font-weight: 700;
     color: #ffd866;
@@ -1369,7 +1350,7 @@ body.flipped-view #aiCastBarContainer {
     display: block;
 }
 .talent-choice-name {
-    font-family: 'Esthetique', 'Cinzel', serif;
+    font-family: 'Cinzel', 'Georgia', serif;
     font-size: 14px;
     font-weight: 400;
     color: #fff;
@@ -1468,7 +1449,7 @@ body.flipped-view #aiCastBarContainer {
     min-width: 520px;
 }
 #loadingTitle {
-    font-family: 'Esthetique', 'Cinzel', serif;
+    font-family: 'Cinzel', 'Georgia', serif;
     font-size: 64px;
     font-weight: 800;
     color: var(--gold-light);
@@ -1552,7 +1533,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 #talentSubtitle {
-    font-family: 'Esthetique', 'Cinzel', serif;
+    font-family: 'Cinzel', 'Georgia', serif;
     font-size: 22px;
     color: var(--parchment-dark);
     margin-bottom: 30px;
@@ -1606,7 +1587,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .upgrade-name {
-    font-family: 'Esthetique', 'Cinzel', serif;
+    font-family: 'Cinzel', 'Georgia', serif;
     font-size: 20px;
     color: var(--gold-light);
     margin-bottom: 8px;
@@ -1751,7 +1732,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 #stageTransitionText {
-    font-family: 'Esthetique', 'Cinzel', 'Georgia', serif;
+    font-family: 'Cinzel', 'Georgia', serif;
     font-size: 42px;
     color: var(--gold-light);
     text-shadow: 0 0 30px rgba(212, 168, 73, 0.6),
@@ -1776,7 +1757,7 @@ body.flipped-view #aiCastBarContainer {
     display: inline-block;
     min-width: 220px;
     padding: 14px 32px;
-    font-family: 'Esthetique', 'Cinzel', serif;
+    font-family: 'Cinzel', 'Georgia', serif;
     font-size: 22px;
     letter-spacing: 2px;
     color: var(--gold-light);
@@ -1868,7 +1849,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-title {
-    font-family: 'Esthetique', 'Cinzel', serif;
+    font-family: 'Cinzel', 'Georgia', serif;
     font-size: 48px;
     color: var(--gold-light);
     text-shadow: 3px 3px 0 #000, -1px -1px 0 var(--gold-dark);
@@ -1893,7 +1874,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-prompt {
-    font-family: 'Esthetique', 'Cinzel', serif;
+    font-family: 'Cinzel', 'Georgia', serif;
     font-size: 20px;
     color: var(--parchment);
     text-shadow: 2px 2px 0 #000;
@@ -1949,7 +1930,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-connected-msg {
-    font-family: 'Esthetique', 'Cinzel', serif;
+    font-family: 'Cinzel', 'Georgia', serif;
     font-size: 28px;
     color: #6ad26a;
     text-shadow: 2px 2px 0 #000;
@@ -2065,7 +2046,7 @@ body.flipped-view #aiCastBarContainer {
 
 .arcane-title {
     position: relative;
-    font-family: 'Esthetique', 'Cinzel', serif;
+    font-family: 'Cinzel', 'Georgia', serif;
     font-size: 84px;
     font-weight: 700;
     letter-spacing: 6px;
