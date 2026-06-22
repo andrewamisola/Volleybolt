@@ -989,38 +989,38 @@ body.flipped-view #aiCastBarContainer {
 /* Parry Button - Centered above ability bar */
 #parryButton {
     position: absolute;
-    bottom: 230px;
-    left: 50%;
-    transform: translateX(-50%);
+    bottom: 50px;            /* just below the FF9 command menu (bottom-left) */
+    left: 40px;
+    transform: none;
     display: none;  /* Hidden until game starts */
-    width: 70px;
-    height: 70px;
+    width: auto;
+    height: auto;
     z-index: 199;
     pointer-events: auto;
     cursor: pointer;
 }
 
+/* FF9 steel pill: "Parry  [SPC]" */
 #parryButton .parry-hex {
     position: relative;
-    width: 70px;
-    height: 70px;
-    background: linear-gradient(180deg,
-        rgba(20, 18, 15, 1) 0%,
-        rgba(35, 30, 25, 1) 40%,
-        rgba(30, 25, 22, 1) 100%);
+    width: auto;
+    height: auto;
+    background:
+        repeating-linear-gradient(118deg, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px, rgba(0,0,0,0.05) 1px, rgba(0,0,0,0.05) 2px, transparent 2px, transparent 4px),
+        linear-gradient(180deg, rgba(84,96,118,0.92) 0%, rgba(42,52,70,0.95) 100%);
     clip-path: none;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
     justify-content: center;
-    border: 2px solid #2a2420;
-    border-top-color: #1a1815;
-    border-left-color: #1a1815;
+    gap: 12px;
+    padding: 6px 14px;
+    border: 2px solid #d3dae8;
     box-shadow:
-        inset 2px 2px 4px rgba(0, 0, 0, 0.6),
-        inset -1px -1px 2px rgba(255, 255, 255, 0.05),
-        0 2px 4px rgba(0, 0, 0, 0.4);
-    border-radius: 2px;
+        inset 0 0 0 1px rgba(16,24,40,0.7),
+        inset 0 2px 3px rgba(255,255,255,0.2),
+        4px 4px 0 rgba(0,0,0,0.5);
+    border-radius: 9px;
 }
 
 #parryButton .parry-hex::before {
@@ -1028,31 +1028,36 @@ body.flipped-view #aiCastBarContainer {
 }
 
 #parryButton .parry-icon {
-    width: 50px;
-    height: 50px;
-    background-image: url('textures/parry.png');
-    background-size: contain;
-    background-position: center;
-    background-repeat: no-repeat;
-    filter: url(#posterize) drop-shadow(2px 2px 2px #000);
-    image-rendering: pixelated;
+    width: auto;
+    height: auto;
+    background: none;
+    filter: none;
+    image-rendering: auto;
+}
+#parryButton .parry-icon::after {
+    content: 'Parry';
+    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-size: 15px;
+    color: #f4f7ff;
+    text-shadow: 2px 2px 0 rgba(8,12,26,0.9);
 }
 
 #parryButton .parry-key {
-    position: absolute;
-    bottom: -4px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: linear-gradient(180deg, #3a3230 0%, #252220 100%);
-    font-family: 'Crimson Text', Georgia, serif;
-    font-size: 12px;
-    color: #6a5a4a;
-    padding: 1px 5px;
-    border: 1px solid #3a3430;
-    border-radius: 3px;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+    position: static;
+    transform: none;
+    background: rgba(16,24,40,0.55);
+    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-size: 11px;
+    color: #cdd8ef;
+    padding: 2px 6px;
+    border: 1px solid rgba(206,214,230,0.4);
+    border-radius: 4px;
+    box-shadow: none;
+    text-shadow: 1px 1px 0 rgba(8,12,26,0.9);
     z-index: 20;
 }
+
+.parry-cooldown-sweep { display: none !important; }
 
 #parryButton:hover .parry-hex {
     background: linear-gradient(180deg,
