@@ -1477,7 +1477,7 @@ body.flipped-view #aiCastBarContainer {
     min-width: 520px;
 }
 #loadingTitle {
-    font-family: 'FF9UI', 'Cinzel', serif;
+    font-family: 'Esthetique', 'FF9UI', 'Cinzel', serif;
     font-size: 64px;
     font-weight: 800;
     color: var(--gold-light);
@@ -2485,9 +2485,9 @@ body.flipped-view #aiCastBarContainer {
     pointer-events: none;
 }
 
-/* --- Tall FF-style serif logo + light bloom behind it --- */
+/* --- Title logo: Esthetique display font + light bloom behind it --- */
 .arcane-title {
-    font-family: 'Cormorant Garamond', 'Cinzel', serif;
+    font-family: 'Esthetique', 'Cormorant Garamond', 'Cinzel', serif;
     font-size: 108px;
     font-weight: 700;
     letter-spacing: 8px;
