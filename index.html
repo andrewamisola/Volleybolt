@@ -3414,6 +3414,7 @@
                 }
             }).connect(musicBitCrusher);
             synths.music.volume.value = -12;  // Lower volume
+            synths.music.mute = true;  // Music OFF for now (flip to false / remove to re-enable)
             synths.musicLoaded = false;
 
             // Wait for all samples to actually load (with timeout)
