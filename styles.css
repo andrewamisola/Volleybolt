@@ -54,7 +54,7 @@ html, body {
     height: 100%;
     overflow: hidden;
     background: #15121b;  /* Warm dusk letterbox bars (was dead black) */
-    font-family: 'Crimson Text', Georgia, serif;
+    font-family: 'FF9UI', 'Crimson Text', Georgia, serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     display: flex;
@@ -133,11 +133,12 @@ html, body {
 
 /* Tower labels */
 .tower-label {
-    font-family: 'Cinzel', 'Georgia', serif;
+    display: none;   /* HTML duplicate hidden - GUI tower label is the visible one (stops double-render shimmer) */
+    font-family: 'FF9UI', 'Cinzel', serif;
     font-size: 26px;
     font-weight: 700;
     color: #c9a44a;
-    text-shadow: 2px 2px 0px #000, 3px 3px 0px #000;
+    text-shadow: 2px 2px 0px #565656;
     letter-spacing: 4px;
     text-transform: uppercase;
 }
@@ -156,7 +157,7 @@ html, body {
     top: 22px;
     left: 50%;
     transform: translateX(-50%);
-    font-family: 'Cinzel', 'Georgia', serif;
+    font-family: 'FF9UI', 'Cinzel', serif;
     font-size: 48px;
     font-weight: 700;
     color: #c9a44a;
@@ -168,7 +169,7 @@ html, body {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-family: 'Cinzel', 'Georgia', serif;
+    font-family: 'FF9UI', 'Cinzel', serif;
     font-size: 56px;
     font-weight: 700;
     color: #f0c050;
@@ -742,7 +743,7 @@ html, body {
 
 /* Title row */
 .tooltip-title {
-    font-family: 'Cinzel', 'Georgia', serif;
+    font-family: 'FF9UI', 'Cinzel', serif;
     font-size: 18px;
     color: #c9a44a;
     margin-bottom: 10px;
@@ -1267,7 +1268,7 @@ body.flipped-view #aiCastBarContainer {
     font-size: 28px;
 }
 .talent-panel-title {
-    font-family: 'Cinzel', 'Georgia', serif;
+    font-family: 'FF9UI', 'Cinzel', serif;
     font-size: 20px;
     font-weight: 700;
     color: #ffd866;
@@ -1366,7 +1367,7 @@ body.flipped-view #aiCastBarContainer {
     display: block;
 }
 .talent-choice-name {
-    font-family: 'Cinzel', 'Georgia', serif;
+    font-family: 'FF9UI', 'Cinzel', serif;
     font-size: 14px;
     font-weight: 400;
     color: #fff;
@@ -1465,7 +1466,7 @@ body.flipped-view #aiCastBarContainer {
     min-width: 520px;
 }
 #loadingTitle {
-    font-family: 'Cinzel', 'Georgia', serif;
+    font-family: 'FF9UI', 'Cinzel', serif;
     font-size: 64px;
     font-weight: 800;
     color: var(--gold-light);
@@ -1549,7 +1550,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 #talentSubtitle {
-    font-family: 'Cinzel', 'Georgia', serif;
+    font-family: 'FF9UI', 'Cinzel', serif;
     font-size: 22px;
     color: var(--parchment-dark);
     margin-bottom: 30px;
@@ -1603,7 +1604,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .upgrade-name {
-    font-family: 'Cinzel', 'Georgia', serif;
+    font-family: 'FF9UI', 'Cinzel', serif;
     font-size: 20px;
     color: var(--gold-light);
     margin-bottom: 8px;
@@ -1748,7 +1749,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 #stageTransitionText {
-    font-family: 'Cinzel', 'Georgia', serif;
+    font-family: 'FF9UI', 'Cinzel', serif;
     font-size: 42px;
     color: var(--gold-light);
     text-shadow: 0 0 30px rgba(212, 168, 73, 0.6),
@@ -1773,7 +1774,7 @@ body.flipped-view #aiCastBarContainer {
     display: inline-block;
     min-width: 220px;
     padding: 14px 32px;
-    font-family: 'Cinzel', 'Georgia', serif;
+    font-family: 'FF9UI', 'Cinzel', serif;
     font-size: 22px;
     letter-spacing: 2px;
     color: var(--gold-light);
@@ -1865,7 +1866,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-title {
-    font-family: 'Cinzel', 'Georgia', serif;
+    font-family: 'FF9UI', 'Cinzel', serif;
     font-size: 48px;
     color: var(--gold-light);
     text-shadow: 3px 3px 0 #000, -1px -1px 0 var(--gold-dark);
@@ -1890,7 +1891,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-prompt {
-    font-family: 'Cinzel', 'Georgia', serif;
+    font-family: 'FF9UI', 'Cinzel', serif;
     font-size: 20px;
     color: var(--parchment);
     text-shadow: 2px 2px 0 #000;
@@ -1946,7 +1947,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-connected-msg {
-    font-family: 'Cinzel', 'Georgia', serif;
+    font-family: 'FF9UI', 'Cinzel', serif;
     font-size: 28px;
     color: #6ad26a;
     text-shadow: 2px 2px 0 #000;
@@ -2062,7 +2063,7 @@ body.flipped-view #aiCastBarContainer {
 
 .arcane-title {
     position: relative;
-    font-family: 'Cinzel', 'Georgia', serif;
+    font-family: 'FF9UI', 'Cinzel', serif;
     font-size: 84px;
     font-weight: 700;
     letter-spacing: 6px;
@@ -2245,3 +2246,143 @@ body.flipped-view #aiCastBarContainer {
     89%  { opacity: 0.30; }
     100% { opacity: 0.20; }
 }
+
+/* ============================================================
+   VERTICAL FF9 COMMAND MENU - ability bar redesign.
+   Overrides the earlier horizontal-slot rules (later in source =
+   wins at equal specificity). Re-skins the existing slots into a
+   FF9-style vertical command list with a hand pointer.
+   ============================================================ */
+#abilityBar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1px;
+    left: 40px;            /* FF9 command box sits bottom-left */
+    bottom: 90px;
+    transform: none;
+    padding: 12px 16px;
+    /* Brushed-metal grain (fine diagonal lines) over the steel gradient */
+    background-image:
+        repeating-linear-gradient(118deg,
+            rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px,
+            rgba(0,0,0,0.05) 1px, rgba(0,0,0,0.05) 2px,
+            transparent 2px, transparent 4px),
+        linear-gradient(180deg, rgba(84,96,118,0.92) 0%, rgba(42,52,70,0.95) 100%);
+    /* Crisp FF9 hard drop shadow (no blur) */
+    box-shadow:
+        inset 0 0 0 1px rgba(16,24,40,0.75),
+        inset 0 2px 3px rgba(255,255,255,0.22),
+        inset 0 -3px 4px rgba(0,0,0,0.38),
+        6px 6px 0 rgba(0,0,0,0.55);
+}
+.ability-slot {
+    width: 216px;
+    height: 30px;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;              /* separates name / orbs / keybind */
+    padding-left: 28px;     /* room for the hand pointer */
+    position: relative;
+}
+/* FF9 hand pointer (crisp triangle), shown on hover + last-cast */
+.ability-slot::before {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0; height: 0;
+    border-top: 7px solid transparent;
+    border-bottom: 7px solid transparent;
+    border-left: 12px solid #f4f7ff;
+    filter: drop-shadow(2px 2px 0 rgba(8,12,26,0.85));
+    opacity: 0;
+    transition: opacity 0.07s ease;
+    z-index: 3;
+}
+.ability-slot:hover::before,
+.ability-slot.last-cast::before { opacity: 1; }
+
+.ability-hex {
+    order: 1;
+    position: static;
+    flex: 1 1 auto;
+    width: auto;
+    height: 100%;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    overflow: visible;
+    padding: 0;
+}
+.ability-slot.ready .ability-hex { background: transparent; border: none; }
+.ability-slot.ready .ability-hex::before { content: none; }
+
+.ability-icon {
+    width: auto;
+    height: auto;
+    flex: 0 1 auto;
+    justify-content: flex-start;
+    text-align: left;
+    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-size: 16px;
+    color: #f4f7ff;
+    text-shadow: 2px 2px 0 rgba(8,12,26,0.9);   /* crisp FF9 text shadow */
+    padding: 0;
+}
+.ability-slot:hover .ability-icon,
+.ability-slot.last-cast .ability-icon { color: #fff4c2; }  /* warm cream highlight */
+
+/* mana cost shown as small orbs */
+.mana-cost {
+    order: 2;
+    position: static;
+    width: auto; height: auto;
+    background: none;
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+    padding: 0;
+    margin: 0;
+    color: #5ad0ff;                 /* player-mana blue */
+    font-size: 10px;
+    letter-spacing: 2px;
+    line-height: 1;
+    text-shadow: 1px 1px 0 rgba(8,12,26,0.9);
+    display: flex;
+    align-items: center;
+}
+/* keybind badge on the right (replaces the mana number here) */
+.ability-key {
+    order: 3;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    position: static;
+    top: auto; left: auto; right: auto; bottom: auto;
+    min-width: 17px; height: 17px;
+    padding: 0 3px;
+    background: rgba(16,24,40,0.55);
+    border: 1px solid rgba(206,214,230,0.4);
+    border-radius: 4px;
+    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-size: 11px;
+    color: #cdd8ef;
+    text-shadow: 1px 1px 0 rgba(8,12,26,0.9);
+}
+/* Hotbar bits not used in the FF9 menu (CD shown creatively later) */
+.cooldown-sweep,
+.cooldown-overlay,
+.cast-progress-overlay,
+.shine-effect,
+.upgrade-indicator { display: none !important; }
+/* Dim unavailable rows the FF9 way, and hide the pointer on them */
+.ability-slot.on-cooldown,
+.ability-slot.no-mana { opacity: 0.45; }
+.ability-slot.on-cooldown::before,
+.ability-slot.no-mana::before { opacity: 0 !important; }

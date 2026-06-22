@@ -10,7 +10,7 @@
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css?v=6">
+    <link rel="stylesheet" href="styles.css?v=11">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -1219,6 +1219,9 @@
             };
             const el = document.getElementById(map[abilityId]);
             if (!el) return;
+            // FF9 hand pointer snaps to the spell just cast
+            document.querySelectorAll('#abilityBar .ability-slot.last-cast').forEach(s => s.classList.remove('last-cast'));
+            el.classList.add('last-cast');
             el.classList.remove('cast-fired');
             // Force reflow so re-adding the class restarts the animation
             void el.offsetWidth;
@@ -1281,9 +1284,12 @@
                     iconEl.textContent = uiName;
                 }
 
-                // Update mana cost badge
+                // Update mana cost - shown as small orbs (one per mana)
                 const manaCostEl = slotEl.querySelector('.mana-cost');
-                if (manaCostEl) manaCostEl.textContent = uiMana;
+                if (manaCostEl) {
+                    const n = parseInt(uiMana, 10);
+                    manaCostEl.textContent = (n > 0 && n <= 8) ? '●'.repeat(n) : uiMana;
+                }
 
                 // Update data-ability attribute
                 slotEl.setAttribute('data-ability', spellId);
@@ -4400,15 +4406,15 @@
             playerHealthLabel.text = "BLUE TOWER";
             playerHealthLabel.color = "#c9a44a";
             playerHealthLabel.fontSize = 24;
-            playerHealthLabel.fontFamily = "'Cinzel', 'Georgia', serif";
+            playerHealthLabel.fontFamily = "'FF9UI', 'Cinzel', serif";
             playerHealthLabel.fontWeight = "700";
-            playerHealthLabel.shadowColor = "#000";
+            playerHealthLabel.shadowColor = "#565656";  // hard grey shadow (not full black)
             playerHealthLabel.shadowBlur = 0;  // Pixel shadow, no blur
             playerHealthLabel.shadowOffsetX = 2;
             playerHealthLabel.shadowOffsetY = 2;
             playerHealthLabel.height = "32px";
             playerHealthLabel.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-            playerHealthLabel.alpha = 1;  // Visible - using Babylon GUI for CRT effects
+            playerHealthLabel.alpha = 1;  // GUI label is the tower text; HTML .tower-label is hidden to stop double-render shimmer
             playerHealthPanel.addControl(playerHealthLabel);
             window.guiElements.playerHealthLabel = playerHealthLabel;
 
@@ -4477,15 +4483,15 @@
             aiHealthLabel.text = "RED TOWER";
             aiHealthLabel.color = "#c9a44a";
             aiHealthLabel.fontSize = 24;
-            aiHealthLabel.fontFamily = "'Cinzel', 'Georgia', serif";
+            aiHealthLabel.fontFamily = "'FF9UI', 'Cinzel', serif";
             aiHealthLabel.fontWeight = "700";
-            aiHealthLabel.shadowColor = "#000";
+            aiHealthLabel.shadowColor = "#565656";  // hard grey shadow (not full black)
             aiHealthLabel.shadowBlur = 0;  // Pixel shadow, no blur
             aiHealthLabel.shadowOffsetX = 2;
             aiHealthLabel.shadowOffsetY = 2;
             aiHealthLabel.height = "32px";
             aiHealthLabel.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
-            aiHealthLabel.alpha = 1;  // Visible - using Babylon GUI for CRT effects
+            aiHealthLabel.alpha = 1;  // GUI label is the tower text; HTML .tower-label is hidden to stop double-render shimmer
             aiHealthPanel.addControl(aiHealthLabel);
             window.guiElements.aiHealthLabel = aiHealthLabel;
 
@@ -4709,7 +4715,7 @@
             transitionText.text = "";
             transitionText.color = "#f0c050";
             transitionText.fontSize = 42;
-            transitionText.fontFamily = "'Cinzel', 'Georgia', serif";
+            transitionText.fontFamily = "'FF9UI', 'Cinzel', serif";
             transitionText.fontWeight = "700";
             transitionText.shadowColor = "#000";
             transitionText.shadowBlur = 0;
@@ -4728,7 +4734,7 @@
             messageText.text = "";
             messageText.color = "#f0c050";
             messageText.fontSize = 48;
-            messageText.fontFamily = "'Cinzel', 'Georgia', serif";
+            messageText.fontFamily = "'FF9UI', 'Cinzel', serif";
             messageText.fontWeight = "700";
             messageText.shadowColor = "#000";
             messageText.shadowBlur = 0;  // Pixel shadow
@@ -4759,7 +4765,7 @@
             victoryTitle.text = "VICTORY!";
             victoryTitle.color = "#ffd700";  // Gold
             victoryTitle.fontSize = 96;
-            victoryTitle.fontFamily = "'Cinzel', 'Georgia', serif";
+            victoryTitle.fontFamily = "'FF9UI', 'Cinzel', serif";
             victoryTitle.fontWeight = "700";
             victoryTitle.shadowColor = "#000";
             victoryTitle.shadowBlur = 0;
@@ -4776,7 +4782,7 @@
             victorySubtitle.text = "You have conquered the arena!";
             victorySubtitle.color = "#e0d0a0";
             victorySubtitle.fontSize = 24;
-            victorySubtitle.fontFamily = "'Cinzel', 'Georgia', serif";
+            victorySubtitle.fontFamily = "'FF9UI', 'Cinzel', serif";
             victorySubtitle.fontWeight = "400";
             victorySubtitle.shadowColor = "#000";
             victorySubtitle.shadowBlur = 0;
@@ -4794,7 +4800,7 @@
             continueBtn.height = "60px";
             continueBtn.color = "#d4c4a0";
             continueBtn.fontSize = 24;
-            continueBtn.fontFamily = "'Cinzel', 'Georgia', serif";
+            continueBtn.fontFamily = "'FF9UI', 'Cinzel', serif";
             continueBtn.background = "#3d3528";
             continueBtn.cornerRadius = 6;
             continueBtn.thickness = 3;
@@ -4851,7 +4857,7 @@
             menuTitle.text = "VOLLEYBOLT";
             menuTitle.color = "#c9a44a";
             menuTitle.fontSize = 72;
-            menuTitle.fontFamily = "'Cinzel', 'Georgia', serif";
+            menuTitle.fontFamily = "'FF9UI', 'Cinzel', serif";
             menuTitle.fontWeight = "700";
             menuTitle.shadowColor = "#000";
             menuTitle.shadowBlur = 0;
@@ -4893,7 +4899,7 @@
                 btn.height = "90px";
                 btn.color = "#000000b3";  // 70% black text
                 btn.fontSize = 40;
-                btn.fontFamily = "'Cinzel', 'Georgia', serif";
+                btn.fontFamily = "'FF9UI', 'Cinzel', serif";
                 btn.fontWeight = "900";
                 btn.textBlock.lineSpacing = "8px";
                 btn.textBlock.letterSpacing = "2px";
@@ -5018,7 +5024,7 @@
             const modeSelectTitle = new BABYLON.GUI.TextBlock();
             modeSelectTitle.text = "SELECT MODE";
             modeSelectTitle.color = "#d8c278";
-            modeSelectTitle.fontFamily = "'Cinzel', 'Georgia', serif";
+            modeSelectTitle.fontFamily = "'FF9UI', 'Cinzel', serif";
             modeSelectTitle.fontSize = 48;
             modeSelectTitle.fontWeight = "800";
             modeSelectTitle.height = "60px";
@@ -5034,7 +5040,7 @@
                 btn.height = "80px";
                 btn.color = "#000000b3";
                 btn.fontSize = 28;
-                btn.fontFamily = "'Cinzel', 'Georgia', serif";
+                btn.fontFamily = "'FF9UI', 'Cinzel', serif";
                 btn.fontWeight = "900";
                 btn.thickness = 0;
                 btn.background = "#3d3528";
@@ -5263,7 +5269,7 @@
             const dcTitle = new BABYLON.GUI.TextBlock();
             dcTitle.text = "OPPONENT DISCONNECTED";
             dcTitle.color = "#e74c4c";
-            dcTitle.fontFamily = "'Cinzel', 'Georgia', serif";
+            dcTitle.fontFamily = "'FF9UI', 'Cinzel', serif";
             dcTitle.fontSize = 42;
             dcTitle.height = "60px";
             dcTitle.shadowColor = "#000";
@@ -5286,7 +5292,7 @@
             dcBtn.background = "#3d3528";
             dcBtn.cornerRadius = 6;
             dcBtn.thickness = 2;
-            dcBtn.fontFamily = "'Cinzel', 'Georgia', serif";
+            dcBtn.fontFamily = "'FF9UI', 'Cinzel', serif";
             dcBtn.fontSize = 22;
             dcStack.addControl(dcBtn);
 
@@ -5389,7 +5395,7 @@
             playerCastLabel.text = "Fireball";
             playerCastLabel.color = "#f0c050";
             playerCastLabel.fontSize = 18;
-            playerCastLabel.fontFamily = "'Cinzel', 'Georgia', serif";
+            playerCastLabel.fontFamily = "'FF9UI', 'Cinzel', serif";
             playerCastLabel.fontWeight = "700";
             playerCastLabel.shadowColor = "#000";
             playerCastLabel.shadowBlur = 0;  // Pixel shadow
@@ -5442,7 +5448,7 @@
             aiCastLabel.text = "Fireball";
             aiCastLabel.color = "#e76e55";
             aiCastLabel.fontSize = 18;
-            aiCastLabel.fontFamily = "'Cinzel', 'Georgia', serif";
+            aiCastLabel.fontFamily = "'FF9UI', 'Cinzel', serif";
             aiCastLabel.fontWeight = "700";
             aiCastLabel.shadowColor = "#000";
             aiCastLabel.shadowBlur = 0;  // Pixel shadow
@@ -6295,7 +6301,7 @@
             shadowGenerator.transparencyShadow = true;
 
             // STEPPED SHADOWS - Update every N frames for retro feel (not every frame)
-            shadowGenerator.getShadowMap().refreshRate = 6;  // Update every 6 frames (~10fps at 60fps)
+            shadowGenerator.getShadowMap().refreshRate = 1;  // Every frame - stepped shadows caused a crawling "heat-wave" shimmer
 
             // Store globally for debugging
             window.shadowGenerator = shadowGenerator;
@@ -9116,7 +9122,7 @@
             castleShadowGen.useExponentialShadowMap = false;
             castleShadowGen.usePoissonSampling = true;
             castleShadowGen.bias = 0.0001;
-            castleShadowGen.getShadowMap().refreshRate = 6;
+            castleShadowGen.getShadowMap().refreshRate = 1;  // Every frame - no crawling shimmer
 
             // Find all castle meshes and add them as shadow casters
             const castlePrefixes = ["playerBrick_", "aiBrick_", "playerButtress_", "aiButtress_",
@@ -11526,15 +11532,12 @@
                         proj.mesh.position.x += proj.velX * dt;
                         proj.mesh.position.z += proj.velZ * dt;
 
-                        // Update trail anchor based on distance (FPS-independent trails)
-                        if (proj.trailAnchor && proj.lastTrailSamplePos) {
-                            const dx = proj.mesh.position.x - proj.lastTrailSamplePos.x;
-                            const dz = proj.mesh.position.z - proj.lastTrailSamplePos.z;
-                            const dist = Math.sqrt(dx * dx + dz * dz);
-                            if (dist >= TRAIL_SAMPLE_SPACING) {
-                                proj.trailAnchor.position.copyFrom(proj.mesh.position);
-                                proj.lastTrailSamplePos.copyFrom(proj.mesh.position);
-                            }
+                        // Keep the trail anchor on the projectile every fixed step so the
+                        // TrailMesh ribbon stays continuous (distance-gating made it collapse
+                        // to zero length between samples -> trail vanished mid-flight).
+                        if (proj.trailAnchor) {
+                            proj.trailAnchor.position.copyFrom(proj.mesh.position);
+                            if (proj.lastTrailSamplePos) proj.lastTrailSamplePos.copyFrom(proj.mesh.position);
                         }
 
                         // Decrement collision grace time
