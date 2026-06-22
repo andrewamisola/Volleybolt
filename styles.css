@@ -1458,11 +1458,17 @@ body.flipped-view #aiCastBarContainer {
     pointer-events: none;
 }
 #loadingCard {
-    background: rgba(16,12,10,0.95);
-    background-image: url("textures/ui.png");
-    background-size: 520px 520px;
-    border: 5px solid #2f2620;
-    box-shadow: 0 0 0 3px rgba(0,0,0,0.6), 10px 10px 0 #000;
+    /* FF9 steel window (replaces the old stone ui.png texture) */
+    background:
+        repeating-linear-gradient(118deg, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px, rgba(0,0,0,0.05) 1px, rgba(0,0,0,0.05) 2px, transparent 2px, transparent 4px),
+        linear-gradient(180deg, rgba(88,100,122,0.96) 0%, rgba(44,54,72,0.97) 100%);
+    border: 2px solid #e0e6f0;
+    border-radius: 14px;
+    box-shadow:
+        inset 0 0 0 1px rgba(16,24,40,0.7),
+        inset 0 2px 4px rgba(255,255,255,0.18),
+        inset 0 -4px 6px rgba(0,0,0,0.35),
+        8px 8px 0 rgba(0,0,0,0.55);
     padding: 36px 48px 44px;
     display: flex;
     flex-direction: column;
@@ -1475,7 +1481,7 @@ body.flipped-view #aiCastBarContainer {
     font-size: 64px;
     font-weight: 800;
     color: var(--gold-light);
-    text-shadow: 4px 4px 0 #000, 0 0 12px rgba(0,0,0,0.6);
+    text-shadow: 3px 3px 0 #565656;   /* hard grey shadow */
     margin-bottom: 36px;
     letter-spacing: 6px;
 }
@@ -1484,31 +1490,31 @@ body.flipped-view #aiCastBarContainer {
 }
 #loadingBarContainer {
     width: 420px;
-    height: 26px;
-    background: rgba(16,12,10,0.9);
-    border: 4px solid #3a2f26;
-    box-shadow: 0 0 0 3px rgba(0,0,0,0.4), 6px 6px 0 #000;
-    background-image: url("textures/ui.png");
-    background-size: 320px 320px;
+    height: 24px;
+    background: rgba(20,28,42,0.9);
+    border: 2px solid #cfd6e4;
+    border-radius: 7px;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.5), 4px 4px 0 rgba(0,0,0,0.5);
     position: relative;
+    overflow: hidden;
 }
 #loadingBar {
     height: 100%;
     width: 0%;
-    background: linear-gradient(180deg, #d4a849 0%, #a67c00 50%, #c9a44a 100%);
+    background: linear-gradient(180deg, #bfe6ff 0%, #6db4e6 50%, #8fc8ee 100%);
     transition: width 0.15s steps(8);
 }
 #loadingText {
-    font-family: 'Rajdhani', sans-serif;
+    font-family: 'FF9UI', 'Cabin', sans-serif;
     font-size: 18px;
     font-weight: 700;
-    color: rgba(255, 245, 224, 0.9);
+    color: #eaf0ff;
     margin-top: 18px;
     letter-spacing: 2px;
-    text-shadow: 2px 2px 0 #000;
+    text-shadow: 2px 2px 0 rgba(8,12,26,0.85);
 }
 #loadingTip {
-    font-family: 'Crimson Text', serif;
+    font-family: 'FF9UI', 'Cabin', sans-serif;
     font-size: 14px;
     color: #cfc5b0;
     margin-top: 32px;
