@@ -6580,7 +6580,7 @@
                 blurKernelSize: 32,  // Soft blur
                 mainTextureFixedSize: 256  // Lower res = softer/cheaper
             });
-            glowLayer.intensity = 0.6;  // Subtle, not sci-fi
+            glowLayer.intensity = 0.72;  // Warm bloom on spells/emissive - storybook, not sci-fi
 
             // Warm color selector for fire projectiles
             glowLayer.customEmissiveColorSelector = (mesh, subMesh, material, result) => {
@@ -6597,7 +6597,7 @@
             let glowFlickerTime = 0;
             scene.onBeforeRenderObservable.add(() => {
                 glowFlickerTime += scene.getEngine().getDeltaTime() * 0.005;
-                glowLayer.intensity = 0.55 + Math.sin(glowFlickerTime * 3) * 0.08;
+                glowLayer.intensity = 0.65 + Math.sin(glowFlickerTime * 3) * 0.08;  // ~0.57-0.73 living-flame flicker
             });
 
             // Store globally so projectiles can add themselves
