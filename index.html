@@ -8949,9 +8949,9 @@
             const loadGateTextures = () => {
                 const wallTex = new BABYLON.Texture("textures/tower_stone.png", scene, false, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE,
                     () => {
-                        // Scale texture to cover wall (6 wide × 4.5 tall)
-                        wallTex.uScale = 2;  // Tile twice across width
-                        wallTex.vScale = 2;  // Tile twice across height
+                        // One stone-block pattern per gate brick (2x2 was too dense/busy)
+                        wallTex.uScale = 1;
+                        wallTex.vScale = 1;
                         playerGateMat.diffuseTexture = wallTex;
                         playerGateMat.diffuseColor = new BABYLON.Color3(1, 1, 1);
                         aiGateMat.diffuseTexture = wallTex.clone();
@@ -8960,18 +8960,16 @@
                         keystoneMat.diffuseTexture = wallTex.clone();
                         keystoneMat.diffuseColor = MCM.goldBright;
 
-                        // Create rotated texture for buttresses (90 degrees)
+                        // Buttresses are tall & narrow - tile vertically (no rotation) so the
+                        // stone reads at the same scale as the rest and isn't stretched.
                         const buttressTex = wallTex.clone();
-                        buttressTex.wAng = Math.PI / 2;  // Rotate 90 degrees
-                        buttressTex.uScale = 2;
-                        buttressTex.vScale = 2;
+                        buttressTex.uScale = 1;
+                        buttressTex.vScale = 3;
 
-                        // Apply to buttress materials
                         playerButtressMat = playerGateMat.clone("playerButtressMat");
                         playerButtressMat.diffuseTexture = buttressTex;
                         aiButtressMat = aiGateMat.clone("aiButtressMat");
                         aiButtressMat.diffuseTexture = buttressTex.clone();
-                        aiButtressMat.diffuseTexture.wAng = Math.PI / 2;
 
                         // Update existing buttress meshes
                         scene.meshes.forEach(m => {
