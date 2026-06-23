@@ -61,7 +61,7 @@ html, body {
     justify-content: center;
     align-items: center;
 }
-/* 4:3 CRT aspect ratio container */
+/* 16:9 game viewport (sized by fitGameViewport in JS; scale-to-fit, pillar/letterboxed) */
 #gameContainer {
     position: relative;
     background: #15121b;

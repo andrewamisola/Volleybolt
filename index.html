@@ -15,7 +15,7 @@
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css?v=20">
+    <link rel="stylesheet" href="styles.css?v=21">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -4195,27 +4195,35 @@
             const gameContainer = document.getElementById('gameContainer');
 
             // 4:3 CRT aspect ratio handler
-            function resize4to3() {
+            // Fit the largest 16:9 rectangle inside the window (scale-to-fit). Pillarbox on
+            // ultrawide, letterbox on portrait. Every device gets the same 16:9 framing, just
+            // at different pixel sizes. Also publishes a --ui-scale (container width / 1920ref)
+            // so the HUD can scale proportionally on any resolution.
+            const TARGET_RATIO = 16 / 9;
+            const UI_REF_WIDTH = 1920;  // HUD designed against this; scales from here
+            function fitGameViewport() {
                 const windowW = window.innerWidth;
                 const windowH = window.innerHeight;
-                const targetRatio = 4 / 3;
 
                 let width, height;
-                if (windowW / windowH > targetRatio) {
-                    // Window is wider than 4:3 - fit to height
+                if (windowW / windowH > TARGET_RATIO) {
+                    // Window wider than 16:9 -> fit to height (pillarbox)
                     height = windowH;
-                    width = height * targetRatio;
+                    width = height * TARGET_RATIO;
                 } else {
-                    // Window is taller than 4:3 - fit to width
+                    // Window taller/narrower than 16:9 -> fit to width (letterbox)
                     width = windowW;
-                    height = width / targetRatio;
+                    height = width / TARGET_RATIO;
                 }
 
                 gameContainer.style.width = width + 'px';
                 gameContainer.style.height = height + 'px';
+                // Proportional HUD scale factor for resolution-independent UI.
+                gameContainer.style.setProperty('--ui-scale', (width / UI_REF_WIDTH).toFixed(4));
             }
-            resize4to3();
-            window.addEventListener('resize', resize4to3);
+            window.fitGameViewport = fitGameViewport;
+            fitGameViewport();
+            window.addEventListener('resize', fitGameViewport);
 
             // Debug straightness grid (DOM, above the canvas). toggleDebugGrid() in console.
             window.toggleDebugGrid = () => {
@@ -4364,9 +4372,16 @@
             // Orthographic mode for true isometric look (no perspective distortion)
             camera.mode = BABYLON.Camera.ORTHOGRAPHIC_CAMERA;
 
-            // Ortho settings for different views
-            const MENU_ORTHO = { left: -6, right: 2, top: 4, bottom: -2 };  // Player on right side of frame
-            const GAME_ORTHO = { left: -18, right: 18, top: 12, bottom: -12 };
+            // Ortho settings for different views.
+            // The viewport is locked to 16:9 (see fitGameViewport), so the ortho frustum is
+            // ALSO locked to 16:9 -- this (a) stops the scene stretching (the old 36x24 frustum
+            // was 1.5:1 shown in a 4:3 canvas) and (b) guarantees every player sees the exact
+            // same world rectangle regardless of screen size/resolution (competitive fairness).
+            const GAME_ASPECT = 16 / 9;
+            const WORLD_HALF_HEIGHT = 12;                              // vertical world extent (zoom)
+            const WORLD_HALF_WIDTH = WORLD_HALF_HEIGHT * GAME_ASPECT;  // 21.333... -> 16:9
+            const MENU_ORTHO = { left: -7.3333, right: 3.3333, top: 4, bottom: -2 };  // 16:9, player framed right
+            const GAME_ORTHO = { left: -WORLD_HALF_WIDTH, right: WORLD_HALF_WIDTH, top: WORLD_HALF_HEIGHT, bottom: -WORLD_HALF_HEIGHT };
 
             // Start with menu ortho bounds
             camera.orthoLeft = MENU_ORTHO.left;
@@ -13220,7 +13235,7 @@
             engine.runRenderLoop(window.gameRenderLoop);
 
             window.addEventListener('resize', () => {
-                resize4to3();
+                fitGameViewport();
                 engine.resize();
                 applyRetroResolution();
             });
