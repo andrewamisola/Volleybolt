@@ -989,8 +989,8 @@ body.flipped-view #aiCastBarContainer {
 /* Parry Button - Centered above ability bar */
 #parryButton {
     position: absolute;
-    bottom: 50px;            /* just below the FF9 command menu (bottom-left) */
-    left: 40px;
+    bottom: 90px;            /* aligned with the command menu's bottom */
+    left: 304px;             /* to the RIGHT of the spells window (clears the overlap) */
     transform: none;
     display: none;  /* Hidden until game starts */
     width: auto;
