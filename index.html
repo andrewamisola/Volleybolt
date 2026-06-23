@@ -5980,6 +5980,36 @@
             }
 
             // ============================================================
+            // PS1 FLAT (GOURAUD-ish) LIGHTING -- kill specular highlights
+            // The PS1 lit per-vertex with no specular. True per-vertex Gouraud isn't
+            // injectable into Babylon's StandardMaterial, but removing the specular
+            // highlight (with the flat-shaded low-poly geometry already in use) gives the
+            // matte, highlight-free PS1 look. Hook onNewMaterialAddedObservable so it also
+            // catches async-loaded materials (characters etc).
+            // ============================================================
+            window.ps1FlatLighting = true;
+            const applyFlatLighting = (mat) => {
+                if (!window.ps1FlatLighting || !mat) return;
+                if (mat instanceof BABYLON.StandardMaterial) {
+                    if (!mat._ps1SpecSaved) { mat._ps1PrevSpecular = mat.specularColor.clone(); mat._ps1SpecSaved = true; }
+                    mat.specularColor = BABYLON.Color3.Black();
+                }
+            };
+            scene.onNewMaterialAddedObservable.add(applyFlatLighting);
+            scene.materials.forEach(applyFlatLighting);
+            window.setFlatLighting = (on) => {
+                window.ps1FlatLighting = on;
+                scene.materials.forEach(mat => {
+                    if (mat instanceof BABYLON.StandardMaterial) {
+                        if (on) mat.specularColor = BABYLON.Color3.Black();
+                        else if (mat._ps1PrevSpecular) mat.specularColor = mat._ps1PrevSpecular.clone();
+                    }
+                });
+                console.log("PS1 flat lighting: " + (on ? "ON" : "OFF"));
+            };
+            console.log("PS1 flat lighting (specular kill) enabled");
+
+            // ============================================================
             // PS1-STYLE VERTEX WOBBLE (Vertex Snapping)
             // Simulates the PlayStation 1's lack of sub-pixel precision
             // Vertices "snap" to a low-resolution grid, causing jitter/wobble
@@ -6129,7 +6159,7 @@
             );
 
             affineWarpPostProcess.onApply = (effect) => {
-                effect.setFloat("warpStrength", 0.15);  // Subtle warp
+                effect.setFloat("warpStrength", window.ps1AffineStrength !== undefined ? window.ps1AffineStrength : 0.08);
                 effect.setVector2("screenSize", new BABYLON.Vector2(
                     engine.getRenderWidth(),
                     engine.getRenderHeight()
@@ -6137,10 +6167,17 @@
                 effect.setTexture("depthSampler", depthRenderer.getDepthMap());
             };
 
-            // Disable by default (can be toggled for testing)
-            affineWarpPostProcess.enabled = false;
+            // Screen-space approximation of PS1 affine texture swim (depth-weighted warp).
+            // True per-polygon affine isn't injectable into Babylon's StandardMaterial, so this
+            // is a subtle stand-in. Enabled by default; tune via setPS1Affine(enabled, strength).
+            affineWarpPostProcess.enabled = true;
             window.affineWarpPostProcess = affineWarpPostProcess;
-            console.log("PS1 affine texture warp shader loaded (disabled by default)");
+            window.setPS1Affine = (enabled, strength) => {
+                if (strength !== undefined) window.ps1AffineStrength = strength;
+                affineWarpPostProcess.enabled = enabled;
+                console.log("PS1 affine warp: " + (enabled ? ("ON strength=" + (window.ps1AffineStrength!==undefined?window.ps1AffineStrength:0.08)) : "OFF"));
+            };
+            console.log("PS1 affine texture warp loaded (enabled, screen-space approximation)");
 
             // ============================================================
             // RETRO PIXELATION POST-PROCESSING - DISABLED
