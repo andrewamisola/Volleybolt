@@ -9168,7 +9168,14 @@
                 const keep = BABYLON.MeshBuilder.CreateBox((isPlayer ? "playerKeep" : "aiKeep"),
                     { width: keepS, height: keepH, depth: keepS }, scene);
                 keep.position.set(keepX, keepH / 2, 0);
-                keep.material = mat;                    // tower stone texture
+                // Dedicated material that tiles the stone properly so it isn't stretched
+                // vertically over the tall keep faces.
+                const keepTex = new BABYLON.Texture("textures/tower_stone.png", scene, false, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
+                keepTex.uScale = 2; keepTex.vScale = 5;
+                const keepMat = new BABYLON.StandardMaterial((isPlayer ? "pKeepMat" : "aKeepMat"), scene);
+                keepMat.diffuseTexture = keepTex;
+                keepMat.specularColor = BABYLON.Color3.Black();
+                keep.material = keepMat;
                 keep.receiveShadows = true;
                 keep.enableEdgesRendering(); keep.edgesWidth = 2.0; keep.edgesColor = edgeBlack();
                 if (window.shadowGenerator) window.shadowGenerator.addShadowCaster(keep);
@@ -9177,7 +9184,12 @@
                 const parapet = BABYLON.MeshBuilder.CreateBox((isPlayer ? "playerParapet" : "aiParapet"),
                     { width: keepS + 0.5, height: 0.6, depth: keepS + 0.5 }, scene);
                 parapet.position.set(keepX, keepH, 0);
-                parapet.material = mat;
+                const parapetTex = new BABYLON.Texture("textures/tower_stone.png", scene, false, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
+                parapetTex.uScale = 3; parapetTex.vScale = 1;
+                const parapetMat = new BABYLON.StandardMaterial((isPlayer ? "pParaMat" : "aParaMat"), scene);
+                parapetMat.diffuseTexture = parapetTex;
+                parapetMat.specularColor = BABYLON.Color3.Black();
+                parapet.material = parapetMat;
                 parapet.receiveShadows = true;
                 parapet.enableEdgesRendering(); parapet.edgesWidth = 2.0; parapet.edgesColor = edgeBlack();
 
