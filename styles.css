@@ -61,11 +61,17 @@ html, body {
     justify-content: center;
     align-items: center;
 }
-/* 16:9 game viewport (sized by fitGameViewport in JS; scale-to-fit, pillar/letterboxed) */
+/* 16:9 game viewport (sized by fitGameViewport in JS; scale-to-fit, pillar/letterboxed).
+   Explicitly centered in the window via absolute + translate so it never depends on body
+   flexbox (which can drift to top-left as more elements are added). The dusk body background
+   shows through as the letterbox/pillarbox bars. Still a positioning context for the HUD. */
 #gameContainer {
-    position: relative;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     background: #15121b;
-    /* Calculated by JS to maintain 4:3 */
+    /* width/height set by fitGameViewport() to the largest 16:9 rect that fits the window */
     border-radius: 0;            /* squared off - no CRT screen curve */
     overflow: hidden;
     box-shadow: none;            /* no CRT edge-glow vignette */
