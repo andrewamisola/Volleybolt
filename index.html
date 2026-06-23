@@ -9221,6 +9221,14 @@
             createGate(true);   // Player gate
             createGate(false);  // AI gate
 
+            // Remove the hard black outline (enableEdgesRendering) from the castle pieces -
+            // it reads as a harsh cartoon edge on the towers.
+            scene.meshes.forEach(m => {
+                if (m.name && /(Brick|Buttress|Merlon|Arch|Foundation|Keep|Parapet|Roof|KM)/.test(m.name) && m.disableEdgesRendering) {
+                    m.disableEdgesRendering();
+                }
+            });
+
             // === CASTLE SELF-SHADOWING ===
             // Create a separate light & shadow generator just for castle self-shadows
             // This way castle shadows don't appear on the floor
