@@ -503,6 +503,20 @@
         let projectiles = [];         // Array of active projectiles
         let scene = null;             // Store scene reference globally
 
+        // The reactive fog plane renders in group 1 (on top of the default group 0),
+        // so it draws over transparent projectile trails and washes them out wherever
+        // the swirl is dense. Lift every projectile visual into a group above the fog so
+        // trails/flames stay crisp. Fog still reacts to projectiles via its shader
+        // (fogCuts + projLights), which is independent of render order.
+        const PROJECTILE_RENDER_GROUP = 2;
+        function liftProjectileAboveFog(proj) {
+            if (!proj) return;
+            ['mesh', 'glow', 'flash', 'trail', 'particles', 'outerFlames', 'sparkles'].forEach(k => {
+                const obj = proj[k];
+                if (obj && obj.renderingGroupId !== undefined) obj.renderingGroupId = PROJECTILE_RENDER_GROUP;
+            });
+        }
+
         // ============================================================
         // P2P MULTIPLAYER - Rollback Netcode
         // ============================================================
@@ -9654,6 +9668,7 @@
                     applyUpgradesToProjectile(proj, 'fireball', owner);
                 }
 
+                liftProjectileAboveFog(proj);
                 projectiles.push(proj);
                 return proj;
             };
@@ -9823,6 +9838,7 @@
                 // Attach frostbolt looping sound
                 proj.loopSound = createLoopingSound('frostboltLoop', startX, 0.1);
 
+                liftProjectileAboveFog(proj);
                 projectiles.push(proj);
                 return proj;
             };
@@ -10023,6 +10039,7 @@
                 // Gravity sphere flyby sound
                 proj.loopSound = createLoopingSound('gravityLoop', startX, 0.15);
 
+                liftProjectileAboveFog(proj);
                 projectiles.push(proj);
                 return proj;
             };
