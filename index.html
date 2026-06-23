@@ -5915,6 +5915,71 @@
             console.log("Using HTML screens with CSS CRT effects");
 
             // ============================================================
+            // PS1 VERTEX SNAPPING (authentic - clip-space rounding in the vertex shader)
+            // The PS1 had no sub-pixel precision: it rounded transformed vertices to an
+            // integer grid, producing the iconic "swimming" geometry. We inject that into
+            // every Standard/PBR material's vertex shader via a material plugin, so the
+            // GEOMETRY wobbles (not a screen-space fake). Registered before scene geometry
+            // is built so all later materials pick it up.
+            // ============================================================
+            window.ps1SnapGrid = 150.0;   // grid cells across NDC; lower = chunkier wobble
+            try {
+                class PS1SnapPluginMaterial extends BABYLON.MaterialPluginBase {
+                    constructor(material) {
+                        super(material, "PS1Snap", 200, { PS1SNAP: true });
+                        this._isEnabled = true;       // on by default for the PS1 look
+                        this._enable(true);
+                    }
+                    get isEnabled() { return this._isEnabled; }
+                    set isEnabled(enabled) {
+                        if (this._isEnabled === enabled) return;
+                        this._isEnabled = enabled;
+                        this.markAllDefinesAsDirty();
+                        this._enable(enabled);
+                    }
+                    prepareDefines(defines) { defines.PS1SNAP = this._isEnabled; }
+                    getClassName() { return "PS1SnapPluginMaterial"; }
+                    getUniforms() {
+                        return {
+                            ubo: [{ name: "ps1GridSize", size: 1, type: "float" }],
+                            vertex: "#ifdef PS1SNAP\nuniform float ps1GridSize;\n#endif"
+                        };
+                    }
+                    bindForSubMesh(uniformBuffer) {
+                        if (this._isEnabled) uniformBuffer.updateFloat("ps1GridSize", window.ps1SnapGrid || 150.0);
+                    }
+                    getCustomCode(shaderType) {
+                        if (shaderType !== "vertex") return null;
+                        return {
+                            "CUSTOM_VERTEX_MAIN_END": `
+                            #ifdef PS1SNAP
+                                vec4 ps1clip = gl_Position;
+                                float ps1w = ps1clip.w;
+                                ps1clip.xyz /= ps1w;
+                                ps1clip.xy = floor(ps1clip.xy * ps1GridSize) / ps1GridSize;
+                                ps1clip.xyz *= ps1w;
+                                gl_Position = ps1clip;
+                            #endif
+                            `
+                        };
+                    }
+                }
+                BABYLON.RegisterMaterialPlugin("PS1Snap", (material) => {
+                    material.ps1Snap = new PS1SnapPluginMaterial(material);
+                    return material.ps1Snap;
+                });
+                // Global toggle (recompiles affected materials).
+                window.setPS1Snap = (enabled, grid) => {
+                    if (grid !== undefined) window.ps1SnapGrid = grid;
+                    scene.materials.forEach(m => { if (m.ps1Snap) m.ps1Snap.isEnabled = enabled; });
+                    console.log("PS1 vertex snap: " + (enabled ? ("ON grid=" + window.ps1SnapGrid) : "OFF"));
+                };
+                console.log("PS1 vertex snap material plugin registered (enabled, grid " + window.ps1SnapGrid + ")");
+            } catch (e) {
+                console.warn("PS1 vertex snap plugin failed to register:", e);
+            }
+
+            // ============================================================
             // PS1-STYLE VERTEX WOBBLE (Vertex Snapping)
             // Simulates the PlayStation 1's lack of sub-pixel precision
             // Vertices "snap" to a low-resolution grid, causing jitter/wobble
