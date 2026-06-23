@@ -1019,9 +1019,16 @@ body.flipped-view #aiCastBarContainer {
    custom positioning or pill styling; it just flows as the last slot, like the spells.
    The old .parry-hex / .parry-icon / .parry-key pill rules are gone. */
 #parryButton { cursor: pointer; }
-/* Parry has no mana orbs to fill the row, so its key badge was stretching to fill the
-   width. Pin it to content size and right-align it so it matches the 1/2/3 key badges. */
-#parryButton .ability-key { flex: 0 0 auto; margin-left: auto; }
+/* "Space" is wider than 1/2/3, so flex layout left it misaligned/overlapping. Pin it
+   absolutely to the slot's right edge (9px in = where the 1/2/3 keys land), vertically
+   centered, so it lines up cleanly in the key column. */
+#parryButton .ability-key {
+    position: absolute;
+    right: 9px;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+}
 /* Keep the parry sweep element hidden as before (cooldown reads via the .on-cooldown state). */
 #parrySweep { display: none !important; }
 
