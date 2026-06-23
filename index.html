@@ -6974,18 +6974,25 @@
                     d.position.y = 0.09;               // just above the lane decal (y=0.06)
                     return d;
                 };
-                const blobL = makeBlob("blobShadowL");
-                const blobR = makeBlob("blobShadowR");
+                // One blob per possible combatant paddle: back-left, back-right, and the two
+                // doubles front paddles (created later). Each blob shows only when its paddle
+                // exists and is visible, so singles shows 2 and doubles shows 4. These are the
+                // characters' ground shadow now that the sun no longer casts dynamic shadows.
+                const blobs = [makeBlob("blobShadow0"), makeBlob("blobShadow1"), makeBlob("blobShadow2"), makeBlob("blobShadow3")];
 
                 scene.onBeforeRenderObservable.add(() => {
                     const inGame = (typeof gameState === 'undefined') || (gameState !== 'menu' && gameState !== 'lobby');
-                    blobL.isVisible = inGame && !!playerPaddle;
-                    blobR.isVisible = inGame && !!aiPaddle;
-                    if (playerPaddle) { blobL.position.x = playerPaddle.position.x; blobL.position.z = playerPaddle.position.z; }
-                    if (aiPaddle) { blobR.position.x = aiPaddle.position.x; blobR.position.z = aiPaddle.position.z; }
+                    // Resolved each frame because the front paddles are built after this IIFE.
+                    const paddles = [playerPaddle, aiPaddle, playerFrontPaddle, aiFrontPaddle];
+                    for (let i = 0; i < blobs.length; i++) {
+                        const p = paddles[i];
+                        blobs[i].isVisible = inGame && !!p && p.visibility > 0;
+                        if (p) { blobs[i].position.x = p.position.x; blobs[i].position.z = p.position.z; }
+                    }
                 });
-                window.blobShadowL = blobL;
-                window.blobShadowR = blobR;
+                window.blobShadows = blobs;
+                window.blobShadowL = blobs[0];
+                window.blobShadowR = blobs[1];
             })();
 
             // Create front paddles for doubles mode (hidden by default)
@@ -9285,6 +9292,50 @@
                     m.disableEdgesRendering();
                 }
             });
+
+            // === BAKED TOWER GROUND SHADOWS (replaces the sun's dynamic tower shadow) ===
+            // Soft dark patch grounding each tower, offset toward the sun's shadow direction
+            // (light is at +X,-Z high, so shadows fall toward -X,+Z).
+            (function buildTowerShadows() {
+                const SZ = 128;
+                const tex = new BABYLON.DynamicTexture("towerShadowTex", { width: SZ, height: SZ }, scene, false);
+                const c = tex.getContext();
+                const g = c.createRadialGradient(SZ/2, SZ/2, 0, SZ/2, SZ/2, SZ/2);
+                g.addColorStop(0.0, "rgba(0,0,0,0.75)");
+                g.addColorStop(0.6, "rgba(0,0,0,0.4)");
+                g.addColorStop(1.0, "rgba(0,0,0,0)");
+                c.clearRect(0, 0, SZ, SZ);
+                c.fillStyle = g; c.fillRect(0, 0, SZ, SZ);
+                tex.hasAlpha = true; tex.update();
+                const mat = new BABYLON.StandardMaterial("towerShadowMat", scene);
+                mat.diffuseColor = BABYLON.Color3.Black();
+                mat.specularColor = BABYLON.Color3.Black();
+                mat.emissiveColor = BABYLON.Color3.Black();
+                mat.disableLighting = true;
+                mat.diffuseTexture = tex;
+                mat.useAlphaFromDiffuseTexture = true;
+                mat.alpha = 0.55;
+                mat.backFaceCulling = false;
+                mat.zOffset = -2;
+                [-1, 1].forEach(xSign => {
+                    const baseX = xSign * towerX;
+                    const patch = BABYLON.MeshBuilder.CreateGround("towerShadow", { width: 5.5, height: 9 }, scene);
+                    patch.material = mat;
+                    patch.isPickable = false;
+                    patch.receiveShadows = false;
+                    // Offset toward -X,+Z (shadow direction); stays near the tower footprint.
+                    patch.position.set(baseX - 1.4, 0.08, 1.0);
+                    patch.renderingGroupId = 0;
+                });
+            })();
+
+            // === RETIRE THE SUN'S DYNAMIC SHADOW (full baked-shadow pass) ===
+            // The sun keeps lighting the scene, but no longer renders a dynamic shadow map.
+            // Towers use the baked patches above, characters use blob shadows, projectiles use
+            // their own blob shadows. The separate castleLight still does castle self-shadowing.
+            if (window.shadowGenerator && sunLight) {
+                sunLight.shadowEnabled = false;
+            }
 
             // === CASTLE SELF-SHADOWING ===
             // Create a separate light & shadow generator just for castle self-shadows
