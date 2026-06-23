@@ -15,7 +15,7 @@
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css?v=31">
+    <link rel="stylesheet" href="styles.css?v=32">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -209,11 +209,6 @@
         <div id="stageTransitionText"></div>
     </div>
 
-    <div id="volumeControl">
-        <span id="volumeIcon">🔊</span>
-        <input type="range" id="volumeSlider" min="0" max="100" value="50">
-    </div>
-
     <!-- Player Cast Bar -->
     <div id="castBarContainer">
         <div id="castBarLabel">Fireball</div>
@@ -247,6 +242,11 @@
     <!-- All in-game DOM HUD lives in one scale layer: authored at 1920x1080, scaled as a
          single unit by --ui-scale so it's "baked into" the game render. -->
     <div id="hudScaleLayer">
+    <!-- Volume control: inside the scale layer so it scales with the game, not the browser -->
+    <div id="volumeControl">
+        <span id="volumeIcon">🔊</span>
+        <input type="range" id="volumeSlider" min="0" max="100" value="50">
+    </div>
     <!-- MOBA-style Ability Bar -->
     <div id="abilityBar">
         <div id="fireballSlot" class="ability-slot ready" data-ability="fireball">
@@ -17580,7 +17580,9 @@
             el.className = 'combat-text' + (type ? ' ' + type : '');
             el.textContent = text.toUpperCase();
             el.style.opacity = '1';
-            document.getElementById('gameContainer').appendChild(el);
+            // Append to the HUD scale layer so the text scales with the game (1920x1080 ref),
+            // not the browser. Positioning below is in layer-reference coords.
+            (document.getElementById('hudScaleLayer') || document.getElementById('gameContainer')).appendChild(el);
             return el;
         }
 
@@ -17660,10 +17662,10 @@
                     scene.activeCamera.viewport.toGlobal(renderWidth, renderHeight)
                 );
 
-                // Scale to canvas size and position HTML element
+                // Position in the 1920x1080 HUD-layer reference (scales with the game).
                 if (doStep && item.el) {
-                    const scaleX = canvasRect.width / renderWidth;
-                    const scaleY = canvasRect.height / renderHeight;
+                    const scaleX = 1920 / renderWidth;
+                    const scaleY = 1080 / renderHeight;
                     item.el.style.left = Math.floor(screenPos.x * scaleX) + "px";
                     item.el.style.top = Math.floor(screenPos.y * scaleY) + "px";
                     item.el.style.transform = "translate(-50%, -50%)";
@@ -17687,8 +17689,9 @@
             const canvasRect = canvas.getBoundingClientRect();
             const renderWidth = scene.getEngine().getRenderWidth();
             const renderHeight = scene.getEngine().getRenderHeight();
-            const scaleX = canvasRect.width / renderWidth;
-            const scaleY = canvasRect.height / renderHeight;
+            // Position in the 1920x1080 HUD-layer reference (scales with the game, not browser).
+            const scaleX = 1920 / renderWidth;
+            const scaleY = 1080 / renderHeight;
 
             for (const side of ['player', 'ai']) {
                 const paddle = side === 'player' ? playerPaddle : aiPaddle;

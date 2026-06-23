@@ -382,6 +382,7 @@ html, body {
     position: absolute;
     bottom: 15px;
     right: 15px;
+    pointer-events: auto;   /* HUD scale layer is pointer-events:none; the slider needs clicks */
     display: flex;
     align-items: center;
     gap: 8px;
