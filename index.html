@@ -2,6 +2,11 @@
 <html>
 <head>
     <meta charset="UTF-8">
+    <!-- Always load the freshest build (the browser was serving a cached copy with
+         old post-processes still enabled, which made disabled effects appear to persist). -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Volleybolt</title>
     <!-- Preload custom font -->
     <link rel="preload" href="fonts/esthetique.otf" as="font" type="font/otf" crossorigin>
