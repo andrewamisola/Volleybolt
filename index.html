@@ -509,12 +509,55 @@
         // trails/flames stay crisp. Fog still reacts to projectiles via its shader
         // (fogCuts + projLights), which is independent of render order.
         const PROJECTILE_RENDER_GROUP = 2;
-        function liftProjectileAboveFog(proj) {
+
+        // Shared soft-blob material for projectile ground shadows (lazy: scene must exist).
+        let _projBlobMat = null;
+        function getProjectileBlobMaterial() {
+            if (_projBlobMat) return _projBlobMat;
+            const SZ = 64;
+            const tex = new BABYLON.DynamicTexture("projBlobTex", { width: SZ, height: SZ }, scene, false);
+            const c = tex.getContext();
+            const g = c.createRadialGradient(SZ/2, SZ/2, 0, SZ/2, SZ/2, SZ/2);
+            g.addColorStop(0.0, "rgba(0,0,0,0.8)");
+            g.addColorStop(0.55, "rgba(0,0,0,0.35)");
+            g.addColorStop(1.0, "rgba(0,0,0,0)");
+            c.clearRect(0, 0, SZ, SZ);
+            c.fillStyle = g;
+            c.fillRect(0, 0, SZ, SZ);
+            tex.hasAlpha = true;
+            tex.update();
+            const m = new BABYLON.StandardMaterial("projBlobMat", scene);
+            m.diffuseColor = BABYLON.Color3.Black();
+            m.specularColor = BABYLON.Color3.Black();
+            m.emissiveColor = BABYLON.Color3.Black();
+            m.disableLighting = true;
+            m.diffuseTexture = tex;
+            m.useAlphaFromDiffuseTexture = true;
+            m.alpha = 0.5;
+            m.backFaceCulling = false;
+            m.zOffset = -3;
+            _projBlobMat = m;
+            return m;
+        }
+
+        // Finalize a projectile's scene presence: lift its visuals above the reactive fog
+        // (group 1) so trails stay crisp, and attach a soft blob shadow on the ground that
+        // follows it (replacing the dynamic sun shadow cast).
+        function setupProjectileSceneFx(proj) {
             if (!proj) return;
             ['mesh', 'glow', 'flash', 'trail', 'particles', 'outerFlames', 'sparkles'].forEach(k => {
                 const obj = proj[k];
                 if (obj && obj.renderingGroupId !== undefined) obj.renderingGroupId = PROJECTILE_RENDER_GROUP;
             });
+            // Magma bombs are smaller/lower; scale the blob accordingly.
+            const blobSize = proj.isMagmaBomb ? 0.7 : 1.0;
+            const blob = BABYLON.MeshBuilder.CreateGround("projBlob", { width: blobSize, height: blobSize }, scene);
+            blob.material = getProjectileBlobMaterial();
+            blob.isPickable = false;
+            blob.receiveShadows = false;
+            blob.renderingGroupId = 0;  // on the ground, under the fog is fine (it's a dark shadow)
+            if (proj.mesh) { blob.position.set(proj.mesh.position.x, 0.1, proj.mesh.position.z); }
+            proj.blobShadow = blob;
         }
 
         // ============================================================
@@ -9502,7 +9545,9 @@
                 const startY = options.startY !== undefined ? options.startY : (isSplitProjectile ? 0.35 : 0.7);
                 proj.mesh.position.set(startX, startY, startZ);
                 proj.mesh.rotationQuaternion = BABYLON.Quaternion.Identity();
-                shadowGenerator.addShadowCaster(proj.mesh);
+                // Projectiles no longer cast into the dynamic sun shadow map -- they use a
+                // soft blob shadow instead (see setupProjectileSceneFx). Reduces the fireball's
+                // per-frame interaction load and is part of the full baked-shadow pass.
 
                 // Magma bombs get darker, cooler look and are smaller
                 if (proj.isMagmaBomb) {
@@ -9668,7 +9713,7 @@
                     applyUpgradesToProjectile(proj, 'fireball', owner);
                 }
 
-                liftProjectileAboveFog(proj);
+                setupProjectileSceneFx(proj);
                 projectiles.push(proj);
                 return proj;
             };
@@ -9715,7 +9760,9 @@
                 proj.mesh.position.set(startX, 0.7, startZ);
                 proj.mesh.material = frostCoreMat;
                 proj.mesh.rotationQuaternion = BABYLON.Quaternion.Identity();
-                shadowGenerator.addShadowCaster(proj.mesh);
+                // Projectiles no longer cast into the dynamic sun shadow map -- they use a
+                // soft blob shadow instead (see setupProjectileSceneFx). Reduces the fireball's
+                // per-frame interaction load and is part of the full baked-shadow pass.
 
                 // Add to glow layer for D2-style aura
                 if (glow) {
@@ -9838,7 +9885,7 @@
                 // Attach frostbolt looping sound
                 proj.loopSound = createLoopingSound('frostboltLoop', startX, 0.1);
 
-                liftProjectileAboveFog(proj);
+                setupProjectileSceneFx(proj);
                 projectiles.push(proj);
                 return proj;
             };
@@ -9946,7 +9993,9 @@
                 proj.mesh.position.set(startX, 0.7, startZ);
                 proj.mesh.material = gravitySphereMat;
                 proj.mesh.rotationQuaternion = BABYLON.Quaternion.Identity();
-                shadowGenerator.addShadowCaster(proj.mesh);
+                // Projectiles no longer cast into the dynamic sun shadow map -- they use a
+                // soft blob shadow instead (see setupProjectileSceneFx). Reduces the fireball's
+                // per-frame interaction load and is part of the full baked-shadow pass.
 
                 // No hard disc mesh - just particles for soft feathered look
                 proj.ring = null;
@@ -10039,7 +10088,7 @@
                 // Gravity sphere flyby sound
                 proj.loopSound = createLoopingSound('gravityLoop', startX, 0.15);
 
-                liftProjectileAboveFog(proj);
+                setupProjectileSceneFx(proj);
                 projectiles.push(proj);
                 return proj;
             };
@@ -10110,6 +10159,7 @@
                 if (proj.flash) proj.flash.dispose();
                 if (proj.flashMat) proj.flashMat.dispose();
                 if (proj.trailAnchor) proj.trailAnchor.dispose();  // Distance-based trail anchor
+                if (proj.blobShadow) proj.blobShadow.dispose();    // Soft ground blob shadow
 
                 // Clean up spark-specific visuals (zigzag trail segments and arcs)
                 if (proj.trailSegments) {
@@ -11698,6 +11748,12 @@
                                 proj.trailAnchor.computeWorldMatrix(true);
                                 proj.trail.update();
                             }
+                        }
+
+                        // Soft blob shadow tracks the projectile on the ground
+                        if (proj.blobShadow && !proj.blobShadow.isDisposed()) {
+                            proj.blobShadow.position.x = proj.mesh.position.x;
+                            proj.blobShadow.position.z = proj.mesh.position.z;
                         }
 
                         // Decrement collision grace time
@@ -16967,6 +17023,8 @@
             if (proj.mesh) proj.mesh.dispose();
             if (proj.glow) proj.glow.dispose();
             if (proj.trail) proj.trail.dispose();
+            if (proj.trailAnchor) proj.trailAnchor.dispose();
+            if (proj.blobShadow) proj.blobShadow.dispose();
             if (proj.light) proj.light.dispose();
             if (proj.particles) proj.particles.dispose();
             if (proj.outerFlames) proj.outerFlames.dispose();
