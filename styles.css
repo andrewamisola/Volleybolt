@@ -1994,11 +1994,11 @@ body.flipped-view #aiCastBarContainer {
    surfaces get the identical scrim / title / button treatment.
    ============================================================ */
 .arcane-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
+    /* Fill the centered 16:9 #gameContainer (its parent), NOT the whole window.
+       Was position:fixed 100vw/100vh, which pinned menus to the window and made them
+       sprawl past the centered viewport on non-16:9 screens (the "cut off" UI). */
+    position: absolute;
+    inset: 0;
     pointer-events: none;
     z-index: 200;
     display: none;
