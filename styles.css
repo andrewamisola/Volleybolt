@@ -168,7 +168,7 @@ html, body {
     color: #c9a44a;
     text-shadow: 2px 2px 0px #565656;
     letter-spacing: 4px;
-    text-transform: uppercase;
+    text-transform: none;   /* FF9: first-letter capitalization, no all-caps */
 }
 #playerTowerLabel {
     top: 20px;
@@ -203,7 +203,7 @@ html, body {
     color: #f0c050;
     text-shadow: 4px 4px 0px #000, 5px 5px 0px #000;
     letter-spacing: 6px;
-    text-transform: uppercase;
+    text-transform: none;   /* FF9: first-letter capitalization, no all-caps */
     opacity: 0;
     transition: opacity 0.3s ease;
 }
@@ -230,7 +230,7 @@ html, body {
     pointer-events: none;
     z-index: 1001;
     white-space: nowrap;
-    text-transform: uppercase;
+    text-transform: none;   /* FF9: first-letter capitalization, no all-caps */
     letter-spacing: 1px;
 }
 .combat-text.fire { color: #ffa040; }
@@ -353,7 +353,7 @@ html, body {
     pointer-events: none;
     z-index: 1001;
     white-space: nowrap;
-    text-transform: uppercase;
+    text-transform: none;   /* FF9: first-letter capitalization, no all-caps */
     letter-spacing: 1px;
     transform: translate(-50%, -50%);
 }
@@ -1734,7 +1734,7 @@ body.flipped-view #aiCastBarContainer {
                  0 0 60px rgba(212, 168, 73, 0.3),
                  3px 3px 0 #000;
     letter-spacing: 6px;
-    text-transform: uppercase;
+    text-transform: none;   /* FF9: first-letter capitalization, no all-caps */
     opacity: 0;
     transition: opacity 0.5s ease;
 }
@@ -1913,7 +1913,7 @@ body.flipped-view #aiCastBarContainer {
     border-bottom-color: #6a4a3a;
     border-right-color: #6a4a3a;
     padding: 4px 8px;
-    text-transform: uppercase;
+    text-transform: none;   /* FF9: first-letter capitalization, no all-caps */
     outline: none;
     text-shadow: 2px 2px 0 #000;
 }
@@ -2091,7 +2091,7 @@ body.flipped-view #aiCastBarContainer {
     font-family: 'Rajdhani', 'Cinzel', serif;
     font-size: 16px;
     letter-spacing: 7px;
-    text-transform: uppercase;
+    text-transform: none;   /* FF9: first-letter capitalization, no all-caps */
     color: var(--parchment-dark);
     text-shadow: 1px 1px 0 #000;
     padding-left: 3px;

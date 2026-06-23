@@ -15,7 +15,7 @@
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css?v=32">
+    <link rel="stylesheet" href="styles.css?v=33">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -47,15 +47,15 @@
             <div id="loadingBarContainer">
                 <div id="loadingBar"></div>
             </div>
-            <div id="loadingText">LOADING...</div>
-            <div id="loadingTip">BLOCK SPELLS WITH YOUR PADDLE<br>PARRY TO SEND THEM BACK FASTER</div>
+            <div id="loadingText">Loading...</div>
+            <div id="loadingTip">Block spells with your paddle<br>Parry to send them back faster</div>
         </div>
     </div>
 
     <!-- Multiplayer Lobby Overlay (DOM-owned) -->
     <div id="multiplayerLobby" class="crt-screen" style="display: none;">
         <div class="lobby-panel">
-            <h1 class="lobby-title">MULTIPLAYER</h1>
+            <h1 class="lobby-title">Multiplayer</h1>
             <p class="lobby-subtitle" id="lobbySubtitle">Challenge a friend to battle!</p>
 
             <!-- Mode select -->
@@ -113,7 +113,7 @@
             <div id="domMenuTitleWrap" class="arcane-title-wrap">
                 <h1 id="domMenuTitle" class="arcane-title" data-text="VOLLEYBOLT">VOLLEYBOLT</h1>
                 <div id="domMenuDivider" class="arcane-divider"></div>
-                <div id="domMenuTagline" class="arcane-tagline">ARCANE VOLLEY COMBAT</div>
+                <div id="domMenuTagline" class="arcane-tagline">Arcane Volley Combat</div>
             </div>
             <div id="domMenuButtons" class="arcane-buttons">
                 <button class="game-btn menu-btn is-primary" id="domBtnStartBattle">
@@ -141,9 +141,9 @@
         </div>
         <div class="arcane-content">
             <div class="arcane-title-wrap">
-                <h1 class="arcane-title" data-text="SELECT MODE">SELECT MODE</h1>
+                <h1 class="arcane-title" data-text="Select Mode">Select Mode</h1>
                 <div class="arcane-divider"></div>
-                <div class="arcane-tagline">CHOOSE YOUR BATTLE</div>
+                <div class="arcane-tagline">Choose Your Battle</div>
             </div>
             <div class="arcane-buttons">
                 <button class="game-btn menu-btn is-primary" id="domBtnDuel">
@@ -176,8 +176,8 @@
     <!-- HTML Text Overlay - HIDDEN: Now using Babylon.js GUI for CRT effects -->
     <div id="htmlOverlay" style="display: none;">
         <!-- Tower Labels -->
-        <div id="playerTowerLabel" class="overlay-text tower-label">BLUE TOWER</div>
-        <div id="aiTowerLabel" class="overlay-text tower-label">RED TOWER</div>
+        <div id="playerTowerLabel" class="overlay-text tower-label">Blue Tower</div>
+        <div id="aiTowerLabel" class="overlay-text tower-label">Red Tower</div>
 
         <!-- Score Display -->
         <div id="htmlScore" class="overlay-text">0 - 0</div>
@@ -4502,7 +4502,7 @@
             window.guiElements.playerHealthPanel = playerHealthPanel;
 
             const playerHealthLabel = new BABYLON.GUI.TextBlock();
-            playerHealthLabel.text = "BLUE TOWER";
+            playerHealthLabel.text = "Blue Tower";
             playerHealthLabel.color = "#c9a44a";
             playerHealthLabel.fontSize = 24;
             playerHealthLabel.fontFamily = "'FF9UI', 'Cinzel', serif";
@@ -4579,7 +4579,7 @@
             window.guiElements.aiHealthPanel = aiHealthPanel;
 
             const aiHealthLabel = new BABYLON.GUI.TextBlock();
-            aiHealthLabel.text = "RED TOWER";
+            aiHealthLabel.text = "Red Tower";
             aiHealthLabel.color = "#c9a44a";
             aiHealthLabel.fontSize = 24;
             aiHealthLabel.fontFamily = "'FF9UI', 'Cinzel', serif";
@@ -4717,7 +4717,7 @@
 
             // Stage name text below progress bar (stageGrid ends at ~108px)
             const stageNameText = new BABYLON.GUI.TextBlock();
-            stageNameText.text = stageNames[currentStage].toUpperCase();
+            stageNameText.text = stageNames[currentStage];
             stageNameText.color = window.getStageColor ? window.getStageColor(currentStage) : "#c9a44a";
             stageNameText.fontSize = "10px";
             stageNameText.fontFamily = "'Press Start 2P', 'Courier New', monospace";
@@ -4765,7 +4765,7 @@
 
                 // Update stage name text (only show during gameplay, not menu)
                 if (window.guiElements.stageNameText && window.stageNames) {
-                    window.guiElements.stageNameText.text = window.stageNames[currentStage].toUpperCase();
+                    window.guiElements.stageNameText.text = window.stageNames[currentStage];
                     if (window.getStageColor) {
                         window.guiElements.stageNameText.color = window.getStageColor(currentStage);
                     }
@@ -4861,7 +4861,7 @@
 
             // Victory/Defeat title (BIG)
             const victoryTitle = new BABYLON.GUI.TextBlock();
-            victoryTitle.text = "VICTORY!";
+            victoryTitle.text = "Victory!";
             victoryTitle.color = "#ffd700";  // Gold
             victoryTitle.fontSize = 96;
             victoryTitle.fontFamily = "'FF9UI', 'Cinzel', serif";
@@ -5121,7 +5121,7 @@
             modeSelectOverlay.addControl(modeSelectPanel);
 
             const modeSelectTitle = new BABYLON.GUI.TextBlock();
-            modeSelectTitle.text = "SELECT MODE";
+            modeSelectTitle.text = "Select Mode";
             modeSelectTitle.color = "#d8c278";
             modeSelectTitle.fontFamily = "'FF9UI', 'Cinzel', serif";
             modeSelectTitle.fontSize = 48;
@@ -7442,7 +7442,7 @@
             };
 
             // Initial progress - scene created
-            updateLoadingProgress(15, 'LOADING SCENE...');
+            updateLoadingProgress(15, 'Loading scene...');
 
             let allModelsLoadedCalled = false;  // Prevent multiple showTalentScreen calls
             const checkAllLoaded = () => {
@@ -7456,7 +7456,7 @@
                         if (loadingScreen) {
                             // Update loading screen to show "Click to Start"
                             document.getElementById('loadingBar').style.width = '100%';
-                            document.getElementById('loadingText').textContent = 'CLICK TO START';
+                            document.getElementById('loadingText').textContent = 'Click to Start';
                             document.getElementById('loadingText').style.color = '#c9a44a';
                             document.getElementById('loadingText').style.cursor = 'pointer';
                             document.getElementById('loadingText').style.fontSize = '12px';
@@ -7620,7 +7620,7 @@
                         }
 
                         console.log('[P1] Anims:', Object.keys(combatants.left.animations));
-                        updateLoadingProgress(55, 'PLAYER READY...');
+                        updateLoadingProgress(55, 'Player ready...');
                         checkAllLoaded();
                     },
                     null,
@@ -7629,7 +7629,7 @@
                         combatants.left.modelLoaded = true;
                         playerModelLoaded = true;
                         playerPaddle.visibility = 1;
-                        updateLoadingProgress(55, 'PLAYER READY...');
+                        updateLoadingProgress(55, 'Player ready...');
                         checkAllLoaded();
                     }
                 );
@@ -7668,7 +7668,7 @@
                         }
 
                         console.log('[P2] Anims:', Object.keys(combatants.right.animations));
-                        updateLoadingProgress(100, 'READY!');
+                        updateLoadingProgress(100, 'Ready!');
                         checkAllLoaded();
                     },
                     null,
@@ -7677,7 +7677,7 @@
                         combatants.right.modelLoaded = true;
                         aiModelLoaded = true;
                         aiPaddle.visibility = 1;
-                        updateLoadingProgress(100, 'READY!');
+                        updateLoadingProgress(100, 'Ready!');
                         checkAllLoaded();
                     }
                 );
@@ -9025,7 +9025,7 @@
             };
 
             // === LOAD CHARACTERS BASED ON MODE ===
-            updateLoadingProgress(30, 'LOADING WIZARDS...');
+            updateLoadingProgress(30, 'Loading wizards...');
             if (CHARACTER_MODE === 'meshy_wizard') {
                 loadMeshyWizard();
             } else if (CHARACTER_MODE === 'procedural_wizard') {
@@ -13942,7 +13942,7 @@
 
                 // Step 3: Show "READY..." AND reveal the arena at the same time, so the
                 // player can see the map and get oriented while "Ready" holds.
-                text.text = "READY...";
+                text.text = "Ready...";
                 animateAlpha(text, 0, 1, 500, null);
                 // Dramatic fade-up of the arena during "Ready"
                 animateAlpha(overlay, 1, 0, 1000, () => {
@@ -13951,7 +13951,7 @@
                         // Step 4: Fade out "Ready"
                         animateAlpha(text, 1, 0, 250, () => {
                             // Step 5: "GO!" - the actual start
-                            text.text = "GO!";
+                            text.text = "Go!";
                             animateAlpha(text, 0, 1, 250, () => {
                                 // Step 6: hold "GO!" then fade it out
                                 setTimeout(() => {
@@ -14776,8 +14776,8 @@
                 // Host sees canonical view (combatants.left on screen left)
                 if (window.resetCameraToDefault) window.resetCameraToDefault();
                 if (window.applyClientPerspective) window.applyClientPerspective(false);
-                if (window.guiElements.playerHealthLabel) window.guiElements.playerHealthLabel.text = "BLUE TOWER";
-                if (window.guiElements.aiHealthLabel) window.guiElements.aiHealthLabel.text = "RED TOWER";
+                if (window.guiElements.playerHealthLabel) window.guiElements.playerHealthLabel.text = "Blue Tower";
+                if (window.guiElements.aiHealthLabel) window.guiElements.aiHealthLabel.text = "Red Tower";
             } else {
                 combatants.left.inputSource = 'network';
                 combatants.left.isLocalPlayer = false;
@@ -14789,8 +14789,8 @@
                 if (window.applyClientPerspective) window.applyClientPerspective(true);
                 // After HUD swap: visual-left panel now shows combatants.right (red),
                 // visual-right panel shows combatants.left (blue). Labels follow data.
-                if (window.guiElements.playerHealthLabel) window.guiElements.playerHealthLabel.text = "BLUE TOWER";
-                if (window.guiElements.aiHealthLabel) window.guiElements.aiHealthLabel.text = "RED TOWER";
+                if (window.guiElements.playerHealthLabel) window.guiElements.playerHealthLabel.text = "Blue Tower";
+                if (window.guiElements.aiHealthLabel) window.guiElements.aiHealthLabel.text = "Red Tower";
             }
 
             // Apply shared upgrade (use same for both in PvP)
@@ -16077,11 +16077,11 @@
 
             // Configure for victory or defeat
             if (isVictory) {
-                title.text = "VICTORY!";
+                title.text = "Victory!";
                 title.color = "#ffd700";  // Gold
                 subtitle.text = "You have conquered the arena!";
             } else {
-                title.text = "DEFEAT";
+                title.text = "Defeat";
                 title.color = "#c04040";  // Red
                 subtitle.text = "The enemy has prevailed...";
             }
@@ -16365,7 +16365,7 @@
                                 text.alpha = 1;
                                 text.isVisible = true;
                                 if (window.guiElements?.stageNameText) {
-                                    window.guiElements.stageNameText.text = stageName.toUpperCase();
+                                    window.guiElements.stageNameText.text = stageName;
                                     if (window.getStageColor) {
                                         window.guiElements.stageNameText.color = window.getStageColor(toStage);
                                     }
@@ -17578,7 +17578,7 @@
         function createHTMLCombatText(text, type = '') {
             const el = document.createElement('div');
             el.className = 'combat-text' + (type ? ' ' + type : '');
-            el.textContent = text.toUpperCase();
+            el.textContent = text;   /* FF9: keep natural casing, no all-caps */
             el.style.opacity = '1';
             // Append to the HUD scale layer so the text scales with the game (1920x1080 ref),
             // not the browser. Positioning below is in layer-reference coords.
