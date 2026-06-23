@@ -8947,7 +8947,7 @@
             let aiButtressMat = null;
 
             const loadGateTextures = () => {
-                const wallTex = new BABYLON.Texture("textures/stone_wall.png", scene, false, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE,
+                const wallTex = new BABYLON.Texture("textures/tower_stone.png", scene, false, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE,
                     () => {
                         // Scale texture to cover wall (6 wide × 4.5 tall)
                         wallTex.uScale = 2;  // Tile twice across width
@@ -9153,6 +9153,59 @@
                 foundation.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
                 // D2 style: only characters/projectiles cast shadows
                 foundation.receiveShadows = true;
+
+                // ============================================================
+                // TOWER KEEP - a tall stone tower rising behind the gate so the
+                // whole structure reads as a fortified tower (gate = destructible
+                // base; keep + crenellations + roof = the tower silhouette).
+                // ============================================================
+                const teamCol = isPlayer ? new BABYLON.Color3(0.30, 0.45, 0.95) : new BABYLON.Color3(0.95, 0.32, 0.28);
+                const keepX = baseX + xSign * 1.3;     // set back behind the gate wall
+                const keepS = 3.4;                      // square footprint (narrower than the 6-wide gate)
+                const keepH = 8.0;                      // tall
+                const edgeBlack = () => new BABYLON.Color4(0, 0, 0, 1);
+
+                const keep = BABYLON.MeshBuilder.CreateBox((isPlayer ? "playerKeep" : "aiKeep"),
+                    { width: keepS, height: keepH, depth: keepS }, scene);
+                keep.position.set(keepX, keepH / 2, 0);
+                keep.material = mat;                    // tower stone texture
+                keep.receiveShadows = true;
+                keep.enableEdgesRendering(); keep.edgesWidth = 2.0; keep.edgesColor = edgeBlack();
+                if (window.shadowGenerator) window.shadowGenerator.addShadowCaster(keep);
+
+                // Parapet band at the top (slightly oversized)
+                const parapet = BABYLON.MeshBuilder.CreateBox((isPlayer ? "playerParapet" : "aiParapet"),
+                    { width: keepS + 0.5, height: 0.6, depth: keepS + 0.5 }, scene);
+                parapet.position.set(keepX, keepH, 0);
+                parapet.material = mat;
+                parapet.receiveShadows = true;
+                parapet.enableEdgesRendering(); parapet.edgesWidth = 2.0; parapet.edgesColor = edgeBlack();
+
+                // Crenellations around the parapet edge
+                const pHalf = (keepS + 0.5) / 2;
+                const merlonY = keepH + 0.6 + 0.3;
+                for (let p = -pHalf + 0.35; p <= pHalf - 0.35; p += 0.78) {
+                    [[p, pHalf], [p, -pHalf], [pHalf, p], [-pHalf, p]].forEach(([dx, dz], k) => {
+                        const m = BABYLON.MeshBuilder.CreateBox((isPlayer ? "pKM" : "aKM") + p.toFixed(1) + k,
+                            { width: 0.45, height: 0.7, depth: 0.45 }, scene);
+                        m.position.set(keepX + dx, merlonY, dz);
+                        m.material = keystoneMat;
+                        m.enableEdgesRendering(); m.edgesWidth = 1.5; m.edgesColor = edgeBlack();
+                    });
+                }
+
+                // Team-colored pyramidal roof
+                const roof = BABYLON.MeshBuilder.CreateCylinder((isPlayer ? "playerRoof" : "aiRoof"),
+                    { diameterTop: 0, diameterBottom: keepS + 1.0, height: 3.4, tessellation: 4 }, scene);
+                roof.rotation.y = Math.PI / 4;          // align the 4-sided pyramid square to the keep
+                roof.position.set(keepX, keepH + 0.6 + 1.7, 0);
+                const roofMat = new BABYLON.StandardMaterial((isPlayer ? "pRoofMat" : "aRoofMat"), scene);
+                roofMat.diffuseColor = teamCol;
+                roofMat.specularColor = BABYLON.Color3.Black();
+                roofMat.emissiveColor = teamCol.scale(0.18);
+                roof.material = roofMat;
+                roof.enableEdgesRendering(); roof.edgesWidth = 2.0; roof.edgesColor = edgeBlack();
+                if (window.shadowGenerator) window.shadowGenerator.addShadowCaster(roof);
             };
 
             createGate(true);   // Player gate
