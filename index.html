@@ -15,7 +15,7 @@
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css?v=36">
+    <link rel="stylesheet" href="styles.css?v=37">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -4558,7 +4558,7 @@
             playerHealthPercent.text = "100%";
             playerHealthPercent.color = "#209cee";
             playerHealthPercent.fontSize = 18;
-            playerHealthPercent.fontFamily = "'Press Start 2P', monospace";
+            playerHealthPercent.fontFamily = "'FF9UI', 'Cabin', sans-serif";
             playerHealthPercent.width = "100px";
             playerHealthPercent.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
             playerHealthPercent.paddingLeft = "8px";
@@ -4606,7 +4606,7 @@
             aiHealthPercent.text = "100%";
             aiHealthPercent.color = "#e76e55";
             aiHealthPercent.fontSize = 18;
-            aiHealthPercent.fontFamily = "'Press Start 2P', monospace";
+            aiHealthPercent.fontFamily = "'FF9UI', 'Cabin', sans-serif";
             aiHealthPercent.width = "100px";
             aiHealthPercent.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
             aiHealthPercent.paddingRight = "8px";
@@ -4662,7 +4662,7 @@
             scoreText.text = "0 - 0";
             scoreText.color = "#c9a44a";
             scoreText.fontSize = 42;
-            scoreText.fontFamily = "'Rajdhani', sans-serif";
+            scoreText.fontFamily = "'FF9UI', 'Cabin', sans-serif";
             scoreText.fontWeight = "700";
             scoreText.alpha = 0;  // Start hidden (menu state)
             scorePanel.addControl(scoreText);
@@ -4720,7 +4720,7 @@
             stageNameText.text = stageNames[currentStage];
             stageNameText.color = window.getStageColor ? window.getStageColor(currentStage) : "#c9a44a";
             stageNameText.fontSize = "10px";
-            stageNameText.fontFamily = "'Press Start 2P', 'Courier New', monospace";
+            stageNameText.fontFamily = "'FF9UI', 'Cabin', sans-serif";
             stageNameText.top = "120px";
             stageNameText.height = "24px";
             stageNameText.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
@@ -5309,7 +5309,7 @@
             const netStatusText = new BABYLON.GUI.TextBlock();
             netStatusText.text = "";
             netStatusText.color = "#6ad26a";
-            netStatusText.fontFamily = "'Crimson Text', serif";
+            netStatusText.fontFamily = "'FF9UI', 'Cabin', sans-serif";
             netStatusText.fontSize = 16;
             netStatusText.height = "20px";
             netStatusText.width = "120px";
@@ -5379,7 +5379,7 @@
             const dcReason = new BABYLON.GUI.TextBlock();
             dcReason.text = "";
             dcReason.color = "#cfc5b0";
-            dcReason.fontFamily = "'Crimson Text', serif";
+            dcReason.fontFamily = "'FF9UI', 'Cabin', sans-serif";
             dcReason.fontSize = 20;
             dcReason.height = "30px";
             dcStack.addControl(dcReason);
@@ -5748,7 +5748,7 @@
                 cooldownText.text = "";
                 cooldownText.color = "white";
                 cooldownText.fontSize = 32;
-                cooldownText.fontFamily = "'Rajdhani', sans-serif";
+                cooldownText.fontFamily = "'FF9UI', 'Cabin', sans-serif";
                 cooldownText.fontWeight = "700";
                 cooldownText.shadowColor = "#000";
                 cooldownText.shadowBlur = 0;  // Pixel shadow
@@ -5772,7 +5772,7 @@
                 keyText.text = keyLabel;
                 keyText.color = "#ccc";
                 keyText.fontSize = 18;
-                keyText.fontFamily = "'Rajdhani', sans-serif";
+                keyText.fontFamily = "'FF9UI', 'Cabin', sans-serif";
                 keyText.fontWeight = "700";
                 keyText.shadowColor = "#000";
                 keyText.shadowBlur = 0;  // Pixel shadow
@@ -5893,7 +5893,7 @@
             parryKeyText.text = "SPC";
             parryKeyText.color = "#ccc";
             parryKeyText.fontSize = 11;
-            parryKeyText.fontFamily = "'Rajdhani', sans-serif";
+            parryKeyText.fontFamily = "'FF9UI', 'Cabin', sans-serif";
             parryKeyText.fontWeight = "700";
             parryKeyText.shadowColor = "#000";
             parryKeyText.shadowBlur = 0;  // Pixel shadow
