@@ -15,7 +15,7 @@
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css?v=23">
+    <link rel="stylesheet" href="styles.css?v=24">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -244,6 +244,9 @@
         <progress class="nes-progress is-primary mana-segment" id="mana5" value="0" max="100"></progress>
     </div>
 
+    <!-- All in-game DOM HUD lives in one scale layer: authored at 1920x1080, scaled as a
+         single unit by --ui-scale so it's "baked into" the game render. -->
+    <div id="hudScaleLayer">
     <!-- MOBA-style Ability Bar -->
     <div id="abilityBar">
         <div id="fireballSlot" class="ability-slot ready" data-ability="fireball">
@@ -389,6 +392,7 @@
             </span>
         </div>
     </div>
+    </div><!-- /hudScaleLayer -->
     </div><!-- /gameContainer -->
 
     <script src="https://cdn.babylonjs.com/babylon.js"></script>

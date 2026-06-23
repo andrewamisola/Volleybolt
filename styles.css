@@ -90,6 +90,28 @@ html, body {
     display: block;
 }
 
+/* ============================================================
+   HUD SCALE LAYER — "baked into the game" UI.
+   All DOM HUD lives here, authored against a fixed 1920x1080 reference and
+   scaled as ONE rigid unit by --ui-scale (= container width / 1920, set in
+   fitGameViewport). Because the container is 16:9, the scaled 1920x1080 layer
+   maps exactly onto it. Result: the HUD scales uniformly with the game render
+   and never reflows/grows independently on window resize or browser zoom.
+   pointer-events:none so it never blocks the game; interactive children
+   re-enable it themselves.
+   ============================================================ */
+#hudScaleLayer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1920px;
+    height: 1080px;
+    transform-origin: 0 0;
+    transform: scale(var(--ui-scale, 1));
+    pointer-events: none;
+    z-index: 150;
+}
+
 /* NES.css progress bar overrides - dark backgrounds */
 .nes-progress {
     background-color: #1a1a1a !important;
@@ -995,9 +1017,11 @@ body.flipped-view #aiCastBarContainer {
 /* Parry Button - Centered above ability bar */
 #parryButton {
     position: absolute;
-    bottom: 90px;            /* aligned with the command menu's bottom */
-    left: 304px;             /* to the RIGHT of the spells window (clears the overlap) */
-    transform: none;
+    /* Folded under the spell window as a tab: centered, just below #abilityBar (bottom:100px).
+       Coordinates are in the 1920x1080 HUD-layer reference. */
+    bottom: 44px;
+    left: 50%;
+    transform: translateX(-50%);
     display: none;  /* Hidden until game starts */
     width: auto;
     height: auto;
