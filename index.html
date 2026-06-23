@@ -9531,7 +9531,11 @@
                 proj.trailAnchor.isVisible = false;
                 proj.trailAnchor.position.copyFrom(proj.mesh.position);
                 proj.lastTrailSamplePos = proj.mesh.position.clone();
-                proj.trail = new BABYLON.TrailMesh("fireTrail_" + Date.now(), proj.trailAnchor, scene, trailWidth, trailLength, true);
+                // autoStart=false: we drive trail.update() from the fixed sim step, not the
+                // render loop. Auto-updating at render rate (~120fps) while the anchor only
+                // moves at sim rate (60fps) sampled duplicate points, and any sim stall
+                // collapsed the whole ribbon to a dot (tail vanished mid-flight).
+                proj.trail = new BABYLON.TrailMesh("fireTrail_" + Date.now(), proj.trailAnchor, scene, trailWidth, trailLength, false);
                 const trailMat = new BABYLON.StandardMaterial("trailMat_" + Date.now(), scene);
                 trailMat.emissiveColor = proj.isMagmaBomb ? new BABYLON.Color3(0.5, 0.1, 0.02) : new BABYLON.Color3(1, 0.3, 0.05);
                 trailMat.alpha = proj.isMagmaBomb ? 0.4 : 0.6;
@@ -9539,6 +9543,10 @@
                 trailMat.backFaceCulling = false;
                 proj.trail.material = trailMat;
                 proj.trailMat = trailMat;
+                // The ribbon's bounding box lags behind the moving geometry, so frustum
+                // culling intermittently drops it for a frame (tail blinks off/on). Always
+                // render it.
+                proj.trail.alwaysSelectAsActiveMesh = true;
 
                 // Fire light - both fireballs and magma bombs illuminate surfaces
                 proj.light = new BABYLON.PointLight("fireLight_" + Date.now(), new BABYLON.Vector3(0, 0.3, 0), scene);
@@ -9710,7 +9718,7 @@
                 proj.trailAnchor.isVisible = false;
                 proj.trailAnchor.position.copyFrom(proj.mesh.position);
                 proj.lastTrailSamplePos = proj.mesh.position.clone();
-                proj.trail = new BABYLON.TrailMesh("iceTrail_" + Date.now(), proj.trailAnchor, scene, 0.18, 25, true);
+                proj.trail = new BABYLON.TrailMesh("iceTrail_" + Date.now(), proj.trailAnchor, scene, 0.18, 25, false);  // driven from fixed sim step
                 const trailMat = new BABYLON.StandardMaterial("iceTrailMat_" + Date.now(), scene);
                 trailMat.emissiveColor = new BABYLON.Color3(0.4, 0.7, 1);
                 trailMat.diffuseColor = new BABYLON.Color3(0, 0, 0);
@@ -9718,6 +9726,7 @@
                 trailMat.backFaceCulling = false;
                 proj.trail.material = trailMat;
                 proj.trailMat = trailMat;
+                proj.trail.alwaysSelectAsActiveMesh = true;  // prevent frustum-cull blink
 
                 // Ice light
                 proj.light = new BABYLON.PointLight("iceLight_" + Date.now(), new BABYLON.Vector3(0, 0.3, 0), scene);
@@ -11655,12 +11664,17 @@
                         proj.mesh.position.x += proj.velX * dt;
                         proj.mesh.position.z += proj.velZ * dt;
 
-                        // Keep the trail anchor on the projectile every fixed step so the
-                        // TrailMesh ribbon stays continuous (distance-gating made it collapse
-                        // to zero length between samples -> trail vanished mid-flight).
+                        // Advance the trail one section per fixed sim step (FPS-independent).
+                        // The anchor moves with the projectile, then we manually push a new
+                        // trail section. Driving update() here (not at render rate) keeps the
+                        // ribbon continuous and immune to render/sim-rate mismatch or stalls.
                         if (proj.trailAnchor) {
                             proj.trailAnchor.position.copyFrom(proj.mesh.position);
                             if (proj.lastTrailSamplePos) proj.lastTrailSamplePos.copyFrom(proj.mesh.position);
+                            if (proj.trail && !proj.trail.isDisposed()) {
+                                proj.trailAnchor.computeWorldMatrix(true);
+                                proj.trail.update();
+                            }
                         }
 
                         // Decrement collision grace time
