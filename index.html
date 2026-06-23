@@ -6189,6 +6189,70 @@
             window.posterizePostProcess = posterizePostProcess;
             console.log("Posterize shader loaded (disabled - low-res render handles banding)");
 
+            // ============================================================
+            // PS1 15-BIT COLOR QUANTIZATION + 4x4 BAYER DITHER
+            // The PS1 output framebuffer was 15-bit (5 bits / 32 levels per channel),
+            // and it hid the resulting banding with an ordered 4x4 dither matrix.
+            // Authentic, self-contained screen-space pass.
+            // ============================================================
+            BABYLON.Effect.ShadersStore["ps1DitherFragmentShader"] = `
+                precision highp float;
+                varying vec2 vUV;
+                uniform sampler2D textureSampler;
+                uniform vec2 screenSize;
+                uniform float levels;     // discrete steps per channel (32 = true 15-bit)
+                uniform float amount;     // 0..1 blend so it can be dialed back
+
+                // 4x4 Bayer ordered-dither threshold matrix, normalized to [0,1)
+                float bayer(vec2 p) {
+                    int x = int(mod(p.x, 4.0));
+                    int y = int(mod(p.y, 4.0));
+                    int i = x + y * 4;
+                    // matrix:  0  8  2 10 / 12 4 14 6 / 3 11 1 9 / 15 7 13 5
+                    float m = 0.0;
+                    if (i == 0) m = 0.0;   else if (i == 1) m = 8.0;  else if (i == 2) m = 2.0;  else if (i == 3) m = 10.0;
+                    else if (i == 4) m = 12.0; else if (i == 5) m = 4.0;  else if (i == 6) m = 14.0; else if (i == 7) m = 6.0;
+                    else if (i == 8) m = 3.0;  else if (i == 9) m = 11.0; else if (i == 10) m = 1.0; else if (i == 11) m = 9.0;
+                    else if (i == 12) m = 15.0; else if (i == 13) m = 7.0; else if (i == 14) m = 13.0; else m = 5.0;
+                    return m / 16.0;
+                }
+
+                void main(void) {
+                    vec4 color = texture2D(textureSampler, vUV);
+                    vec2 pixel = vUV * screenSize;
+                    float steps = levels - 1.0;
+                    // Ordered dither offset of +/- half a quantization step, then snap.
+                    float d = (bayer(pixel) - 0.5) / steps;
+                    vec3 q = floor((color.rgb + d) * steps + 0.5) / steps;
+                    gl_FragColor = vec4(mix(color.rgb, q, amount), color.a);
+                }
+            `;
+
+            const PS1_DITHER_LEVELS = 32.0;   // 5 bits/channel = authentic 15-bit color
+            const ps1DitherPostProcess = new BABYLON.PostProcess(
+                "ps1Dither",
+                "ps1Dither",
+                ["screenSize", "levels", "amount"],
+                null,
+                1.0,
+                camera,
+                BABYLON.Texture.NEAREST_SAMPLINGMODE
+            );
+            ps1DitherPostProcess.onApply = (effect) => {
+                effect.setVector2("screenSize", new BABYLON.Vector2(engine.getRenderWidth(), engine.getRenderHeight()));
+                effect.setFloat("levels", window.ps1DitherLevels || PS1_DITHER_LEVELS);
+                effect.setFloat("amount", window.ps1DitherAmount !== undefined ? window.ps1DitherAmount : 1.0);
+            };
+            ps1DitherPostProcess.enabled = true;  // PS1 pass on by default
+            window.ps1DitherPostProcess = ps1DitherPostProcess;
+            window.setPS1Dither = (enabled, levels, amount) => {
+                if (levels !== undefined) window.ps1DitherLevels = levels;
+                if (amount !== undefined) window.ps1DitherAmount = amount;
+                ps1DitherPostProcess.enabled = enabled;
+                console.log("PS1 dither: " + (enabled ? ("ON levels=" + (window.ps1DitherLevels||PS1_DITHER_LEVELS) + " amount=" + (window.ps1DitherAmount!==undefined?window.ps1DitherAmount:1.0)) : "OFF"));
+            };
+            console.log("PS1 15-bit dither pass loaded (enabled)");
+
             // --- Optional Film Grain Post-Process (disabled by default) ---
             // Very light grain for D2/HL1 grit without muddying clarity
             BABYLON.Effect.ShadersStore["grainFragmentShader"] = `
