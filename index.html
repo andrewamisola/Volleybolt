@@ -6168,9 +6168,12 @@
             };
 
             // Screen-space approximation of PS1 affine texture swim (depth-weighted warp).
-            // True per-polygon affine isn't injectable into Babylon's StandardMaterial, so this
-            // is a subtle stand-in. Enabled by default; tune via setPS1Affine(enabled, strength).
-            affineWarpPostProcess.enabled = true;
+            // DISABLED: this radial UV displacement (offset * distFromCenter) is mathematically
+            // barrel distortion -- it bows the image toward the corners, which is the "curved
+            // CRT corner" artifact the user has been chasing. It was also the only active
+            // curvature source in the whole pipeline (CRT/vignette/imageProcessing all off).
+            // Off by default; opt in via setPS1Affine(true) only if the barrel look is wanted.
+            affineWarpPostProcess.enabled = false;
             window.affineWarpPostProcess = affineWarpPostProcess;
             window.setPS1Affine = (enabled, strength) => {
                 if (strength !== undefined) window.ps1AffineStrength = strength;
