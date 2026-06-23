@@ -9531,6 +9531,11 @@
                 proj.trailAnchor.isVisible = false;
                 proj.trailAnchor.position.copyFrom(proj.mesh.position);
                 proj.lastTrailSamplePos = proj.mesh.position.clone();
+                // Bake the world matrix NOW so TrailMesh seeds all its sections at the spawn
+                // point. Without this the anchor's world matrix is still identity (origin), so
+                // the ribbon is born stretched from spawn to map-center (the dark streak) and
+                // the near-ball tail looks missing until those sections cycle out.
+                proj.trailAnchor.computeWorldMatrix(true);
                 // autoStart=false: we drive trail.update() from the fixed sim step, not the
                 // render loop. Auto-updating at render rate (~120fps) while the anchor only
                 // moves at sim rate (60fps) sampled duplicate points, and any sim stall
@@ -9718,6 +9723,7 @@
                 proj.trailAnchor.isVisible = false;
                 proj.trailAnchor.position.copyFrom(proj.mesh.position);
                 proj.lastTrailSamplePos = proj.mesh.position.clone();
+                proj.trailAnchor.computeWorldMatrix(true);  // seed sections at spawn, not origin (see fire trail)
                 proj.trail = new BABYLON.TrailMesh("iceTrail_" + Date.now(), proj.trailAnchor, scene, 0.18, 25, false);  // driven from fixed sim step
                 const trailMat = new BABYLON.StandardMaterial("iceTrailMat_" + Date.now(), scene);
                 trailMat.emissiveColor = new BABYLON.Color3(0.4, 0.7, 1);
