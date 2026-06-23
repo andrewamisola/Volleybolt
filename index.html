@@ -5922,7 +5922,7 @@
             // GEOMETRY wobbles (not a screen-space fake). Registered before scene geometry
             // is built so all later materials pick it up.
             // ============================================================
-            window.ps1SnapGrid = 150.0;   // grid cells across NDC; lower = chunkier wobble
+            window.ps1SnapGrid = 260.0;   // grid cells across NDC; lower = chunkier wobble (dialed back from 150 - was mushing character models)
             try {
                 class PS1SnapPluginMaterial extends BABYLON.MaterialPluginBase {
                     constructor(material) {
@@ -7111,11 +7111,16 @@
 
                 scene.onBeforeRenderObservable.add(() => {
                     const inGame = (typeof gameState === 'undefined') || (gameState !== 'menu' && gameState !== 'lobby');
+                    const doubles = (typeof isDoublesMode === 'function') ? isDoublesMode() : false;
                     // Resolved each frame because the front paddles are built after this IIFE.
+                    // Don't gate on the paddle MESH visibility -- it's set to 0 once the character
+                    // model renders in its place, but the blob must still show under the character.
+                    // Back blobs (0,1) always show in-game; front blobs (2,3) only in doubles.
                     const paddles = [playerPaddle, aiPaddle, playerFrontPaddle, aiFrontPaddle];
                     for (let i = 0; i < blobs.length; i++) {
                         const p = paddles[i];
-                        blobs[i].isVisible = inGame && !!p && p.visibility > 0;
+                        const isFront = i >= 2;
+                        blobs[i].isVisible = inGame && !!p && (!isFront || doubles);
                         if (p) { blobs[i].position.x = p.position.x; blobs[i].position.z = p.position.z; }
                     }
                 });
