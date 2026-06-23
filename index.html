@@ -15,7 +15,7 @@
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css?v=33">
+    <link rel="stylesheet" href="styles.css?v=34">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -17468,27 +17468,22 @@
                 )
             );
 
-            // Get canvas offset for letterbox alignment
-            const canvas = scene.getEngine().getRenderingCanvas();
-            const canvasRect = canvas.getBoundingClientRect();
-            const scaleX = canvasRect.width / scene.getEngine().getRenderWidth();
-            const scaleY = canvasRect.height / scene.getEngine().getRenderHeight();
+            // Position in the 1920x1080 HUD-layer reference so it scales with the game.
+            // Float + bounce + fade is now a pure CSS animation (damageFloat); JS only
+            // places it and removes it when done.
+            const rw = scene.getEngine().getRenderWidth();
+            const rh = scene.getEngine().getRenderHeight();
 
             const dmgEl = document.createElement('div');
             dmgEl.className = 'damage-number';
             dmgEl.textContent = '-' + damage;
-            dmgEl.style.left = Math.floor(canvasRect.left + screenPos.x * scaleX) + 'px';
-            dmgEl.style.top = Math.floor(canvasRect.top + screenPos.y * scaleY) + 'px';
-            dmgEl.style.opacity = '1';
-            document.body.appendChild(dmgEl);
+            dmgEl.style.left = Math.floor(screenPos.x / rw * 1920) + 'px';
+            dmgEl.style.top = Math.floor(screenPos.y / rh * 1080) + 'px';
+            (document.getElementById('hudScaleLayer') || document.body).appendChild(dmgEl);
 
-            // Add to queue for stepped animation
+            // Add to queue (removal only)
             const side = isPlayerTower ? 'player' : 'ai';
-            damageTextQueue[side].push({
-                el: dmgEl,
-                age: 0,
-                startY: canvasRect.top + screenPos.y * scaleY
-            });
+            damageTextQueue[side].push({ el: dmgEl, age: 0 });
         }
 
         // Update damage text with stepped animation (called from render loop)
@@ -17510,18 +17505,7 @@
                         continue;
                     }
 
-                    // Stepped fade and movement
-                    if (doStep) {
-                        // Stepped fade: 1.0 -> 0.66 -> 0.33 -> 0
-                        if (item.age > 1.0) {
-                            const fadeProgress = (item.age - 1.0) / 0.5;
-                            const steppedOpacity = fadeProgress < 0.33 ? 1 : fadeProgress < 0.66 ? 0.66 : fadeProgress < 1 ? 0.33 : 0;
-                            item.el.style.opacity = String(steppedOpacity);
-                        }
-                        // Stepped Y movement
-                        const steppedAge = Math.floor(item.age / 0.15) * 0.15;
-                        item.el.style.top = Math.floor(item.startY - steppedAge * 30) + 'px';
-                    }
+                    // Movement + fade are handled by the CSS damageFloat animation.
                 }
             }
         };
@@ -17592,6 +17576,8 @@
             const side = isPlayer ? 'player' : 'ai';
             const el = createHTMLCombatText(text, type);
             if (!el) return;
+            // Player cast text reads as a team-colored steel speech bubble.
+            el.classList.add('cast-bubble', isPlayer ? 'team-blue' : 'team-red');
 
             combatTextQueue[side].push({
                 el: el,
