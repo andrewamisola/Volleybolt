@@ -18,6 +18,14 @@
     font-style: normal;
 }
 
+/* Final Fantasy "dupe" display font (test, for the title screen) */
+@font-face {
+    font-family: 'FinalFantasy';
+    src: url('fonts/finalf.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+}
+
 :root {
     /* Retro color palette - muted, earthy, classic game colors */
     --gold: #d4a849;
@@ -2514,9 +2522,9 @@ body.flipped-view #aiCastBarContainer {
     pointer-events: none;
 }
 
-/* --- Title logo: Esthetique display font + light bloom behind it --- */
+/* --- Title logo: Final Fantasy dupe display font (test) + light bloom behind it --- */
 .arcane-title {
-    font-family: 'Esthetique', 'Cormorant Garamond', 'Cinzel', serif;
+    font-family: 'FinalFantasy', 'Esthetique', 'Cormorant Garamond', 'Cinzel', serif;
     font-size: 108px;
     font-weight: 700;
     letter-spacing: 8px;
