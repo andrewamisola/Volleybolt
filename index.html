@@ -10,7 +10,7 @@
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css?v=19">
+    <link rel="stylesheet" href="styles.css?v=20">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -20,6 +20,10 @@
          One layer owns scanlines + vignette + subtle flicker so the whole game
          feels like it's behind a single CRT pane. -->
     <div id="crtOverlay"></div>
+    <!-- Debug straightness grid: DOM lines above the WebGL canvas, bypass all shaders.
+         Toggle with toggleDebugGrid() in the console. If these straight lines look curved
+         on screen, the bow is the physical display, not the render. -->
+    <div id="debugGrid"></div>
 
     <!-- SVG Filters for retro effects -->
     <svg style="display:none">
@@ -4207,6 +4211,16 @@
             }
             resize4to3();
             window.addEventListener('resize', resize4to3);
+
+            // Debug straightness grid (DOM, above the canvas). toggleDebugGrid() in console.
+            window.toggleDebugGrid = () => {
+                const g = document.getElementById('debugGrid');
+                if (!g) return 'no grid';
+                const on = g.style.display !== 'block';
+                g.style.display = on ? 'block' : 'none';
+                console.log('Debug grid: ' + (on ? 'ON' : 'OFF'));
+                return on;
+            };
 
             const engine = new BABYLON.Engine(canvas, true, {
                 preserveDrawingBuffer: false,

@@ -2206,6 +2206,20 @@ body.flipped-view #aiCastBarContainer {
    Scanlines + vignette + subtle flicker. pointer-events: none
    so it never interferes with input.
    ============================================================ */
+/* Debug straightness grid - perfectly straight DOM lines above the canvas.
+   Toggle with toggleDebugGrid() in the console. Diagnoses render-curve vs
+   physical-display-curve: if these bow, the display is curved, not the game. */
+#debugGrid {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    pointer-events: none;
+    background-image:
+        repeating-linear-gradient(to right, rgba(0,255,128,0.7) 0, rgba(0,255,128,0.7) 1px, transparent 1px, transparent 64px),
+        repeating-linear-gradient(to bottom, rgba(0,255,128,0.7) 0, rgba(0,255,128,0.7) 1px, transparent 1px, transparent 64px);
+}
+
 #crtOverlay {
     /* Disabled for the clean storybook look - the low-res 3D render carries the
        retro feel without scanlines/vignette/flicker stacked on top. */
