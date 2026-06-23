@@ -7112,8 +7112,8 @@
                 const blobTex = new BABYLON.DynamicTexture("blobShadowTex", { width: SZ, height: SZ }, scene, false);
                 const bctx = blobTex.getContext();
                 const grad = bctx.createRadialGradient(SZ/2, SZ/2, 0, SZ/2, SZ/2, SZ/2);
-                grad.addColorStop(0.0, "rgba(0,0,0,0.9)");
-                grad.addColorStop(0.5, "rgba(0,0,0,0.5)");
+                grad.addColorStop(0.0, "rgba(0,0,0,1.0)");
+                grad.addColorStop(0.55, "rgba(0,0,0,0.7)");
                 grad.addColorStop(1.0, "rgba(0,0,0,0)");
                 bctx.clearRect(0, 0, SZ, SZ);
                 bctx.fillStyle = grad;
@@ -7128,12 +7128,12 @@
                 blobMat.disableLighting = true;
                 blobMat.diffuseTexture = blobTex;      // alpha comes from the texture
                 blobMat.useAlphaFromDiffuseTexture = true;
-                blobMat.alpha = 0.6;
+                blobMat.alpha = 0.9;   // stronger so the shadow reads on the dark dirt
                 blobMat.backFaceCulling = false;
                 blobMat.zOffset = -3;                  // keep it above the ground/lane decal
 
                 const makeBlob = (name) => {
-                    const d = BABYLON.MeshBuilder.CreateGround(name, { width: 1.7, height: 1.15 }, scene);
+                    const d = BABYLON.MeshBuilder.CreateGround(name, { width: 2.1, height: 1.45 }, scene);
                     d.material = blobMat;
                     d.isPickable = false;
                     d.receiveShadows = false;
