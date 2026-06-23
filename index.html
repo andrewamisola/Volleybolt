@@ -15,7 +15,7 @@
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css?v=27">
+    <link rel="stylesheet" href="styles.css?v=28">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -337,30 +337,33 @@
                 </div>
             </div>
         </div>
-    </div>
-
-    <!-- Parry Button - Hexagon style -->
-    <div id="parryButton" class="ready">
-        <div class="parry-hex">
-            <div class="parry-icon"></div>
-            <div class="parry-cooldown-sweep" id="parrySweep"></div>
-        </div>
-        <span class="parry-key">SPC</span>
-        <!-- Tooltip -->
-        <div class="ability-tooltip" id="parryTooltip">
-            <div class="tooltip-title">Parry</div>
-            <div class="tooltip-stats-row">
-                <div class="tooltip-stats-left">
-                    <span class="tooltip-stat-item mana"><span class="icon">*</span><span class="value">Free</span></span>
-                    <span class="tooltip-stat-item cast"><span class="icon">></span><span class="value">Instant</span></span>
+        <!-- Parry — same .ability-slot format as the spells, last slot in the command box -->
+        <div id="parryButton" class="ability-slot ready" data-ability="parry">
+            <div class="ability-hex">
+                <div class="shine-effect"></div>
+                <span class="ability-icon">Parry</span>
+                <div class="cooldown-sweep" id="parrySweep"></div>
+            </div>
+            <div class="cooldown-overlay">
+                <span class="cooldown-text" id="parryCDText"></span>
+            </div>
+            <div class="ability-key">SPC</div>
+            <!-- Tooltip -->
+            <div class="ability-tooltip" id="parryTooltip">
+                <div class="tooltip-title">Parry</div>
+                <div class="tooltip-stats-row">
+                    <div class="tooltip-stats-left">
+                        <span class="tooltip-stat-item mana"><span class="icon">*</span><span class="value">Free</span></span>
+                        <span class="tooltip-stat-item cast"><span class="icon">></span><span class="value">Instant</span></span>
+                    </div>
+                    <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">0.2s / 3s CD</span></span>
                 </div>
-                <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">0.2s / 3s CD</span></span>
-            </div>
-            <div class="tooltip-description">
-                <span class="tt-mechanic">Parry</span> incoming projectiles to reflect them back with increased speed. Grants <span class="tt-value">1</span> <span class="tt-mana">Mana</span> on success. <span class="tt-value">0.2s</span> CD on hit, <span class="tt-value">3s</span> CD on miss.
+                <div class="tooltip-description">
+                    <span class="tt-mechanic">Parry</span> incoming projectiles to reflect them back with increased speed. Grants <span class="tt-value">1</span> <span class="tt-mana">Mana</span> on success. <span class="tt-value">0.2s</span> CD on hit, <span class="tt-value">3s</span> CD on miss.
+                </div>
             </div>
         </div>
-    </div>
+    </div><!-- /abilityBar -->
 
     <!-- Upgrade Points HUD -->
     <div id="upgradePointsHUD">
