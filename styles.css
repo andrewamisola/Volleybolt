@@ -1017,10 +1017,11 @@ body.flipped-view #aiCastBarContainer {
 /* Parry Button - Centered above ability bar */
 #parryButton {
     position: absolute;
-    /* Folded under the spell window as a tab: centered, just below #abilityBar (bottom:100px).
-       Coordinates are in the 1920x1080 HUD-layer reference. */
+    /* Folded under the spell command box as a tab. The box is at left:40px / w~252 (center
+       x~166) / bottom:90px, so Parry centers under that box (not screen-center) and tucks
+       just below it. Coordinates are in the 1920x1080 HUD-layer reference. */
     bottom: 44px;
-    left: 50%;
+    left: 166px;
     transform: translateX(-50%);
     display: none;  /* Hidden until game starts */
     width: auto;
