@@ -12811,28 +12811,8 @@
             emberParticles.updateSpeed = 0.01;
             emberParticles.start();
 
-            // --- FAKE GOD RAYS (Light cones from above) ---
-            const createGodRay = (x, z, color, intensity = 0.15) => {
-                const cone = BABYLON.MeshBuilder.CreateCylinder("godRay", {
-                    diameterTop: 0.5,
-                    diameterBottom: 4,
-                    height: 12,
-                    tessellation: 8
-                }, scene);
-                cone.position.set(x, 6, z);
-                const rayMat = new BABYLON.StandardMaterial("rayMat", scene);
-                rayMat.emissiveColor = color;
-                rayMat.alpha = intensity;
-                rayMat.disableLighting = true;
-                rayMat.backFaceCulling = false;
-                cone.material = rayMat;
-                return cone;
-            };
-
-            // God rays on each side
-            const godRayBlue = createGodRay(-tableWidth/2 - 2, 0, NES.lightBlue, 0.08);
-            const godRayRed = createGodRay(tableWidth/2 + 2, 0, NES.lightRed, 0.08);
-            const godRayCenter = createGodRay(0, 0, NES.gold, 0.05);
+            // (Removed the fake god-ray light cones over the towers/midfield -- they read as
+            // pointless spotlights and added visual noise.)
 
             // --- SCREEN SHAKE ---
             let shakeIntensity = 0;
