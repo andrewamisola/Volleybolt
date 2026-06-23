@@ -6100,8 +6100,22 @@
                 effect.setTexture("depthSampler", depthRenderer.getDepthMap());
             };
 
+            // IMPORTANT: Babylon's base PostProcess has NO `.enabled` property -- setting it
+            // is a silent no-op, so a post-process created with `new PostProcess(..., camera)`
+            // KEEPS RUNNING regardless. (This is why the "disabled" CRT barrel+vignette still
+            // bent the screen corners for ages.) The only real on/off is attach/detach from
+            // the camera. Use this everywhere instead of `.enabled =`.
+            const setPPEnabled = (pp, on) => {
+                if (!pp || !camera) return;
+                const list = camera._postProcesses || [];
+                const attached = list.indexOf(pp) !== -1;
+                if (on && !attached) camera.attachPostProcess(pp);
+                else if (!on && attached) camera.detachPostProcess(pp);
+            };
+            window.setPPEnabled = setPPEnabled;
+
             // Toggle wobble on/off
-            ps1WobblePostProcess.enabled = PS1_ENABLED;
+            setPPEnabled(ps1WobblePostProcess, PS1_ENABLED);
             window.ps1WobblePostProcess = ps1WobblePostProcess;
             console.log("PS1 vertex wobble shader loaded (resolution: " + PS1_RESOLUTION + ")");
 
@@ -6113,7 +6127,7 @@
             // Toggle all PS1 effects at once
             window.setPS1Mode = (enabled) => {
                 if (window.ps1WobblePostProcess) {
-                    window.ps1WobblePostProcess.enabled = enabled;
+                    setPPEnabled(window.ps1WobblePostProcess, enabled);
                 }
                 if (window.setPS1Framerate) {
                     window.setPS1Framerate(enabled, 20);
@@ -6192,11 +6206,11 @@
             // CRT corner" artifact the user has been chasing. It was also the only active
             // curvature source in the whole pipeline (CRT/vignette/imageProcessing all off).
             // Off by default; opt in via setPS1Affine(true) only if the barrel look is wanted.
-            affineWarpPostProcess.enabled = false;
+            setPPEnabled(affineWarpPostProcess, false);
             window.affineWarpPostProcess = affineWarpPostProcess;
             window.setPS1Affine = (enabled, strength) => {
                 if (strength !== undefined) window.ps1AffineStrength = strength;
-                affineWarpPostProcess.enabled = enabled;
+                setPPEnabled(affineWarpPostProcess, enabled);
                 console.log("PS1 affine warp: " + (enabled ? ("ON strength=" + (window.ps1AffineStrength!==undefined?window.ps1AffineStrength:0.08)) : "OFF"));
             };
             console.log("PS1 affine texture warp loaded (enabled, screen-space approximation)");
@@ -6309,7 +6323,7 @@
             };
             // Disabled: the low internal resolution already bands color cleanly.
             // Stacking posterize on top was part of the "moshposh" of competing filters.
-            posterizePostProcess.enabled = false;
+            setPPEnabled(posterizePostProcess, false);
             window.posterizePostProcess = posterizePostProcess;
             console.log("Posterize shader loaded (disabled - low-res render handles banding)");
 
@@ -6367,12 +6381,12 @@
                 effect.setFloat("levels", window.ps1DitherLevels || PS1_DITHER_LEVELS);
                 effect.setFloat("amount", window.ps1DitherAmount !== undefined ? window.ps1DitherAmount : 1.0);
             };
-            ps1DitherPostProcess.enabled = true;  // PS1 pass on by default
+            setPPEnabled(ps1DitherPostProcess, true);  // PS1 pass on by default (only one left on)
             window.ps1DitherPostProcess = ps1DitherPostProcess;
             window.setPS1Dither = (enabled, levels, amount) => {
                 if (levels !== undefined) window.ps1DitherLevels = levels;
                 if (amount !== undefined) window.ps1DitherAmount = amount;
-                ps1DitherPostProcess.enabled = enabled;
+                setPPEnabled(ps1DitherPostProcess, enabled);
                 console.log("PS1 dither: " + (enabled ? ("ON levels=" + (window.ps1DitherLevels||PS1_DITHER_LEVELS) + " amount=" + (window.ps1DitherAmount!==undefined?window.ps1DitherAmount:1.0)) : "OFF"));
             };
             console.log("PS1 15-bit dither pass loaded (enabled)");
@@ -6410,11 +6424,11 @@
                 effect.setFloat("strength", window.grainStrength || 0.03); // default 3%
                 effect.setFloat("time", grainTime);
             };
-            grainPostProcess.enabled = false; // default off
+            setPPEnabled(grainPostProcess, false); // default off
             window.grainPostProcess = grainPostProcess;
             window.setGrain = (enabled, strength = 0.03) => {
                 window.grainStrength = strength;
-                if (window.grainPostProcess) window.grainPostProcess.enabled = enabled;
+                if (window.grainPostProcess) setPPEnabled(window.grainPostProcess, enabled);
                 console.log("Film grain: " + (enabled ? ("ON (" + strength + ")") : "OFF"));
             };
             console.log("Film grain pass loaded (disabled by default)");
@@ -6490,7 +6504,7 @@
             // console itself. With the low-res render carrying the retro feel, stacking
             // scanlines + curvature + vignette just muddied the image. (CSS #crtOverlay
             // is also disabled in styles.css.)
-            crtPostProcess.enabled = false;
+            setPPEnabled(crtPostProcess, false);  // actually detaches it -- .enabled was a no-op
             window.crtPostProcess = crtPostProcess;
             console.log("CRT filter loaded (disabled for clean storybook look)");
 
