@@ -2383,7 +2383,10 @@ body.flipped-view #aiCastBarContainer {
     font-family: 'FF9UI', 'Cabin', sans-serif;
     font-size: 16px;
     color: #f4f7ff;
-    text-shadow: 2px 2px 0 rgba(8,12,26,0.9);   /* crisp FF9 text shadow */
+    /* crisp solid-black 8-way stroke (no soft offset shadow) */
+    text-shadow:
+        -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000,
+        0 -1px 0 #000, 0 1px 0 #000, -1px 0 0 #000, 1px 0 0 #000;
     padding: 0;
 }
 .ability-slot:hover .ability-icon,
