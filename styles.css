@@ -27,11 +27,10 @@
 }
 
 :root {
-    /* Standard FF9 text outline: crisp 8-way solid-black stroke, used on ALL FF9UI text
-       so every label shares the same shadow type + color. */
-    --ff9-stroke:
-        -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000,
-        0 -1px 0 #000, 0 1px 0 #000, -1px 0 0 #000, 1px 0 0 #000;
+    /* Standard FF9 text shadow: crisp hard offset, solid black, no blur -- matches the
+       stage name (Midfield) and Ready/Go! transition text. Used on ALL FF9UI text so every
+       label shares the same shadow type + color. */
+    --ff9-shadow: 2px 2px 0 #000;
 
     /* Retro color palette - muted, earthy, classic game colors */
     --gold: #d4a849;
@@ -120,8 +119,10 @@ html, body {
     left: 0;
     width: 1920px;
     height: 1080px;
-    transform-origin: 0 0;
-    transform: scale(var(--ui-scale, 1));
+    /* Use `zoom` (not transform: scale) so text is re-rasterized crisply at the final size.
+       transform: scale bitmap-scales the layer -> soft/blurry text + strokes when the window
+       isn't exactly the 1920 reference. zoom reflows + renders sharp. */
+    zoom: var(--ui-scale, 1);
     pointer-events: none;
     z-index: 150;
 }
@@ -240,7 +241,7 @@ html, body {
     padding: 0;
     background: none;          /* no black box -- plain floating text */
     border: none;
-    text-shadow: var(--ff9-stroke);
+    text-shadow: var(--ff9-shadow);
     pointer-events: none;
     z-index: 1001;
     white-space: nowrap;
@@ -257,7 +258,7 @@ html, body {
         linear-gradient(180deg, rgba(84,96,118,0.95) 0%, rgba(42,52,70,0.97) 100%);
     border: 2px solid #d3dae8;
     border-radius: 8px;
-    text-shadow: var(--ff9-stroke);
+    text-shadow: var(--ff9-shadow);
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), 0 3px 0 rgba(0,0,0,0.45);
 }
 .combat-text.cast-bubble::after {   /* downward speech-bubble tail */
@@ -297,7 +298,7 @@ html, body {
         repeating-linear-gradient(118deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, rgba(0,0,0,0.07) 1px, rgba(0,0,0,0.07) 2px, transparent 2px, transparent 4px),
         linear-gradient(180deg, rgba(60,110,170,0.95) 0%, rgba(30,60,110,0.97) 100%);
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), 0 3px 0 rgba(0,0,0,0.45);
-    text-shadow: var(--ff9-stroke);
+    text-shadow: var(--ff9-shadow);
 }
 .combat-text.frozen::after {   /* downward bubble tail */
     content: '';
@@ -321,7 +322,7 @@ html, body {
     color: #c9a44a;
     font-family: 'FF9UI', 'Cabin', sans-serif;
     font-size: 24px;
-    text-shadow: var(--ff9-stroke);  /* Simple pixel shadow */
+    text-shadow: var(--ff9-shadow);  /* Simple pixel shadow */
     pointer-events: none;
     user-select: none;
     letter-spacing: 4px;
@@ -417,7 +418,7 @@ html, body {
     padding: 0;
     background: none;            /* no black box */
     border: none;
-    text-shadow: var(--ff9-stroke);   /* shared FF9 stroke */
+    text-shadow: var(--ff9-shadow);   /* shared FF9 stroke */
     pointer-events: none;
     z-index: 1001;
     white-space: nowrap;
@@ -1467,7 +1468,7 @@ body.flipped-view #aiCastBarContainer {
     font-size: 24px;
     font-weight: 700;
     color: #ffd700;
-    text-shadow: var(--ff9-stroke);  /* Simple pixel shadow */
+    text-shadow: var(--ff9-shadow);  /* Simple pixel shadow */
     pointer-events: none;
     z-index: 10000;
     animation: floatUp 2s ease-out forwards;
@@ -2403,7 +2404,7 @@ body.flipped-view #aiCastBarContainer {
     font-family: 'FF9UI', 'Cabin', sans-serif;
     font-size: 21px;   /* bigger: FF9UI is smaller than the old fonts */
     color: #f4f7ff;
-    text-shadow: var(--ff9-stroke);
+    text-shadow: var(--ff9-shadow);
     padding: 0;
 }
 .ability-slot:hover .ability-icon,
@@ -2424,7 +2425,7 @@ body.flipped-view #aiCastBarContainer {
     font-size: 10px;
     letter-spacing: 2px;
     line-height: 1;
-    text-shadow: var(--ff9-stroke);
+    text-shadow: var(--ff9-shadow);
     display: flex;
     align-items: center;
 }
@@ -2444,7 +2445,7 @@ body.flipped-view #aiCastBarContainer {
     font-family: 'FF9UI', 'Cabin', sans-serif;
     font-size: 11px;
     color: #cdd8ef;
-    text-shadow: var(--ff9-stroke);
+    text-shadow: var(--ff9-shadow);
 }
 /* Hotbar bits not used in the FF9 menu (CD shown creatively later) */
 .cooldown-sweep,
@@ -2503,7 +2504,7 @@ body.flipped-view #aiCastBarContainer {
     justify-content: flex-start;
     align-items: center;
     color: #e7ecf6;
-    text-shadow: var(--ff9-stroke);
+    text-shadow: var(--ff9-shadow);
     position: relative;
 }
 .arcane-buttons .menu-btn:hover { transform: none; color: #fff4c2; border: none; }
@@ -2538,7 +2539,7 @@ body.flipped-view #aiCastBarContainer {
     font-size: 14px;
     letter-spacing: 2px;
     color: #aab2c4;
-    text-shadow: var(--ff9-stroke);
+    text-shadow: var(--ff9-shadow);
     pointer-events: none;
 }
 
@@ -2583,7 +2584,7 @@ body.flipped-view #aiCastBarContainer {
     font-weight: 600;
     letter-spacing: 2px;
     color: #f3e6c0;   /* warm cream */
-    text-shadow: var(--ff9-stroke);
+    text-shadow: var(--ff9-shadow);
     transition: color 0.12s ease;
 }
 .arcane-buttons .menu-btn:hover .menu-btn-label {
