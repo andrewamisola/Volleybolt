@@ -15,7 +15,7 @@
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css?v=41">
+    <link rel="stylesheet" href="styles.css?v=44">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -4503,7 +4503,7 @@
 
             const playerHealthLabel = new BABYLON.GUI.TextBlock();
             playerHealthLabel.text = "Blue Tower";
-            playerHealthLabel.color = "#c9a44a";
+            playerHealthLabel.color = "#f0c050";
             playerHealthLabel.fontSize = 24;
             playerHealthLabel.fontFamily = "'FF9UI', 'Cinzel', serif";
             playerHealthLabel.fontWeight = "700";
@@ -4580,7 +4580,7 @@
 
             const aiHealthLabel = new BABYLON.GUI.TextBlock();
             aiHealthLabel.text = "Red Tower";
-            aiHealthLabel.color = "#c9a44a";
+            aiHealthLabel.color = "#f0c050";
             aiHealthLabel.fontSize = 24;
             aiHealthLabel.fontFamily = "'FF9UI', 'Cinzel', serif";
             aiHealthLabel.fontWeight = "700";
@@ -4660,7 +4660,7 @@
 
             const scoreText = new BABYLON.GUI.TextBlock();
             scoreText.text = "0 - 0";
-            scoreText.color = "#c9a44a";
+            scoreText.color = "#f0c050";
             scoreText.fontSize = 42;
             scoreText.fontFamily = "'FF9UI', 'Cabin', sans-serif";
             scoreText.fontWeight = "700";
@@ -4689,7 +4689,7 @@
 
             // Stage names & palette (blue = player side, gold = midfield, red = enemy side)
             const stageNames = ["Blue Core", "Blue Territory", "Midfield", "Red Territory", "Red Core"];
-            const stageColors = ["#5ad0ff", "#5ad0ff", "#c9a44a", "#ff6b5b", "#ff6b5b"];
+            const stageColors = ["#5ad0ff", "#5ad0ff", "#f0c050", "#ff6b5b", "#ff6b5b"];
 
             window.guiElements.stageSegments = [];
             window.stageNames = stageNames;
@@ -4707,7 +4707,7 @@
                 const stageFill = new BABYLON.GUI.Rectangle();
                 stageFill.width = "100%";
                 stageFill.height = "100%";
-                stageFill.background = i === currentStage ? "#c9a44a" : "#2e2418";
+                stageFill.background = i === currentStage ? "#f0c050" : "#2e2418";
                 stageFill.color = "transparent";
                 stageFill.thickness = 0;
                 stageBg.addControl(stageFill);
@@ -4718,7 +4718,7 @@
             // Stage name text below progress bar (stageGrid ends at ~108px)
             const stageNameText = new BABYLON.GUI.TextBlock();
             stageNameText.text = stageNames[currentStage];
-            stageNameText.color = window.getStageColor ? window.getStageColor(currentStage) : "#c9a44a";
+            stageNameText.color = window.getStageColor ? window.getStageColor(currentStage) : "#f0c050";
             stageNameText.fontSize = "10px";
             stageNameText.fontFamily = "'FF9UI', 'Cabin', sans-serif";
             stageNameText.top = "120px";
@@ -4746,7 +4746,7 @@
                     // Current stage ALWAYS takes priority (yellow) - so player knows where they are
                     if (i === currentStage) {
                         // Current stage - bright gold
-                        seg.fill.background = "#c9a44a";
+                        seg.fill.background = "#f0c050";
                         seg.bg.color = "#f0c050";
                     } else if (result === 'player') {
                         // Player won this stage - blue/green
@@ -4954,7 +4954,7 @@
             // --- MAIN MENU TITLE (GUI for CRT effects) ---
             const menuTitle = new BABYLON.GUI.TextBlock();
             menuTitle.text = "Volleybolt";
-            menuTitle.color = "#c9a44a";
+            menuTitle.color = "#f0c050";
             menuTitle.fontSize = 72;
             menuTitle.fontFamily = "'FF9UI', 'Cinzel', serif";
             menuTitle.fontWeight = "700";
@@ -5509,7 +5509,7 @@
             playerCastBg.width = "180px";
             playerCastBg.height = "22px";
             playerCastBg.background = "#1a1a1a";
-            playerCastBg.color = "#c9a44a";
+            playerCastBg.color = "#f0c050";
             playerCastBg.thickness = 2;
             playerCastContainer.addControl(playerCastBg);
 
@@ -5687,6 +5687,333 @@
             abilityBarContainer.isVisible = false;
             guiTexture.addControl(abilityBarContainer);
 
+            // ============================================================
+            // FF9 COMMAND MENU (Babylon GUI) - crisp, replaces the soft DOM spell box.
+            // Phase 1: steel window + "Command" title tab + slots (name / mana orbs / key).
+            // Live cooldown/ready/mana states get wired in a follow-up.
+            // ============================================================
+            try {
+                const G = BABYLON.GUI, ALN = G.Control;
+                const cmdSlots = [
+                    { id: 'fireball',        name: 'Fireball',     key: '1',     mana: 1 },
+                    { id: 'frostbolt',       name: 'Frostbolt',    key: '2',     mana: 2 },
+                    { id: 'chain_lightning', name: 'Thunderstorm', key: '3',     mana: 2 },
+                    { id: 'parry',           name: 'Parry',        key: 'Space', mana: 0 },
+                ];
+                const ROW_H = 42, PAD = 10, TITLE_H = 26, BOX_W = 290;
+                const BOX_H = PAD * 2 + cmdSlots.length * ROW_H;
+                const STEEL = "rgba(46,56,76,0.94)", RIM = "#dfe6f2", TXT = "#f4f7ff";
+
+                const box = new G.Rectangle("commandBox");
+                box.width = BOX_W + "px"; box.height = BOX_H + "px";
+                box.background = STEEL; box.color = RIM; box.thickness = 2; box.cornerRadius = 8;
+                box.clipChildren = false;   // let the title tab overhang the top border
+                box.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                box.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
+                // Sit low-left in the clean band BELOW the stage frame (small lift off the
+                // bottom edge), so the title tab clears the stage's dark bottom border.
+                box.left = "34px"; box.top = "-16px";
+                box.shadowColor = "#000"; box.shadowBlur = 0; box.shadowOffsetX = 4; box.shadowOffsetY = 4;
+                box.isVisible = false;
+                guiTexture.addControl(box);
+
+                const stack = new G.StackPanel("commandStack");
+                stack.isVertical = true; stack.width = (BOX_W - PAD * 2) + "px";
+                stack.paddingTop = PAD + "px";
+                stack.verticalAlignment = ALN.VERTICAL_ALIGNMENT_TOP;
+                box.addControl(stack);
+
+                const cmdRefs = [];
+                cmdSlots.forEach((s) => {
+                    const row = new G.Rectangle();
+                    row.width = "100%"; row.height = ROW_H + "px"; row.thickness = 0; row.background = "transparent";
+
+                    const hand = new G.TextBlock();
+                    hand.text = "▶"; hand.color = "#f0c050"; hand.fontSize = 16;
+                    hand.width = "20px"; hand.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                    hand.left = "0px"; hand.alpha = 0;
+                    row.addControl(hand);
+
+                    const name = new G.TextBlock();
+                    name.text = s.name; name.color = TXT; name.fontSize = 23;
+                    name.fontFamily = "'FF9UI', 'Cabin', sans-serif"; name.fontWeight = "600";
+                    name.shadowColor = "#000"; name.shadowBlur = 0; name.shadowOffsetX = 2; name.shadowOffsetY = 2;
+                    name.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                    name.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                    name.left = "24px"; name.resizeToFit = true;
+                    row.addControl(name);
+
+                    const manaRight = (s.key.length > 1 ? "-60px" : "-34px");
+                    const mana = new G.TextBlock();
+                    mana.text = s.mana > 0 ? "●".repeat(s.mana) : "";
+                    mana.color = "#5ad0ff"; mana.fontSize = 13;
+                    mana.shadowColor = "#000"; mana.shadowBlur = 0; mana.shadowOffsetX = 1; mana.shadowOffsetY = 1;
+                    mana.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT;
+                    mana.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT;
+                    mana.left = manaRight;
+                    mana.resizeToFit = true;
+                    row.addControl(mana);
+
+                    // Cooldown countdown — shown in place of the mana orbs while on CD.
+                    const cd = new G.TextBlock();
+                    cd.text = ""; cd.color = "#9aa6bd"; cd.fontSize = 17;
+                    cd.fontFamily = "'FF9UI', 'Cabin', sans-serif";
+                    cd.shadowColor = "#000"; cd.shadowBlur = 0; cd.shadowOffsetX = 2; cd.shadowOffsetY = 2;
+                    cd.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT;
+                    cd.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT;
+                    cd.left = manaRight; cd.resizeToFit = true; cd.isVisible = false;
+                    row.addControl(cd);
+
+                    const kw = s.key.length > 1 ? 52 : 26;
+                    const keyBadge = new G.Rectangle();
+                    keyBadge.width = kw + "px"; keyBadge.height = "24px";
+                    keyBadge.background = "rgba(16,24,40,0.55)"; keyBadge.color = "rgba(206,214,230,0.5)";
+                    keyBadge.thickness = 1; keyBadge.cornerRadius = 4;
+                    keyBadge.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT; keyBadge.left = "0px";
+                    row.addControl(keyBadge);
+                    const keyText = new G.TextBlock();
+                    keyText.text = s.key; keyText.color = "#cdd8ef"; keyText.fontSize = 13;
+                    keyText.fontFamily = "'FF9UI', 'Cabin', sans-serif";
+                    keyText.shadowColor = "#000"; keyText.shadowBlur = 0; keyText.shadowOffsetX = 1; keyText.shadowOffsetY = 1;
+                    keyBadge.addControl(keyText);
+
+                    stack.addControl(row);
+                    cmdRefs.push({ id: s.id, row, name, mana, cd, keyBadge, keyText, hand });
+                });
+
+                // "Command" title tab hanging over the top border (FF9 battle-window signature).
+                // Added to the GUI ROOT (not as a child of box) so nothing clips its overhang —
+                // positioned to float just above the box's top-left corner.
+                const titleTab = new G.Rectangle("commandTitleTab");
+                titleTab.width = "150px"; titleTab.height = TITLE_H + "px";
+                titleTab.background = STEEL; titleTab.color = RIM; titleTab.thickness = 2; titleTab.cornerRadius = 6;
+                titleTab.clipChildren = false;
+                titleTab.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                titleTab.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
+                // box bottom edge is 16px above container bottom; box top edge is 16+BOX_H above it.
+                // Float the tab's bottom 4px into the box top (so it reads as "attached").
+                titleTab.left = "50px"; titleTab.top = (-(16 + BOX_H - 4)) + "px";
+                titleTab.isVisible = false;
+                guiTexture.addControl(titleTab);
+                const titleText = new G.TextBlock();
+                titleText.text = "Command"; titleText.color = "#f0c050"; titleText.fontSize = 16;
+                titleText.fontFamily = "'FF9UI', 'Cabin', sans-serif"; titleText.fontWeight = "600";
+                titleText.shadowColor = "#000"; titleText.shadowBlur = 0; titleText.shadowOffsetX = 2; titleText.shadowOffsetY = 2;
+                titleTab.addControl(titleText);
+
+                // Apply a visual state to one slot. mode: 'castable' | 'noMana' | 'cooldown' | 'active'.
+                const GOLD = "#f0c050", READY_TXT = "#f4f7ff", DIM_TXT = "#8b94a8";
+                function applyState(ref, mode, cdSeconds) {
+                    if (!ref) return;
+                    // Skip redundant updates so we don't re-dirty the GUI texture every frame.
+                    const cdLabel = (mode === 'cooldown' && typeof cdSeconds === 'number' && isFinite(cdSeconds) && cdSeconds > 0)
+                        ? Math.ceil(cdSeconds) : -1;
+                    if (ref._mode === mode && ref._cdLabel === cdLabel) return;
+                    ref._mode = mode; ref._cdLabel = cdLabel;
+                    if (mode === 'cooldown') {
+                        ref.name.color = DIM_TXT; ref.name.alpha = 0.6;
+                        ref.mana.isVisible = false;
+                        ref.cd.isVisible = (cdLabel > 0);
+                        ref.cd.text = (cdLabel > 0) ? (cdLabel + "") : "";
+                        ref.hand.alpha = 0;
+                        ref.keyBadge.alpha = 0.5;
+                    } else if (mode === 'noMana') {
+                        ref.name.color = READY_TXT; ref.name.alpha = 0.7;
+                        ref.mana.isVisible = true; ref.mana.color = "#5a6680"; ref.mana.alpha = 1;
+                        ref.cd.isVisible = false;
+                        ref.hand.alpha = 0;
+                        ref.keyBadge.alpha = 1;
+                    } else if (mode === 'active') {
+                        ref.name.color = "#8fd0ff"; ref.name.alpha = 1;
+                        ref.mana.isVisible = (ref.mana.text !== ""); ref.mana.color = "#8fd0ff"; ref.mana.alpha = 1;
+                        ref.cd.isVisible = false;
+                        ref.hand.alpha = 1; ref.hand.color = "#8fd0ff";
+                        ref.keyBadge.alpha = 1;
+                    } else { // castable
+                        ref.name.color = GOLD; ref.name.alpha = 1;
+                        ref.mana.isVisible = (ref.mana.text !== ""); ref.mana.color = "#5ad0ff"; ref.mana.alpha = 1;
+                        ref.cd.isVisible = false;
+                        ref.hand.alpha = 1; ref.hand.color = "#f0c050";
+                        ref.keyBadge.alpha = 1;
+                    }
+                }
+
+                window.commandMenu = {
+                    box, titleTab, slots: cmdRefs,
+                    setSlotState: (id, mode, cdSeconds) => applyState(cmdRefs.find(r => r.id === id), mode, cdSeconds),
+                };
+                // Parry is ready at match start (before any parry event fires).
+                applyState(cmdRefs.find(r => r.id === 'parry'), 'castable');
+
+                // ----- Detail window: an identical steel window that pops to the RIGHT of the
+                // command menu on hover, showing the spell's stats + description. -----
+                const DETAIL_W = BOX_W, DETAIL_H = BOX_H;   // identical to the command window
+                const DETAIL_X = 34 + BOX_W + 14;   // command box left + width + gap
+                const detailBox = new G.Rectangle("commandDetailBox");
+                detailBox.width = DETAIL_W + "px"; detailBox.height = DETAIL_H + "px";
+                detailBox.background = STEEL; detailBox.color = RIM; detailBox.thickness = 2; detailBox.cornerRadius = 8;
+                detailBox.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                detailBox.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
+                detailBox.left = DETAIL_X + "px"; detailBox.top = "-16px";
+                detailBox.shadowColor = "#000"; detailBox.shadowBlur = 0; detailBox.shadowOffsetX = 4; detailBox.shadowOffsetY = 4;
+                detailBox.isVisible = false;
+                guiTexture.addControl(detailBox);
+
+                // Stats line as a horizontal row of tokens so numbers render WHITE (pop) against
+                // muted gold labels (Babylon TextBlock is single-color, so we split into runs).
+                const STAT_LABEL = "#f0c050";
+                const detailStats = new G.StackPanel("detailStats");
+                detailStats.isVertical = false; detailStats.height = "22px";
+                detailStats.width = (DETAIL_W - 32) + "px";
+                detailStats.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                detailStats.verticalAlignment = ALN.VERTICAL_ALIGNMENT_TOP;
+                detailStats.left = "16px"; detailStats.top = "13px";
+                detailBox.addControl(detailStats);
+                function setStatsTokens(str) {
+                    detailStats.clearControls();
+                    const tokens = (str || "").match(/(\d+\.?\d*|[^\d]+)/g) || [];
+                    tokens.forEach(tok => {
+                        const tb = new G.TextBlock();
+                        tb.text = tok; tb.resizeToFit = true; tb.fontSize = 15;
+                        tb.fontFamily = "'FF9UI', 'Cabin', sans-serif";
+                        tb.color = /\d/.test(tok) ? "#ffffff" : STAT_LABEL;
+                        tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
+                        detailStats.addControl(tb);
+                    });
+                }
+
+                const detailDesc = new G.TextBlock();
+                detailDesc.color = "#eef2fb"; detailDesc.fontSize = 14;
+                detailDesc.fontFamily = "'FF9UI', 'Cabin', sans-serif";
+                detailDesc.shadowColor = "#000"; detailDesc.shadowBlur = 0; detailDesc.shadowOffsetX = 2; detailDesc.shadowOffsetY = 2;
+                detailDesc.textWrapping = true; detailDesc.lineSpacing = "2px";
+                detailDesc.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                detailDesc.verticalAlignment = ALN.VERTICAL_ALIGNMENT_TOP;
+                detailDesc.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                detailDesc.textVerticalAlignment = ALN.VERTICAL_ALIGNMENT_TOP;
+                detailDesc.left = "16px"; detailDesc.top = "44px";
+                detailDesc.width = (DETAIL_W - 32) + "px"; detailDesc.height = (DETAIL_H - 56) + "px";
+                detailBox.addControl(detailDesc);
+
+                // Spell-name title tab on the detail window (GUI root, like the Command tab).
+                const detailTab = new G.Rectangle("commandDetailTab");
+                detailTab.width = "150px"; detailTab.height = TITLE_H + "px";
+                detailTab.background = STEEL; detailTab.color = RIM; detailTab.thickness = 2; detailTab.cornerRadius = 6;
+                detailTab.clipChildren = false;
+                detailTab.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                detailTab.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
+                detailTab.left = (DETAIL_X + 16) + "px"; detailTab.top = (-(16 + DETAIL_H - 4)) + "px";
+                detailTab.isVisible = false;
+                guiTexture.addControl(detailTab);
+                const detailTabText = new G.TextBlock();
+                detailTabText.text = ""; detailTabText.color = "#f0c050"; detailTabText.fontSize = 16;
+                detailTabText.fontFamily = "'FF9UI', 'Cabin', sans-serif"; detailTabText.fontWeight = "600";
+                detailTabText.shadowColor = "#000"; detailTabText.shadowBlur = 0; detailTabText.shadowOffsetX = 2; detailTabText.shadowOffsetY = 2;
+                detailTab.addControl(detailTabText);
+
+                const stripHtml = (h) => (h || "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+                function spellInfo(id) {
+                    const reg = window.ABILITY_REGISTRY && window.ABILITY_REGISTRY[id];
+                    if (reg) {
+                        const u = reg.ui;
+                        return {
+                            name: u.name,
+                            stats: `${u.manaCostLabel} Mana    ${u.castLabel}    ${u.cooldownLabel}`,
+                            desc: stripHtml(u.description),
+                        };
+                    }
+                    if (id === 'parry') return {
+                        name: 'Parry', stats: 'Space    Reaction',
+                        desc: 'Time it to deflect an incoming projectile back at the enemy. A clean parry returns it faster; a whiff means a longer cooldown.',
+                    };
+                    return null;
+                }
+                function showDetail(id) {
+                    const info = spellInfo(id);
+                    if (!info) { hideDetail(); return; }
+                    detailTabText.text = info.name;
+                    setStatsTokens(info.stats);
+                    detailDesc.text = info.desc;
+                    detailBox.isVisible = true; detailTab.isVisible = true;
+                }
+                function hideDetail() { detailBox.isVisible = false; detailTab.isVisible = false; }
+
+                // Hover wiring — the game never attaches Babylon input and the page is a stack of
+                // DOM overlays, so GUI onPointerEnter never fires. Instead we listen for mouse moves
+                // at the window (capture phase, so nothing can swallow them) and hit-test the rows
+                // against their actual rendered rectangles (_currentMeasure, in ADT pixel space).
+                let hoveredId = null;
+                function adtPointFromClient(clientX, clientY) {
+                    const canvas = scene.getEngine().getRenderingCanvas();
+                    if (!canvas) return null;
+                    const rect = canvas.getBoundingClientRect();
+                    if (!rect.width || !rect.height) return null;
+                    const size = guiTexture.getSize();
+                    return {
+                        x: (clientX - rect.left) * (size.width / rect.width),
+                        y: (clientY - rect.top) * (size.height / rect.height),
+                    };
+                }
+                function hitTestRow(clientX, clientY) {
+                    if (!box.isVisible) return null;
+                    const p = adtPointFromClient(clientX, clientY);
+                    if (!p) return null;
+                    for (const ref of cmdRefs) {
+                        const m = ref.row._currentMeasure;
+                        if (!m || !m.width) continue;
+                        if (p.x >= m.left && p.x <= m.left + m.width &&
+                            p.y >= m.top  && p.y <= m.top + m.height) return ref.id;
+                    }
+                    return null;
+                }
+                function onHoverMove(e) {
+                    const found = hitTestRow(e.clientX, e.clientY);
+                    if (found === hoveredId) return;
+                    hoveredId = found;
+                    if (found) showDetail(found); else hideDetail();
+                }
+                window.addEventListener('pointermove', onHoverMove, true);
+                window.addEventListener('pointerleave', () => { if (hoveredId) { hoveredId = null; hideDetail(); } }, true);
+
+                Object.assign(window.commandMenu, { detailBox, detailTab, showDetail, hideDetail, hitTestRow });
+
+                // Resolve the local player's combatant (singles, doubles, and pvp).
+                function localCombatant() {
+                    let lc = (typeof localPlayerCombatant !== 'undefined' && localPlayerCombatant)
+                        ? localPlayerCombatant : window.combatants && window.combatants.left;
+                    if (typeof gameMode !== 'undefined' && gameMode === 'pvp'
+                        && window.combatants && window.combatants.left && window.combatants.right) {
+                        lc = window.combatants[getLocalSide()];
+                    }
+                    return lc;
+                }
+
+                // Per-frame: visibility + live spell states (parry is driven by updateParryButtonGUI).
+                scene.onBeforeRenderObservable.add(() => {
+                    const inGame = (typeof gameState === 'undefined') || (gameState !== 'menu' && gameState !== 'lobby');
+                    if (box.isVisible !== inGame) box.isVisible = inGame;
+                    if (titleTab.isVisible !== inGame) titleTab.isVisible = inGame;
+                    if (!inGame) { if (detailBox.isVisible) hideDetail(); hoveredId = null; return; }
+
+                    const lc = localCombatant();
+                    if (!lc) return;
+                    const mana = (typeof lc.mana === 'number') ? lc.mana : 0;
+                    const cds = lc.cooldowns || {};
+                    const A = window.abilities || {};
+                    cmdRefs.forEach(ref => {
+                        if (ref.id === 'parry') return;          // handled by the parry GUI hook
+                        const remaining = cds[ref.id] || 0;
+                        const cost = (A[ref.id] && A[ref.id].manaCost) || 0;
+                        if (remaining > 0) applyState(ref, 'cooldown', remaining);
+                        else if (mana < cost) applyState(ref, 'noMana');
+                        else applyState(ref, 'castable');
+                    });
+                });
+                console.log("FF9 GUI command menu built");
+            } catch (e) {
+                console.warn("Command menu GUI failed:", e);
+            }
+
             // Helper function to create ability button
             function createAbilityButton(name, keyLabel, readyColor, bgColor, noManaColor) {
                 const container = new BABYLON.GUI.Rectangle();
@@ -5786,7 +6113,7 @@
             }
 
             // Fireball button (gold when ready, red-ish when no mana)
-            const fireballBtn = createAbilityButton("fireball", "1", "#c9a44a", "#2a2218", "#8b4444");
+            const fireballBtn = createAbilityButton("fireball", "1", "#f0c050", "#2a2218", "#8b4444");
             abilityBarContainer.addControl(fireballBtn.container);
 
             // Add fireball icon image
@@ -7457,7 +7784,7 @@
                             // Update loading screen to show "Click to Start"
                             document.getElementById('loadingBar').style.width = '100%';
                             document.getElementById('loadingText').textContent = 'Click to Start';
-                            document.getElementById('loadingText').style.color = '#c9a44a';
+                            document.getElementById('loadingText').style.color = '#f0c050';
                             document.getElementById('loadingText').style.cursor = 'pointer';
                             document.getElementById('loadingText').style.fontSize = '12px';
                             document.getElementById('loadingTip').style.display = 'none';
@@ -8546,7 +8873,7 @@
             // CHARACTER MODE SELECTION
             // ========================================
             // Options: 'wizard' (original GLB), 'procedural_wizard', 'meshy_wizard'
-            const CHARACTER_MODE = 'merged_glb'; // Use merged GLB with all animations
+            const CHARACTER_MODE = 'pickle'; // 'merged_glb' = original wizards; 'pickle' = pickle-wizard swap (idle only)
 
             let playerWizardParts = null;
             let aiWizardParts = null;
@@ -9024,9 +9351,182 @@
                 });
             };
 
+            // === PICKLE WIZARD QUICK SWAP (idle only) ===
+            // Loads the single rigged pickle GLB for both players at the same paddle transform
+            // as the current characters. Reversible: set CHARACTER_MODE back to 'merged_glb'.
+            const loadPickleWizard = () => {
+                const loadOne = (side, paddle, facingRotation, onComplete) => {
+                    const isPlayer = side === 'left';
+                    const prefix = isPlayer ? 'player' : 'ai';
+                    const combatant = isPlayer ? combatants.left : combatants.right;
+                    const animStore = isPlayer ? playerAnimations : aiAnimations;
+                    // Native pickle animation clips, generated on the pickle's OWN rig via
+                    // Higgsfield 3d_rigging (so proportions stay correct, unlike retargeting the
+                    // humanoid wizard clips). All clips share the same 24-bone rig from the same
+                    // source mesh, so name-matched retargeting onto the idle base is clean.
+                    const modelPath = 'models/pickle/';
+                    const PICKLE_ANIMS = {
+                        left: 'pickle_left.glb', right: 'pickle_right.glb',
+                        cast_loop: 'pickle_cast.glb', cast_release: 'pickle_cast_release.glb',
+                        victory: 'pickle_victory.glb', defeat: 'pickle_defeat.glb'
+                    };
+                    // Render the ORIGINAL high-detail mesh (clean texture + face); the 3d_rigging
+                    // clips share its Meshy rig, so animations retarget onto it. (The 3d_rigging
+                    // GLBs are decimated ~18x and re-baked, which smears the painted texture.)
+                    const basePath = '.pickle/', baseFile = 'pickle_wizard_v1.glb';
+
+                    BABYLON.SceneLoader.ImportMesh("", basePath, baseFile, scene,
+                        (meshes, particleSystems, skeletons, animationGroups) => {
+                            const modelRoot = new BABYLON.TransformNode(`${prefix}PickleRoot`, scene);
+                            meshes.forEach(m => {
+                                if (!m.parent || m.parent === scene) m.parent = modelRoot;
+                                shadowGenerator.addShadowCaster(m);
+                                if (!m.material) return;
+                                // Tint the AI pickle red so the two sides read apart
+                                if (!isPlayer) {
+                                    const t = m.material.clone(`${m.material.name}_aiTint`);
+                                    m.material = t;
+                                    if (t.albedoColor) {
+                                        t.albedoColor = new BABYLON.Color3(
+                                            Math.min(1, t.albedoColor.r * 1.4 + 0.3),
+                                            t.albedoColor.g * 0.5, t.albedoColor.b * 0.5);
+                                    } else if (t.diffuseColor) {
+                                        t.diffuseColor = new BABYLON.Color3(
+                                            Math.min(1, t.diffuseColor.r * 1.4 + 0.3),
+                                            t.diffuseColor.g * 0.5, t.diffuseColor.b * 0.5);
+                                    }
+                                }
+                                // Match the scene's flat PS1 storybook look: kill the PBR gloss /
+                                // environment reflections so the pickle isn't a shiny outlier.
+                                const mat = m.material;
+                                if (mat.roughness !== undefined) mat.roughness = 1;
+                                if (mat.metallic !== undefined) mat.metallic = 0;
+                                if (mat.environmentIntensity !== undefined) mat.environmentIntensity = 0;
+                                if (mat.specularIntensity !== undefined) mat.specularIntensity = 0;
+                                if (mat.emissiveColor) mat.emissiveColor = new BABYLON.Color3(0, 0, 0);
+                                mat.emissiveFresnelParameters = null;
+                                // Crisp pixel texels (nearest magnification) BUT mip-mapped
+                                // minification, so the 2048² texture doesn't alias/shimmer when the
+                                // pickle is small on screen (plain NEAREST ignores mipmaps -> sparkle).
+                                const tex = mat.albedoTexture || mat.diffuseTexture;
+                                if (tex) {
+                                    tex.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
+                                    tex.anisotropicFilteringLevel = 8;
+                                }
+                            });
+
+                            modelRoot.parent = paddle;
+                            modelRoot.position.set(0, 0, 0);
+                            modelRoot.scaling = new BABYLON.Vector3(1, 1, 1);  // tune by eye
+                            modelRoot.rotation.y = facingRotation;
+                            paddle.visibility = 0;
+
+                            combatant.modelRoot = modelRoot;
+                            combatant.skeleton = skeletons[0] || null;
+                            combatant.flashMeshes = meshes.filter(m => m.material);
+                            if (isPlayer) { playerModelRoot = modelRoot; playerFlashMeshes = combatant.flashMeshes; }
+                            else { aiModelRoot = modelRoot; aiFlashMeshes = combatant.flashMeshes; }
+
+                            // Idle ships inside the base GLB.
+                            if (animationGroups.length > 0) {
+                                const idle = animationGroups[0];
+                                idle.name = `${prefix}_idle`;
+                                idle.stop();
+                                combatant.animations['idle'] = idle;
+                                animStore['idle'] = idle;
+                            }
+
+                            // Map bone name -> its linked glTF TransformNode. The skinned mesh is
+                            // driven by these nodes (bones are slaved to them), so imported clips
+                            // MUST target the nodes; bone-bound clips get overridden and don't move
+                            // the mesh (this caused "every action looks like defeat").
+                            const nodeByName = {};
+                            (combatant.skeleton?.bones || []).forEach(b => {
+                                const tn = b.getTransformNode && b.getTransformNode();
+                                if (tn) nodeByName[tn.name] = tn;
+                            });
+
+                            // Import the remaining native clips and bind them to this combatant's nodes.
+                            // Keep full transforms (these are authored for the pickle's own rig).
+                            const otherAnims = ['left', 'right', 'cast_loop', 'cast_release', 'victory', 'defeat'];
+                            let ai = 0;
+                            const loadNext = () => {
+                                if (ai >= otherAnims.length) {
+                                    const rel = combatant.animations['cast_release'];
+                                    if (rel) {
+                                        // Skip the wind-up "catch" (~first 22%) so the clip opens on
+                                        // the forward push-off / spell release, not the gather.
+                                        const skip = Math.round((rel.to - rel.from) * 0.22);
+                                        rel.normalize(rel.from + skip, rel.to);
+                                        rel.speedRatio = 2.2;   // snappy release
+                                    }
+                                    // Parry reuses the (distinct) release clip.
+                                    if (rel) {
+                                        combatant.animations['parry'] = rel;
+                                        animStore['parry'] = rel;
+                                    }
+                                    Object.values(combatant.animations).forEach(a => { if (a && a.stop) a.stop(); });
+                                    if (combatant.animations['idle']) {
+                                        combatant.animations['idle'].play(true);
+                                        combatant.currentAnim = 'idle';
+                                    }
+                                    console.log(`[pickle ${prefix}] anims:`, Object.keys(combatant.animations));
+                                    onComplete();
+                                    return;
+                                }
+                                const action = otherAnims[ai++];
+                                const fileName = PICKLE_ANIMS[action];
+                                const before = scene.animationGroups.length;
+                                BABYLON.SceneLoader.ImportAnimations(
+                                    modelPath, fileName, scene, false,
+                                    BABYLON.SceneLoaderAnimationGroupLoadingMode.NoSync, null,
+                                    () => {
+                                        const newAnims = scene.animationGroups.slice(before);
+                                        if (newAnims.length > 0) {
+                                            const anim = newAnims[0];
+                                            // Bind clip targets to this combatant's linked TransformNodes
+                                            // (NOT bones) so the animation actually drives the mesh.
+                                            anim.targetedAnimations.forEach(ta => {
+                                                const n = ta.target && ta.target.name;
+                                                if (n && nodeByName[n]) ta.target = nodeByName[n];
+                                            });
+                                            anim.name = `${prefix}_${action}`;
+                                            anim.stop();
+                                            combatant.animations[action] = anim;
+                                            animStore[action] = anim;
+                                        }
+                                        loadNext();
+                                    },
+                                    null,
+                                    (err) => { console.error(`[pickle ${prefix}] "${action}" failed:`, err); loadNext(); }
+                                );
+                            };
+                            console.log(`[pickle ${prefix}] base loaded`, meshes.length, 'meshes');
+                            loadNext();
+                        },
+                        null,
+                        (scene, msg, err) => {
+                            console.error(`[pickle ${prefix}] load failed:`, msg, err);
+                            paddle.visibility = 1;
+                            onComplete();
+                        }
+                    );
+                };
+                // Load sequentially (player, then AI) so each cleanly collects its own
+                // imported clips — concurrent imports race on scene.animationGroups indexing.
+                loadOne('left', playerPaddle, Math.PI / 2, () => {
+                    combatants.left.modelLoaded = true; playerModelLoaded = true; checkAllLoaded();
+                    loadOne('right', aiPaddle, -Math.PI / 2, () => {
+                        combatants.right.modelLoaded = true; aiModelLoaded = true; checkAllLoaded();
+                    });
+                });
+            };
+
             // === LOAD CHARACTERS BASED ON MODE ===
             updateLoadingProgress(30, 'Loading wizards...');
-            if (CHARACTER_MODE === 'meshy_wizard') {
+            if (CHARACTER_MODE === 'pickle') {
+                loadPickleWizard();
+            } else if (CHARACTER_MODE === 'meshy_wizard') {
                 loadMeshyWizard();
             } else if (CHARACTER_MODE === 'procedural_wizard') {
                 loadWizardCharacters();
@@ -10843,6 +11343,12 @@
                         htmlBtn.classList.add('on-cooldown');
                         if (sweep) sweep.style.setProperty('--sweep-angle', '360deg');
                     }
+                }
+
+                // Mirror onto the FF9 GUI command menu's Parry slot.
+                if (window.commandMenu && window.commandMenu.setSlotState) {
+                    const mode = state === 'ready' ? 'castable' : (state === 'active' ? 'active' : 'cooldown');
+                    window.commandMenu.setSlotState('parry', mode);
                 }
             };
 
@@ -16280,7 +16786,7 @@
             const slideInFrom = movingRight ? "200px" : "-200px";
             const slideOutTo = movingRight ? "-200px" : "200px";
             const centerPos = "0px";
-            const stageColor = (window.getStageColor ? window.getStageColor(toStage) : text.color) || "#c9a44a";
+            const stageColor = (window.getStageColor ? window.getStageColor(toStage) : text.color) || "#f0c050";
 
             // Block gameplay input and casting during the entire transition
             roundTransitioning = true;
