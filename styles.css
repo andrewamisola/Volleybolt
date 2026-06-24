@@ -27,6 +27,12 @@
 }
 
 :root {
+    /* Standard FF9 text outline: crisp 8-way solid-black stroke, used on ALL FF9UI text
+       so every label shares the same shadow type + color. */
+    --ff9-stroke:
+        -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000,
+        0 -1px 0 #000, 0 1px 0 #000, -1px 0 0 #000, 1px 0 0 #000;
+
     /* Retro color palette - muted, earthy, classic game colors */
     --gold: #d4a849;
     --gold-dark: #8b6914;
@@ -228,13 +234,13 @@ html, body {
 .combat-text {
     position: absolute;
     font-family: 'FF9UI', 'Cabin', sans-serif;
-    font-size: 10px;
+    font-size: 15px;          /* bigger: FF9UI reads smaller than the old pixel font */
     font-weight: 400;
     color: #fff;
     padding: 0;
     background: none;          /* no black box -- plain floating text */
     border: none;
-    text-shadow: 2px 2px 0px #000;
+    text-shadow: var(--ff9-stroke);
     pointer-events: none;
     z-index: 1001;
     white-space: nowrap;
@@ -251,7 +257,7 @@ html, body {
         linear-gradient(180deg, rgba(84,96,118,0.95) 0%, rgba(42,52,70,0.97) 100%);
     border: 2px solid #d3dae8;
     border-radius: 8px;
-    text-shadow: 1px 1px 0 rgba(8,12,26,0.9);
+    text-shadow: var(--ff9-stroke);
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), 0 3px 0 rgba(0,0,0,0.45);
 }
 .combat-text.cast-bubble::after {   /* downward speech-bubble tail */
@@ -281,10 +287,27 @@ html, body {
 .combat-text.fire { color: #ffa040; }
 .combat-text.frost { color: #80d0ff; }
 .combat-text.lightning { color: #ffff40; }
+/* Status effects (Frozen, etc.) use the chat-bubble style too -- frost variant. */
 .combat-text.frozen {
-    color: #ffffff;
-    background: rgba(64, 128, 255, 0.4);
-    font-style: italic;
+    color: #eaf6ff;
+    padding: 5px 12px 6px;
+    border: 2px solid #8fd0ff;
+    border-radius: 8px;
+    background:
+        repeating-linear-gradient(118deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, rgba(0,0,0,0.07) 1px, rgba(0,0,0,0.07) 2px, transparent 2px, transparent 4px),
+        linear-gradient(180deg, rgba(60,110,170,0.95) 0%, rgba(30,60,110,0.97) 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), 0 3px 0 rgba(0,0,0,0.45);
+    text-shadow: var(--ff9-stroke);
+}
+.combat-text.frozen::after {   /* downward bubble tail */
+    content: '';
+    position: absolute;
+    left: 50%; bottom: -8px;
+    transform: translateX(-50%);
+    width: 0; height: 0;
+    border-left: 7px solid transparent;
+    border-right: 7px solid transparent;
+    border-top: 8px solid #8fd0ff;
 }
 .combat-text.damage { color: #ff4040; font-size: 12px; }
 .combat-text.cancel { color: #ffff40; }
@@ -298,7 +321,7 @@ html, body {
     color: #c9a44a;
     font-family: 'FF9UI', 'Cabin', sans-serif;
     font-size: 24px;
-    text-shadow: 2px 2px 0px #000;  /* Simple pixel shadow */
+    text-shadow: var(--ff9-stroke);  /* Simple pixel shadow */
     pointer-events: none;
     user-select: none;
     letter-spacing: 4px;
@@ -388,16 +411,13 @@ html, body {
 .damage-number {
     position: absolute;
     font-family: 'FF9UI', 'Cabin', sans-serif;
-    font-size: 14px;
+    font-size: 18px;             /* bigger */
     font-weight: 400;
     color: #fff;                 /* white text */
     padding: 0;
     background: none;            /* no black box */
     border: none;
-    /* black stroke all around for readability (no box needed) */
-    text-shadow:
-        -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000,
-        0 -2px 0 #000, 0 2px 0 #000, -2px 0 0 #000, 2px 0 0 #000;
+    text-shadow: var(--ff9-stroke);   /* shared FF9 stroke */
     pointer-events: none;
     z-index: 1001;
     white-space: nowrap;
@@ -1447,7 +1467,7 @@ body.flipped-view #aiCastBarContainer {
     font-size: 24px;
     font-weight: 700;
     color: #ffd700;
-    text-shadow: 2px 2px 0px #000;  /* Simple pixel shadow */
+    text-shadow: var(--ff9-stroke);  /* Simple pixel shadow */
     pointer-events: none;
     z-index: 10000;
     animation: floatUp 2s ease-out forwards;
@@ -2381,12 +2401,9 @@ body.flipped-view #aiCastBarContainer {
     justify-content: flex-start;
     text-align: left;
     font-family: 'FF9UI', 'Cabin', sans-serif;
-    font-size: 16px;
+    font-size: 21px;   /* bigger: FF9UI is smaller than the old fonts */
     color: #f4f7ff;
-    /* crisp solid-black 8-way stroke (no soft offset shadow) */
-    text-shadow:
-        -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000,
-        0 -1px 0 #000, 0 1px 0 #000, -1px 0 0 #000, 1px 0 0 #000;
+    text-shadow: var(--ff9-stroke);
     padding: 0;
 }
 .ability-slot:hover .ability-icon,
@@ -2407,7 +2424,7 @@ body.flipped-view #aiCastBarContainer {
     font-size: 10px;
     letter-spacing: 2px;
     line-height: 1;
-    text-shadow: 1px 1px 0 rgba(8,12,26,0.9);
+    text-shadow: var(--ff9-stroke);
     display: flex;
     align-items: center;
 }
@@ -2427,7 +2444,7 @@ body.flipped-view #aiCastBarContainer {
     font-family: 'FF9UI', 'Cabin', sans-serif;
     font-size: 11px;
     color: #cdd8ef;
-    text-shadow: 1px 1px 0 rgba(8,12,26,0.9);
+    text-shadow: var(--ff9-stroke);
 }
 /* Hotbar bits not used in the FF9 menu (CD shown creatively later) */
 .cooldown-sweep,
@@ -2486,7 +2503,7 @@ body.flipped-view #aiCastBarContainer {
     justify-content: flex-start;
     align-items: center;
     color: #e7ecf6;
-    text-shadow: 2px 2px 0 rgba(8,12,26,0.9);
+    text-shadow: var(--ff9-stroke);
     position: relative;
 }
 .arcane-buttons .menu-btn:hover { transform: none; color: #fff4c2; border: none; }
@@ -2521,7 +2538,7 @@ body.flipped-view #aiCastBarContainer {
     font-size: 14px;
     letter-spacing: 2px;
     color: #aab2c4;
-    text-shadow: 1px 1px 0 rgba(8,12,26,0.8);
+    text-shadow: var(--ff9-stroke);
     pointer-events: none;
 }
 
@@ -2562,14 +2579,11 @@ body.flipped-view #aiCastBarContainer {
 /* --- Menu items: FF9UI with a crisp black stroke for readability (no soft glow) --- */
 .arcane-buttons .menu-btn .menu-btn-label {
     font-family: 'FF9UI', 'Cabin', sans-serif;
-    font-size: 34px;
+    font-size: 46px;   /* bigger: FF9UI is smaller than the old Cormorant */
     font-weight: 600;
     letter-spacing: 2px;
     color: #f3e6c0;   /* warm cream */
-    /* hard black stroke (8-way), no blur */
-    text-shadow:
-        -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000,
-        0 -2px 0 #000, 0 2px 0 #000, -2px 0 0 #000, 2px 0 0 #000;
+    text-shadow: var(--ff9-stroke);
     transition: color 0.12s ease;
 }
 .arcane-buttons .menu-btn:hover .menu-btn-label {

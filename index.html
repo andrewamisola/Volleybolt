@@ -15,7 +15,7 @@
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css?v=38">
+    <link rel="stylesheet" href="styles.css?v=39">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -12507,7 +12507,7 @@
                                     }
                                     // Show frozen text at front paddle position
                                     if (window.showCombatTextAt) {
-                                        showCombatTextAt(playerFrontPaddle.position.clone(), '#FROZEN', 'frozen');
+                                        showCombatTextAt(playerFrontPaddle.position.clone(), 'Frozen', 'frozen');
                                     }
                                     toDestroy.push(proj);
                                 } else {
@@ -12575,7 +12575,7 @@
                                     }
                                     // Show frozen text at front paddle position
                                     if (window.showCombatTextAt) {
-                                        showCombatTextAt(aiFrontPaddle.position.clone(), '#FROZEN', 'frozen');
+                                        showCombatTextAt(aiFrontPaddle.position.clone(), 'Frozen', 'frozen');
                                     }
                                     toDestroy.push(proj);
                                 } else {
@@ -17538,7 +17538,7 @@
         function showFrozenText(isPlayer) {
             // Show ailment text that lasts for freeze duration
             const freezeDuration = abilities.frostbolt.freezeDuration || 1.0;
-            showAilmentText(isPlayer, '#FROZEN', 'frozen', freezeDuration);
+            showAilmentText(isPlayer, 'Frozen', 'frozen', freezeDuration);
         }
 
         // === GUI-BASED FLOATING COMBAT TEXT SYSTEM ===
