@@ -27,7 +27,8 @@ Goal: make the game **boot and transition like a real game** — clean loading �
 One module owns `state` and all transitions. Nothing outside it mutates scene/camera/UI visibility.
 
 ```
-BOOT → MENU → MATCH → GAMEOVER → MENU
+BOOT → MENU → MATCH ⇄ PAUSE → MENU        (Esc opens PAUSE; Quit → MENU)
+              MATCH → GAMEOVER → MENU
                           ↘ (Continue) ↗
 MENU → LOBBY → MATCH        (multiplayer)
 LOBBY/MATCH → (disconnect/quit) → MENU
@@ -37,6 +38,7 @@ Each state has exactly one entry function:
 - `enterBoot()` — load engine + all assets (pickle GLBs, textures, audio) with a progress bar → MENU.
 - `enterMenu()` — show 2D title backdrop + `Start Battle` / `Multiplayer`; pause/idle the 3D engine; hide all gameplay UI and the 3D view.
 - `startMatch(opts)` — see below.
+- `enterPause()` / `resumeMatch()` — see In-game / pause menu.
 - `enterGameOver(result)` — show victory/defeat overlay over the frozen match; Continue → `endMatch()`.
 - `enterLobby()` — host/join UI.
 
@@ -59,6 +61,14 @@ This single path **replaces** the tangle of `resetGame` / `resetRound` (match-st
 
 - A single camera; `startMatch()` sets its fixed wide-shot pose (full arena, both sides visible). No `MENU_CAMERA`, no `setOrthoForMenu` menu transition, no camera animation between menu and play.
 - Shared world: host/P1 = left, guest/P2 = right. **Remove** the `applyClientPerspective(flip)` mirroring path entirely (simpler, desync-proof). Each client controls only its own paddle; no input flipping needed since the world is shared.
+
+## In-game / pause menu
+
+During MATCH, **Escape** opens an in-game menu overlay:
+- **Single-player:** genuinely pauses the match (freeze the sim/round timers). Options: **Resume** (`resumeMatch()` → back to MATCH) and **Quit to Menu** (`endMatch()` → MENU).
+- **Multiplayer:** cannot pause a P2P opponent, so the overlay does **not** freeze the sim — it offers **Resume** (close overlay) and **Leave Match** (disconnect → `endMatch()` → MENU). Optionally signal the peer so they see "opponent left" via the existing `LEAVE` message.
+
+The overlay is a sibling of the GAMEOVER overlay (DOM/GUI), and "Quit/Leave" reuses the same single `endMatch()` exit path — no separate teardown logic.
 
 ## Multiplayer (lean)
 
@@ -84,4 +94,5 @@ This single path **replaces** the tangle of `resetGame` / `resetRound` (match-st
 - `Start Battle` → fresh single-player match at midfield, fixed wide camera, every time.
 - Victory/Defeat → Continue → clean 2D menu → starting again gives a fresh match (no stale end-scene, no off-angle camera).
 - `Multiplayer` → host/join by code → both land in the same shared-world match (host left, guest right); disconnect returns both cleanly to the menu.
+- **Escape** during a match opens the pause/in-game menu; Quit/Leave returns cleanly to the 2D menu via `endMatch()`.
 - No ES-module crash or `ability-registry.js` 404 in the console.
