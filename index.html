@@ -13721,6 +13721,9 @@
 
             // Store render loop function globally so we can restart it after pausing
             window.gameRenderLoop = () => {
+                // 2D menu/lobby/boot: the DOM owns the screen — skip 3D rendering entirely
+                // (this is what keeps any menu camera from ever showing).
+                if (GameSM.state === 'menu' || GameSM.state === 'lobby' || GameSM.state === 'boot') return;
                 const now = performance.now();
 
                 // STEPPED ANIMATIONS - Pause/resume at fixed intervals for retro sprite feel
@@ -14175,6 +14178,8 @@
         // Switch to menu state
         function showTalentScreen(instantCamera = false) {
             gameState = "menu";
+            GameSM.state = 'menu';
+            GameSM.show3D(false);   // 2D menu: hide the 3D arena (no menu camera)
 
             // Stop any running game
             roundActive = false;
@@ -14324,6 +14329,11 @@
                     case 'lobby':    return this.enterLobby(opts);
                 }
             },
+            // Show/hide the 3D arena canvas. Menu/lobby are 2D (DOM); 3D only shows in a match.
+            show3D(visible) {
+                const c = document.getElementById('canvas');
+                if (c) c.style.visibility = visible ? 'visible' : 'hidden';
+            },
             enterMenu()      { showTalentScreen(true); },              // legacy menu setup
             startMatch(opts) { startGame(); },                         // legacy match start (Task 4)
             endMatch()       { returnToMenuTransition(); },            // legacy end->menu (Task 5)
@@ -14333,6 +14343,7 @@
             enterLobby()     { if (window.showMultiplayerLobby) showMultiplayerLobby(); },
         };
         window.GameSM = GameSM;
+        GameSM.show3D(false);   // boot/menu is 2D: hide the 3D arena until a match starts
 
         // Start game from menu
         let startGameInProgress = false;  // Prevent double-clicks
@@ -14343,6 +14354,8 @@
                 return;
             }
             startGameInProgress = true;
+            GameSM.state = 'match';
+            GameSM.show3D(true);    // reveal the 3D arena for the match
 
             // Cover the screen with black BEFORE the menu overlay drops, so the swap
             // to the gameplay view happens entirely under black (no menu-angle / HUD flash).
