@@ -405,14 +405,18 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
     <!-- PeerJS for P2P WebRTC multiplayer -->
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-    <!-- Modular config files (expose on window for backward compatibility) -->
+    <!-- Modular config files (expose globals on window for the inline game) -->
     <script type="module" src="js/config/game-config.js"></script>
-    <script type="module" src="js/config/ability-registry.js"></script>
+    <!-- Removed js/config/ability-registry.js: file does not exist (404). Ability data is
+         window.AbilityRegistry, defined inline below. -->
     <script type="module" src="js/audio/audio-system.js"></script>
     <script type="module" src="js/ui/ui-system.js"></script>
     <script type="module" src="js/rendering/rendering-utils.js"></script>
     <script type="module" src="js/systems/game-systems.js"></script>
-    <script type="module" src="js/main.js"></script>
+    <!-- Removed js/main.js: diagnostic-only entry whose import of updateGravityUI from
+         ui-system.js (which doesn't export it) caused a hard ES-module crash. The game runs
+         from the inline script below; main.js was never functional. -->
+
     <script>
         // Global error handler to debug doubles crash
         window.onerror = function(msg, url, lineNo, columnNo, error) {
