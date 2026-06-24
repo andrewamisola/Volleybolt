@@ -471,6 +471,7 @@
 
         // Game state machine: "menu" | "playing" | "paused"
         let gameState = "menu";
+        let paused = false;   // true while the Esc pause menu freezes a single-player match
 
         // Menu camera settings (eye-level close-up of player character)
         // Camera at player's eye level, slightly angled for dynamic hero shot
@@ -13202,8 +13203,8 @@
                 // Always update animations (menu dancing, etc.) - runs in all states
                 if (window.updateAllAnimations) updateAllAnimations();
 
-                // Skip game logic when in menu or game over
-                if (gameState !== "playing" || gameOver) return;
+                // Skip game logic when in menu, game over, or paused (Esc pause menu)
+                if (gameState !== "playing" || gameOver || paused) return;
 
                 // Get frame time with safety cap (spiral-of-death guard)
                 let renderDt = engine.getDeltaTime() / 1000;
@@ -14337,13 +14338,55 @@
             enterMenu()      { showTalentScreen(true); },              // legacy menu setup
             startMatch(opts) { startGame(); },                         // legacy match start (Task 4)
             endMatch()       { returnToMenuTransition(); },            // legacy end->menu (Task 5)
-            enterPause()     { /* implemented in Task 7 */ },
-            resumeMatch()    { /* implemented in Task 7 */ },
+            enterPause() {
+                if (this.state !== 'match') return;
+                ensurePauseOverlay();
+                this.state = 'pause';
+                if (gameMode !== 'pvp') paused = true;   // freeze sim (can't pause a P2P peer)
+                const quitBtn = document.getElementById('pauseQuitBtn');
+                if (quitBtn) quitBtn.textContent = (gameMode === 'pvp') ? 'Leave Match' : 'Quit to Menu';
+                const ov = document.getElementById('pauseOverlay');
+                if (ov) ov.style.display = 'flex';
+            },
+            resumeMatch() {
+                if (this.state !== 'pause') return;
+                paused = false;
+                this.state = 'match';
+                const ov = document.getElementById('pauseOverlay');
+                if (ov) ov.style.display = 'none';
+            },
             enterGameOver(r) { showVictoryScreen(r === 'victory'); },
             enterLobby()     { if (window.showMultiplayerLobby) showMultiplayerLobby(); },
         };
         window.GameSM = GameSM;
         GameSM.show3D(false);   // boot/menu is 2D: hide the 3D arena until a match starts
+
+        // --- Esc pause / in-game menu ---
+        function ensurePauseOverlay() {
+            if (document.getElementById('pauseOverlay')) return;
+            const ov = document.createElement('div');
+            ov.id = 'pauseOverlay';
+            ov.style.cssText = 'position:fixed;inset:0;z-index:700;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.6)';
+            ov.innerHTML =
+                '<div style="background:#2a2438;border:3px solid #5a4a78;border-radius:10px;padding:28px 44px;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.5)">' +
+                '<div style="color:#f0c050;font-family:\'FF9UI\',serif;font-size:40px;letter-spacing:2px;margin-bottom:22px">Paused</div>' +
+                '<button id="pauseResumeBtn" class="game-btn menu-btn" style="display:block;width:240px;margin:10px auto">Resume</button>' +
+                '<button id="pauseQuitBtn" class="game-btn menu-btn" style="display:block;width:240px;margin:10px auto">Quit to Menu</button>' +
+                '</div>';
+            document.body.appendChild(ov);
+            ov.querySelector('#pauseResumeBtn').addEventListener('click', () => GameSM.resumeMatch());
+            ov.querySelector('#pauseQuitBtn').addEventListener('click', () => {
+                paused = false;
+                ov.style.display = 'none';
+                returnToMenuTransition();   // verified clean teardown -> 2D menu
+            });
+        }
+        document.addEventListener('keydown', (e) => {
+            if (e.code !== 'Escape') return;
+            if (window.TalentState && TalentState.isSelectingTalent) return;  // talent panel owns Esc then
+            if (GameSM.state === 'match') { GameSM.enterPause(); e.preventDefault(); }
+            else if (GameSM.state === 'pause') { GameSM.resumeMatch(); e.preventDefault(); }
+        });
 
         // Start game from menu
         let startGameInProgress = false;  // Prevent double-clicks
