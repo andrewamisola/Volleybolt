@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Pickle Anim Test</title>
+<style>html,body{margin:0;height:100%;background:#2a2440;overflow:hidden}#c{width:100%;height:100%;display:block}
+#hud{position:fixed;top:10px;left:12px;color:#9cff9c;font:13px monospace;background:rgba(0,0,0,.4);padding:6px 10px;border-radius:6px}</style></head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">loading…</div>
+<script src="https://cdn.babylonjs.com/babylon.js"></script>
+<script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const file = params.get('f') || 'models/pickle/cast_test.glb';
+const engine = new BABYLON.Engine(document.getElementById('c'), true);
+const scene = new BABYLON.Scene(engine);
+scene.clearColor = new BABYLON.Color4(0.165,0.141,0.251,1);
+const cam = new BABYLON.ArcRotateCamera('cam', -Math.PI/2, Math.PI/2.2, 4, new BABYLON.Vector3(0,1,0), scene);
+cam.attachControl(document.getElementById('c'), true);
+new BABYLON.HemisphericLight('h', new BABYLON.Vector3(0,1,0), scene).intensity = 0.95;
+const dir = new BABYLON.DirectionalLight('d', new BABYLON.Vector3(-0.5,-1,-0.5), scene); dir.intensity = 1.0;
+const grid = BABYLON.MeshBuilder.CreateGround('g',{width:6,height:6,subdivisions:6},scene);
+const gm = new BABYLON.StandardMaterial('gm',scene); gm.wireframe=true; gm.emissiveColor=new BABYLON.Color3(.35,.3,.5); gm.disableLighting=true; grid.material=gm;
+
+const slash = file.lastIndexOf('/');
+const dir2 = file.slice(0, slash+1), name = file.slice(slash+1);
+BABYLON.SceneLoader.ImportMesh('', dir2, name, scene, (meshes, ps, sk, groups) => {
+  groups.forEach(a=>a.stop()); if (groups[0]) groups[0].start(true);
+  let min=new BABYLON.Vector3(1e9,1e9,1e9), max=min.scale(-1);
+  meshes.forEach(m=>{const b=m.getBoundingInfo&&m.getBoundingInfo(); if(!b)return;
+    min=BABYLON.Vector3.Minimize(min,b.boundingBox.minimumWorld); max=BABYLON.Vector3.Maximize(max,b.boundingBox.maximumWorld);});
+  const c = min.add(max).scale(0.5), size = max.subtract(min).length();
+  cam.setTarget(c); cam.radius = size*1.3;
+  document.getElementById('hud').textContent = `${name} | anims: ${groups.map(a=>a.name).join(', ')}`;
+  window._groups = groups;
+}, null, (s,m)=>{document.getElementById('hud').textContent='ERR '+m;});
+engine.runRenderLoop(()=>scene.render());
+addEventListener('resize',()=>engine.resize());
+</script>
+</body></html>

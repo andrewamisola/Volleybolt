@@ -5,3 +5,7 @@ nul
 tmpclaude-*
 models/p3/
 models/p4/
+
+# Playwright MCP screenshots/logs
+.playwright-mcp/
+**/.DS_Store

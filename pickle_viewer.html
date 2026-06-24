@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Pickle Wizard — Viewer</title>
+<style>
+  html,body{margin:0;height:100%;background:#2a2440;overflow:hidden;font-family:system-ui,sans-serif}
+  #c{width:100%;height:100%;display:block;touch-action:none}
+  #hud{position:fixed;top:10px;left:12px;color:#e8e0ff;font-size:13px;line-height:1.5;
+       background:rgba(0,0,0,.35);padding:8px 12px;border-radius:8px;pointer-events:none}
+  #hud b{color:#9cff9c}
+  kbd{background:#1c1830;border:1px solid #554a78;border-radius:4px;padding:1px 5px;font-size:11px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <b>Pickle Wizard v1</b><br>
+  drag = orbit · scroll = zoom<br>
+  <kbd>1</kbd> idle anim · <kbd>2</kbd> T-pose · <kbd>G</kbd> grid · <kbd>W</kbd> wireframe<br>
+  <kbd>F</kbd> toggle face<br>
+  <b>Seat face:</b> arrows = up/down/left/right · <kbd>Q</kbd>/<kbd>E</kbd> = into/off face<br>
+  <kbd>[</kbd>/<kbd>]</kbd> scale · <kbd>,</kbd>/<kbd>.</kbd> roll · <kbd>M</kbd> mirror · <kbd>P</kbd> print values
+</div>
+<div id="seat" style="position:fixed;bottom:10px;left:12px;color:#9cff9c;font-size:12px;
+     background:rgba(0,0,0,.4);padding:6px 10px;border-radius:6px;font-family:monospace"></div>
+<script src="https://cdn.babylonjs.com/babylon.js"></script>
+<script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+<script>
+const canvas = document.getElementById('c');
+const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer:true, stencil:true });
+const scene = new BABYLON.Scene(engine);
+scene.clearColor = new BABYLON.Color4(0.165, 0.141, 0.251, 1);
+
+const camera = new BABYLON.ArcRotateCamera('cam', -Math.PI/2, Math.PI/2.4, 4, new BABYLON.Vector3(0,1,0), scene);
+camera.attachControl(canvas, true);
+camera.wheelPrecision = 40;
+camera.lowerRadiusLimit = 1.2;
+camera.upperRadiusLimit = 15;
+
+new BABYLON.HemisphericLight('h', new BABYLON.Vector3(0,1,0), scene).intensity = 0.9;
+const dir = new BABYLON.DirectionalLight('d', new BABYLON.Vector3(-0.5,-1,-0.5), scene);
+dir.intensity = 1.1;
+
+const grid = BABYLON.MeshBuilder.CreateGround('g', { width:8, height:8, subdivisions:8 }, scene);
+const gm = new BABYLON.StandardMaterial('gm', scene);
+gm.wireframe = true; gm.emissiveColor = new BABYLON.Color3(0.35,0.3,0.5); gm.disableLighting = true;
+grid.material = gm;
+
+let groups = [];
+let facePlane = null;
+let _nodes = null;   // { head, front } glTF TransformNodes (true render space)
+// Seating offsets in REAL world units (model is ~1.7 tall), in the head's frame.
+// out = forward off the face, up = vertical, side = horizontal, scale = face width, roll = spin.
+const seat = { out: 0.18, up: 0, side: 0, scale: 0.5, roll: 0, flip: 1 };
+
+function updateSeatHud() {
+  document.getElementById('seat').textContent =
+    `out ${seat.out.toFixed(3)} up ${seat.up.toFixed(3)} side ${seat.side.toFixed(3)} | scale ${seat.scale.toFixed(3)} | roll ${seat.roll.toFixed(2)} | flip ${seat.flip}`;
+}
+
+function buildFace() {
+  // glTF nodes live in true render space (unlike the bone matrices, which are 48x off).
+  const head = scene.getTransformNodeByName('Head');
+  const front = scene.getTransformNodeByName('headfront');
+  if (!head || !front) { console.warn('Missing Head/headfront transform nodes'); return; }
+  _nodes = { head, front };
+
+  const tex = new BABYLON.Texture('.pickle/pickle_face.png', scene, false, false,
+    BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
+  tex.hasAlpha = true;
+  tex.vScale = -1; tex.vOffset = 1;   // GLB/Babylon UV flips the sprite vertically; undo it
+  const mat = new BABYLON.StandardMaterial('faceMat', scene);
+  mat.diffuseTexture = tex;                 // alpha source
+  mat.emissiveTexture = tex;                // unlit color (flat FF9 look)
+  mat.useAlphaFromDiffuseTexture = true;
+  mat.disableLighting = true;
+  mat.backFaceCulling = false;
+  mat.diffuseColor = new BABYLON.Color3(0, 0, 0);
+
+  facePlane = BABYLON.MeshBuilder.CreatePlane('facePlane', { width: 1, height: 0.56 }, scene);
+  facePlane.material = mat;
+  facePlane.rotationQuaternion = BABYLON.Quaternion.Identity();
+  updateSeatHud();
+  console.log('Face built; seating from Head/headfront/head_end bones each frame');
+}
+
+let _framedFront = false;
+// Re-seat every frame from live bone world positions => rides the head, never skinned/warped.
+scene.onBeforeRenderObservable.add(() => {
+  if (!facePlane || !_nodes) return;
+  const { head, front } = _nodes;
+  const hp = head.getAbsolutePosition();
+  const fp = front.getAbsolutePosition();
+  const fwd = fp.subtract(hp).normalize();              // out the front of the face
+  const up0 = BABYLON.Axis.Y;                           // character stands upright
+  const right = BABYLON.Vector3.Cross(up0, fwd).normalize();
+  const up = BABYLON.Vector3.Cross(fwd, right).normalize();
+
+  const pos = hp
+    .add(fwd.scale(seat.out))
+    .add(up.scale(seat.up))
+    .add(right.scale(seat.side));
+  facePlane.position.copyFrom(pos);
+  facePlane.scaling.set(seat.scale * seat.flip, seat.scale, 1);   // width x (0.56*width)
+
+  const m = BABYLON.Matrix.Identity();
+  BABYLON.Matrix.FromXYZAxesToRef(right, up, fwd, m);
+  BABYLON.Quaternion.FromRotationMatrixToRef(m, facePlane.rotationQuaternion);
+  if (seat.roll) facePlane.rotate(BABYLON.Axis.Z, seat.roll, BABYLON.Space.LOCAL);
+
+  // One-shot: park the camera dead-on the pickle's face on load.
+  // Front normal measured from the seated face plane (~ +X, slightly down).
+  if (!_framedFront) {
+    _framedFront = true;
+    const front = new BABYLON.Vector3(0.97, -0.18, 0.06).normalize();
+    const centre = hp.subtract(BABYLON.Vector3.Up().scale(0.35));   // mid-upper body
+    camera.lowerRadiusLimit = 0.5;
+    camera.upperRadiusLimit = 12;
+    camera.wheelPrecision = 60;
+    camera.setTarget(centre);
+    camera.setPosition(centre.add(front.scale(2.6)));
+  }
+});
+
+BABYLON.SceneLoader.ImportMesh('', '.pickle/', 'pickle_wizard_v1.glb', scene,
+  (meshes, ps, skeletons, animationGroups) => {
+    groups = animationGroups;
+    groups.forEach(a => a.stop());
+    if (groups[0]) groups[0].start(true);
+    buildFace();
+
+    // frame the model
+    let min = new BABYLON.Vector3(1e9,1e9,1e9), max = new BABYLON.Vector3(-1e9,-1e9,-1e9);
+    meshes.forEach(m => { const b = m.getBoundingInfo?.(); if(!b) return;
+      min = BABYLON.Vector3.Minimize(min, b.boundingBox.minimumWorld);
+      max = BABYLON.Vector3.Maximize(max, b.boundingBox.maximumWorld); });
+    const center = min.add(max).scale(0.5);
+    const size = max.subtract(min).length();
+    camera.setTarget(new BABYLON.Vector3(center.x, center.y, center.z));
+    camera.radius = size * 1.4;
+    console.log('Loaded pickle:', meshes.length, 'meshes,', animationGroups.length, 'anims',
+                animationGroups.map(a=>a.name));
+  },
+  null,
+  (s, msg) => console.error('LOAD ERROR', msg)
+);
+
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k === '1' && groups[0]) { groups.forEach(a=>a.stop()); groups[0].start(true); }
+  if (k === '2') groups.forEach(a=>a.stop());                       // freeze -> bind/T pose
+  if (k === 'g') grid.setEnabled(!grid.isEnabled());
+  if (k === 'w') scene.meshes.forEach(m => { if(m.material && m!==grid && m!==facePlane) m.material.wireframe = !m.material.wireframe; });
+  if (k === 'f' && facePlane) facePlane.setEnabled(!facePlane.isEnabled());
+
+  // --- live face seating (offsets in world units) ---
+  if (!facePlane) return;
+  const step = e.shiftKey ? 0.005 : 0.02;
+  let touched = true;
+  switch (k) {
+    case 'arrowup':    seat.up   += step; break;
+    case 'arrowdown':  seat.up   -= step; break;
+    case 'arrowleft':  seat.side -= step; break;
+    case 'arrowright': seat.side += step; break;
+    case 'q':          seat.out  -= step; break;   // into the face
+    case 'e':          seat.out  += step; break;   // off the face
+    case '[':          seat.scale = Math.max(0.05, seat.scale - step); break;
+    case ']':          seat.scale += step; break;
+    case ',':          seat.roll -= 0.05; break;
+    case '.':          seat.roll += 0.05; break;
+    case 'm':          seat.flip *= -1; break;      // mirror horizontally if texture is reversed
+    case 'p':
+      console.log('SEAT =', JSON.stringify(seat));
+      document.getElementById('seat').style.color = '#ffe08c';
+      touched = false; break;
+    default: touched = false;
+  }
+  if (touched) { e.preventDefault(); updateSeatHud(); }
+});
+
+engine.runRenderLoop(() => scene.render());
+addEventListener('resize', () => engine.resize());
+</script>
+</body>
+</html>
