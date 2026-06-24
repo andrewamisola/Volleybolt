@@ -68,8 +68,8 @@ html, body {
     overflow: hidden;
     background: #15121b;  /* Warm dusk letterbox bars (was dead black) */
     font-family: 'FF9UI', 'Crimson Text', Georgia, serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
     display: flex;
     justify-content: center;
     align-items: center;
