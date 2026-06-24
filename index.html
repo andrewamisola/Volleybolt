@@ -14307,6 +14307,33 @@
             }
         }
 
+        // === GAME STATE MACHINE ===
+        // Strangler refactor: this controller owns lifecycle transitions. In this first step
+        // each handler just delegates to the existing legacy function it will eventually
+        // replace, so behavior is unchanged until later tasks move logic in.
+        const GameSM = {
+            state: 'boot',   // 'boot' | 'menu' | 'match' | 'pause' | 'gameover' | 'lobby'
+            to(next, opts) {
+                console.log(`[SM] ${this.state} -> ${next}`);
+                this.state = next;
+                switch (next) {
+                    case 'menu':     return this.enterMenu(opts);
+                    case 'match':    return this.startMatch(opts);
+                    case 'pause':    return this.enterPause(opts);
+                    case 'gameover': return this.enterGameOver(opts);
+                    case 'lobby':    return this.enterLobby(opts);
+                }
+            },
+            enterMenu()      { showTalentScreen(true); },              // legacy menu setup
+            startMatch(opts) { startGame(); },                         // legacy match start (Task 4)
+            endMatch()       { returnToMenuTransition(); },            // legacy end->menu (Task 5)
+            enterPause()     { /* implemented in Task 7 */ },
+            resumeMatch()    { /* implemented in Task 7 */ },
+            enterGameOver(r) { showVictoryScreen(r === 'victory'); },
+            enterLobby()     { if (window.showMultiplayerLobby) showMultiplayerLobby(); },
+        };
+        window.GameSM = GameSM;
+
         // Start game from menu
         let startGameInProgress = false;  // Prevent double-clicks
         function startGame() {
