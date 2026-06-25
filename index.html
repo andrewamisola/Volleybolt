@@ -14388,6 +14388,38 @@
             else if (GameSM.state === 'pause') { GameSM.resumeMatch(); e.preventDefault(); }
         });
 
+        // --- Debug menu (backtick ` toggles) ---
+        function ensureDebugMenu() {
+            if (document.getElementById('debugMenu')) return;
+            const d = document.createElement('div');
+            d.id = 'debugMenu';
+            d.style.cssText = 'position:fixed;top:10px;right:10px;z-index:800;display:none;background:rgba(20,16,30,0.92);border:2px solid #5a4a78;border-radius:8px;padding:12px 14px;box-shadow:0 4px 16px rgba(0,0,0,.5)';
+            d.innerHTML =
+                '<div style="color:#9cff9c;font-family:monospace;font-weight:bold;margin-bottom:8px;font-size:13px">DEBUG <span style="color:#776a9a;font-weight:normal">(` toggles)</span></div>' +
+                '<button id="dbgWin"  class="game-btn menu-btn" style="display:block;width:170px;margin:6px 0">Force Win</button>' +
+                '<button id="dbgLose" class="game-btn menu-btn" style="display:block;width:170px;margin:6px 0">Force Lose</button>';
+            document.body.appendChild(d);
+            d.querySelector('#dbgWin').addEventListener('click', () => debugForceEnd(true));
+            d.querySelector('#dbgLose').addEventListener('click', () => debugForceEnd(false));
+        }
+        function debugForceEnd(win) {
+            if (GameSM.state !== 'match') { console.log('[debug] Force Win/Lose only works during a match'); return; }
+            gameOver = true;
+            paused = false;
+            if (combatants.left)  combatants.left.roundResult  = win ? 'victory' : 'defeat';
+            if (combatants.right) combatants.right.roundResult = win ? 'defeat'  : 'victory';
+            showVictoryScreen(win);   // real Victory/Defeat overlay + Continue
+        }
+        document.addEventListener('keydown', (e) => {
+            if (e.code !== 'Backquote') return;
+            const t = e.target;  // don't toggle while typing (e.g., MP join-code input)
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            ensureDebugMenu();
+            const d = document.getElementById('debugMenu');
+            d.style.display = (d.style.display === 'block') ? 'none' : 'block';
+            e.preventDefault();
+        });
+
         // Start game from menu
         let startGameInProgress = false;  // Prevent double-clicks
         function startGame() {
