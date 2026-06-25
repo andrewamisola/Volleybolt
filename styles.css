@@ -73,7 +73,7 @@ html, body {
     height: 100%;
     overflow: hidden;
     background: #15121b;  /* Warm dusk letterbox bars (was dead black) */
-    font-family: 'FF9UI', 'Crimson Text', Georgia, serif;
+    font-family: 'FF9UI', sans-serif;
     -webkit-font-smoothing: auto;
     -moz-osx-font-smoothing: auto;
     display: flex;
@@ -190,7 +190,7 @@ html, body {
 /* Tower labels */
 .tower-label {
     display: none;   /* HTML duplicate hidden - GUI tower label is the visible one (stops double-render shimmer) */
-    font-family: 'FF9UI', 'Cinzel', serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 26px;
     font-weight: 700;
     color: var(--ff9-gold);
@@ -213,7 +213,7 @@ html, body {
     top: 22px;
     left: 50%;
     transform: translateX(-50%);
-    font-family: 'FF9UI', 'Cinzel', serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 48px;
     font-weight: 700;
     color: var(--ff9-gold);
@@ -225,7 +225,7 @@ html, body {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-family: 'FF9UI', 'Cinzel', serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 56px;
     font-weight: 700;
     color: #f0c050;
@@ -247,8 +247,8 @@ html, body {
 /* NES-styled floating combat text - unified system for all text types */
 .combat-text {
     position: absolute;
-    font-family: 'FF9UI', 'Cabin', sans-serif;
-    font-size: 15px;          /* bigger: FF9UI reads smaller than the old pixel font */
+    font-family: 'FF9UI', sans-serif;
+    font-size: 18px;          /* unified body-UI size (matches command menu / HUD labels) */
     font-weight: 400;
     color: #fff;
     padding: 0;
@@ -313,7 +313,7 @@ html, body {
     left: 50%;
     transform: translateX(-50%);
     color: var(--ff9-gold);
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 24px;
     text-shadow: var(--ff9-shadow);  /* Simple pixel shadow */
     pointer-events: none;
@@ -339,7 +339,7 @@ html, body {
     left: 50%;
     transform: translate(-50%, -50%);
     color: var(--gold-light);
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 28px;
     text-shadow: 3px 3px 0px #000, -1px -1px 0px var(--gold-dark);
     pointer-events: none;
@@ -353,7 +353,7 @@ html, body {
     left: 50%;
     transform: translateX(-50%);
     color: var(--parchment-dark);
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 18px;
     letter-spacing: 2px;
     pointer-events: none;
@@ -395,7 +395,7 @@ html, body {
 
 .health-label {
     color: var(--ff9-gold);
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 9px;
     margin-bottom: 6px;
     text-shadow: 1px 1px 0px #000;
@@ -404,7 +404,7 @@ html, body {
 /* Damage numbers - same format as combat text */
 .damage-number {
     position: absolute;
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 48px;             /* MASSIVE */
     font-weight: 700;
     color: #fff;                 /* white text */
@@ -432,7 +432,7 @@ html, body {
 .frozen-text {
     position: absolute;
     color: #80d0ff;
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 64px;
     font-weight: bold;
     text-shadow: 3px 3px 0px #000, 4px 4px 0px #000;
@@ -592,7 +592,7 @@ html, body {
     text-align: center;
     padding: 3px;
     box-sizing: border-box;
-    font-family: 'FF9UI', 'Cabin', 'Segoe UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 15px;
     font-weight: normal;
     line-height: 1.12;
@@ -661,7 +661,7 @@ html, body {
 }
 
 .cooldown-text {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 36px;
     font-weight: bold;
     color: #ffffff;
@@ -713,7 +713,7 @@ html, body {
     transform: translateX(-50%);
     background: linear-gradient(180deg, #3a3230 0%, #252220 100%);
     color: #6a5a4a;
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 14px;
     padding: 2px 6px;
     border: 1px solid #3a3430;
@@ -781,7 +781,7 @@ html, body {
     right: -6px;
     background: linear-gradient(180deg, #1a2a3a 0%, #0a1520 100%);
     color: #6ac0ff;
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 16px;
     font-weight: bold;
     padding: 2px 6px;
@@ -842,7 +842,7 @@ html, body {
 
 /* Title row */
 .tooltip-title {
-    font-family: 'FF9UI', 'Cinzel', serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 18px;
     color: var(--ff9-gold);
     margin-bottom: 10px;
@@ -854,7 +854,7 @@ html, body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 16px;
     margin-bottom: 8px;
     padding-bottom: 8px;
@@ -889,7 +889,7 @@ html, body {
 
 /* Description */
 .tooltip-description {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 16px;
     color: var(--parchment);
     line-height: 1.4;
@@ -982,7 +982,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 #castBarLabel {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 8px;
     color: #fff;
     text-align: left;
@@ -1010,7 +1010,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 #aiCastBarLabel {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 8px;
     color: #fff;
     text-align: right;
@@ -1267,7 +1267,7 @@ body.flipped-view #aiCastBarContainer {
     font-size: 20px;
 }
 .upgrade-points-value {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 20px;
     font-weight: 700;
     color: #ffd700;
@@ -1310,14 +1310,14 @@ body.flipped-view #aiCastBarContainer {
     font-size: 28px;
 }
 .talent-panel-title {
-    font-family: 'FF9UI', 'Cinzel', serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 20px;
     font-weight: 700;
     color: #ffd866;
     flex: 1;
 }
 .talent-panel-tier {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 12px;
     padding: 4px 10px;
     background: rgba(100, 150, 255, 0.2);
@@ -1341,7 +1341,7 @@ body.flipped-view #aiCastBarContainer {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 14px;
     font-weight: 700;
     transition: all 0.3s ease;
@@ -1409,7 +1409,7 @@ body.flipped-view #aiCastBarContainer {
     display: block;
 }
 .talent-choice-name {
-    font-family: 'FF9UI', 'Cinzel', serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 14px;
     font-weight: 400;
     color: #fff;
@@ -1430,7 +1430,7 @@ body.flipped-view #aiCastBarContainer {
     text-align: center;
 }
 .talent-points-display {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 12px;
     color: rgba(255, 255, 255, 0.7);
 }
@@ -1458,7 +1458,7 @@ body.flipped-view #aiCastBarContainer {
 /* Floating notification text */
 .floating-notification {
     position: fixed;
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 24px;
     font-weight: 700;
     color: #ffd700;
@@ -1514,7 +1514,7 @@ body.flipped-view #aiCastBarContainer {
     min-width: 520px;
 }
 #loadingTitle {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 64px;
     font-weight: 800;
     color: var(--gold-light);
@@ -1542,7 +1542,7 @@ body.flipped-view #aiCastBarContainer {
     transition: width 0.15s steps(8);
 }
 #loadingText {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 18px;
     font-weight: 700;
     color: #eaf0ff;
@@ -1551,7 +1551,7 @@ body.flipped-view #aiCastBarContainer {
     text-shadow: 2px 2px 0 rgba(8,12,26,0.85);
 }
 #loadingTip {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 14px;
     color: #cfc5b0;
     margin-top: 32px;
@@ -1597,107 +1597,14 @@ body.flipped-view #aiCastBarContainer {
     display: none;  /* Using GUI title instead for CRT effects */
 }
 
-#talentSubtitle {
-    font-family: 'FF9UI', 'Cinzel', serif;
-    font-size: 22px;
-    color: var(--parchment-dark);
-    margin-bottom: 30px;
-    text-shadow: 1px 1px 0px #000;
-}
-
-#upgradeContainer {
-    display: flex;
-    gap: 15px;
-    flex-wrap: wrap;
-    justify-content: center;
-    max-width: 800px;
-}
-
-.upgrade-card {
-    width: 180px;
-    background: linear-gradient(180deg, var(--brown) 0%, var(--brown-dark) 100%);
-    border: 3px solid var(--brown-light);
-    border-top-color: #6a4a3a;
-    border-left-color: #6a4a3a;
-    border-bottom-color: #1a0a05;
-    border-right-color: #1a0a05;
-    padding: 15px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    text-align: center;
-    box-shadow: inset 1px 1px 0px rgba(255,255,255,0.1), 4px 4px 0px #000;
-}
-
-.upgrade-card:hover {
-    border-color: var(--gold);
-    border-top-color: var(--gold-light);
-    border-left-color: var(--gold-light);
-    border-bottom-color: var(--gold-dark);
-    border-right-color: var(--gold-dark);
-    transform: translateY(-2px);
-}
-
-.upgrade-card.selected {
-    background: linear-gradient(180deg, #4a3020 0%, #2a1810 100%);
-    border-color: var(--gold);
-    border-top-color: var(--gold-light);
-    border-left-color: var(--gold-light);
-    box-shadow: inset 0 0 20px rgba(212, 168, 73, 0.3), 4px 4px 0px #000;
-}
-
-.upgrade-icon {
-    font-size: 36px;
-    margin-bottom: 8px;
-    filter: drop-shadow(2px 2px 0px #000);
-}
-
-.upgrade-name {
-    font-family: 'FF9UI', 'Cinzel', serif;
-    font-size: 20px;
-    color: var(--gold-light);
-    margin-bottom: 8px;
-    text-shadow: 1px 1px 0px #000;
-    line-height: 1.4;
-}
-
-.upgrade-base {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
-    font-size: 14px;
-    color: var(--parchment-dark);
-    margin-bottom: 8px;
-}
-
-.upgrade-desc {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
-    font-size: 16px;
-    color: var(--parchment);
-    line-height: 1.3;
-    margin-bottom: 10px;
-    text-shadow: 1px 1px 0px #000;
-}
-
-.upgrade-effects {
-    text-align: left;
-    padding-left: 5px;
-}
-
-.upgrade-effect {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
-    font-size: 14px;
-    color: var(--green);
-    margin: 3px 0;
-    text-shadow: 1px 1px 0px #000;
-}
-
-.upgrade-effect::before {
-    content: '+ ';
-    color: var(--gold);
-}
+/* Removed (style-era audit, 2026-06-25): dead upgrade-card screen CSS — #talentSubtitle,
+   #upgradeContainer, .upgrade-card/.upgrade-icon/name/base/desc/effects. The upgrade/talent
+   feature is not in the game; these had zero HTML/JS references (only Diablo-palette orphans). */
 
 /* Start Battle Button - D2 Style */
 #startBattleBtn {
     margin-top: 30px;
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 14px;
     padding: 12px 30px;
     background: linear-gradient(180deg, var(--brown) 0%, var(--brown-dark) 100%);
@@ -1746,7 +1653,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 #multiplayerBtn {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 14px;
     padding: 12px 30px;
     background: linear-gradient(180deg, #203040 0%, #101820 100%);
@@ -1797,7 +1704,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 #stageTransitionText {
-    font-family: 'FF9UI', 'Cinzel', serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 42px;
     color: var(--gold-light);
     text-shadow: 0 0 30px rgba(212, 168, 73, 0.6),
@@ -1822,7 +1729,7 @@ body.flipped-view #aiCastBarContainer {
     display: inline-block;
     min-width: 220px;
     padding: 14px 32px;
-    font-family: 'FF9UI', 'Cinzel', serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 22px;
     letter-spacing: 2px;
     color: #eef2fa;                          /* FF9 cream-white */
@@ -1863,7 +1770,7 @@ body.flipped-view #aiCastBarContainer {
     min-width: 140px;
     padding: 8px 20px;
     font-size: 16px;
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
 }
 
 .game-btn-ghost {
@@ -1913,7 +1820,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-title {
-    font-family: 'FF9UI', 'Cinzel', serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 48px;
     color: var(--gold-light);
     text-shadow: 3px 3px 0 #000, -1px -1px 0 var(--gold-dark);
@@ -1922,7 +1829,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-subtitle {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 18px;
     color: var(--parchment-dark);
     margin: 0 0 28px 0;
@@ -1938,7 +1845,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-prompt {
-    font-family: 'FF9UI', 'Cinzel', serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 20px;
     color: var(--parchment);
     text-shadow: 2px 2px 0 #000;
@@ -1946,7 +1853,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-code {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 56px;
     font-weight: 700;
     letter-spacing: 10px;
@@ -1959,7 +1866,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-status {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 16px;
     color: var(--parchment-dark);
     margin: 4px 0;
@@ -1970,7 +1877,7 @@ body.flipped-view #aiCastBarContainer {
 .lobby-input {
     width: 280px;
     height: 56px;
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 32px;
     font-weight: 600;
     letter-spacing: 8px;
@@ -1994,7 +1901,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-connected-msg {
-    font-family: 'FF9UI', 'Cinzel', serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 28px;
     color: #6ad26a;
     text-shadow: 2px 2px 0 #000;
@@ -2002,7 +1909,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-ready-line {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 18px;
     margin: 2px 0;
     text-shadow: 1px 1px 0 #000;
@@ -2111,7 +2018,7 @@ body.flipped-view #aiCastBarContainer {
 
 .arcane-title {
     position: relative;
-    font-family: 'FF9UI', 'Cinzel', serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 84px;
     font-weight: 700;
     letter-spacing: 6px;
@@ -2158,7 +2065,7 @@ body.flipped-view #aiCastBarContainer {
 @keyframes dividerGrow { to { width: 340px; } }
 
 .arcane-tagline {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 16px;
     letter-spacing: 7px;
     text-transform: none;   /* FF9: first-letter capitalization, no all-caps */
@@ -2395,7 +2302,7 @@ body.flipped-view #aiCastBarContainer {
     flex: 0 1 auto;
     justify-content: flex-start;
     text-align: left;
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 21px;   /* bigger: FF9UI is smaller than the old fonts */
     color: #f4f7ff;
     text-shadow: var(--ff9-shadow);
@@ -2436,7 +2343,7 @@ body.flipped-view #aiCastBarContainer {
     background: rgba(16,24,40,0.55);
     border: 1px solid rgba(206,214,230,0.4);
     border-radius: 4px;
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 11px;
     color: #cdd8ef;
     text-shadow: var(--ff9-shadow);
@@ -2529,7 +2436,7 @@ body.flipped-view #aiCastBarContainer {
     left: 0;
     width: 100%;
     text-align: center;
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 14px;
     letter-spacing: 2px;
     color: #aab2c4;
@@ -2573,7 +2480,7 @@ body.flipped-view #aiCastBarContainer {
 
 /* --- Menu items: FF9UI with a crisp black stroke for readability (no soft glow) --- */
 .arcane-buttons .menu-btn .menu-btn-label {
-    font-family: 'FF9UI', 'Cabin', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 46px;   /* bigger: FF9UI is smaller than the old Cormorant */
     font-weight: 600;
     letter-spacing: 2px;

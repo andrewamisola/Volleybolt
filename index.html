@@ -4493,6 +4493,45 @@
             window.guiTexture = guiTexture;
             window.guiElements = { guiTexture: guiTexture };
 
+            // FF9 gauge recipe (applied to health/cast bars): two-tone gradient fill, warm-dark
+            // gradient track (#2f191b->#160c0d), 1px cyan rim (#9fe3ff), hard 3px offset shadow,
+            // inset top sheen, and a lit leading edge that glows at the fill's front.
+            // flip = mirror the gauge (for the right-side Red tower): fill anchors RIGHT and
+            // drains toward center, with the lit leading edge + bright gradient end on the LEFT.
+            function applyFF9Gauge(bg, fill, trackW, c0, c1, flip) {
+                if (!bg || !fill) return;
+                const G = BABYLON.GUI;
+                const track = new G.LinearGradient(0, 0, 0, 24);   // vertical warm-dark track
+                track.addColorStop(0, "#2f191b"); track.addColorStop(1, "#160c0d");
+                bg.backgroundGradient = track;
+                bg.color = "#9fe3ff"; bg.thickness = 2;            // cyan rim, thickness matches Skill menu
+                bg.cornerRadius = 3;                               // FF9 gauges are near-square
+                bg.shadowColor = "#000"; bg.shadowBlur = 0;
+                bg.shadowOffsetX = 3; bg.shadowOffsetY = 3;        // hard offset shadow (window idiom)
+                // Babylon GUI gradient coords are ABSOLUTE texture pixels (not control-local), so a
+                // gradient hardcoded at (0..trackW) only lands on a bar sitting near x=0. Stash the
+                // params + the bg here; seatGaugeGradient() rebuilds the gradient at the bar's real
+                // measured position each layout (so off-origin bars like the right-side Red tower work).
+                fill._gradBg = bg; fill._gradC0 = c0; fill._gradC1 = c1; fill._gradFlip = !!flip;
+                fill._gradL = -1; fill._gradW = -1;   // force a re-seat on first measured frame
+                fill.cornerRadius = 2;
+                fill.horizontalAlignment = flip ? G.Control.HORIZONTAL_ALIGNMENT_RIGHT
+                                                : G.Control.HORIZONTAL_ALIGNMENT_LEFT;
+                // inset top sheen
+                const sheen = new G.Rectangle();
+                sheen.height = "2px"; sheen.width = "92%"; sheen.thickness = 0; sheen.top = "1px";
+                sheen.background = "rgba(255,255,255,0.5)";
+                sheen.verticalAlignment = G.Control.VERTICAL_ALIGNMENT_TOP;
+                fill.addControl(sheen);
+                // lit leading edge (bright tip at the fill's HP frontier — right normally, left when flipped)
+                const tip = new G.Rectangle();
+                tip.width = "3px"; tip.height = "100%"; tip.thickness = 0;
+                tip.background = "rgba(220,245,255,0.9)";
+                tip.horizontalAlignment = flip ? G.Control.HORIZONTAL_ALIGNMENT_LEFT
+                                               : G.Control.HORIZONTAL_ALIGNMENT_RIGHT;
+                fill.addControl(tip);
+            }
+
             // --- HEALTH BARS ---
             // Player health bar (top-left corner)
             const playerHealthPanel = new BABYLON.GUI.StackPanel();
@@ -4509,10 +4548,10 @@
             const playerHealthLabel = new BABYLON.GUI.TextBlock();
             playerHealthLabel.text = "Blue Tower";
             playerHealthLabel.color = "#f0c050";
-            playerHealthLabel.fontSize = 24;
-            playerHealthLabel.fontFamily = "'FF9UI', 'Cinzel', serif";
-            playerHealthLabel.fontWeight = "700";
-            playerHealthLabel.shadowColor = "#565656";  // hard grey shadow (not full black)
+            playerHealthLabel.fontSize = 18;
+            playerHealthLabel.fontFamily = "'FF9UI', sans-serif";
+            playerHealthLabel.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
+            playerHealthLabel.shadowColor = "#000";  // black pixel shadow -- match the command menu / other gold text
             playerHealthLabel.shadowBlur = 0;  // Pixel shadow, no blur
             playerHealthLabel.shadowOffsetX = 2;
             playerHealthLabel.shadowOffsetY = 2;
@@ -4533,10 +4572,10 @@
             const playerHealthBg = new BABYLON.GUI.Rectangle();
             playerHealthBg.width = "240px";
             playerHealthBg.height = "24px";
-            playerHealthBg.background = "#241b12";
-            playerHealthBg.color = "#5a4326";
-            playerHealthBg.thickness = 3;
-            playerHealthBg.cornerRadius = 2;
+            playerHealthBg.background = "rgba(46,56,76,0.94)";   // FF9 steel window
+            playerHealthBg.color = "#dfe6f2";                    // light rim (command-menu match)
+            playerHealthBg.thickness = 2;
+            playerHealthBg.cornerRadius = 10;   // rounded, clean -- no hard offset shadow
             playerHealthRow.addControl(playerHealthBg);
 
             // Health bar fill
@@ -4547,8 +4586,10 @@
             playerHealthFill.color = "transparent";
             playerHealthFill.thickness = 0;
             playerHealthFill.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+            playerHealthFill.cornerRadius = 8;   // match rounded frame, no corner poke
             playerHealthBg.addControl(playerHealthFill);
             window.guiElements.playerHealthFill = playerHealthFill;
+            applyFF9Gauge(playerHealthBg, playerHealthFill, 240, "#2173ac", "#57c4ec");   // blue HP gauge -- softened gradient
 
             // HP texture overlay
             const playerHealthTexture = new BABYLON.GUI.Image("playerHpTex", "textures/hp_texture.png");
@@ -4563,7 +4604,7 @@
             playerHealthPercent.text = "100%";
             playerHealthPercent.color = "#209cee";
             playerHealthPercent.fontSize = 18;
-            playerHealthPercent.fontFamily = "'FF9UI', 'Cabin', sans-serif";
+            playerHealthPercent.fontFamily = "'FF9UI', sans-serif";
             playerHealthPercent.width = "100px";
             playerHealthPercent.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
             playerHealthPercent.paddingLeft = "8px";
@@ -4586,10 +4627,10 @@
             const aiHealthLabel = new BABYLON.GUI.TextBlock();
             aiHealthLabel.text = "Red Tower";
             aiHealthLabel.color = "#f0c050";
-            aiHealthLabel.fontSize = 24;
-            aiHealthLabel.fontFamily = "'FF9UI', 'Cinzel', serif";
-            aiHealthLabel.fontWeight = "700";
-            aiHealthLabel.shadowColor = "#565656";  // hard grey shadow (not full black)
+            aiHealthLabel.fontSize = 18;
+            aiHealthLabel.fontFamily = "'FF9UI', sans-serif";
+            aiHealthLabel.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
+            aiHealthLabel.shadowColor = "#000";  // black pixel shadow -- match the command menu / other gold text
             aiHealthLabel.shadowBlur = 0;  // Pixel shadow, no blur
             aiHealthLabel.shadowOffsetX = 2;
             aiHealthLabel.shadowOffsetY = 2;
@@ -4611,7 +4652,7 @@
             aiHealthPercent.text = "100%";
             aiHealthPercent.color = "#e76e55";
             aiHealthPercent.fontSize = 18;
-            aiHealthPercent.fontFamily = "'FF9UI', 'Cabin', sans-serif";
+            aiHealthPercent.fontFamily = "'FF9UI', sans-serif";
             aiHealthPercent.width = "100px";
             aiHealthPercent.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
             aiHealthPercent.paddingRight = "8px";
@@ -4623,10 +4664,10 @@
             const aiHealthBg = new BABYLON.GUI.Rectangle();
             aiHealthBg.width = "240px";
             aiHealthBg.height = "24px";
-            aiHealthBg.background = "#241b12";
-            aiHealthBg.color = "#5a4326";
-            aiHealthBg.thickness = 3;
-            aiHealthBg.cornerRadius = 2;
+            aiHealthBg.background = "rgba(46,56,76,0.94)";   // FF9 steel window
+            aiHealthBg.color = "#dfe6f2";                    // light rim
+            aiHealthBg.thickness = 2;
+            aiHealthBg.cornerRadius = 10;
             aiHealthRow.addControl(aiHealthBg);
 
             // AI Health bar fill
@@ -4637,8 +4678,10 @@
             aiHealthFill.color = "transparent";
             aiHealthFill.thickness = 0;
             aiHealthFill.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+            aiHealthFill.cornerRadius = 8;
             aiHealthBg.addControl(aiHealthFill);
             window.guiElements.aiHealthFill = aiHealthFill;
+            applyFF9Gauge(aiHealthBg, aiHealthFill, 240, "#992f1e", "#ff9e82", true);   // red HP gauge -- mirrored, softened gradient
 
             // HP texture overlay for AI
             const aiHealthTexture = new BABYLON.GUI.Image("aiHpTex", "textures/hp_texture.png");
@@ -4667,8 +4710,8 @@
             scoreText.text = "0 - 0";
             scoreText.color = "#f0c050";
             scoreText.fontSize = 42;
-            scoreText.fontFamily = "'FF9UI', 'Cabin', sans-serif";
-            scoreText.fontWeight = "700";
+            scoreText.fontFamily = "'FF9UI', sans-serif";
+            scoreText.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             scoreText.alpha = 0;  // Start hidden (menu state)
             scorePanel.addControl(scoreText);
             window.guiElements.scoreText = scoreText;
@@ -4724,8 +4767,8 @@
             const stageNameText = new BABYLON.GUI.TextBlock();
             stageNameText.text = stageNames[currentStage];
             stageNameText.color = window.getStageColor ? window.getStageColor(currentStage) : "#f0c050";
-            stageNameText.fontSize = "10px";
-            stageNameText.fontFamily = "'FF9UI', 'Cabin', sans-serif";
+            stageNameText.fontSize = "18px";
+            stageNameText.fontFamily = "'FF9UI', sans-serif";
             stageNameText.top = "120px";
             stageNameText.height = "24px";
             stageNameText.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
@@ -4819,8 +4862,8 @@
             transitionText.text = "";
             transitionText.color = "#f0c050";
             transitionText.fontSize = 42;
-            transitionText.fontFamily = "'FF9UI', 'Cinzel', serif";
-            transitionText.fontWeight = "700";
+            transitionText.fontFamily = "'FF9UI', sans-serif";
+            transitionText.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             transitionText.shadowColor = "#000";
             transitionText.shadowBlur = 0;
             transitionText.shadowOffsetX = 3;
@@ -4838,8 +4881,8 @@
             messageText.text = "";
             messageText.color = "#f0c050";
             messageText.fontSize = 48;
-            messageText.fontFamily = "'FF9UI', 'Cinzel', serif";
-            messageText.fontWeight = "700";
+            messageText.fontFamily = "'FF9UI', sans-serif";
+            messageText.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             messageText.shadowColor = "#000";
             messageText.shadowBlur = 0;  // Pixel shadow
             messageText.shadowOffsetX = 3;
@@ -4869,8 +4912,8 @@
             victoryTitle.text = "Victory!";
             victoryTitle.color = "#ffd700";  // Gold
             victoryTitle.fontSize = 96;
-            victoryTitle.fontFamily = "'FF9UI', 'Cinzel', serif";
-            victoryTitle.fontWeight = "700";
+            victoryTitle.fontFamily = "'FF9UI', sans-serif";
+            victoryTitle.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             victoryTitle.shadowColor = "#000";
             victoryTitle.shadowBlur = 0;
             victoryTitle.shadowOffsetX = 5;
@@ -4886,7 +4929,7 @@
             victorySubtitle.text = "You have conquered the arena!";
             victorySubtitle.color = "#e0d0a0";
             victorySubtitle.fontSize = 24;
-            victorySubtitle.fontFamily = "'FF9UI', 'Cinzel', serif";
+            victorySubtitle.fontFamily = "'FF9UI', sans-serif";
             victorySubtitle.fontWeight = "400";
             victorySubtitle.shadowColor = "#000";
             victorySubtitle.shadowBlur = 0;
@@ -4904,7 +4947,7 @@
             continueBtn.height = "60px";
             continueBtn.color = "#d4c4a0";
             continueBtn.fontSize = 24;
-            continueBtn.fontFamily = "'FF9UI', 'Cinzel', serif";
+            continueBtn.fontFamily = "'FF9UI', sans-serif";
             continueBtn.background = "#3d3528";
             continueBtn.cornerRadius = 6;
             continueBtn.thickness = 3;
@@ -4961,8 +5004,8 @@
             menuTitle.text = "Volleybolt";
             menuTitle.color = "#f0c050";
             menuTitle.fontSize = 72;
-            menuTitle.fontFamily = "'FF9UI', 'Cinzel', serif";
-            menuTitle.fontWeight = "700";
+            menuTitle.fontFamily = "'FF9UI', sans-serif";
+            menuTitle.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             menuTitle.shadowColor = "#000";
             menuTitle.shadowBlur = 0;
             menuTitle.shadowOffsetX = 5;
@@ -5003,7 +5046,7 @@
                 btn.height = "90px";
                 btn.color = "#000000b3";  // 70% black text
                 btn.fontSize = 40;
-                btn.fontFamily = "'FF9UI', 'Cinzel', serif";
+                btn.fontFamily = "'FF9UI', sans-serif";
                 btn.fontWeight = "900";
                 btn.textBlock.lineSpacing = "8px";
                 btn.textBlock.letterSpacing = "2px";
@@ -5128,7 +5171,7 @@
             const modeSelectTitle = new BABYLON.GUI.TextBlock();
             modeSelectTitle.text = "Select Mode";
             modeSelectTitle.color = "#d8c278";
-            modeSelectTitle.fontFamily = "'FF9UI', 'Cinzel', serif";
+            modeSelectTitle.fontFamily = "'FF9UI', sans-serif";
             modeSelectTitle.fontSize = 48;
             modeSelectTitle.fontWeight = "800";
             modeSelectTitle.height = "60px";
@@ -5144,7 +5187,7 @@
                 btn.height = "80px";
                 btn.color = "#000000b3";
                 btn.fontSize = 28;
-                btn.fontFamily = "'FF9UI', 'Cinzel', serif";
+                btn.fontFamily = "'FF9UI', sans-serif";
                 btn.fontWeight = "900";
                 btn.thickness = 0;
                 btn.background = "#3d3528";
@@ -5248,9 +5291,9 @@
                 const manaBg = new BABYLON.GUI.Ellipse();
                 manaBg.width = "22px";
                 manaBg.height = "22px";
-                manaBg.background = "#1a1a1a";
-                manaBg.color = "#333";
-                manaBg.thickness = 2;
+                manaBg.background = "#1c0f10";               // FF9 warm-dark socket
+                manaBg.color = "#9fe3ff";                    // cyan rim
+                manaBg.thickness = 2;                        // match Skill menu border thickness
                 manaWrapper.addControl(manaBg);
 
                 // Half circle (bottom half) - shown at 1-99%
@@ -5314,9 +5357,9 @@
             const netStatusText = new BABYLON.GUI.TextBlock();
             netStatusText.text = "";
             netStatusText.color = "#6ad26a";
-            netStatusText.fontFamily = "'FF9UI', 'Cabin', sans-serif";
-            netStatusText.fontSize = 16;
-            netStatusText.height = "20px";
+            netStatusText.fontFamily = "'FF9UI', sans-serif";
+            netStatusText.fontSize = 18;
+            netStatusText.height = "22px";
             netStatusText.width = "120px";
             netStatusText.top = "10px";
             netStatusText.left = "-10px";
@@ -5373,7 +5416,7 @@
             const dcTitle = new BABYLON.GUI.TextBlock();
             dcTitle.text = "OPPONENT DISCONNECTED";
             dcTitle.color = "#e74c4c";
-            dcTitle.fontFamily = "'FF9UI', 'Cinzel', serif";
+            dcTitle.fontFamily = "'FF9UI', sans-serif";
             dcTitle.fontSize = 42;
             dcTitle.height = "60px";
             dcTitle.shadowColor = "#000";
@@ -5384,7 +5427,7 @@
             const dcReason = new BABYLON.GUI.TextBlock();
             dcReason.text = "";
             dcReason.color = "#cfc5b0";
-            dcReason.fontFamily = "'FF9UI', 'Cabin', sans-serif";
+            dcReason.fontFamily = "'FF9UI', sans-serif";
             dcReason.fontSize = 20;
             dcReason.height = "30px";
             dcStack.addControl(dcReason);
@@ -5396,7 +5439,7 @@
             dcBtn.background = "#3d3528";
             dcBtn.cornerRadius = 6;
             dcBtn.thickness = 2;
-            dcBtn.fontFamily = "'FF9UI', 'Cinzel', serif";
+            dcBtn.fontFamily = "'FF9UI', sans-serif";
             dcBtn.fontSize = 22;
             dcStack.addControl(dcBtn);
 
@@ -5435,9 +5478,9 @@
                 const manaBg = new BABYLON.GUI.Ellipse();
                 manaBg.width = "22px";
                 manaBg.height = "22px";
-                manaBg.background = "#1a1a1a";
-                manaBg.color = "#333";
-                manaBg.thickness = 2;
+                manaBg.background = "#1c0f10";               // FF9 warm-dark socket
+                manaBg.color = "#9fe3ff";                    // cyan rim
+                manaBg.thickness = 2;                        // match Skill menu border thickness
                 manaWrapper.addControl(manaBg);
 
                 // Half circle (bottom half) - shown at 1-99%
@@ -5499,8 +5542,8 @@
             playerCastLabel.text = "Fireball";
             playerCastLabel.color = "#f0c050";
             playerCastLabel.fontSize = 18;
-            playerCastLabel.fontFamily = "'FF9UI', 'Cinzel', serif";
-            playerCastLabel.fontWeight = "700";
+            playerCastLabel.fontFamily = "'FF9UI', sans-serif";
+            playerCastLabel.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             playerCastLabel.shadowColor = "#000";
             playerCastLabel.shadowBlur = 0;  // Pixel shadow
             playerCastLabel.shadowOffsetX = 2;
@@ -5513,9 +5556,10 @@
             const playerCastBg = new BABYLON.GUI.Rectangle();
             playerCastBg.width = "180px";
             playerCastBg.height = "22px";
-            playerCastBg.background = "#1a1a1a";
-            playerCastBg.color = "#f0c050";
+            playerCastBg.background = "rgba(46,56,76,0.94)";   // FF9 steel
+            playerCastBg.color = "#dfe6f2";                    // light rim
             playerCastBg.thickness = 2;
+            playerCastBg.cornerRadius = 10;
             playerCastContainer.addControl(playerCastBg);
 
             const playerCastFill = new BABYLON.GUI.Rectangle();
@@ -5525,8 +5569,10 @@
             playerCastFill.color = "transparent";
             playerCastFill.thickness = 0;
             playerCastFill.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+            playerCastFill.cornerRadius = 8;
             playerCastBg.addControl(playerCastFill);
             window.guiElements.playerCastFill = playerCastFill;
+            applyFF9Gauge(playerCastBg, playerCastFill, 180, "#bf8a30", "#ffd96a");   // gold cast gauge -- softened gradient
 
             // Cast bar texture overlay
             const playerCastTexture = new BABYLON.GUI.Image("playerCastTex", "textures/castbar_texture.png");
@@ -5552,8 +5598,8 @@
             aiCastLabel.text = "Fireball";
             aiCastLabel.color = "#e76e55";
             aiCastLabel.fontSize = 18;
-            aiCastLabel.fontFamily = "'FF9UI', 'Cinzel', serif";
-            aiCastLabel.fontWeight = "700";
+            aiCastLabel.fontFamily = "'FF9UI', sans-serif";
+            aiCastLabel.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             aiCastLabel.shadowColor = "#000";
             aiCastLabel.shadowBlur = 0;  // Pixel shadow
             aiCastLabel.shadowOffsetX = 2;
@@ -5566,9 +5612,10 @@
             const aiCastBg = new BABYLON.GUI.Rectangle();
             aiCastBg.width = "180px";
             aiCastBg.height = "22px";
-            aiCastBg.background = "#1a1a1a";
-            aiCastBg.color = "#8b2020";
+            aiCastBg.background = "rgba(46,56,76,0.94)";   // FF9 steel
+            aiCastBg.color = "#dfe6f2";                    // light rim
             aiCastBg.thickness = 2;
+            aiCastBg.cornerRadius = 10;
             aiCastContainer.addControl(aiCastBg);
 
             const aiCastFill = new BABYLON.GUI.Rectangle();
@@ -5578,8 +5625,10 @@
             aiCastFill.color = "transparent";
             aiCastFill.thickness = 0;
             aiCastFill.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+            aiCastFill.cornerRadius = 8;
             aiCastBg.addControl(aiCastFill);
             window.guiElements.aiCastFill = aiCastFill;
+            applyFF9Gauge(aiCastBg, aiCastFill, 180, "#992f1e", "#ff9e82", true);   // red cast gauge -- mirrored, softened gradient
 
             // Cast bar texture overlay for AI
             const aiCastTexture = new BABYLON.GUI.Image("aiCastTex", "textures/castbar_texture.png");
@@ -5588,6 +5637,15 @@
             aiCastTexture.stretch = BABYLON.GUI.Image.STRETCH_FILL;
             aiCastTexture.alpha = 0.7;
             aiCastFill.addControl(aiCastTexture);
+
+            // FF9 redesign: strip the painted texture overlays off the HUD bars/orbs so they
+            // read as clean steel windows like the command menu (hp/mana/castbar textures).
+            guiTexture.getDescendants(false).forEach(c => {
+                if (c instanceof BABYLON.GUI.Image && c.source &&
+                    /hp_texture|mana_texture|castbar_texture/.test(c.source)) {
+                    c.isVisible = false;
+                }
+            });
 
             // --- ABILITY BAR BACKGROUND (bottom center) ---
             // Rendered in Babylon GUI for CRT shader effects
@@ -5734,14 +5792,14 @@
                     row.width = "100%"; row.height = ROW_H + "px"; row.thickness = 0; row.background = "transparent";
 
                     const hand = new G.TextBlock();
-                    hand.text = "▶"; hand.color = "#f0c050"; hand.fontSize = 16;
+                    hand.text = "▶"; hand.color = "#f0c050"; hand.fontSize = 18;
                     hand.width = "20px"; hand.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
                     hand.left = "0px"; hand.alpha = 0;
                     row.addControl(hand);
 
                     const name = new G.TextBlock();
-                    name.text = s.name; name.color = TXT; name.fontSize = 23;
-                    name.fontFamily = "'FF9UI', 'Cabin', sans-serif"; name.fontWeight = "600";
+                    name.text = s.name; name.color = TXT; name.fontSize = 18;
+                    name.fontFamily = "'FF9UI', sans-serif"; name.fontWeight = "600";
                     name.shadowColor = "#000"; name.shadowBlur = 0; name.shadowOffsetX = 2; name.shadowOffsetY = 2;
                     name.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
                     name.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
@@ -5751,7 +5809,7 @@
                     const manaRight = (s.key.length > 1 ? "-60px" : "-34px");
                     const mana = new G.TextBlock();
                     mana.text = s.mana > 0 ? "●".repeat(s.mana) : "";
-                    mana.color = "#5ad0ff"; mana.fontSize = 13;
+                    mana.color = "#5ad0ff"; mana.fontSize = 18;
                     mana.shadowColor = "#000"; mana.shadowBlur = 0; mana.shadowOffsetX = 1; mana.shadowOffsetY = 1;
                     mana.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT;
                     mana.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -5761,8 +5819,8 @@
 
                     // Cooldown countdown — shown in place of the mana orbs while on CD.
                     const cd = new G.TextBlock();
-                    cd.text = ""; cd.color = "#9aa6bd"; cd.fontSize = 17;
-                    cd.fontFamily = "'FF9UI', 'Cabin', sans-serif";
+                    cd.text = ""; cd.color = "#9aa6bd"; cd.fontSize = 18;
+                    cd.fontFamily = "'FF9UI', sans-serif";
                     cd.shadowColor = "#000"; cd.shadowBlur = 0; cd.shadowOffsetX = 2; cd.shadowOffsetY = 2;
                     cd.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT;
                     cd.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -5777,8 +5835,8 @@
                     keyBadge.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT; keyBadge.left = "0px";
                     row.addControl(keyBadge);
                     const keyText = new G.TextBlock();
-                    keyText.text = s.key; keyText.color = "#cdd8ef"; keyText.fontSize = 13;
-                    keyText.fontFamily = "'FF9UI', 'Cabin', sans-serif";
+                    keyText.text = s.key; keyText.color = "#cdd8ef"; keyText.fontSize = 18;
+                    keyText.fontFamily = "'FF9UI', sans-serif";
                     keyText.shadowColor = "#000"; keyText.shadowBlur = 0; keyText.shadowOffsetX = 1; keyText.shadowOffsetY = 1;
                     keyBadge.addControl(keyText);
 
@@ -5801,8 +5859,8 @@
                 titleTab.isVisible = false;
                 guiTexture.addControl(titleTab);
                 const titleText = new G.TextBlock();
-                titleText.text = "Command"; titleText.color = "#f0c050"; titleText.fontSize = 16;
-                titleText.fontFamily = "'FF9UI', 'Cabin', sans-serif"; titleText.fontWeight = "600";
+                titleText.text = "Command"; titleText.color = "#f0c050"; titleText.fontSize = 18;
+                titleText.fontFamily = "'FF9UI', sans-serif"; titleText.fontWeight = "600";
                 titleText.shadowColor = "#000"; titleText.shadowBlur = 0; titleText.shadowOffsetX = 2; titleText.shadowOffsetY = 2;
                 titleTab.addControl(titleText);
 
@@ -5879,8 +5937,8 @@
                     const tokens = (str || "").match(/(\d+\.?\d*|[^\d]+)/g) || [];
                     tokens.forEach(tok => {
                         const tb = new G.TextBlock();
-                        tb.text = tok; tb.resizeToFit = true; tb.fontSize = 15;
-                        tb.fontFamily = "'FF9UI', 'Cabin', sans-serif";
+                        tb.text = tok; tb.resizeToFit = true; tb.fontSize = 18;
+                        tb.fontFamily = "'FF9UI', sans-serif";
                         tb.color = /\d/.test(tok) ? "#ffffff" : STAT_LABEL;
                         tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
                         detailStats.addControl(tb);
@@ -5888,8 +5946,8 @@
                 }
 
                 const detailDesc = new G.TextBlock();
-                detailDesc.color = "#eef2fb"; detailDesc.fontSize = 14;
-                detailDesc.fontFamily = "'FF9UI', 'Cabin', sans-serif";
+                detailDesc.color = "#eef2fb"; detailDesc.fontSize = 18;
+                detailDesc.fontFamily = "'FF9UI', sans-serif";
                 detailDesc.shadowColor = "#000"; detailDesc.shadowBlur = 0; detailDesc.shadowOffsetX = 2; detailDesc.shadowOffsetY = 2;
                 detailDesc.textWrapping = true; detailDesc.lineSpacing = "2px";
                 detailDesc.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
@@ -5911,8 +5969,8 @@
                 detailTab.isVisible = false;
                 guiTexture.addControl(detailTab);
                 const detailTabText = new G.TextBlock();
-                detailTabText.text = ""; detailTabText.color = "#f0c050"; detailTabText.fontSize = 16;
-                detailTabText.fontFamily = "'FF9UI', 'Cabin', sans-serif"; detailTabText.fontWeight = "600";
+                detailTabText.text = ""; detailTabText.color = "#f0c050"; detailTabText.fontSize = 18;
+                detailTabText.fontFamily = "'FF9UI', sans-serif"; detailTabText.fontWeight = "600";
                 detailTabText.shadowColor = "#000"; detailTabText.shadowBlur = 0; detailTabText.shadowOffsetX = 2; detailTabText.shadowOffsetY = 2;
                 detailTab.addControl(detailTabText);
 
@@ -6080,8 +6138,8 @@
                 cooldownText.text = "";
                 cooldownText.color = "white";
                 cooldownText.fontSize = 32;
-                cooldownText.fontFamily = "'FF9UI', 'Cabin', sans-serif";
-                cooldownText.fontWeight = "700";
+                cooldownText.fontFamily = "'FF9UI', sans-serif";
+                cooldownText.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
                 cooldownText.shadowColor = "#000";
                 cooldownText.shadowBlur = 0;  // Pixel shadow
                 cooldownText.isVisible = false;
@@ -6104,8 +6162,8 @@
                 keyText.text = keyLabel;
                 keyText.color = "#ccc";
                 keyText.fontSize = 18;
-                keyText.fontFamily = "'FF9UI', 'Cabin', sans-serif";
-                keyText.fontWeight = "700";
+                keyText.fontFamily = "'FF9UI', sans-serif";
+                keyText.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
                 keyText.shadowColor = "#000";
                 keyText.shadowBlur = 0;  // Pixel shadow
                 keyText.alpha = 0;  // Hidden - using HTML overlay for crisp text
@@ -6224,9 +6282,9 @@
             const parryKeyText = new BABYLON.GUI.TextBlock();
             parryKeyText.text = "SPC";
             parryKeyText.color = "#ccc";
-            parryKeyText.fontSize = 11;
-            parryKeyText.fontFamily = "'FF9UI', 'Cabin', sans-serif";
-            parryKeyText.fontWeight = "700";
+            parryKeyText.fontSize = 18;
+            parryKeyText.fontFamily = "'FF9UI', sans-serif";
+            parryKeyText.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             parryKeyText.shadowColor = "#000";
             parryKeyText.shadowBlur = 0;  // Pixel shadow
             parryKeyText.alpha = 0;  // Hidden - using HTML overlay for crisp text
@@ -7049,12 +7107,13 @@
                 mat.specularPower = 0;
 
                 if (texturePath) {
-                    const tex = new BABYLON.Texture(texturePath, scene, false, true, BABYLON.Texture.NEAREST_SAMPLINGMODE);
+                    const tex = new BABYLON.Texture(texturePath, scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
                     tex.uScale = tileU;
                     tex.vScale = tileV;
                     mat.diffuseTexture = tex;
-                    // Pixelated look - no filtering
-                    tex.updateSamplingMode(BABYLON.Texture.NEAREST_SAMPLINGMODE);
+                    // PS1 look: nearest magnification (chunky texels) + mipmapped minification
+                    // (mode 8) so the low-res tiling ground stays stable in the distance (no sparkle)
+                    tex.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
                 }
 
                 if (color) {
@@ -7071,7 +7130,7 @@
             scene.fogEnd = 60;
 
             // === MATERIALS (solid colors for now - add textures later) ===
-            const floorMat = createClassicMaterial("floorMat", "textures/grass_field.png", 4, 2, new BABYLON.Color3(1.0, 0.98, 0.9));  // Tiling storybook grass ground (real material, not a baked top-down map)
+            const floorMat = createClassicMaterial("floorMat", "textures/grass_field.png?v=3", 4, 2, new BABYLON.Color3(1.0, 0.98, 0.9));  // Tiling storybook grass ground (real material, not a baked top-down map)
             floorMat.emissiveColor = new BABYLON.Color3(0.16, 0.16, 0.12);  // Gentle black-point lift
 
             // Optional bump/normal map - disabled (created outline artifacts, not D2 style)
@@ -7084,7 +7143,7 @@
             // floorMat.invertNormalMapX = true;
             // floorMat.invertNormalMapY = true;
             const groundMat = createClassicMaterial("groundMat", null, 1, 1, GRAY.ground);
-            const wallStoneMat = createClassicMaterial("wallStoneMat", "textures/rail.png", 8, 1, new BABYLON.Color3(0.6, 0.6, 0.6));
+            const wallStoneMat = createClassicMaterial("wallStoneMat", "textures/rail.png?v=3", 8, 1, new BABYLON.Color3(0.6, 0.6, 0.6));
             wallStoneMat.emissiveColor = new BABYLON.Color3(0.15, 0.12, 0.1);  // Subtle glow so walls are always visible
             const cliffMat = createClassicMaterial("cliffMat", null, 1, 1, GRAY.jungle);
 
@@ -7175,7 +7234,7 @@
             // ============================================================
             (function buildLanePath() {
                 const dirtMat = new BABYLON.StandardMaterial("lanePathMat", scene);
-                const dirtTex = new BABYLON.Texture("textures/dirt_road.png", scene, false, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
+                const dirtTex = new BABYLON.Texture("textures/dirt_road.png?v=3", scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
                 dirtTex.uScale = 6;  dirtTex.vScale = 3;   // tile for surface detail
                 dirtMat.diffuseTexture = dirtTex;
                 dirtMat.specularColor = BABYLON.Color3.Black();
@@ -9745,7 +9804,7 @@
             let aiButtressMat = null;
 
             const loadGateTextures = () => {
-                const wallTex = new BABYLON.Texture("textures/tower_stone.png", scene, false, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE,
+                const wallTex = new BABYLON.Texture("textures/tower_stone.png?v=3", scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR,
                     () => {
                         // One stone-block pattern per gate brick (2x2 was too dense/busy)
                         wallTex.uScale = 1;
@@ -9966,7 +10025,7 @@
                 keep.position.set(keepX, keepH / 2, 0);
                 // Dedicated material that tiles the stone properly so it isn't stretched
                 // vertically over the tall keep faces.
-                const keepTex = new BABYLON.Texture("textures/tower_stone.png", scene, false, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
+                const keepTex = new BABYLON.Texture("textures/tower_stone.png?v=3", scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
                 keepTex.uScale = 2; keepTex.vScale = 5;
                 const keepMat = new BABYLON.StandardMaterial((isPlayer ? "pKeepMat" : "aKeepMat"), scene);
                 keepMat.diffuseTexture = keepTex;
@@ -9980,7 +10039,7 @@
                 const parapet = BABYLON.MeshBuilder.CreateBox((isPlayer ? "playerParapet" : "aiParapet"),
                     { width: keepS + 0.5, height: 0.6, depth: keepS + 0.5 }, scene);
                 parapet.position.set(keepX, keepH, 0);
-                const parapetTex = new BABYLON.Texture("textures/tower_stone.png", scene, false, true, BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
+                const parapetTex = new BABYLON.Texture("textures/tower_stone.png?v=3", scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
                 parapetTex.uScale = 3; parapetTex.vScale = 1;
                 const parapetMat = new BABYLON.StandardMaterial((isPlayer ? "pParaMat" : "aParaMat"), scene);
                 parapetMat.diffuseTexture = parapetTex;
@@ -10112,8 +10171,8 @@
 
             // Load castle wall texture for team-colored surfaces
             const loadTeamTextures = () => {
-                const teamTex = new BABYLON.Texture("textures/castle_wall.png", scene, false, true,
-                    BABYLON.Texture.TRILINEAR_SAMPLINGMODE,
+                const teamTex = new BABYLON.Texture("textures/castle_wall.png?v=3", scene, false, true,
+                    BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR,
                     () => {
                         // Apply to blue team (base + backdrop)
                         const blueTex = teamTex.clone();
@@ -18036,7 +18095,30 @@
             return combatantIsRooted(combatants.right);
         }
 
+        // Rebuild a gauge fill's gradient at the bar's REAL measured pixel position. Babylon GUI
+        // gradient coords are absolute (texture space), so an off-origin bar (e.g. right-side Red
+        // tower) must have its gradient spanning the bar's actual left..right, not 0..trackW.
+        function seatGaugeGradient(fill) {
+            if (!fill || !fill._gradBg || !fill._gradC0) return;
+            const m = fill._gradBg._currentMeasure;
+            if (!m || m.width < 2) return;                       // not laid out yet
+            if (fill._gradL === m.left && fill._gradW === m.width) return;  // unchanged
+            fill._gradL = m.left; fill._gradW = m.width;
+            const G = BABYLON.GUI;
+            const fg = new G.LinearGradient(m.left, 0, m.left + m.width, 0);
+            // c0 = dark (outer edge), c1 = bright (leading edge). Flip puts bright on the left.
+            if (fill._gradFlip) { fg.addColorStop(0, fill._gradC1); fg.addColorStop(1, fill._gradC0); }
+            else                { fg.addColorStop(0, fill._gradC0); fg.addColorStop(1, fill._gradC1); }
+            fill.backgroundGradient = fg;
+        }
+
         function updateHealthBars() {
+            if (window.guiElements) {
+                seatGaugeGradient(window.guiElements.playerHealthFill);
+                seatGaugeGradient(window.guiElements.aiHealthFill);
+                seatGaugeGradient(window.guiElements.playerCastFill);
+                seatGaugeGradient(window.guiElements.aiCastFill);
+            }
             // Read from combatant state with fallback to legacy variables
             let localHealth = combatants.left ? combatants.left.towerHealth : playerTowerHealth;
             let remoteHealth = combatants.right ? combatants.right.towerHealth : aiTowerHealth;
@@ -18541,6 +18623,9 @@
                 if (currentStage >= 4) {
                     // Already at enemy core and won = VICTORY
                     gameOver = true;
+                    roundTransitioning = false;  // match over: no round reset runs, so clear the
+                                                 // "block actions" flag here or the game-over continue
+                                                 // handler (gated on !roundTransitioning) stays dead
                     // Track match win and commit stats
                     StatTracker.increment('matches_won');
                     StatTracker.commitMatch();
@@ -18569,6 +18654,9 @@
                 if (currentStage <= 0) {
                     // Already at player core and lost = DEFEAT
                     gameOver = true;
+                    roundTransitioning = false;  // match over: no round reset runs, so clear the
+                                                 // "block actions" flag here or the game-over continue
+                                                 // handler (gated on !roundTransitioning) stays dead
                     // Track match loss and commit stats
                     StatTracker.increment('matches_lost');
                     StatTracker.commitMatch();
