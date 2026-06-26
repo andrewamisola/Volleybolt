@@ -1318,20 +1318,14 @@
             const iconClasses = {
                 fireball: 'fireball-icon',
                 frostbolt: 'frostbolt-icon',
-                chain_lightning: 'chainlightning-icon',
-                snowball: 'snowball-icon',
-                spark: 'spark-icon',
-                boulder: 'boulder-icon'
+                chain_lightning: 'chainlightning-icon'
             };
 
             // Mana cost display
             const manaCostDisplay = {
                 fireball: '1',
                 frostbolt: '2',
-                chain_lightning: '2',
-                snowball: '½',
-                spark: '1',
-                boulder: '2'
+                chain_lightning: '2'
             };
 
             const loadout = PlayerLoadout.getLoadout();
@@ -1340,8 +1334,7 @@
                 const slotEl = slotElements[index];
                 if (!slotEl) return;
 
-                // Prefer the canonical ABILITY_REGISTRY; fall back to SpellRegistry
-                // for placeholder spells not yet in the registry (snowball/spark/boulder).
+                // Prefer the canonical ABILITY_REGISTRY; fall back to SpellRegistry.
                 const reg = ABILITY_REGISTRY[spellId];
                 const spell = SpellRegistry.get(spellId);
                 if (!reg && !spell) return;
@@ -7155,25 +7148,6 @@
                 return mesh;
             };
 
-            // Create low-poly rock/boulder
-            const createRock = (name, size, segments = 6) => {
-                const rock = BABYLON.MeshBuilder.CreateIcoSphere(name, {
-                    radius: size,
-                    subdivisions: 1,  // Very low poly
-                    flat: true
-                }, scene);
-                // Distort vertices for organic look
-                const positions = rock.getVerticesData(BABYLON.VertexBuffer.PositionKind);
-                for (let i = 0; i < positions.length; i += 3) {
-                    positions[i] += (deterministicValue(i) - 0.5) * size * 0.3;
-                    positions[i + 1] += (deterministicValue(i + 1) - 0.5) * size * 0.2;
-                    positions[i + 2] += (deterministicValue(i + 2) - 0.5) * size * 0.3;
-                }
-                rock.updateVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
-                rock.material = cliffMat;
-                return rock;
-            };
-
             // Create chunky pillar/column
             const createPillar = (name, radius, height, sides = 6) => {
                 const pillar = BABYLON.MeshBuilder.CreateCylinder(name, {
@@ -10991,24 +10965,14 @@
                 while (projectiles.length > 0) {
                     destroyProjectile(projectiles[0]);
                 }
-                // Also clean up any orphaned particle systems
+                // Also clean up any orphaned particle systems. Dispose EVERY transient spell effect
+                // (fire/ice/grav cores, magmaBurst, shieldSparks, etc.) rather than a name whitelist
+                // that silently misses effects -> they used to linger and finish their lifetime after
+                // returning to menu. Keep only the persistent ambient "embers" (created once at scene init).
                 if (scene && scene.particleSystems) {
-                    const toDispose = [];
-                    for (const ps of scene.particleSystems) {
-                        if (ps && ps.name && (
-                            ps.name.startsWith('fireCore') ||
-                            ps.name.startsWith('fireOuter') ||
-                            ps.name.startsWith('iceCore') ||
-                            ps.name.startsWith('frostMist') ||
-                            ps.name.startsWith('iceSparkle') ||
-                            ps.name.startsWith('snowParticles') ||
-                            ps.name.startsWith('sparkParticles') ||
-                            ps.name.startsWith('gravParticles') ||
-                            ps.name.startsWith('gravSphere')
-                        )) {
-                            toDispose.push(ps);
-                        }
-                    }
+                    const toDispose = scene.particleSystems.filter(
+                        ps => ps && ps.name && !ps.name.startsWith('ember')
+                    );
                     for (const ps of toDispose) {
                         try { ps.dispose(); } catch(e) {}
                     }
@@ -13182,20 +13146,6 @@
                                 if (window.createImpactFlash) {
                                     createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(0.5, 0.8, 1), 1.0);
                                 }
-                            } else if (proj.type === 'snowball') {
-                                // Snowball deals fixed damage
-                                const damage = abilities.snowball.damage;
-                                if (window.createImpactFlash) {
-                                    createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(0.9, 0.95, 1), 1.5);
-                                }
-                                dealDamageToTower(isPlayerTower, damage, proj.mesh.position.z);
-                            } else if (proj.type === 'gravitySphere') {
-                                // Gravity sphere deals 2 damage per captured ball
-                                const damage = abilities.gravity.sphereDamage * (proj.capturedCount || 1);
-                                if (window.createImpactFlash) {
-                                    createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(0.5, 0.1, 0.7), 2.5 + damage * 0.3);
-                                }
-                                dealDamageToTower(isPlayerTower, damage, proj.mesh.position.z);
                             } else {
                                 // Use fixed damage if set (magma bombs), otherwise scale with volleys (2 base, +1 per volley, max 5)
                                 const damage = proj.damage !== undefined ? proj.damage : Math.min(2 + proj.volleyCount, 6);
@@ -13212,20 +13162,6 @@
                                 if (window.createImpactFlash) {
                                     createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(0.5, 0.8, 1), 1.0);
                                 }
-                            } else if (proj.type === 'snowball') {
-                                // Snowball deals fixed damage
-                                const damage = abilities.snowball.damage;
-                                if (window.createImpactFlash) {
-                                    createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(0.9, 0.95, 1), 1.5);
-                                }
-                                dealDamageToTower(isPlayerTower, damage, proj.mesh.position.z);
-                            } else if (proj.type === 'gravitySphere') {
-                                // Gravity sphere deals 2 damage per captured ball
-                                const damage = abilities.gravity.sphereDamage * (proj.capturedCount || 1);
-                                if (window.createImpactFlash) {
-                                    createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(0.5, 0.1, 0.7), 2.5 + damage * 0.3);
-                                }
-                                dealDamageToTower(isPlayerTower, damage, proj.mesh.position.z);
                             } else {
                                 // Use fixed damage if set (magma bombs), otherwise scale with volleys (2 base, +1 per volley, max 5)
                                 const damage = proj.damage !== undefined ? proj.damage : Math.min(2 + proj.volleyCount, 6);
@@ -13787,7 +13723,12 @@
                 const now = performance.now();
 
                 // STEPPED ANIMATIONS - Pause/resume at fixed intervals for retro sprite feel
-                if (animSteppingEnabled) {
+                if (paused) {
+                    // Esc pause menu: the sim is gated by `paused`, but Babylon AnimationGroups
+                    // run in the render loop independently -> models kept playing their idle/walk
+                    // cycles. Freeze the animation system so the scene holds still behind the overlay.
+                    scene.animationsEnabled = false;
+                } else if (animSteppingEnabled) {
                     const stepMs = window.ANIM_STEP_MS || ANIM_STEP_MS;
                     if (now - lastAnimStepTime >= stepMs) {
                         lastAnimStepTime = now;
