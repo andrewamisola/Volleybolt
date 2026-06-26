@@ -1432,6 +1432,9 @@
                 channelAura: null,           // Particle system during channel
                 lightningBolts: [],          // Active lightning bolt meshes
 
+                // Per-match stat counters (Party Stats window). Reset at match start.
+                matchStats: { spellsCast: 0, parries: 0, damageDealt: 0 },
+
                 // Upgrades
                 upgrades: [],
 
@@ -5728,21 +5731,23 @@
                     { id: 'fireball',        name: 'Fireball',     key: '1',     mana: 1 },
                     { id: 'frostbolt',       name: 'Frostbolt',    key: '2',     mana: 2 },
                     { id: 'chain_lightning', name: 'Thunderstorm', key: '3',     mana: 2 },
-                    { id: 'parry',           name: 'Parry',        key: 'Space', mana: 0 },
+                    { id: 'parry',           name: 'Parry',        key: '␣',     mana: 0 },
                 ];
                 const ROW_H = 42, PAD = 10, TITLE_H = 26, BOX_W = 290;
                 const BOX_H = PAD * 2 + cmdSlots.length * ROW_H;
+                // Centered trio layout: [Command] [Spell Info] [Party]. The center (detail)
+                // window sits dead-center; the other two are one SLOT (box + gap) left/right.
+                const GAP = 14, SLOT = BOX_W + GAP, TAB_W = 150, TAB_OFF = -BOX_W / 2 + 16 + TAB_W / 2;  // TAB_OFF = -54
                 const STEEL = "rgba(46,56,76,0.94)", RIM = "#dfe6f2", TXT = "#f4f7ff";
 
                 const box = new G.Rectangle("commandBox");
                 box.width = BOX_W + "px"; box.height = BOX_H + "px";
                 box.background = STEEL; box.color = RIM; box.thickness = 2; box.cornerRadius = 8;
                 box.clipChildren = false;   // let the title tab overhang the top border
-                box.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                box.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_CENTER;
                 box.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
-                // Sit low-left in the clean band BELOW the stage frame (small lift off the
-                // bottom edge), so the title tab clears the stage's dark bottom border.
-                box.left = "34px"; box.top = "-16px";
+                // Command is the LEFT window of the centered trio (one SLOT left of center).
+                box.left = (-SLOT) + "px"; box.top = "-16px";
                 box.shadowColor = "#000"; box.shadowBlur = 0; box.shadowOffsetX = 4; box.shadowOffsetY = 4;
                 box.isVisible = false;
                 guiTexture.addControl(box);
@@ -5818,11 +5823,12 @@
                 titleTab.width = "150px"; titleTab.height = TITLE_H + "px";
                 titleTab.background = STEEL; titleTab.color = RIM; titleTab.thickness = 2; titleTab.cornerRadius = 6;
                 titleTab.clipChildren = false;
-                titleTab.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                titleTab.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_CENTER;
                 titleTab.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
                 // box bottom edge is 16px above container bottom; box top edge is 16+BOX_H above it.
                 // Float the tab's bottom 4px into the box top (so it reads as "attached").
-                titleTab.left = "50px"; titleTab.top = (-(16 + BOX_H - 4)) + "px";
+                // Tab sits near the box's left edge (TAB_OFF), shifted with the command window.
+                titleTab.left = (-SLOT + TAB_OFF) + "px"; titleTab.top = (-(16 + BOX_H - 4)) + "px";
                 titleTab.isVisible = false;
                 guiTexture.addControl(titleTab);
                 const titleText = new G.TextBlock();
@@ -5875,16 +5881,17 @@
                 // Parry is ready at match start (before any parry event fires).
                 applyState(cmdRefs.find(r => r.id === 'parry'), 'castable');
 
-                // ----- Detail window: an identical steel window that pops to the RIGHT of the
-                // command menu on hover, showing the spell's stats + description. -----
+                // ----- Spell Info window: the dead-CENTER steel window of the trio. Persistent;
+                // shows the hovered spell's stats + description (defaults to the first spell). -----
                 const DETAIL_W = BOX_W, DETAIL_H = BOX_H;   // identical to the command window
-                const DETAIL_X = 34 + BOX_W + 14;   // command box left + width + gap
                 const detailBox = new G.Rectangle("commandDetailBox");
                 detailBox.width = DETAIL_W + "px"; detailBox.height = DETAIL_H + "px";
                 detailBox.background = STEEL; detailBox.color = RIM; detailBox.thickness = 2; detailBox.cornerRadius = 8;
-                detailBox.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                detailBox.clipChildren = false;   // let the spell-name tab overhang the top border
+                detailBox.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_CENTER;
                 detailBox.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
-                detailBox.left = DETAIL_X + "px"; detailBox.top = "-16px";
+                // Spell Info is the dead-CENTER window of the trio.
+                detailBox.left = "0px"; detailBox.top = "-16px";
                 detailBox.shadowColor = "#000"; detailBox.shadowBlur = 0; detailBox.shadowOffsetX = 4; detailBox.shadowOffsetY = 4;
                 detailBox.isVisible = false;
                 guiTexture.addControl(detailBox);
@@ -5901,22 +5908,23 @@
                 detailBox.addControl(detailStats);
                 function setStatsTokens(str) {
                     detailStats.clearControls();
-                    const tokens = (str || "").match(/(\d+\.?\d*|[^\d]+)/g) || [];
-                    tokens.forEach(tok => {
-                        const tb = new G.TextBlock();
-                        tb.text = tok; tb.resizeToFit = true; tb.fontSize = 18;
-                        tb.fontFamily = "'FF9UI', sans-serif";
-                        tb.color = /\d/.test(tok) ? "#ffffff" : STAT_LABEL;
-                        tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
-                        detailStats.addControl(tb);
-                    });
+                    // Single TextBlock so the internal spacing between stat groups is preserved --
+                    // per-token TextBlocks trim their leading/trailing whitespace, which collapsed
+                    // the gaps (e.g. "1Mana1s Cast4s CD").
+                    const tb = new G.TextBlock();
+                    tb.text = str || ""; tb.resizeToFit = true; tb.fontSize = 18;
+                    tb.fontFamily = "'FF9UI', sans-serif"; tb.color = "#ffffff";
+                    tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
+                    tb.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                    tb.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                    detailStats.addControl(tb);
                 }
 
                 const detailDesc = new G.TextBlock();
                 detailDesc.color = "#eef2fb"; detailDesc.fontSize = 18;
                 detailDesc.fontFamily = "'FF9UI', sans-serif";
                 detailDesc.shadowColor = "#000"; detailDesc.shadowBlur = 0; detailDesc.shadowOffsetX = 2; detailDesc.shadowOffsetY = 2;
-                detailDesc.textWrapping = true; detailDesc.lineSpacing = "2px";
+                detailDesc.textWrapping = true; detailDesc.lineSpacing = "7px";
                 detailDesc.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
                 detailDesc.verticalAlignment = ALN.VERTICAL_ALIGNMENT_TOP;
                 detailDesc.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
@@ -5930,9 +5938,9 @@
                 detailTab.width = "150px"; detailTab.height = TITLE_H + "px";
                 detailTab.background = STEEL; detailTab.color = RIM; detailTab.thickness = 2; detailTab.cornerRadius = 6;
                 detailTab.clipChildren = false;
-                detailTab.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                detailTab.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_CENTER;
                 detailTab.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
-                detailTab.left = (DETAIL_X + 16) + "px"; detailTab.top = (-(16 + DETAIL_H - 4)) + "px";
+                detailTab.left = (TAB_OFF) + "px"; detailTab.top = (-(16 + DETAIL_H - 4)) + "px";
                 detailTab.isVisible = false;
                 guiTexture.addControl(detailTab);
                 const detailTabText = new G.TextBlock();
@@ -5940,6 +5948,87 @@
                 detailTabText.fontFamily = "'FF9UI', sans-serif"; detailTabText.fontWeight = "600";
                 detailTabText.shadowColor = "#000"; detailTabText.shadowBlur = 0; detailTabText.shadowOffsetX = 2; detailTabText.shadowOffsetY = 2;
                 detailTab.addControl(detailTabText);
+
+                // ----- Party Stats window: the RIGHT window of the trio. Persistent two-row
+                // table (Blue Tower / Red Tower) x three columns (Cast / Parry / Dmg). -----
+                const statsBox = new G.Rectangle("commandStatsBox");
+                statsBox.width = BOX_W + "px"; statsBox.height = BOX_H + "px";
+                statsBox.background = STEEL; statsBox.color = RIM; statsBox.thickness = 2; statsBox.cornerRadius = 8;
+                statsBox.clipChildren = false;   // let the title tab overhang the top border
+                statsBox.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_CENTER;
+                statsBox.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
+                statsBox.left = (SLOT) + "px"; statsBox.top = "-16px";
+                statsBox.shadowColor = "#000"; statsBox.shadowBlur = 0; statsBox.shadowOffsetX = 4; statsBox.shadowOffsetY = 4;
+                statsBox.isVisible = false;
+                guiTexture.addControl(statsBox);
+
+                // "Party" title tab (GUI root, like the Command/Spell-name tabs).
+                const statsTab = new G.Rectangle("commandStatsTab");
+                statsTab.width = "150px"; statsTab.height = TITLE_H + "px";
+                statsTab.background = STEEL; statsTab.color = RIM; statsTab.thickness = 2; statsTab.cornerRadius = 6;
+                statsTab.clipChildren = false;
+                statsTab.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_CENTER;
+                statsTab.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
+                statsTab.left = (SLOT + TAB_OFF) + "px"; statsTab.top = (-(16 + BOX_H - 4)) + "px";
+                statsTab.isVisible = false;
+                guiTexture.addControl(statsTab);
+                const statsTabText = new G.TextBlock();
+                statsTabText.text = "Stats"; statsTabText.color = "#f0c050"; statsTabText.fontSize = 18;
+                statsTabText.fontFamily = "'FF9UI', sans-serif"; statsTabText.fontWeight = "600";
+                statsTabText.shadowColor = "#000"; statsTabText.shadowBlur = 0; statsTabText.shadowOffsetX = 2; statsTabText.shadowOffsetY = 2;
+                statsTab.addControl(statsTabText);
+
+                // Table geometry (relative to statsBox, 16px padding). Three right-aligned number
+                // columns; `left` for right-aligned controls is the negative distance from the
+                // box's RIGHT edge (box width 290). Right-edges: Cast 168, Parry 224, Dmg 274.
+                const COL_CAST = -142, COL_PARRY = -76, COL_DMG = -16;  // = -(290 - rightEdge), wider gaps
+                const HDR_TOP = 20, ROW_BLUE_TOP = 78, ROW_RED_TOP = 128;  // more vertical breathing room
+                // A left-aligned label (row name).
+                function statsLabel(txt, color, topPx) {
+                    const tb = new G.TextBlock();
+                    tb.text = txt; tb.color = color; tb.fontSize = 18;
+                    tb.fontFamily = "'FF9UI', sans-serif"; tb.fontWeight = "600";
+                    tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
+                    tb.resizeToFit = true;
+                    tb.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                    tb.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                    tb.verticalAlignment = ALN.VERTICAL_ALIGNMENT_TOP;
+                    tb.left = "16px"; tb.top = topPx + "px";
+                    statsBox.addControl(tb);
+                    return tb;
+                }
+                // A right-aligned column cell (header label or number).
+                function statsCell(txt, color, leftPx, topPx, size) {
+                    const tb = new G.TextBlock();
+                    tb.text = txt; tb.color = color; tb.fontSize = size || 18;
+                    tb.fontFamily = "'FF9UI', sans-serif";
+                    tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
+                    tb.resizeToFit = true;
+                    tb.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT;
+                    tb.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT;
+                    tb.verticalAlignment = ALN.VERTICAL_ALIGNMENT_TOP;
+                    tb.left = leftPx + "px"; tb.top = topPx + "px";
+                    statsBox.addControl(tb);
+                    return tb;
+                }
+                // Header row.
+                statsCell("CAS", "#f0c050", COL_CAST, HDR_TOP);
+                statsCell("PAR", "#f0c050", COL_PARRY, HDR_TOP);
+                statsCell("DMG", "#f0c050", COL_DMG, HDR_TOP);
+                // Blue row.
+                statsLabel("Blue", "#6fb0ff", ROW_BLUE_TOP);
+                const blueCast = statsCell("0", "#ffffff", COL_CAST, ROW_BLUE_TOP);
+                const blueParry = statsCell("0", "#ffffff", COL_PARRY, ROW_BLUE_TOP);
+                const blueDmg = statsCell("0", "#ffffff", COL_DMG, ROW_BLUE_TOP);
+                // Red row.
+                statsLabel("Red", "#e76e55", ROW_RED_TOP);
+                const redCast = statsCell("0", "#ffffff", COL_CAST, ROW_RED_TOP);
+                const redParry = statsCell("0", "#ffffff", COL_PARRY, ROW_RED_TOP);
+                const redDmg = statsCell("0", "#ffffff", COL_DMG, ROW_RED_TOP);
+                const statsRefs = {
+                    blue: { cast: blueCast, parry: blueParry, dmg: blueDmg },
+                    red:  { cast: redCast,  parry: redParry,  dmg: redDmg },
+                };
 
                 const stripHtml = (h) => (h || "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
                 function spellInfo(id) {
@@ -5967,6 +6056,8 @@
                     detailBox.isVisible = true; detailTab.isVisible = true;
                 }
                 function hideDetail() { detailBox.isVisible = false; detailTab.isVisible = false; }
+                // Center window is PERSISTENT mid-match: defaults to the first spell (fireball).
+                const DEFAULT_DETAIL_ID = cmdSlots[0].id;
 
                 // Hover wiring — the game never attaches Babylon input and the page is a stack of
                 // DOM overlays, so GUI onPointerEnter never fires. Instead we listen for mouse moves
@@ -6000,12 +6091,14 @@
                     const found = hitTestRow(e.clientX, e.clientY);
                     if (found === hoveredId) return;
                     hoveredId = found;
-                    if (found) showDetail(found); else hideDetail();
+                    // Persistent center: fall back to the default spell instead of hiding.
+                    if (found) showDetail(found); else showDetail(DEFAULT_DETAIL_ID);
                 }
                 window.addEventListener('pointermove', onHoverMove, true);
-                window.addEventListener('pointerleave', () => { if (hoveredId) { hoveredId = null; hideDetail(); } }, true);
+                window.addEventListener('pointerleave', () => { if (hoveredId) { hoveredId = null; showDetail(DEFAULT_DETAIL_ID); } }, true);
 
                 Object.assign(window.commandMenu, { detailBox, detailTab, showDetail, hideDetail, hitTestRow });
+                Object.assign(window.commandMenu, { statsBox, statsTab });
 
                 // Resolve the local player's combatant (singles, doubles, and pvp).
                 function localCombatant() {
@@ -6023,7 +6116,23 @@
                     const inGame = (typeof gameState === 'undefined') || (gameState !== 'menu' && gameState !== 'lobby');
                     if (box.isVisible !== inGame) box.isVisible = inGame;
                     if (titleTab.isVisible !== inGame) titleTab.isVisible = inGame;
-                    if (!inGame) { if (detailBox.isVisible) hideDetail(); hoveredId = null; return; }
+                    if (!inGame) {
+                        if (detailBox.isVisible) hideDetail();
+                        statsBox.isVisible = false; statsTab.isVisible = false;
+                        hoveredId = null; return;
+                    }
+
+                    // Persistent center: if nothing is hovered, keep the default spell shown.
+                    if (hoveredId === null && !detailBox.isVisible) showDetail(DEFAULT_DETAIL_ID);
+
+                    // Party Stats window: visibility + live per-match counters.
+                    if (statsBox.isVisible !== inGame) statsBox.isVisible = inGame;
+                    if (statsTab.isVisible !== inGame) statsTab.isVisible = inGame;
+                    const bl = window.combatants && window.combatants.left, rd = window.combatants && window.combatants.right;
+                    const blS = (bl && bl.matchStats) || { spellsCast: 0, parries: 0, damageDealt: 0 };
+                    const rdS = (rd && rd.matchStats) || { spellsCast: 0, parries: 0, damageDealt: 0 };
+                    statsRefs.blue.cast.text = '' + (blS.spellsCast || 0); statsRefs.blue.parry.text = '' + (blS.parries || 0); statsRefs.blue.dmg.text = '' + Math.round(blS.damageDealt || 0);
+                    statsRefs.red.cast.text  = '' + (rdS.spellsCast || 0); statsRefs.red.parry.text  = '' + (rdS.parries || 0); statsRefs.red.dmg.text  = '' + Math.round(rdS.damageDealt || 0);
 
                     const lc = localCombatant();
                     if (!lc) return;
@@ -7095,6 +7204,32 @@
             scene.fogColor = new BABYLON.Color3(0.27, 0.21, 0.30);  // Warm dusk - matches clearColor (was fade-to-black)
             scene.fogStart = 25;
             scene.fogEnd = 60;
+
+            // ============================================================
+            // ATMOSPHERIC BACKDROP -- layered magic-coliseum sky behind the arena.
+            // Fixed ortho camera (~(0,17,-29) looking +Z, 30deg up; "behind" = +Z), so depth is
+            // FAKED with baked textures + fog, and parallax with differential UV scroll (the camera
+            // never moves). Fully additive -- no gameplay/collision/UI/camera changes.
+            // Tune the mood via BACKDROP. Flip BACKDROP_ENABLED to false to disable the whole thing.
+            // ============================================================
+            const BACKDROP_ENABLED = true;   // now just the UI-readability fade; the void stays the original purple
+            const BACKDROP = {
+                uiMask: "textures/backdrop_uimask.png?v=1",   // bottom-up dark fade for HUD legibility
+            };
+            (function buildBackdrop() {
+                if (!BACKDROP_ENABLED) return;
+                // Kept the original purple void (clearColor + fog above are untouched). Add ONLY a
+                // UI-readability gradient: a dark fade rising from the bottom, rendered as a GUI image
+                // UNDER the HUD panels (low zIndex) so the void behind the Command / Spell / Stats
+                // windows is darker for legibility while the panels stay crisp on top. It lives on
+                // guiTexture, so it only shows while the 3D canvas is up (in a match, not the 2D menu).
+                const mask = new BABYLON.GUI.Image("uiReadabilityMask", BACKDROP.uiMask);
+                mask.width = "100%"; mask.height = "100%";
+                mask.stretch = BABYLON.GUI.Image.STRETCH_FILL;
+                mask.zIndex = -50;            // behind the HUD panels (default zIndex 0)
+                mask.isPointerBlocker = false;
+                guiTexture.addControl(mask);
+            })();
 
             // === MATERIALS (solid colors for now - add textures later) ===
             const floorMat = createClassicMaterial("floorMat", "textures/grass_field.png?v=3", 4, 2, new BABYLON.Color3(1.0, 0.98, 0.9));  // Tiling storybook grass ground (real material, not a baked top-down map)
@@ -10991,6 +11126,9 @@
                 // Gain 1 mana on parry
                 gainMana(parryer, 1);
 
+                // Per-match parry counter (Party Stats) — attribute to the parrying combatant.
+                { const pc = (parryer === 'player') ? combatants.left : combatants.right; if (pc && pc.matchStats) pc.matchStats.parries++; }
+
                 // Track parry stats (only for local player)
                 if (parryer === 'player') {
                     StatTracker.increment('parries_successful');
@@ -13402,6 +13540,9 @@
             // Check and spend mana
             if (!spendMana(caster, abilities.fireball.manaCost)) return;
 
+            // Per-match spell-cast counter (Party Stats) — attribute to the casting combatant.
+            { const cc = getCombatantLegacy(caster); if (cc && cc.matchStats) cc.matchStats.spellsCast++; }
+
             // Track stat (only for local player in single/pvp)
             if (caster === 'player' || (getCombatantLegacy(caster)?.isLocalPlayer)) {
                 StatTracker.increment('fireball_casts');
@@ -13446,6 +13587,9 @@
 
             // Check and spend mana
             if (!spendMana(caster, abilities.frostbolt.manaCost)) return;
+
+            // Per-match spell-cast counter (Party Stats) — attribute to the casting combatant.
+            { const cc = getCombatantLegacy(caster); if (cc && cc.matchStats) cc.matchStats.spellsCast++; }
 
             // Visual feedback for the local player only
             const _fbC = getCombatantLegacy(caster);
@@ -16084,6 +16228,10 @@
             if (window.updateManaBarVisibility) updateManaBarVisibility();
             updateScore();
             resetTalentState();  // Reset talents for new match
+            // Reset per-match stat counters (Party Stats window) for all combatants.
+            for (const c of (isDoublesMode() ? getAllCombatants() : [combatants.left, combatants.right])) {
+                if (c && c.matchStats) c.matchStats = { spellsCast: 0, parries: 0, damageDealt: 0 };
+            }
             resetRound();
 
             // Hide gameplay UI when resetting (menu state)
@@ -16780,6 +16928,9 @@
             c.mana -= abilities.chain_lightning.manaCost;
             if (isPlayer) playerMana = c.mana;
             else aiMana = c.mana;
+
+            // Per-match spell-cast counter (Party Stats) — attribute to the casting combatant.
+            if (c.matchStats) c.matchStats.spellsCast++;
 
             // Visual feedback for the local player only
             if ((isPlayer || c.isLocalPlayer) && window.flashAbilitySlot) {
@@ -17705,6 +17856,9 @@
             if (combatant) {
                 combatant.towerHealth = Math.max(0, combatant.towerHealth - damage);
             }
+            // Per-match damage counter (Party Stats) — attribute to the ATTACKER, i.e. the
+            // combatant on the opposite side of the tower being damaged.
+            { const atk = isPlayerTower ? combatants.right : combatants.left; if (atk && atk.matchStats) atk.matchStats.damageDealt += damage; }
             // LEGACY - sync tower health variables
             if (isPlayerTower) {
                 playerTowerHealth = combatant ? combatant.towerHealth : Math.max(0, playerTowerHealth - damage);
