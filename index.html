@@ -3393,9 +3393,7 @@
                 iceShatter: 'sfx/ice-shatter.wav',
                 cancel: 'sfx/cancel.wav',
                 overpowered: 'sfx/overpowered.wav',
-                lightning: 'sfx/lightning.wav',
-                lightning2: 'sfx/lightning2.wav',
-                lightning3: 'sfx/lightning3.wav'
+                lightning: 'sfx/lightning.wav'
             };
 
             // Looping casting sounds - separate for player and AI with panning
@@ -3798,16 +3796,6 @@
                 if (!toneStarted) await initToneJS();
                 if (synths.samples.lightning) synths.samples.lightning.volume.value = 3;
                 playSample('lightning');
-            },
-            lightning2: async () => {
-                if (!toneStarted) await initToneJS();
-                if (synths.samples.lightning2) synths.samples.lightning2.volume.value = 3;
-                playSample('lightning2');
-            },
-            lightning3: async () => {
-                if (!toneStarted) await initToneJS();
-                if (synths.samples.lightning3) synths.samples.lightning3.volume.value = 3;
-                playSample('lightning3');
             },
 
             // Casting loop start - plays mid-cast.wav looping (panned by side)
