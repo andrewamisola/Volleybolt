@@ -4426,6 +4426,36 @@
             guiTexture.idealWidth = 1440;   // Reference width for scaling (4:3 aspect)
             guiTexture.useInvalidateRectOptimization = false;  // Ensure proper redraw
 
+            // Resolution-aware UI scaling: the GUI renders CRISPLY at native resolution (no
+            // renderAtIdealSize upscale-blur -- positions/sizes/fonts already scale via idealHeight).
+            // The one thing idealHeight does NOT scale is border thickness / cornerRadius (raw px),
+            // which is why the white border looked chunky at low res and hairline at 4K. So we scale
+            // those by the same height ratio (renderHeight / 1080) and re-apply on every window resize.
+            (function setupGuiScaling() {
+                let tracked = null;
+                const apply = () => {
+                    if (!tracked) {
+                        tracked = [];
+                        guiTexture.getDescendants(false).forEach(c => {
+                            const baseT = (typeof c.thickness === 'number') ? c.thickness : 0;
+                            const baseR = (typeof c.cornerRadius === 'number') ? c.cornerRadius : 0;
+                            if (baseT > 0 || baseR > 0) tracked.push({ c, baseT, baseR });
+                        });
+                    }
+                    const scale = Math.max(0.5, scene.getEngine().getRenderHeight() / 1080);
+                    tracked.forEach(({ c, baseT, baseR }) => {
+                        if (baseT > 0) c.thickness = baseT * scale;
+                        if (baseR > 0) c.cornerRadius = baseR * scale;
+                    });
+                };
+                // Capture base values + first apply once the GUI is fully built & rendered,
+                // then keep in sync with resolution changes.
+                scene.onAfterRenderObservable.addOnce(() => {
+                    apply();
+                    scene.getEngine().onResizeObservable.add(apply);
+                });
+            })();
+
             // Store globally for update functions
             window.guiTexture = guiTexture;
             window.guiElements = { guiTexture: guiTexture };
@@ -7139,9 +7169,6 @@
             table.position.y = -0.15;
             table.material = floorMat;
             table.receiveShadows = true;
-            table.enableEdgesRendering();
-            table.edgesWidth = 2.0;
-            table.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
             window.arenaFloor = table;  // Store reference for resizing
 
             // ============================================================
@@ -7220,11 +7247,17 @@
                     new BABYLON.StandardMaterial("bushMatB", scene),
                     new BABYLON.StandardMaterial("bushMatC", scene)
                 ];
-                const greens = [[0.26, 0.45, 0.18], [0.19, 0.36, 0.15], [0.34, 0.5, 0.22]];
+                // Low-fi dappled leaf texture (shared, seamless) + a per-material tint so the
+                // three bush shades stay distinct while the texture adds storybook leaf detail.
+                const leafTex = new BABYLON.Texture("textures/bush_leaves.png?v=1", scene, false, true,
+                    BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
+                leafTex.anisotropicFilteringLevel = 4;
+                const tints = [[0.95, 1.0, 0.85], [0.72, 0.82, 0.6], [1.05, 1.05, 0.92]];
                 bushMats.forEach((m, i) => {
-                    m.diffuseColor = new BABYLON.Color3(...greens[i]);
+                    m.diffuseTexture = leafTex;
+                    m.diffuseColor = new BABYLON.Color3(...tints[i]);
                     m.specularColor = BABYLON.Color3.Black();
-                    m.emissiveColor = new BABYLON.Color3(greens[i][0] * 0.25, greens[i][1] * 0.25, greens[i][2] * 0.25);
+                    m.emissiveColor = new BABYLON.Color3(0.05, 0.09, 0.04);  // tiny lift so shadowed bushes aren't black
                 });
 
                 // One bush clump = a few squashed low-poly icospheres
@@ -7259,6 +7292,21 @@
                 [[-halfW + 1, farZ], [halfW - 1, farZ]].forEach(([cx, cz]) => {
                     makeBush(cx, cz, 1.6 + Math.random() * 0.4);
                 });
+
+                // --- Wind wobble: gently oscillate ONLY the grass + bush leaf UV offsets with
+                // sine waves so the foliage looks alive (texture-space, so no geometry/other
+                // materials move). Bushes rustle a touch more than the ground. Honors Esc pause. ---
+                const grassTex = (scene.getMaterialByName('floorMat') || {}).diffuseTexture;
+                scene.onBeforeRenderObservable.add(() => {
+                    if (typeof paused !== 'undefined' && paused) return;   // freeze with the rest on pause
+                    const t = performance.now() * 0.001;
+                    leafTex.uOffset = Math.sin(t * 1.3) * 0.02;
+                    leafTex.vOffset = Math.cos(t * 1.0) * 0.014;
+                    if (grassTex) {
+                        grassTex.uOffset = Math.sin(t * 0.7) * 0.012;
+                        grassTex.vOffset = Math.cos(t * 0.55) * 0.009;
+                    }
+                });
             })();
 
             // === ARENA BORDER WALLS ===
@@ -7275,9 +7323,6 @@
             wallBack.material = wallStoneMat;
             // D2 style: only characters/projectiles cast shadows
             wallBack.receiveShadows = true;
-            wallBack.enableEdgesRendering();
-            wallBack.edgesWidth = 2.0;
-            wallBack.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
             window.wallBack = wallBack;  // Store reference for resizing
 
             // Front wall (near camera)
@@ -7290,9 +7335,6 @@
             wallFront.material = wallStoneMat;
             // D2 style: only characters/projectiles cast shadows
             wallFront.receiveShadows = true;
-            wallFront.enableEdgesRendering();
-            wallFront.edgesWidth = 2.0;
-            wallFront.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
             window.wallFront = wallFront;  // Store reference for resizing
 
             // === SIDE BASES ===
@@ -7314,9 +7356,6 @@
             // Texture loaded later in loadTeamTextures()
             // D2 style: only characters/projectiles cast shadows
             blueBase.receiveShadows = true;
-            blueBase.enableEdgesRendering();
-            blueBase.edgesWidth = 2.0;
-            blueBase.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
             window.blueBase = blueBase;  // Store reference for resizing
 
             // Red side base (right)
@@ -7333,9 +7372,6 @@
             // Texture loaded later in loadTeamTextures()
             // D2 style: only characters/projectiles cast shadows
             redBase.receiveShadows = true;
-            redBase.enableEdgesRendering();
-            redBase.edgesWidth = 2.0;
-            redBase.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
             window.redBase = redBase;  // Store reference for resizing
 
             // ============================================================
@@ -7381,9 +7417,6 @@
                 }, scene);
                 playerFrontPaddle.position.set(DOUBLES_POSITIONS.left.front.x, 0, 0);
                 playerFrontPaddle.material = playerMat;
-                playerFrontPaddle.enableEdgesRendering();
-                playerFrontPaddle.edgesWidth = 2.0;
-                playerFrontPaddle.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
                 playerFrontPaddle.visibility = 0;  // Hidden until doubles mode
 
                 // Right front paddle (opponent front or player front)
@@ -7392,9 +7425,6 @@
                 }, scene);
                 aiFrontPaddle.position.set(DOUBLES_POSITIONS.right.front.x, 0, 0);
                 aiFrontPaddle.material = aiMat;
-                aiFrontPaddle.enableEdgesRendering();
-                aiFrontPaddle.edgesWidth = 2.0;
-                aiFrontPaddle.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
                 aiFrontPaddle.visibility = 0;  // Hidden until doubles mode
             }
 
@@ -7453,15 +7483,9 @@
             playerPaddle.position.set(-tableWidth/2 + 1.5, 0, 0);
             playerPaddle.material = playerMat;
             // No shadow for paddle - only character casts shadow
-            playerPaddle.enableEdgesRendering();
-            playerPaddle.edgesWidth = 2.0;
-            playerPaddle.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
 
             // AI paddle (RIGHT side of screen)
             aiPaddle = BABYLON.MeshBuilder.CreateBox("ai", { width: 0.4, height: 0.5, depth: 2.5 }, scene);
-            aiPaddle.enableEdgesRendering();
-            aiPaddle.edgesWidth = 2.0;
-            aiPaddle.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
             aiPaddle.position.set(tableWidth/2 - 1.5, 0, 0);
             aiPaddle.material = aiMat;
             // No shadow for paddle - only character casts shadow
@@ -9834,9 +9858,6 @@
                         side * (wallWidth/2 + buttressWidth/2 - 0.2)
                     );
                     buttress.material = mat;  // Use same material - texture loads async
-                    buttress.enableEdgesRendering();
-                    buttress.edgesWidth = 2.5;
-                    buttress.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
                     // D2 style: only characters/projectiles cast shadows
                     buttress.receiveShadows = true;
                 });
@@ -9861,9 +9882,6 @@
                         -wallWidth/2 + merlonSpacing/2 + i * merlonSpacing
                     );
                     merlon.material = keystoneMat;
-                    merlon.enableEdgesRendering();
-                    merlon.edgesWidth = 2.0;
-                    merlon.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
                     // D2 style: only characters/projectiles cast shadows
                 }
 
@@ -9906,9 +9924,6 @@
                 );
                 archTop.position.set(baseX, 2.4, 0);
                 archTop.material = keystoneMat;
-                archTop.enableEdgesRendering();
-                archTop.edgesWidth = 2.0;
-                archTop.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
                 // D2 style: only characters/projectiles cast shadows
 
                 // === STONE FOUNDATION (Base) ===
@@ -9921,9 +9936,6 @@
                 const foundationMat = mat.clone((isPlayer ? "pFoundMat" : "aFoundMat"));
                 foundationMat.diffuseColor = mat.diffuseColor.scale(0.7);  // Darker base
                 foundation.material = foundationMat;
-                foundation.enableEdgesRendering();
-                foundation.edgesWidth = 2.5;
-                foundation.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
                 // D2 style: only characters/projectiles cast shadows
                 foundation.receiveShadows = true;
 
@@ -9950,7 +9962,6 @@
                 keepMat.specularColor = BABYLON.Color3.Black();
                 keep.material = keepMat;
                 keep.receiveShadows = true;
-                keep.enableEdgesRendering(); keep.edgesWidth = 2.0; keep.edgesColor = edgeBlack();
                 if (window.shadowGenerator) window.shadowGenerator.addShadowCaster(keep);
 
                 // Parapet band at the top (slightly oversized)
@@ -9964,7 +9975,6 @@
                 parapetMat.specularColor = BABYLON.Color3.Black();
                 parapet.material = parapetMat;
                 parapet.receiveShadows = true;
-                parapet.enableEdgesRendering(); parapet.edgesWidth = 2.0; parapet.edgesColor = edgeBlack();
 
                 // Crenellations around the parapet edge
                 const pHalf = (keepS + 0.5) / 2;
@@ -9975,7 +9985,6 @@
                             { width: 0.45, height: 0.7, depth: 0.45 }, scene);
                         m.position.set(keepX + dx, merlonY, dz);
                         m.material = keystoneMat;
-                        m.enableEdgesRendering(); m.edgesWidth = 1.5; m.edgesColor = edgeBlack();
                     });
                 }
 
@@ -9989,7 +9998,6 @@
                 roofMat.specularColor = BABYLON.Color3.Black();
                 roofMat.emissiveColor = teamCol.scale(0.18);
                 roof.material = roofMat;
-                roof.enableEdgesRendering(); roof.edgesWidth = 2.0; roof.edgesColor = edgeBlack();
                 if (window.shadowGenerator) window.shadowGenerator.addShadowCaster(roof);
             };
 
@@ -10077,9 +10085,6 @@
                 backdrop.material = isPlayer ? playerBackdropMat : aiBackdropMat;
                 // D2 style: only characters/projectiles cast shadows
                 backdrop.receiveShadows = true;
-                backdrop.enableEdgesRendering();
-                backdrop.edgesWidth = 2.0;
-                backdrop.edgesColor = new BABYLON.Color4(0, 0, 0, 1);
 
                 return backdrop;
             };
