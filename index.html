@@ -413,9 +413,8 @@
     <script type="module" src="js/ui/ui-system.js"></script>
     <script type="module" src="js/rendering/rendering-utils.js"></script>
     <script type="module" src="js/systems/game-systems.js"></script>
-    <!-- Removed js/main.js: diagnostic-only entry whose import of updateGravityUI from
-         ui-system.js (which doesn't export it) caused a hard ES-module crash. The game runs
-         from the inline script below; main.js was never functional. -->
+    <!-- Removed js/main.js: diagnostic-only entry whose missing ES-module import caused a
+         hard crash. The game runs from the inline script below; main.js was never functional. -->
 
     <script>
         // Global error handler to debug doubles crash
@@ -1425,11 +1424,6 @@
                 castTime: 0,
                 castingLoopSource: null,
 
-                // Gravity Spell
-                gravityBarrier: null,
-                capturedBalls: 0,
-                gravityPhase: 'ready',
-
                 // Chain Lightning
                 channelTime: 0,              // How long currently channeling
                 zappedCount: 0,              // Projectiles zapped this channel
@@ -1795,9 +1789,6 @@
             combatant.casting = null;
             combatant.castProgress = 0;
             combatant.castTime = 0;
-            combatant.gravityPhase = 'ready';
-            combatant.gravityBarrier = null;
-            combatant.capturedBalls = 0;
             // Don't reset cooldowns here - that's done separately per round/startRound
             // Don't reset score/towerHealth - that's per-round/match state managed elsewhere
         }
@@ -3016,16 +3007,6 @@
         let aiFireballCooldown = 0;
         let playerFrostboltCooldown = 0;
         let aiFrostboltCooldown = 0;
-        let playerGravityCooldown = 0;
-        let aiGravityCooldown = 0;
-
-        // LEGACY - sync only, read from combatants.left/right gravity state
-        let playerGravityBarrier = null;  // Active barrier object
-        let aiGravityBarrier = null;
-        let playerCapturedBalls = 0;      // Number of balls captured
-        let aiCapturedBalls = 0;
-        let playerGravityPhase = 'ready'; // 'ready', 'barrier', 'sphere'
-        let aiGravityPhase = 'ready';
 
         // LEGACY - sync only, read from combatants.left/right.freezeTime
         let playerFreezeTime = 0;
@@ -3224,9 +3205,6 @@
                 loadSound('frostboltCast', 'sfx/frostbolt_cast.wav'),
                 loadSound('frostboltLoop', 'sfx/ice_blast_travel.wav'),
                 loadSound('frozen', 'sfx/frozen.wav'),
-                loadSound('gravityCast', 'sfx/gravitysphere_cast.wav'),
-                loadSound('gravityAbsorb', 'sfx/gravitysphere_absorb.wav'),
-                loadSound('gravityLoop', 'sfx/gravitysphere_flyby.wav'),
                 loadSound('victory', 'sfx/victory.wav'),
                 loadSound('defeat', 'sfx/defeat.wav'),
                 loadSound('castingLoop', 'sfx/mid-cast.wav'),
@@ -3412,8 +3390,6 @@
                 spellReady: 'sfx/spell_ready.wav',
                 frostboltCast: 'sfx/frostbolt_cast.wav',
                 frozen: 'sfx/frozen.wav',
-                gravityCast: 'sfx/gravitysphere_cast.wav',
-                gravityAbsorb: 'sfx/gravitysphere_absorb.wav',
                 iceShatter: 'sfx/ice-shatter.wav',
                 cancel: 'sfx/cancel.wav',
                 overpowered: 'sfx/overpowered.wav',
@@ -3438,7 +3414,7 @@
             }).connect(aiCastPanner);
             synths.aiCastingLoop.volume.value = -8;
 
-            // Electric charge casting loops for Chain Lightning (spark)
+            // Electric charge casting loops for Chain Lightning
             synths.playerElectricLoop = new Tone.Player({
                 url: 'sfx/electric_charge.wav',
                 loop: true
@@ -3815,26 +3791,6 @@
             overpowered: async () => {
                 if (!toneStarted) await initToneJS();
                 playSample('overpowered');
-            },
-
-            // Gravity cast - crushed sample only
-            gravityCast: async () => {
-                if (!toneStarted) await initToneJS();
-                // Therapy layer DISABLED
-                // synths.therapy.triggerAttackRelease(N.B3, "1n");
-                // synths.sub.triggerAttackRelease(N.B2, "1n");
-                // synths.harmonic.triggerAttackRelease(N.Fs3, "1n");
-                // 8-bit crushed sample layer
-                playSample('gravityCast');
-            },
-
-            // Gravity absorb - crushed sample only
-            gravityAbsorb: async () => {
-                if (!toneStarted) await initToneJS();
-                // Therapy layer DISABLED
-                // synths.therapy.triggerAttackRelease(N.E4, "4n");
-                // 8-bit crushed sample layer
-                playSample('gravityAbsorb');
             },
 
             // Lightning sounds (for Chain Lightning ability) - LOUD
@@ -10672,209 +10628,6 @@
                 return proj;
             };
 
-            // Gravity sphere material (darker, more intense)
-            const gravitySphereMat = new BABYLON.StandardMaterial("gravitySphereMat", scene);
-            gravitySphereMat.diffuseColor = new BABYLON.Color3(0.1, 0.05, 0.15);
-            gravitySphereMat.emissiveColor = new BABYLON.Color3(0.5, 0.1, 0.6);
-
-            // Create gravity barrier around a paddle
-            window.createGravityBarrier = (caster) => {
-                const paddle = caster === 'player' ? playerPaddle : aiPaddle;
-
-                const barrier = {
-                    caster: caster,
-                    timeRemaining: abilities.gravity.barrierDuration,
-                    capturedCount: 0
-                };
-
-                // Create barrier mesh - a torus around the paddle
-                barrier.mesh = BABYLON.MeshBuilder.CreateTorus("barrier_" + Date.now(), {
-                    diameter: 4,
-                    thickness: 0.3,
-                    tessellation: 32
-                }, scene);
-                barrier.mesh.rotation.x = Math.PI / 2;
-                barrier.mesh.position.copyFrom(paddle.position);
-                barrier.mesh.position.y = 0.5;
-                barrier.mesh.material = gravityMat;
-
-                // Inner shield sphere
-                barrier.shield = BABYLON.MeshBuilder.CreateSphere("shield_" + Date.now(), { diameter: 3.5 }, scene);
-                barrier.shield.position.copyFrom(paddle.position);
-                barrier.shield.position.y = 0.5;
-                const shieldMat = new BABYLON.StandardMaterial("shieldMat_" + Date.now(), scene);
-                shieldMat.diffuseColor = new BABYLON.Color3(0.2, 0.05, 0.3);
-                shieldMat.emissiveColor = new BABYLON.Color3(0.3, 0.1, 0.4);
-                shieldMat.alpha = 0.3;
-                barrier.shield.material = shieldMat;
-                barrier.shieldMat = shieldMat;
-
-                // Gravity point light
-                barrier.light = new BABYLON.PointLight("gravLight_" + Date.now(), new BABYLON.Vector3(0, 0.5, 0), scene);
-                barrier.light.diffuse = new BABYLON.Color3(0.6, 0.2, 0.8);
-                barrier.light.intensity = 0.8;
-                barrier.light.range = 8;
-                barrier.light.parent = barrier.mesh;
-
-                // Dark swirling particles
-                barrier.particles = new BABYLON.ParticleSystem("gravParticles_" + Date.now(), 100, scene);
-                barrier.particles.particleTexture = flareTexture;
-                barrier.particles.emitter = barrier.mesh;
-                barrier.particles.minEmitBox = new BABYLON.Vector3(-1.5, -0.5, -1.5);
-                barrier.particles.maxEmitBox = new BABYLON.Vector3(1.5, 0.5, 1.5);
-                barrier.particles.color1 = new BABYLON.Color4(0.5, 0.1, 0.6, 1);
-                barrier.particles.color2 = new BABYLON.Color4(0.2, 0.05, 0.3, 1);
-                barrier.particles.colorDead = new BABYLON.Color4(0.1, 0, 0.15, 0);
-                barrier.particles.minSize = 0.15;
-                barrier.particles.maxSize = 0.4;
-                barrier.particles.minLifeTime = 0.3;
-                barrier.particles.maxLifeTime = 0.6;
-                barrier.particles.emitRate = 80;
-                barrier.particles.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
-                // Swirling motion
-                barrier.particles.direction1 = new BABYLON.Vector3(-1, 0.2, -1);
-                barrier.particles.direction2 = new BABYLON.Vector3(1, 0.4, 1);
-                barrier.particles.gravity = new BABYLON.Vector3(0, 0, 0);
-                barrier.particles.minEmitPower = 1;
-                barrier.particles.maxEmitPower = 2;
-                barrier.particles.start();
-
-                // Play activation sound
-                playSound('gravityCast', paddle.position.x, 0.8);
-
-                return barrier;
-            };
-
-            // Destroy gravity barrier
-            window.destroyGravityBarrier = (barrier) => {
-                if (!barrier) return;
-                if (barrier.particles) barrier.particles.dispose(false);
-                if (barrier.light) barrier.light.dispose();
-                if (barrier.shield) barrier.shield.dispose();
-                if (barrier.shieldMat) barrier.shieldMat.dispose();
-                if (barrier.mesh) barrier.mesh.dispose();
-            };
-
-            // Gravity sphere projectile spawner
-            window.spawnGravitySphere = (owner, startX, startZ, velX, velZ, capturedCount) => {
-                const proj = {
-                    owner: owner,
-                    type: 'gravitySphere',
-                    velX: velX,
-                    velZ: velZ,
-                    velY: 0,
-                    speed: abilities.gravity.baseSpeed,
-                    isParried: false,
-                    parriedBy: null,
-                    volleyCount: 0,
-                    capturedCount: capturedCount || 1  // How many balls were absorbed
-                };
-
-                // Create small core mesh - the black hole center
-                proj.mesh = BABYLON.MeshBuilder.CreateSphere("gravitySphere_" + Date.now(), { diameter: 0.4 }, scene);
-                proj.mesh.position.set(startX, 0.7, startZ);
-                proj.mesh.material = gravitySphereMat;
-                proj.mesh.rotationQuaternion = BABYLON.Quaternion.Identity();
-                // Projectiles no longer cast into the dynamic sun shadow map -- they use a
-                // soft blob shadow instead (see setupProjectileSceneFx). Reduces the fireball's
-                // per-frame interaction load and is part of the full baked-shadow pass.
-
-                // No hard disc mesh - just particles for soft feathered look
-                proj.ring = null;
-                proj.ringMat = null;
-
-                // Dark purple light
-                proj.light = new BABYLON.PointLight("gravSphereLight_" + Date.now(), new BABYLON.Vector3(0, 0, 0), scene);
-                proj.light.diffuse = new BABYLON.Color3(0.6, 0.2, 0.9);
-                proj.light.intensity = 1.2;           // Enhanced for ground/wall visibility
-                proj.light.range = 12;                // Wider range to reach surfaces
-                proj.light.parent = proj.mesh;
-
-                // Inner swirl - soft feathery particles near center
-                proj.particles = new BABYLON.ParticleSystem("gravSphereInner_" + Date.now(), 150, scene);
-                proj.particles.particleTexture = flareTexture;
-                proj.particles.emitter = proj.mesh;
-                proj.particles.minEmitBox = new BABYLON.Vector3(-0.8, -0.08, -0.8);
-                proj.particles.maxEmitBox = new BABYLON.Vector3(0.8, 0.08, 0.8);
-                proj.particles.color1 = new BABYLON.Color4(0.95, 0.5, 1, 0.9);
-                proj.particles.color2 = new BABYLON.Color4(0.7, 0.3, 0.95, 0.8);
-                proj.particles.colorDead = new BABYLON.Color4(0.4, 0.15, 0.6, 0);
-                proj.particles.minSize = 0.2;
-                proj.particles.maxSize = 0.5;
-                proj.particles.minLifeTime = 0.4;
-                proj.particles.maxLifeTime = 0.8;
-                proj.particles.emitRate = 120;
-                proj.particles.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
-                proj.particles.minAngularSpeed = 3;
-                proj.particles.maxAngularSpeed = 6;
-                proj.particles.direction1 = new BABYLON.Vector3(-1.5, 0, 1.5);
-                proj.particles.direction2 = new BABYLON.Vector3(1.5, 0, -1.5);
-                proj.particles.gravity = new BABYLON.Vector3(0, 0, 0);
-                proj.particles.minEmitPower = 0.8;
-                proj.particles.maxEmitPower = 1.5;
-                proj.particles.start();
-
-                // Bright galaxy core - soft glowing center
-                proj.particles2 = new BABYLON.ParticleSystem("gravSphereCore_" + Date.now(), 40, scene);
-                proj.particles2.particleTexture = flareTexture;
-                proj.particles2.emitter = proj.mesh;
-                proj.particles2.minEmitBox = new BABYLON.Vector3(-0.15, -0.05, -0.15);
-                proj.particles2.maxEmitBox = new BABYLON.Vector3(0.15, 0.05, 0.15);
-                proj.particles2.color1 = new BABYLON.Color4(1, 0.95, 1, 1);
-                proj.particles2.color2 = new BABYLON.Color4(1, 0.7, 1, 0.9);
-                proj.particles2.colorDead = new BABYLON.Color4(0.7, 0.4, 0.9, 0);
-                proj.particles2.minSize = 0.4;
-                proj.particles2.maxSize = 0.8;
-                proj.particles2.minLifeTime = 0.15;
-                proj.particles2.maxLifeTime = 0.3;
-                proj.particles2.emitRate = 35;
-                proj.particles2.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
-                proj.particles2.direction1 = new BABYLON.Vector3(-0.2, 0, -0.2);
-                proj.particles2.direction2 = new BABYLON.Vector3(0.2, 0, 0.2);
-                proj.particles2.minEmitPower = 0.2;
-                proj.particles2.maxEmitPower = 0.4;
-                proj.particles2.start();
-
-                // Outer feathery wisps - soft fading edges
-                proj.particles3 = new BABYLON.ParticleSystem("gravSphereOuter_" + Date.now(), 180, scene);
-                proj.particles3.particleTexture = flareTexture;
-                proj.particles3.emitter = proj.mesh;
-                proj.particles3.minEmitBox = new BABYLON.Vector3(-1.8, -0.05, -1.8);
-                proj.particles3.maxEmitBox = new BABYLON.Vector3(1.8, 0.05, 1.8);
-                proj.particles3.color1 = new BABYLON.Color4(0.5, 0.2, 0.7, 0.5);  // More transparent
-                proj.particles3.color2 = new BABYLON.Color4(0.3, 0.1, 0.5, 0.3);
-                proj.particles3.colorDead = new BABYLON.Color4(0.1, 0.02, 0.2, 0);  // Fade to nothing
-                proj.particles3.minSize = 0.15;
-                proj.particles3.maxSize = 0.35;
-                proj.particles3.minLifeTime = 0.8;
-                proj.particles3.maxLifeTime = 1.5;
-                proj.particles3.emitRate = 140;
-                proj.particles3.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
-                proj.particles3.minAngularSpeed = 1;
-                proj.particles3.maxAngularSpeed = 3;
-                proj.particles3.direction1 = new BABYLON.Vector3(-2, 0, 2);
-                proj.particles3.direction2 = new BABYLON.Vector3(2, 0, -2);
-                proj.particles3.minEmitPower = 0.6;
-                proj.particles3.maxEmitPower = 1.3;
-                proj.particles3.start();
-
-                // Parry flash (hidden)
-                proj.flash = BABYLON.MeshBuilder.CreateSphere("flash_" + Date.now(), { diameter: 2 }, scene);
-                proj.flashMat = new BABYLON.StandardMaterial("flashMat_" + Date.now(), scene);
-                proj.flashMat.emissiveColor = new BABYLON.Color3(0.6, 0.2, 0.8);
-                proj.flashMat.alpha = 0;
-                proj.flash.material = proj.flashMat;
-                proj.flash.parent = proj.mesh;
-                proj.flash.position = BABYLON.Vector3.Zero();
-
-                // Gravity sphere flyby sound
-                proj.loopSound = createLoopingSound('gravityLoop', startX, 0.15);
-
-                setupProjectileSceneFx(proj);
-                projectiles.push(proj);
-                return proj;
-            };
-
             // Lingering trails array - trails that fade out after projectile destruction
             const lingeringTrails = [];
             const TRAIL_LINGER_TIME = 0.2;  // 0.2 seconds
@@ -10979,18 +10732,13 @@
                 }
             };
 
-            // Clear all lightning FX (spark chains, zap flashes, etc.)
+            // Clear all lightning FX (zap flashes, lightning bolts, etc.)
             // NOTE: This only clears visual effects, does NOT reset casting state
             window.clearAllLightningFX = () => {
-                // Clear spark chains and lightning bolts for all combatants
+                // Clear lightning bolts for all combatants
                 const allCombatants = window.getAllCombatants ? getAllCombatants() : [combatants.left, combatants.right];
                 for (const c of allCombatants) {
                     if (!c) continue;
-
-                    // Clean up spark chains
-                    if (window.cleanupSparkChains) {
-                        window.cleanupSparkChains(c);
-                    }
 
                     // Clean up lightning bolts array
                     if (c.lightningBolts && c.lightningBolts.length > 0) {
@@ -10999,11 +10747,6 @@
                         }
                         c.lightningBolts = [];
                     }
-
-                    // Reset spark-related state
-                    c.sparkActiveChains = [];
-                    c.sparkChainProjs = [];
-                    c.sparkChainCount = 0;
                 }
 
                 // Clear any lightning bolt meshes by name pattern (catch-all for any strays)
@@ -11013,7 +10756,6 @@
                         if (mesh && mesh.name && (
                             mesh.name.startsWith('persistBolt') ||
                             mesh.name.startsWith('zapFlash') ||
-                            mesh.name.startsWith('sparkArc') ||
                             mesh.name.startsWith('lightningBolt')
                         )) {
                             toDispose.push(mesh);
@@ -11241,9 +10983,6 @@
 
             // Parry a specific projectile
             const parryProjectile = (proj, parryer, aimDir = null) => {
-                // Snowball CAN be parried - keeps its size and just reverses direction
-                // No special handling needed - just let it parry normally
-
                 proj.isParried = true;
                 proj.parriedBy = parryer;
                 proj.owner = parryer;
@@ -11910,15 +11649,6 @@
                                     // Determine caster string for executeChainLightning
                                     const casterStr = combatant.side === 'left' ? 'player' : 'ai';
                                     executeChainLightning(casterStr);
-                                } else if (castingSpell === 'spark') {
-                                    // Execute spark and cleanup chains
-                                    const casterStr = combatant.side === 'left' ? 'player' : 'ai';
-                                    if (window.executeSpark) window.executeSpark(casterStr);
-                                }
-
-                                // Clean up any spark chains before clearing casting state
-                                if (window.cleanupSparkChains) {
-                                    window.cleanupSparkChains(combatant);
                                 }
 
                                 combatant.casting = null;
@@ -12114,19 +11844,6 @@
                         if (isLocal) updateCooldownUI();
                     }
 
-                    // Gravity cooldown
-                    if (c.cooldowns.gravity > 0) {
-                        c.cooldowns.gravity -= dt;
-                        if (c.cooldowns.gravity <= 0) {
-                            c.cooldowns.gravity = 0;
-                            // Read gravityPhase from combatant state
-                            if (roundActive && c.gravityPhase === 'ready' && isLocal) {
-                                playSound('spellReady', paddle.position.x, 0.12);  // Subtle
-                            }
-                        }
-                        if (isLocal) updateGravityUI();
-                    }
-
                     // Chain Lightning cooldown
                     if (c.cooldowns.chain_lightning > 0) {
                         c.cooldowns.chain_lightning -= dt;
@@ -12144,12 +11861,10 @@
                 if (combatants.left) {
                     playerFireballCooldown = combatants.left.cooldowns.fireball;
                     playerFrostboltCooldown = combatants.left.cooldowns.frostbolt;
-                    playerGravityCooldown = combatants.left.cooldowns.gravity;
                 }
                 if (combatants.right) {
                     aiFireballCooldown = combatants.right.cooldowns.fireball;
                     aiFrostboltCooldown = combatants.right.cooldowns.frostbolt;
-                    aiGravityCooldown = combatants.right.cooldowns.gravity;
                 }
 
                 // Update cooldown UI at stepped rate (25fps) for D2 feel
@@ -12179,31 +11894,6 @@
                     // Sync legacy variables for backwards compatibility
                     if (combatants.left) { playerMana = combatants.left.mana; playerManaRegen = combatants.left.manaRegen; }
                     if (combatants.right) { aiMana = combatants.right.mana; aiManaRegen = combatants.right.manaRegen; }
-                }
-
-                // Update gravity barriers using unified combatant loop
-                for (const c of [combatants.left, combatants.right]) {
-                    if (!c || !c.gravityBarrier) continue;
-                    const barrier = c.gravityBarrier;
-                    const paddle = c.side === 'left' ? playerPaddle : aiPaddle;
-                    const casterLegacy = c.side === 'left' ? 'player' : 'ai';
-
-                    barrier.timeRemaining -= dt;
-                    // Follow paddle position
-                    barrier.mesh.position.x = paddle.position.x;
-                    barrier.mesh.position.z = paddle.position.z;
-                    barrier.shield.position.x = paddle.position.x;
-                    barrier.shield.position.z = paddle.position.z;
-                    // Rotate for visual effect
-                    barrier.mesh.rotation.z += dt * 2;
-
-                    // LEGACY - sync barrier reference
-                    if (c.side === 'left') playerGravityBarrier = barrier;
-                    else aiGravityBarrier = barrier;
-
-                    if (barrier.timeRemaining <= 0 || c.capturedBalls >= abilities.gravity.maxCapture) {
-                        transitionToSpherePhase(casterLegacy);
-                    }
                 }
 
                 // Update freeze timers and ice block visuals using unified combatant loop
@@ -12246,11 +11936,6 @@
                     leftC.castProgress += dt;
                     playerCastProgress = leftC.castProgress; // Sync legacy
 
-                    // Update spark chain visuals to follow projectiles
-                    if (leftC.casting === 'spark' && window.updateSparkChains) {
-                        window.updateSparkChains(leftC);
-                    }
-
                     // Show upgrade name if active (e.g., "Magma Lob" instead of "Fireball")
                     const playerUpgrades = getActiveUpgrades(leftC.casting, 'player');
                     const playerAbility = getAbility(leftC.casting);
@@ -12270,11 +11955,6 @@
                 if (rightC && rightC.casting && roundActive) {
                     rightC.castProgress += dt;
                     aiCastProgress = rightC.castProgress; // Sync legacy
-
-                    // Update spark chain visuals to follow projectiles
-                    if (rightC.casting === 'spark' && window.updateSparkChains) {
-                        window.updateSparkChains(rightC);
-                    }
 
                     // Show upgrade name if active
                     const aiUpgrades = getActiveUpgrades(rightC.casting, 'ai');
@@ -12492,7 +12172,7 @@
                             continue;
                         }
 
-                        // Check for projectiles marked for destruction (e.g., snowball after parry attempt)
+                        // Check for projectiles marked for destruction
                         if (proj.shouldDestroy) {
                             toDestroy.push(proj);
                             continue;
@@ -12546,11 +12226,6 @@
                                 toDestroy.push(proj);
                                 continue;
                             }
-                        }
-
-                        // Update spark lightning arcs
-                        if (proj.type === 'spark' && window.updateSparkArcs) {
-                            window.updateSparkArcs(proj, dt);
                         }
 
                         // Fireball flickering animation
@@ -12608,35 +12283,14 @@
 
                         // Y-axis physics (skip for lobs and magma bombs - they have their own physics)
                         if (!proj.isMagmaBomb && !proj.isLob) {
-                            // Snowball special: lob arc then roll on ground
-                            if (proj.type === 'snowball') {
-                                if (!proj.isRolling) {
-                                    // Apply gravity during lob
-                                    proj.velY += gravity * dt;
-                                    proj.mesh.position.y += proj.velY * dt;
-                                    // Land and start rolling (no bounce)
-                                    if (proj.mesh.position.y < tableY + 0.3) {
-                                        proj.mesh.position.y = tableY + 0.3;
-                                        proj.velY = 0;
-                                        proj.isRolling = true;
-                                        proj.rollScale = 1.0;
-                                    }
-                                }
-                            } else {
-                                // Regular gravity/bounce physics
-                                proj.velY += gravity * dt;
-                                proj.mesh.position.y += proj.velY * dt;
-                                if (proj.mesh.position.y < tableY) {
-                                    proj.mesh.position.y = tableY;
-                                    proj.velY = -proj.velY * bounceRetention;
-                                    if (Math.abs(proj.velY) < 0.5) proj.velY = 0;
-                                }
+                            // Regular gravity/bounce physics
+                            proj.velY += gravity * dt;
+                            proj.mesh.position.y += proj.velY * dt;
+                            if (proj.mesh.position.y < tableY) {
+                                proj.mesh.position.y = tableY;
+                                proj.velY = -proj.velY * bounceRetention;
+                                if (Math.abs(proj.velY) < 0.5) proj.velY = 0;
                             }
-                        }
-
-                        // Snowball stays at ground level while rolling (fixed size)
-                        if (proj.type === 'snowball' && proj.isRolling) {
-                            proj.mesh.position.y = tableY + 0.25;
                         }
 
                         // Visual stretch disabled - was causing particle issues
@@ -12653,93 +12307,6 @@
                             proj.mesh.position.z = wallDepth/2 - 0.5;
                             proj.velZ = -proj.velZ;
                             playSound('woosh', proj.mesh.position.x, 0.5);
-                        }
-
-                        // Player gravity barrier capture
-                        if (combatants.left && combatants.left.gravityBarrier && proj.velX < 0 &&
-                            proj.type !== 'gravitySphere' &&  // Can't capture gravity spheres
-                            combatants.left.capturedBalls < abilities.gravity.maxCapture) {
-                            const barrierRadius = 2;  // Capture radius
-                            const dx = proj.mesh.position.x - playerPaddle.position.x;
-                            const dz = proj.mesh.position.z - playerPaddle.position.z;
-                            const dist = Math.sqrt(dx * dx + dz * dz);
-                            if (dist < barrierRadius && proj.mesh.position.x < playerPaddle.position.x + 1.5) {
-                                // Capture the projectile
-                                combatants.left.capturedBalls++;
-                                playerCapturedBalls = combatants.left.capturedBalls; // Sync legacy
-                                updateGravityUI();
-                                playSound('gravityAbsorb', playerPaddle.position.x, 0.8);
-                                if (window.createImpactFlash) {
-                                    createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(0.5, 0.1, 0.7), 2.5);
-                                }
-                                toDestroy.push(proj);
-                                continue;  // Skip to next projectile
-                            }
-                        }
-
-                        // AI gravity barrier capture
-                        if (combatants.right && combatants.right.gravityBarrier && proj.velX > 0 &&
-                            proj.type !== 'gravitySphere' &&
-                            combatants.right.capturedBalls < abilities.gravity.maxCapture) {
-                            const barrierRadius = 2;
-                            const dx = proj.mesh.position.x - aiPaddle.position.x;
-                            const dz = proj.mesh.position.z - aiPaddle.position.z;
-                            const dist = Math.sqrt(dx * dx + dz * dz);
-                            if (dist < barrierRadius && proj.mesh.position.x > aiPaddle.position.x - 1.5) {
-                                combatants.right.capturedBalls++;
-                                aiCapturedBalls = combatants.right.capturedBalls; // Sync legacy
-                                playSound('gravityAbsorb', aiPaddle.position.x, 0.8);
-                                if (window.createImpactFlash) {
-                                    createImpactFlash(proj.mesh.position.clone(), new BABYLON.Color3(0.5, 0.1, 0.7), 2.5);
-                                }
-                                toDestroy.push(proj);
-                                continue;
-                            }
-                        }
-
-                        // Gravity sphere slowing aura effect on other projectiles
-                        if (proj.type === 'gravitySphere') {
-                            for (const otherProj of projectiles) {
-                                if (otherProj === proj || otherProj.type === 'gravitySphere') continue;
-                                // Check if other projectile is within slow radius
-                                const dx = otherProj.mesh.position.x - proj.mesh.position.x;
-                                const dz = otherProj.mesh.position.z - proj.mesh.position.z;
-                                const dist = Math.sqrt(dx * dx + dz * dz);
-                                if (dist < abilities.gravity.slowRadius && dist > 0.1) {
-                                    // Calculate current speed
-                                    const currentSpeed = Math.sqrt(otherProj.velX * otherProj.velX + otherProj.velZ * otherProj.velZ);
-                                    // Minimum speed is 40% of original (slowFactor)
-                                    const minSpeed = otherProj.speed * abilities.gravity.slowFactor;
-                                    const slowStrength = 1 - (dist / abilities.gravity.slowRadius);
-
-                                    // Only apply drag if above minimum speed
-                                    if (currentSpeed > minSpeed) {
-                                        // Apply drag proportional to how close they are (stronger near center)
-                                        const dragAmount = 1 - (slowStrength * 0.025);  // 2.5% max drag per frame
-                                        otherProj.velX *= dragAmount;
-                                        otherProj.velZ *= dragAmount;
-                                    }
-
-                                    // SWIRL EFFECT - apply tangential velocity for spiral motion
-                                    // Perpendicular to the direction toward center (cross product in 2D)
-                                    const tangentX = -dz / dist;  // Perpendicular direction
-                                    const tangentZ = dx / dist;
-                                    const swirlStrength = slowStrength * 8 * dt;  // Stronger swirl near center
-                                    otherProj.velX += tangentX * swirlStrength;
-                                    otherProj.velZ += tangentZ * swirlStrength;
-
-                                    // Gentle inward pull toward gravity sphere center
-                                    const pullStrength = slowStrength * 2 * dt;
-                                    otherProj.velX -= (dx / dist) * pullStrength;
-                                    otherProj.velZ -= (dz / dist) * pullStrength;
-                                }
-                            }
-                            // Rotate mesh itself slowly
-                            if (proj.mesh.rotationQuaternion) {
-                                const rotAxis = new BABYLON.Vector3(0.1, 1, 0.1).normalize();
-                                const rotQuat = BABYLON.Quaternion.RotationAxis(rotAxis, dt * 3);
-                                proj.mesh.rotationQuaternion = rotQuat.multiply(proj.mesh.rotationQuaternion);
-                            }
                         }
 
                         // Frostbolt cancels enemy projectiles on collision
@@ -12775,15 +12342,14 @@
                         }
 
                         // Projectile-projectile collision (damage-based resolution)
-                        // Skip for frostbolts (handled above) and gravity spheres (special absorb)
-                        if (proj.type !== 'frostbolt' && proj.type !== 'gravitySphere') {
+                        // Skip for frostbolts (handled above)
+                        if (proj.type !== 'frostbolt') {
                             // Grace period - newly spawned projectiles can't collide (fixes magma bomb self-collision)
                             const graceTime = proj.collisionGraceTime || 0;
                             if (graceTime <= 0) {
                                 for (const otherProj of projectiles) {
                                     if (otherProj === proj) continue;
                                     if (otherProj.type === 'frostbolt') continue; // Frostbolts handle their own
-                                    if (otherProj.type === 'gravitySphere') continue;
                                     if (toDestroy.includes(otherProj)) continue;
                                     if ((otherProj.collisionGraceTime || 0) > 0) continue;
                                     // Head-on only (opposite X velocities)
@@ -13026,8 +12592,6 @@
                                         teams.left.front.freezeTime = abilities.frostbolt.freezeDuration;
                                         // Cancel casting if frozen
                                         if (teams.left.front.casting) {
-                                            // Clean up spark chains first
-                                            if (window.cleanupSparkChains) cleanupSparkChains(teams.left.front);
                                             teams.left.front.casting = null;
                                             teams.left.front.castProgress = 0;
                                             if (window.combatantUpdate3DCastBar) {
@@ -13095,7 +12659,6 @@
                                         teams.right.front.freezeTime = abilities.frostbolt.freezeDuration;
                                         // Cancel casting if frozen
                                         if (teams.right.front.casting) {
-                                            if (window.cleanupSparkChains) cleanupSparkChains(teams.right.front);
                                             teams.right.front.casting = null;
                                             teams.right.front.castProgress = 0;
                                             if (window.combatantUpdate3DCastBar) {
@@ -13765,7 +13328,6 @@
             updateHealthBars();
             updateCooldownUI();
             updateManaUI();
-            updateGravityUI();
 
             // Update ability bar to show saved loadout
             if (window.updateAbilityBarFromLoadout) {
@@ -13791,13 +13353,6 @@
                     castFromLoadoutSlot(2, 'player');
                 }
             });
-            // Gravity click handler (COMMENTED OUT FOR REWORK)
-            // document.getElementById('gravitySlot').addEventListener('click', () => {
-            //     if (!gameOver && roundActive) {
-            //         handleGravityInput('player');
-            //     }
-            // });
-
             // Volume slider with localStorage persistence
             const volumeSlider = document.getElementById('volumeSlider');
             const volumeIcon = document.getElementById('volumeIcon');
@@ -13972,204 +13527,6 @@
             showSpellCastText(isPlayer, spellName, 'frost');
         }
 
-        // Handle gravity spell input - two phase ability
-        function handleGravityInput(caster) {
-            const c = getCombatantLegacy(caster);
-            if (!c) return;  // Safety check for doubles mode
-            const isPlayer = caster === 'player';
-            const cooldown = isPlayer ? playerGravityCooldown : aiGravityCooldown;
-
-            if (c.gravityPhase === 'ready' && cooldown <= 0) {
-                // Check mana before activating barrier
-                if (c.mana < abilities.gravity.manaCost) return;
-                if (!spendMana(caster, abilities.gravity.manaCost)) return;
-                // Activate barrier phase
-                activateGravityBarrier(caster);
-            } else if (c.gravityPhase === 'sphere') {
-                // Fire the gravity sphere (no mana cost for firing, already spent on barrier)
-                fireGravitySphere(caster);
-            }
-            // If 'barrier' phase, ignore input (barrier is active, wait for it to finish)
-        }
-
-        // Activate gravity barrier
-        function activateGravityBarrier(caster) {
-            if (!window.createGravityBarrier) return;
-
-            const c = getCombatantLegacy(caster);
-            if (!c) return;  // Safety check for doubles mode
-            const isPlayer = caster === 'player';
-            const barrier = createGravityBarrier(caster);
-
-            // Set combatant state
-            c.gravityBarrier = barrier;
-            c.capturedBalls = 0;
-            c.gravityPhase = 'barrier';
-
-            // Sync legacy variables
-            if (isPlayer) {
-                playerGravityBarrier = c.gravityBarrier;
-                playerCapturedBalls = c.capturedBalls;
-                playerGravityPhase = c.gravityPhase;
-                updateGravityUI();
-            } else {
-                aiGravityBarrier = c.gravityBarrier;
-                aiCapturedBalls = c.capturedBalls;
-                aiGravityPhase = c.gravityPhase;
-            }
-        }
-
-        // Fire gravity sphere (after barrier phase or when max captured)
-        function fireGravitySphere(caster) {
-            if (!window.spawnGravitySphere) return;
-
-            const c = getCombatantLegacy(caster);
-            if (!c) return;  // Safety check for doubles mode
-            const isPlayer = caster === 'player';
-
-            // Must have captured at least 1 ball to fire
-            if (c.capturedBalls <= 0) {
-                // No balls captured, go on cooldown without firing
-                c.gravityPhase = 'ready';
-                c.cooldowns.gravity = abilities.gravity.cooldown;  // Set combatant cooldown
-                if (isPlayer) {
-                    playerGravityPhase = c.gravityPhase;
-                    playerGravityCooldown = abilities.gravity.cooldown;  // Sync legacy
-                } else {
-                    aiGravityPhase = c.gravityPhase;
-                    aiGravityCooldown = abilities.gravity.cooldown;  // Sync legacy
-                }
-                updateGravityUI();
-                return;
-            }
-
-            const captured = c.capturedBalls;
-            const paddle = isPlayer ? playerPaddle : aiPaddle;
-            const speed = abilities.gravity.baseSpeed;
-            let startX, velX;
-
-            // Reset state
-            c.gravityPhase = 'ready';
-            c.capturedBalls = 0;
-            c.cooldowns.gravity = abilities.gravity.cooldown;  // Set combatant cooldown
-
-            if (isPlayer) {
-                startX = paddle.position.x + 1;
-                velX = speed;
-                playerGravityPhase = c.gravityPhase;
-                playerGravityCooldown = abilities.gravity.cooldown;  // Sync legacy
-                playerCapturedBalls = c.capturedBalls;
-            } else {
-                startX = paddle.position.x - 1;
-                velX = -speed;
-                aiGravityPhase = c.gravityPhase;
-                aiGravityCooldown = abilities.gravity.cooldown;  // Sync legacy
-                aiCapturedBalls = c.capturedBalls;
-            }
-
-            const startZ = paddle.position.z;
-            const aimDir = getCasterAimDir(caster, c);
-            const velZ = aimDir !== 0 ? (aimDir * speed * 0.2) : 0;
-
-            playSound('gravityCast', startX, 0.9);
-            spawnGravitySphere(caster, startX, startZ, velX, velZ, captured);
-            updateGravityUI();
-        }
-
-        // Transition from barrier to sphere phase (called when barrier expires or max capture)
-        function transitionToSpherePhase(caster) {
-            const c = getCombatantLegacy(caster);
-            if (!c) return;  // Safety check for doubles mode
-            const isPlayer = caster === 'player';
-
-            // Clean up barrier
-            if (window.destroyGravityBarrier && c.gravityBarrier) {
-                destroyGravityBarrier(c.gravityBarrier);
-            }
-            c.gravityBarrier = null;
-
-            if (c.capturedBalls > 0) {
-                c.gravityPhase = 'sphere';
-            } else {
-                // No balls captured, go directly to cooldown
-                c.gravityPhase = 'ready';
-            }
-
-            // Set cooldown using combatant system
-            if (c.gravityPhase === 'ready') {
-                c.cooldowns.gravity = abilities.gravity.cooldown;
-            }
-
-            // Sync legacy variables
-            if (isPlayer) {
-                playerGravityBarrier = c.gravityBarrier;
-                playerGravityPhase = c.gravityPhase;
-                if (c.gravityPhase === 'ready') {
-                    playerGravityCooldown = abilities.gravity.cooldown;  // Sync legacy
-                }
-            } else {
-                aiGravityBarrier = c.gravityBarrier;
-                aiGravityPhase = c.gravityPhase;
-                if (c.gravityPhase === 'sphere') {
-                    // AI fires immediately
-                    setTimeout(() => {
-                        if (combatants.right.gravityPhase === 'sphere') {
-                            fireGravitySphere('ai');
-                        }
-                    }, 300);
-                } else if (c.gravityPhase === 'ready') {
-                    aiGravityCooldown = abilities.gravity.cooldown;  // Sync legacy
-                }
-            }
-            updateGravityUI();
-        }
-
-        // Update gravity spell UI
-        function updateGravityUI() {
-            const slot = document.getElementById('gravitySlot');
-            if (!slot) return; // Gravity Well is disabled for rework
-
-            const icon = document.getElementById('gravityIcon');
-            const captureEl = document.getElementById('captureCount');
-            const cdText = document.getElementById('gravityCDText');
-            const sweep = document.getElementById('gravitySweep');
-
-            // Get state from combatant (falls back to legacy vars if not initialized)
-            const c = combatants.left;
-            const gravityPhase = c ? c.gravityPhase : playerGravityPhase;
-            const gravityCooldown = c ? c.cooldowns.gravity : playerGravityCooldown;
-            const capturedBalls = c ? c.capturedBalls : playerCapturedBalls;
-
-            // Remove all state classes
-            slot.classList.remove('ready', 'on-cooldown', 'barrier-active', 'sphere-ready');
-
-            if (gravityPhase === 'barrier') {
-                slot.classList.add('barrier-active');
-                icon.textContent = '🌀';
-                captureEl.textContent = capturedBalls + '/' + abilities.gravity.maxCapture;
-                cdText.textContent = '';
-                sweep.style.setProperty('--sweep-angle', '0deg');
-            } else if (gravityPhase === 'sphere') {
-                slot.classList.add('sphere-ready');
-                icon.textContent = '💥';
-                captureEl.textContent = capturedBalls;
-                cdText.textContent = '';
-                sweep.style.setProperty('--sweep-angle', '0deg');
-            } else if (gravityCooldown > 0) {
-                slot.classList.add('on-cooldown');
-                icon.textContent = '🌀';
-                captureEl.textContent = '';
-                cdText.textContent = Math.ceil(gravityCooldown);
-                const sweepAngle = (gravityCooldown / abilities.gravity.cooldown) * 360;
-                sweep.style.setProperty('--sweep-angle', sweepAngle + 'deg');
-            } else {
-                slot.classList.add('ready');
-                icon.textContent = '🌀';
-                captureEl.textContent = '';
-                cdText.textContent = '';
-                sweep.style.setProperty('--sweep-angle', '0deg');
-            }
-        }
 
         // ==========================================
         // MENU / GAME STATE MANAGEMENT
@@ -15527,7 +14884,7 @@
                     casting: combatants.left ? combatants.left.casting : null,
                     castProgress: combatants.left ? combatants.left.castProgress : 0,
                     castTime: combatants.left ? combatants.left.castTime : 0,
-                    cooldowns: combatants.left ? { ...combatants.left.cooldowns } : { fireball: 0, frostbolt: 0, gravity: 0 }
+                    cooldowns: combatants.left ? { ...combatants.left.cooldowns } : { fireball: 0, frostbolt: 0 }
                 },
                 right: {
                     paddleZ: aiPaddle ? aiPaddle.position.z : 0,
@@ -15539,7 +14896,7 @@
                     casting: combatants.right ? combatants.right.casting : null,
                     castProgress: combatants.right ? combatants.right.castProgress : 0,
                     castTime: combatants.right ? combatants.right.castTime : 0,
-                    cooldowns: combatants.right ? { ...combatants.right.cooldowns } : { fireball: 0, frostbolt: 0, gravity: 0 }
+                    cooldowns: combatants.right ? { ...combatants.right.cooldowns } : { fireball: 0, frostbolt: 0 }
                 },
 
                 // Parry state
@@ -16328,7 +15685,7 @@
                     continue;
                 }
 
-                // Check for projectiles marked for destruction (e.g., snowball after parry attempt)
+                // Check for projectiles marked for destruction
                 if (proj.shouldDestroy) {
                     toDestroy.push(proj);
                     continue;
@@ -16356,15 +15713,8 @@
                     proj.velY += gravity * dt;
                     proj.mesh.position.y += proj.velY * dt;
 
-                    // Snowball special: land and start rolling (no bounce)
-                    if (proj.type === 'snowball' && proj.mesh.position.y < tableY + 0.3) {
-                        proj.mesh.position.y = tableY + 0.3;
-                        proj.velY = 0;
-                        proj.isRolling = true;  // Start rolling mode
-                        proj.rollScale = 1.0;   // Initial scale
-                    }
-                    // Other projectiles bounce on table
-                    else if (proj.mesh.position.y < tableY + 0.3) {
+                    // Projectiles bounce on table
+                    if (proj.mesh.position.y < tableY + 0.3) {
                         proj.mesh.position.y = tableY + 0.3;
                         proj.bounceCount = (proj.bounceCount || 0) + 1;
                         if (proj.bounceCount >= 2) {
@@ -16373,16 +15723,6 @@
                             proj.velY = -proj.velY * 0.6;
                         }
                     }
-                }
-
-                // Snowball stays at ground level while rolling (fixed size)
-                if (proj.type === 'snowball' && proj.isRolling) {
-                    proj.mesh.position.y = tableY + 0.25;
-                }
-
-                // Update spark lightning arcs
-                if (proj.type === 'spark' && window.updateSparkArcs) {
-                    window.updateSparkArcs(proj, dt);
                 }
 
                 // Wall collisions
@@ -16428,10 +15768,6 @@
                                 playSound('frozen', px, 0.7);
                                 showFrozenText(!!(combatants.left && combatants.left.isLocalPlayer));
                             }
-                            toDestroy.push(proj);
-                        } else if (proj.type === 'snowball') {
-                            // Snowball is destroyed on block - no bounce, one-way projectile
-                            if (!isResimulating) playSound('block', px, 0.5);
                             toDestroy.push(proj);
                         } else {
                             // Bounce fireball with angle based on hit position
@@ -16485,10 +15821,6 @@
                                 showFrozenText(!!(combatants.right && combatants.right.isLocalPlayer));
                             }
                             toDestroy.push(proj);
-                        } else if (proj.type === 'snowball') {
-                            // Snowball is destroyed on block - no bounce, one-way projectile
-                            if (!isResimulating) playSound('block', px, 0.5);
-                            toDestroy.push(proj);
                         } else {
                             // Bounce fireball with angle based on hit position
                             proj.mesh.position.x = px - paddleHalfWidth - projRadius;
@@ -16521,15 +15853,7 @@
                     const isPlayerTower = proj.owner === 'ai';
                     // Hit left gate (player's tower)
                     if (proj.type !== 'frostbolt') {
-                        let damage;
-                        if (proj.type === 'snowball') {
-                            // Snowball deals fixed damage
-                            damage = abilities.snowball.damage;
-                        } else if (proj.type === 'spark') {
-                            damage = proj.damage || abilities.spark.baseDamage;  // Use calculated damage with chain bonus
-                        } else {
-                            damage = Math.min(2 + proj.volleyCount, 6);  // Fireball damage
-                        }
+                        const damage = Math.min(2 + proj.volleyCount, 6);  // Fireball damage
                         dealDamageToTower(isPlayerTower, damage, proj.mesh.position.z);
                     }
                     toDestroy.push(proj);
@@ -16537,15 +15861,7 @@
                     const isPlayerTower = proj.owner === 'ai';
                     // Hit right gate (AI/guest tower)
                     if (proj.type !== 'frostbolt') {
-                        let damage;
-                        if (proj.type === 'snowball') {
-                            // Snowball deals fixed damage
-                            damage = abilities.snowball.damage;
-                        } else if (proj.type === 'spark') {
-                            damage = proj.damage || abilities.spark.baseDamage;  // Use calculated damage with chain bonus
-                        } else {
-                            damage = Math.min(2 + proj.volleyCount, 6);  // Fireball damage
-                        }
+                        const damage = Math.min(2 + proj.volleyCount, 6);  // Fireball damage
                         dealDamageToTower(isPlayerTower, damage, proj.mesh.position.z);
                     }
                     toDestroy.push(proj);
@@ -16596,17 +15912,17 @@
                 for (const c of combatantsToReset) {
                     if (!c) continue;
                     if (c.inputSource === 'local') {
-                        c.cooldowns = { fireball: 0, frostbolt: 0, gravity: 0, chain_lightning: 0 };
+                        c.cooldowns = { fireball: 0, frostbolt: 0, chain_lightning: 0 };
                     } else {
-                        c.cooldowns = { fireball: 2, frostbolt: 3, gravity: 5, chain_lightning: 0, snowball: 0, spark: 2 };  // AI waits before first casts
+                        c.cooldowns = { fireball: 2, frostbolt: 3, chain_lightning: 0 };  // AI waits before first casts
                     }
                 }
             } else {
                 if (combatants.left) {
-                    combatants.left.cooldowns = { fireball: 0, frostbolt: 0, gravity: 0, chain_lightning: 0 };
+                    combatants.left.cooldowns = { fireball: 0, frostbolt: 0, chain_lightning: 0 };
                 }
                 if (combatants.right) {
-                    combatants.right.cooldowns = { fireball: 2, frostbolt: 3, gravity: 5, chain_lightning: 0 };  // AI waits before first casts
+                    combatants.right.cooldowns = { fireball: 2, frostbolt: 3, chain_lightning: 0 };  // AI waits before first casts
                 }
             }
 
@@ -16615,14 +15931,10 @@
             aiFireballCooldown = 2;
             playerFrostboltCooldown = 0;
             aiFrostboltCooldown = 3;
-            playerGravityCooldown = 0;
-            aiGravityCooldown = 5;
             playerMana = 1;
             aiMana = 1;
             playerManaRegen = 0;
             aiManaRegen = 0;
-
-            updateGravityUI();
         }
 
         function updateScore() {
@@ -16825,18 +16137,11 @@
                 } catch (e) {}
             }
 
-            // Clear gravity barriers before resetting combatant state
-            for (const c of [combatants.left, combatants.right]) {
-                if (c && c.gravityBarrier && window.destroyGravityBarrier) {
-                    destroyGravityBarrier(c.gravityBarrier);
-                }
-            }
-
             // Reset combatant state and cooldowns
             for (const c of [combatants.left, combatants.right]) {
                 if (!c) continue;
                 combatantReset(c, false);
-                c.cooldowns = { fireball: 0, frostbolt: 0, gravity: 0, chain_lightning: 0 };
+                c.cooldowns = { fireball: 0, frostbolt: 0, chain_lightning: 0 };
             }
 
             // MOBA-style: Restore gate health with regeneration
@@ -16861,19 +16166,10 @@
             aiFireballCooldown = 0;
             playerFrostboltCooldown = 0;
             aiFrostboltCooldown = 0;
-            playerGravityCooldown = 0;
-            aiGravityCooldown = 0;
-            playerGravityPhase = 'ready';
-            aiGravityPhase = 'ready';
-            playerCapturedBalls = 0;
-            aiCapturedBalls = 0;
-            playerGravityBarrier = null;
-            aiGravityBarrier = null;
             playerFreezeTime = 0;
             aiFreezeTime = 0;
 
             updateCooldownUI();
-            updateGravityUI();
             updateHealthBars();
 
             // Rebuild the gates
@@ -17334,17 +16630,6 @@
             const c = getCombatantLegacy(caster);
             if (!c) return;  // Safety check for doubles mode
             const isPlayer = caster === 'player';
-
-            // Clean up spark chains if casting spark
-            if (c.casting === 'spark') {
-                if (window.cleanupSparkChains) {
-                    window.cleanupSparkChains(c);
-                }
-                // Stop electric charge sound
-                if (window.ToneSFX && ToneSFX.electricStop) {
-                    ToneSFX.electricStop(isPlayer ? 'player' : 'ai');
-                }
-            }
 
             // Clear pending mana cost (mana was never spent, so no refund needed)
             c.pendingManaCost = 0;
@@ -18518,7 +17803,7 @@
                 clearAllProjectiles();
             }
 
-            // Clear all lightning FX (spark chains, zap flashes, etc.)
+            // Clear all lightning FX (zap flashes, lightning bolts, etc.)
             if (window.clearAllLightningFX) {
                 clearAllLightningFX();
             }
