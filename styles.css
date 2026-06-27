@@ -2486,3 +2486,10 @@ body.flipped-view #aiCastBarContainer {
 }
 .htp-key { min-width: 130px; color: var(--ff9-gold); font-weight: 600; }
 .htp-objective { display: block; margin-top: 10px; max-width: 520px; line-height: 1.5; }
+
+/* ---- Credits ---- */
+.credits-line {
+    font-family: 'FF9UI', sans-serif; font-size: 22px; color: #e7ecf6;
+    text-shadow: var(--ff9-shadow); text-align: center;
+}
+.credits-title { font-size: 30px; color: var(--ff9-gold); margin-bottom: 6px; }
