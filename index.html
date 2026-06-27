@@ -1611,6 +1611,12 @@
                 manaRegen: 0,
                 freezeTime: 0,
 
+                // Juice (ultimate / limit break): fills 0->100 from actions; spend to enter
+                // an 8s burst of free mana + halved cooldowns. Symmetric for player and AI.
+                juice: 0,
+                juiceActive: false,
+                juiceTimer: 0,
+
                 // Cooldowns (keyed by ability ID)
                 cooldowns: { fireball: 0, frostbolt: 0, chain_lightning: 0 },
 
@@ -1687,6 +1693,94 @@
             }
             return caster === 'player' ? combatants.left : combatants.right;
         }
+
+        // ============================================================
+        // JUICE — ultimate / limit break (symmetric for player + AI)
+        // ============================================================
+        const JUICE = {
+            MAX: 500,                                               // points to fill (status bar shows the %)
+            DURATION: 8,                                            // seconds of burst
+            CHARGE: { damage: 12, cast: 8, parry: 10, minor: 4 },  // damage is PER damage point; minor = block/overpower/cancel
+        };
+        function resolveCombatant(ref) {
+            if (!ref) return null;
+            if (typeof ref === 'object') return ref;
+            if (ref === 'player' || ref === 'left') return combatants ? combatants.left : null;
+            if (ref === 'ai' || ref === 'right') return combatants ? combatants.right : null;
+            return null;
+        }
+        // Add charge (capped). No charging during an active burst.
+        function addJuice(ref, amount) {
+            const c = resolveCombatant(ref);
+            if (!c || c.juiceActive) return;
+            c.juice = Math.min(JUICE.MAX, (c.juice || 0) + amount);
+        }
+        // Spend a full bar -> enter the burst. The bar stays full and DRAINS over the burst
+        // (it becomes the duration meter). Returns true if it fired.
+        function activateJuice(ref) {
+            const c = resolveCombatant(ref);
+            if (!c || c.juiceActive || (c.juice || 0) < JUICE.MAX) return false;
+            c.juice = JUICE.MAX;                                   // stays full; drains as duration ticks
+            c.juiceActive = true;
+            c.juiceTimer = JUICE.DURATION;
+            if (window.onJuiceStart) window.onJuiceStart(c);
+            return true;
+        }
+        // Per-frame: free mana (keep topped) + halved cooldowns (extra dt decrement) + drain the
+        // bar from 100->0 over the burst (= visible duration) + fade the aura with it.
+        function updateJuice(dt) {
+            const list = (typeof getAllCombatants === 'function')
+                ? getAllCombatants()
+                : [combatants && combatants.left, combatants && combatants.right];
+            for (const c of list) {
+                if (!c || !c.juiceActive) continue;
+                if (window._juiceTint) window._juiceTint(c, true);  // re-assert the white-hot tint (hit-flash clobbers it)
+                c.mana = getMaxMana(c.side);                       // free casts
+                if (c.cooldowns) {                                 // halved: extra decrement
+                    for (const k in c.cooldowns) if (c.cooldowns[k] > 0) c.cooldowns[k] = Math.max(0, c.cooldowns[k] - dt);
+                }
+                c.juiceTimer -= dt;
+                const frac = Math.max(0, c.juiceTimer / JUICE.DURATION);
+                c.juice = JUICE.MAX * frac;                        // bar drains = time remaining
+                if (c.juiceAura && c.juiceAura.outer) {                 // crazy wobble + fade as it drains
+                    c.juiceAura.t = (c.juiceAura.t || 0) + dt;
+                    const t = c.juiceAura.t;
+                    const wob = (m, sp, amp) => {
+                        if (!m) return;
+                        m.scaling.x = 1 + amp * Math.sin(t * sp);
+                        m.scaling.z = 1 + amp * Math.sin(t * sp * 1.37 + 1.7);
+                        m.scaling.y = 1 + 0.14 * Math.sin(t * sp * 0.6);
+                        m.rotation.y = 0.5 * Math.sin(t * sp * 0.5);   // twist back & forth (not a spin)
+                        m.rotation.x = 0.22 * Math.sin(t * sp * 1.1);
+                        m.rotation.z = 0.22 * Math.cos(t * sp * 0.85);
+                        // Per-vertex lick: jitter x/z, stronger toward the tip. Object-space, so it
+                        // wobbles wildly but never leaves the player.
+                        const base = m._juiceBaseArr, sc = m._juiceScratch;
+                        if (base && sc) {
+                            for (let i = 0; i < base.length; i += 3) {
+                                const bx = base[i], by = base[i + 1], bz = base[i + 2];
+                                const a = 0.04 + 0.24 * (by / 2.7);    // more sway higher up
+                                const ph = i * 0.17;
+                                sc[i]     = bx + a * Math.sin(t * (sp + 4) + ph);
+                                sc[i + 1] = by;
+                                sc[i + 2] = bz + a * Math.cos(t * (sp + 1.5) + ph * 1.4);
+                            }
+                            m.updateVerticesData(BABYLON.VertexBuffer.PositionKind, sc);
+                        }
+                    };
+                    wob(c.juiceAura.outer, 12, 0.28);
+                    wob(c.juiceAura.inner, 16, 0.40);
+                }
+                if (c.juiceTimer <= 0) {
+                    c.juiceActive = false; c.juiceTimer = 0; c.juice = 0;
+                    if (window.onJuiceEnd) window.onJuiceEnd(c);
+                }
+            }
+        }
+        window.addJuice = addJuice;
+        window.activateJuice = activateJuice;
+        window.updateJuice = updateJuice;
+        window.JUICE = JUICE;
 
         // Get UI element IDs for a combatant
         function getCombatantUIElements(combatant) {
@@ -3705,7 +3799,9 @@
                 footstep: 'sfx/footstep.wav',
                 footstep_2: 'sfx/footstep_2.wav',
                 footstep_3: 'sfx/footstep_3.wav',
-                footstep_4: 'sfx/footstep_4.wav'
+                footstep_4: 'sfx/footstep_4.wav',
+                juiceUp: 'sfx/juice_up.wav',
+                juiceReady: 'sfx/juice_ready.wav'
             };
 
             // Looping casting sounds - separate for player and AI with panning
@@ -4040,6 +4136,18 @@
                 // setTimeout(() => synths.bell.triggerAttackRelease(N.B5, "4n"), 50);
                 // 8-bit crushed sample layer
                 playSample('parry');
+            },
+
+            // Juice (ultimate) activation — power-up poof.
+            juiceUp: async () => {
+                if (!toneStarted) await initToneJS();
+                playSample('juiceUp');
+            },
+
+            // Juice bar full — anime streak "ready" cue (played unpanned, like a UI chime).
+            juiceReady: async () => {
+                if (!toneStarted) await initToneJS();
+                playSample('juiceReady');
             },
 
             // Footstep while walking — dirt sample with a slight random pitch each step so a
@@ -4422,6 +4530,11 @@
                 if (e.code === 'Digit3') {
                     castFromLoadoutSlot(2, 'player');
                 }
+            }
+            // Q = activate Juice (ultimate). Usable any time during a match once the bar is full
+            // (not gated on roundActive, so it never feels unresponsive). activateJuice guards readiness.
+            if (e.code === 'KeyQ' && !gameOver && !roundTransitioning) {
+                if (window.activateJuice) window.activateJuice('player');
             }
         });
         document.addEventListener('keyup', (e) => {
@@ -6238,6 +6351,40 @@
                 titleText.top = "-3px";   // FF9UI glyphs sit low; nudge up to optically center in the tab
                 titleTab.addControl(titleText);
 
+                // "JUICE READY" prompt — a command-styled box that appears above the command window
+                // when the local player's bar is full, with the Q key shown as a badge. Hidden otherwise.
+                const READY_W = 174, READY_H = 30;
+                const juiceReadyBox = new G.Rectangle("juiceReadyBox");
+                juiceReadyBox.width = READY_W + "px"; juiceReadyBox.height = READY_H + "px";
+                juiceReadyBox.background = STEEL; juiceReadyBox.color = "#f0c050"; juiceReadyBox.thickness = 2; juiceReadyBox.cornerRadius = 6;
+                juiceReadyBox.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_CENTER;
+                juiceReadyBox.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
+                juiceReadyBox.left = CMD_LEFT + "px";
+                juiceReadyBox.top = (-(BOTTOM_PAD + BOX_H + 16)) + "px";   // float just above the command window
+                juiceReadyBox.zIndex = 70;
+                juiceReadyBox.isVisible = false;
+                guiTexture.addControl(juiceReadyBox);
+                const juiceReadyLabel = new G.TextBlock();
+                juiceReadyLabel.text = "JUICE READY";
+                juiceReadyLabel.color = "#ffe27a"; juiceReadyLabel.fontSize = 14; juiceReadyLabel.fontWeight = "700";
+                juiceReadyLabel.fontFamily = "'FF9UI', sans-serif";
+                juiceReadyLabel.outlineWidth = 2.5; juiceReadyLabel.outlineColor = "#000000";
+                juiceReadyLabel.resizeToFit = true;
+                juiceReadyLabel.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                juiceReadyLabel.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                juiceReadyLabel.left = "12px"; juiceReadyLabel.top = "-2px";
+                juiceReadyBox.addControl(juiceReadyLabel);
+                const qBadge = new G.Rectangle();
+                qBadge.width = "24px"; qBadge.height = "22px";
+                qBadge.background = "rgba(16,24,40,0.55)"; qBadge.color = "rgba(206,214,230,0.6)";
+                qBadge.thickness = 1; qBadge.cornerRadius = 4;
+                qBadge.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT; qBadge.left = "-10px";
+                juiceReadyBox.addControl(qBadge);
+                const qText = new G.TextBlock();
+                qText.text = "Q"; qText.color = "#cdd8ef"; qText.fontSize = 14; qText.fontWeight = "600";
+                qText.fontFamily = "'FF9UI', sans-serif"; qText.top = "-2px";
+                qBadge.addControl(qText);
+
                 // Apply a visual state to one slot. mode: 'castable' | 'noMana' | 'cooldown' | 'active'.
                 const GOLD = "#f0c050", READY_TXT = "#f4f7ff", DIM_TXT = "#8b94a8";
                 function applyState(ref, mode, cdSeconds) {
@@ -6565,7 +6712,7 @@
                 // (CAS/PAR/DMG) now live on the end-of-game leaderboard (see victory screen).
                 // Column geometry: [ Name | HP | MP ] per combatant row. Each HP/MP cell is a
                 // vertical stack — label on top, "#/#" below, a very thin bar underlining it.
-                const NAME_X = 16, HP_X = 120, MP_X = 248, HP_BAR_W = 78, MP_BAR_W = 70;  // name col 16-120; HP/MP spread to fill the 360px status box
+                const NAME_X = 16, HP_X = 96, MP_X = 180, JUICE_X = 264, STAT_BAR_W = 58;  // Name | HP | MP | Juice columns in the 360px box
                 // Left-aligned label/number TextBlock.
                 function statusText(txt, color, leftPx, topPx, size, weight) {
                     const tb = new G.TextBlock();
@@ -6603,21 +6750,24 @@
                 function headerStroke(tb) { tb.outlineWidth = 3; tb.outlineColor = "#000000"; }   // keep statusText's drop shadow
                 headerStroke(statusText("HP", "#ffffff", HP_X, 10, 14, "600"));
                 headerStroke(statusText("MP", "#ffffff", MP_X, 10, 14, "600"));
+                headerStroke(statusText("Juiced", "#ffffff", JUICE_X, 10, 14, "600"));   // Juice (ultimate)
                 // One combatant ROW: Name (col 1) + "#/#" + thin underline bar per stat.
                 function statusRow(label, color, numTop) {
                     const barTop = numTop + 25;   // clear the number's full line box (no overlap)
                     const nameLabel = statusText(label, color, NAME_X, numTop, 16, "600");
                     const hp = statusText("--/--", "#ffffff", HP_X, numTop, 16);
-                    const hpFill = statusBar(HP_X, barTop, HP_BAR_W, color);
+                    const hpFill = statusBar(HP_X, barTop, STAT_BAR_W, color);
                     const mp = statusText("-/-", "#ffffff", MP_X, numTop, 16);
-                    const mpFill = statusBar(MP_X, barTop, MP_BAR_W, "#5ad0ff");
-                    return { hp, hpFill, mp, mpFill, nameLabel };
+                    const mpFill = statusBar(MP_X, barTop, STAT_BAR_W, "#5ad0ff");
+                    const juice = statusText("0", "#ffffff", JUICE_X, numTop, 16);
+                    const juiceFill = statusBar(JUICE_X, barTop, STAT_BAR_W, "#f0c050");   // gold Juice bar
+                    return { hp, hpFill, mp, mpFill, juice, juiceFill, nameLabel };
                 }
                 const statusRefs = {
                     blue: statusRow(window.getPlayerName(), "#6fb0ff", 42),
                     red:  statusRow("Red",  "#e76e55", 86),
                 };
-                window.registerPlayerNameLabel(statusRefs.blue.nameLabel, 96);  // ellipsis-fit the name column (HP starts at x120)
+                window.registerPlayerNameLabel(statusRefs.blue.nameLabel, 72);  // ellipsis-fit the name column (HP starts at x96)
 
                 const stripHtml = (h) => (h || "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
                 function spellInfo(id) {
@@ -6826,9 +6976,33 @@
                         const mpNow = c.mana || 0;
                         refs.mp.text = Math.floor(mpNow) + '/' + maxMp;
                         refs.mpFill.width = (Math.max(0, Math.min(1, mpNow / maxMp)) * 100) + '%';
+                        const juMax = (window.JUICE && window.JUICE.MAX) || 500;
+                        const juPct = Math.round(Math.max(0, Math.min(1, (c.juice || 0) / juMax)) * 100);
+                        refs.juice.text = '' + juPct;          // 0–100 % of the 500-point bar
+                        refs.juiceFill.width = juPct + '%';
                     };
                     setStatus(statusRefs.blue, bl);
                     setStatus(statusRefs.red, rd);
+
+                    // Juice tells (driven off the LOCAL player's bar): READY flag + gold command border.
+                    const localJ = (typeof localCombatant === 'function') ? localCombatant() : bl;
+                    if (localJ) {
+                        const ready = (localJ.juice >= ((window.JUICE && window.JUICE.MAX) || 500)) && !localJ.juiceActive;
+                        // Play the "ready" cue once on the not-ready -> ready transition (unpanned UI chime).
+                        if (ready && !localJ._juiceReadyPinged) {
+                            localJ._juiceReadyPinged = true;
+                            if (window.playSound) window.playSound('juiceReady', 0);
+                        } else if (!ready) {
+                            localJ._juiceReadyPinged = false;
+                        }
+                        if (juiceReadyBox.isVisible !== ready) juiceReadyBox.isVisible = ready;
+                        if (ready) juiceReadyBox.alpha = 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(Date.now() / 180));
+                        if (localJ.juiceActive) {
+                            box.color = (Math.sin(Date.now() / 120) > 0) ? "#ffe89a" : "#f0c050";   // pulsing gold while bursting
+                        } else if (box.color !== RIM) {
+                            box.color = RIM;
+                        }
+                    }
 
                     const lc = localCombatant();
                     if (!lc) return;
@@ -7152,7 +7326,12 @@
                         };
                     }
                     bindForSubMesh(uniformBuffer) {
-                        if (this._isEnabled) uniformBuffer.updateFloat("ps1GridSize", window.ps1SnapGrid || 150.0);
+                        if (this._isEnabled) {
+                            // Per-material override (e.g. the Juice flame uses a much coarser grid for
+                            // a super-intense wobble) falls back to the global grid.
+                            const g = (this._material && this._material._ps1GridOverride) || window.ps1SnapGrid || 150.0;
+                            uniformBuffer.updateFloat("ps1GridSize", g);
+                        }
                     }
                     getCustomCode(shaderType) {
                         if (shaderType !== "vertex") return null;
@@ -11833,7 +12012,7 @@
                 gainMana(parryer, 1);
 
                 // Per-match parry counter (Party Stats) — attribute to the parrying combatant.
-                { const pc = (parryer === 'player') ? combatants.left : combatants.right; if (pc && pc.matchStats) pc.matchStats.parries++;
+                { const pc = (parryer === 'player') ? combatants.left : combatants.right; if (pc && pc.matchStats) pc.matchStats.parries++; if (pc && window.addJuice) window.addJuice(pc, window.JUICE.CHARGE.parry);
                   if (window.logCombat) { const blue = (parryer === 'player'); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' parries!')); } }
 
                 // Track parry stats (only for local player)
@@ -12649,6 +12828,8 @@
             // All gameplay-affecting code runs here at fixed rate
             // ============================================================
             function updateGameLogic(dt) {
+                // Juice (ultimate): free mana + halved cooldowns + burst countdown, for both combatants.
+                if (window.updateJuice) window.updateJuice(dt);
                 // Update parry system
                 updateParryTimer(dt);
                 checkParryHits();
@@ -12983,6 +13164,12 @@
 
                     // NOTE: Model rotation lerp moved to render callback for smooth visuals
 
+                    // AI Juice (ultimate): pop it when full to open a burst window. (Competence
+                    // baseline — fires as soon as ready; smarter timing is future tuning.)
+                    if (combatants.right && combatants.right.juice >= ((window.JUICE && window.JUICE.MAX) || 500) && !combatants.right.juiceActive) {
+                        if (window.activateJuice) window.activateJuice('ai');
+                    }
+
                     // SIMPLE AI CASTING
                     const aiRightIsCasting = combatants.right && combatants.right.casting;
 
@@ -13242,6 +13429,7 @@
                                             // Show Overpowered text when one wins
                                             if (window.showCombatTextAt) showCombatTextAt(midPos, 'Overpowered!', 'cancel');
                                             if (window.logCombat) { const blue = (proj.owner === 'player'); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' Overpowers!')); }
+                                            if (window.addJuice) window.addJuice(proj.owner, window.JUICE.CHARGE.minor);
                                         } else if (otherDmg > projDmg) {
                                             // Other wins - destroy this
                                             toDestroy.push(proj);
@@ -13254,6 +13442,7 @@
                                             playSound('overpowered', midPos.x, 0.8);
                                             if (window.showCombatTextAt) showCombatTextAt(midPos, 'Overpowered!', 'cancel');
                                             if (window.logCombat) { const blue = (otherProj.owner === 'player'); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' Overpowers!')); }
+                                            if (window.addJuice) window.addJuice(otherProj.owner, window.JUICE.CHARGE.minor);
                                             break;
                                         } else {
                                             // Equal damage - mutual destruction (Cancel)
@@ -13262,6 +13451,7 @@
                                             // Cancel rewards both players with 0.5 mana
                                             gainMana('player', 0.5);
                                             gainMana('ai', 0.5);
+                                            if (window.addJuice) { window.addJuice('player', window.JUICE.CHARGE.minor); window.addJuice('ai', window.JUICE.CHARGE.minor); }
                                             if (window.createImpactFlash) createImpactFlash(midPos, new BABYLON.Color3(1, 0.7, 0.2), 3.0);
                                             if (window.createImpactDecal) createImpactDecal({ x: midPos.x, z: midPos.z }, 'fire');
                                             playSound('cancel', midPos.x, 0.8);
@@ -13990,6 +14180,125 @@
             emberParticles.updateSpeed = 0.01;
             emberParticles.start();
 
+            // --- JUICE (ultimate) tells: subtle low-poly flame aura + white-hot golden model tint. ---
+            // White-hot: add a golden emissive boost to the wizard's OWN materials while bursting.
+            const JUICE_MODEL_TINT = new BABYLON.Color3(0.5, 0.42, 0.16);
+            const setJuiceModelTint = (c, on) => {
+                const root = c && c.modelRoot;
+                if (!root || !root.getChildMeshes) return;
+                root.getChildMeshes().forEach((mesh) => {
+                    const mat = mesh.material;
+                    if (!mat || mat.emissiveColor === undefined) return;
+                    if (on) {
+                        if (!mat._juiceTintSaved) {
+                            mat._juicePrevEmissive = mat.emissiveColor.clone();
+                            mat._juicePrevEmissiveTex = ('emissiveTexture' in mat) ? mat.emissiveTexture : undefined;
+                            mat._juiceTintSaved = true;
+                        }
+                        // PBR character mats multiply emissiveColor by a (mostly black) emissive
+                        // texture, which swallows the tint — so null the texture for the burst.
+                        if ('emissiveTexture' in mat) mat.emissiveTexture = null;
+                        if (mat.emissiveIntensity !== undefined) mat.emissiveIntensity = 1;
+                        mat.emissiveColor = JUICE_MODEL_TINT.clone();
+                    } else if (mat._juiceTintSaved) {
+                        mat.emissiveColor = mat._juicePrevEmissive.clone();
+                        if ('emissiveTexture' in mat && mat._juicePrevEmissiveTex !== undefined) mat.emissiveTexture = mat._juicePrevEmissiveTex;
+                        mat._juiceTintSaved = false;
+                    }
+                });
+            };
+            window._juiceTint = setJuiceModelTint;   // re-applied per-frame in updateJuice so the hit-flash can't clobber it
+            // Low brown-noise rumble while the LOCAL player is bursting (created fresh, disposed on end).
+            const startJuiceDrone = (c) => {
+                if (!c || !c.isLocalPlayer || !toneStarted || typeof Tone === 'undefined') return;
+                stopJuiceDrone();
+                try {
+                    const px = (c.paddle && c.paddle.position) ? c.paddle.position.x : 0;
+                    const noise = new Tone.Noise("brown");
+                    const filter = new Tone.Filter({ type: "lowpass", frequency: 180, Q: 0.7 });
+                    const panner = new Tone.Panner(typeof xToPan === 'function' ? xToPan(px) : 0);  // panned to the player's side
+                    const vol = new Tone.Volume(-15);
+                    noise.connect(filter); filter.connect(panner); panner.connect(vol); vol.connect(window.sfxBus || Tone.getDestination());
+                    noise.start();
+                    window._juiceDrone = { noise, filter, panner, vol };
+                } catch (e) {}
+            };
+            function stopJuiceDrone() {
+                if (!window._juiceDrone) return;
+                const d = window._juiceDrone; window._juiceDrone = null;
+                try { d.noise.stop(); } catch (e) {}
+                setTimeout(() => { try { d.noise.dispose(); d.filter.dispose(); if (d.panner) d.panner.dispose(); d.vol.dispose(); } catch (e) {} }, 250);
+            }
+            // Transparent low-poly teardrop flame (additive = soft glow, no blur/post-process needed).
+            // Held at a constant SUBTLE alpha for the whole burst, then faded out at the very end.
+            window.onJuiceStart = (c) => {
+                if (!c) return;
+                const px = (c.paddle && c.paddle.position) ? c.paddle.position.x : 0;
+                if (window.playSound) playSound('juiceUp', px, 1.0);       // power-up poof on activation
+                startJuiceDrone(c);                                        // low rumble while active (local)
+                if (c.juiceAura) { try { window.onJuiceEnd(c); } catch (e) {} }
+                const paddle = c.paddle;
+                if (!paddle) return;
+                // Flame profile (revolved): rounded bulbous base curving to a point at the tip.
+                const flameProfile = (s) => [
+                    new BABYLON.Vector3(0.00,     0.00 * s, 0),   // bottom center
+                    new BABYLON.Vector3(0.42 * s, 0.18 * s, 0),   // flare out -> rounded base
+                    new BABYLON.Vector3(0.60 * s, 0.55 * s, 0),   // belly (widest)
+                    new BABYLON.Vector3(0.52 * s, 1.00 * s, 0),
+                    new BABYLON.Vector3(0.37 * s, 1.45 * s, 0),   // curve inward
+                    new BABYLON.Vector3(0.20 * s, 1.95 * s, 0),
+                    new BABYLON.Vector3(0.07 * s, 2.35 * s, 0),
+                    new BABYLON.Vector3(0.00,     2.70 * s, 0),   // tip point
+                ];
+                const makeFlame = (s, r, g, b, alpha) => {
+                    const m = BABYLON.MeshBuilder.CreateLathe("juiceFlame_" + c.side,
+                        { shape: flameProfile(s), tessellation: 7, closed: false, updatable: true }, scene);
+                    // No flat-shade / no snap override: the emissive material ignores normals (silhouette
+                    // is the same low-poly shape), and the wobble is object-space vertex jitter so it
+                    // stays ON the player instead of being flung off by the coarse clip-space snap.
+                    m.parent = paddle;
+                    m.position.set(0, -0.1, 0);                  // base at the feet, tip overhead
+                    m.isPickable = false;
+                    const mat = new BABYLON.StandardMaterial("juiceFlameMat_" + c.side, scene);
+                    mat.emissiveColor = new BABYLON.Color3(r, g, b);
+                    mat.diffuseColor = new BABYLON.Color3(0, 0, 0);
+                    mat.disableLighting = true;
+                    mat.backFaceCulling = false;
+                    mat.alpha = alpha;
+                    mat.alphaMode = BABYLON.Engine.ALPHA_ADD;    // additive glow -> reads over fog
+                    m.material = mat;
+                    m._juiceBaseAlpha = alpha;                   // remembered for the end fade-out
+                    m.renderingGroupId = 1;
+                    const bp = m.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+                    m._juiceBaseArr = bp ? Float32Array.from(bp) : null;     // rest pose for the wobble
+                    m._juiceScratch = bp ? new Float32Array(bp.length) : null;
+                    return m;
+                };
+                const outer = makeFlame(1.05, 1.0, 0.45, 0.06, 0.06);   // very faint
+                const inner = makeFlame(0.68, 1.0, 0.88, 0.35, 0.10);   // gold core
+                setJuiceModelTint(c, true);                                 // wizard goes white-hot gold
+                c.juiceAura = { outer, inner, t: 0 };
+            };
+            window.onJuiceEnd = (c) => {
+                if (!c) return;
+                if (c.isLocalPlayer) stopJuiceDrone();                      // only the local player's rumble
+                setJuiceModelTint(c, false);                                // restore the model
+                if (c.juiceAura) {
+                    const a = c.juiceAura; c.juiceAura = null;
+                    const meshes = [a.outer, a.inner].filter(Boolean);
+                    let life = 0.1;                                         // quick fade-out then dispose
+                    const obs = scene.onBeforeRenderObservable.add(() => {
+                        life -= scene.getEngine().getDeltaTime() / 1000;
+                        const k = Math.max(0, life / 0.1);
+                        meshes.forEach((m) => { if (m.material) m.material.alpha = (m._juiceBaseAlpha || 0.3) * k; });
+                        if (life <= 0) {
+                            scene.onBeforeRenderObservable.remove(obs);
+                            meshes.forEach((m) => { try { if (m.material) m.material.dispose(); m.dispose(); } catch (e) {} });
+                        }
+                    });
+                }
+            };
+
             // (Removed the fake god-ray light cones over the towers/midfield -- they read as
             // pointless spotlights and added visual noise.)
 
@@ -14242,7 +14551,7 @@
             if (!spendMana(caster, abilities.fireball.manaCost)) return;
 
             // Per-match spell-cast counter (Party Stats) — attribute to the casting combatant.
-            { const cc = getCombatantLegacy(caster); if (cc && cc.matchStats) cc.matchStats.spellsCast++;
+            { const cc = getCombatantLegacy(caster); if (cc && cc.matchStats) cc.matchStats.spellsCast++; if (cc && window.addJuice) window.addJuice(cc, window.JUICE.CHARGE.cast);
               if (cc && window.logCombat) { const blue = (cc === combatants.left); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('fireball'))); } }
 
             // Track stat (only for local player in single/pvp)
@@ -14291,7 +14600,7 @@
             if (!spendMana(caster, abilities.frostbolt.manaCost)) return;
 
             // Per-match spell-cast counter (Party Stats) — attribute to the casting combatant.
-            { const cc = getCombatantLegacy(caster); if (cc && cc.matchStats) cc.matchStats.spellsCast++;
+            { const cc = getCombatantLegacy(caster); if (cc && cc.matchStats) cc.matchStats.spellsCast++; if (cc && window.addJuice) window.addJuice(cc, window.JUICE.CHARGE.cast);
               if (cc && window.logCombat) { const blue = (cc === combatants.left); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('frostbolt'))); } }
 
             // Visual feedback for the local player only
@@ -17826,7 +18135,7 @@
             else aiMana = c.mana;
 
             // Per-match spell-cast counter (Party Stats) — attribute to the casting combatant.
-            if (c.matchStats) c.matchStats.spellsCast++;
+            if (c.matchStats) c.matchStats.spellsCast++; if (window.addJuice) window.addJuice(c, window.JUICE.CHARGE.cast);
             if (window.logCombat) { const blue = (c === combatants.left); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('chain_lightning'))); }
 
             // Visual feedback for the local player only
@@ -18323,7 +18632,7 @@
 
             // Per-match spell-cast counter + combat log — the cast-time path fires here
             // (legacy castFireball() covers the instant on-screen-button path).
-            if (c.matchStats) c.matchStats.spellsCast++;
+            if (c.matchStats) c.matchStats.spellsCast++; if (window.addJuice) window.addJuice(c, window.JUICE.CHARGE.cast);
             if (window.logCombat) { const blue = (c === combatants.left); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('fireball'))); }
 
             const paddle = c.paddle;
@@ -18758,6 +19067,7 @@
             const combatant = isPlayerTower ? combatants.left : combatants.right;
             if (combatant) {
                 combatant.towerHealth = Math.max(0, combatant.towerHealth - damage);
+                if (window.addJuice) window.addJuice(combatant, window.JUICE.CHARGE.damage * damage);  // catch-up charge
             }
             // Per-match damage counter (Party Stats) — attribute to the ATTACKER, i.e. the
             // combatant on the opposite side of the tower being damaged.
