@@ -1698,7 +1698,7 @@
         // JUICE — ultimate / limit break (symmetric for player + AI)
         // ============================================================
         const JUICE = {
-            MAX: 500,                                               // points to fill (status bar shows the %)
+            MAX: 350,                                               // points to fill (status bar shows the %)
             DURATION: 8,                                            // seconds of burst
             CHARGE: { damage: 12, cast: 8, parry: 10, minor: 4 },  // damage is PER damage point; minor = block/overpower/cancel
         };
@@ -1724,6 +1724,7 @@
             c.juiceActive = true;
             c.juiceTimer = JUICE.DURATION;
             if (window.onJuiceStart) window.onJuiceStart(c);
+            if (window.logCombat && window.combatLine) window.logCombat(c.side === 'left' ? 'blue' : 'red', window.combatLine(c.side === 'left', ' Juiced!'));
             return true;
         }
         // Per-frame: free mana (keep topped) + halved cooldowns (extra dt decrement) + drain the
@@ -1774,6 +1775,7 @@
                 if (c.juiceTimer <= 0) {
                     c.juiceActive = false; c.juiceTimer = 0; c.juice = 0;
                     if (window.onJuiceEnd) window.onJuiceEnd(c);
+                    if (window.logCombat && window.combatLine) window.logCombat(c.side === 'left' ? 'blue' : 'red', window.combatLine(c.side === 'left', ' Juice faded'));
                 }
             }
         }
@@ -6688,6 +6690,16 @@
                 statsBox.isVisible = false;
                 guiTexture.addControl(statsBox);
 
+                // Flashing gold border over the LOCAL player's status row while their Juice is active.
+                const juiceStrip = new G.Rectangle("juiceStatusStrip");
+                juiceStrip.width = (STAT_W - 14) + "px"; juiceStrip.height = "36px";
+                juiceStrip.thickness = 2; juiceStrip.color = "#f0c050"; juiceStrip.background = "transparent"; juiceStrip.cornerRadius = 5;
+                juiceStrip.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_CENTER;
+                juiceStrip.verticalAlignment = ALN.VERTICAL_ALIGNMENT_TOP;
+                juiceStrip.top = "38px";          // default: the blue (left) row; repositioned per-frame for MP
+                juiceStrip.isVisible = false;
+                statsBox.addControl(juiceStrip);
+
                 // "Party" title tab (GUI root, like the Command/Spell-name tabs).
                 const statsTab = new G.Rectangle("commandStatsTab");
                 statsTab.width = "150px"; statsTab.height = TITLE_H + "px";
@@ -6998,9 +7010,14 @@
                         if (juiceReadyBox.isVisible !== ready) juiceReadyBox.isVisible = ready;
                         if (ready) juiceReadyBox.alpha = 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(Date.now() / 180));
                         if (localJ.juiceActive) {
-                            box.color = (Math.sin(Date.now() / 120) > 0) ? "#ffe89a" : "#f0c050";   // pulsing gold while bursting
-                        } else if (box.color !== RIM) {
-                            box.color = RIM;
+                            const gold = (Math.sin(Date.now() / 120) > 0) ? "#ffe89a" : "#f0c050";
+                            box.color = gold;                                          // pulsing gold command border
+                            juiceStrip.top = ((localJ === bl ? 42 : 86) - 4) + "px";   // the local player's status row
+                            juiceStrip.color = gold;
+                            if (!juiceStrip.isVisible) juiceStrip.isVisible = true;
+                        } else {
+                            if (box.color !== RIM) box.color = RIM;
+                            if (juiceStrip.isVisible) juiceStrip.isVisible = false;
                         }
                     }
 
@@ -7009,13 +7026,18 @@
                     const mana = (typeof lc.mana === 'number') ? lc.mana : 0;
                     const cds = lc.cooldowns || {};
                     const A = window.abilities || {};
+                    const juicedLocal = !!lc.juiceActive;   // white-hot command text during the burst (client-side)
                     cmdRefs.forEach(ref => {
                         if (ref.id === 'parry') return;          // handled by the parry GUI hook
                         const remaining = cds[ref.id] || 0;
                         const cost = (A[ref.id] && A[ref.id].manaCost) || 0;
+                        // On the juice on/off transition, invalidate the cached state so applyState re-colors.
+                        if (juicedLocal !== !!ref._juiceHot) ref._mode = null;
                         if (remaining > 0) applyState(ref, 'cooldown', remaining);
                         else if (mana < cost) applyState(ref, 'noMana');
                         else applyState(ref, 'castable');
+                        if (juicedLocal) { ref.name.color = "#ffe6a0"; ref.name.alpha = 1; }   // white-hot
+                        ref._juiceHot = juicedLocal;
                     });
                 });
                 console.log("FF9 GUI command menu built");
@@ -17927,10 +17949,10 @@
                 ? activeUpgrades[0].castTime
                 : ability.castTime;
 
-            // Set combatant casting state
+            // Set combatant casting state. During a Juice burst, Fireball casts instantly.
             c.casting = abilityId;
             c.castProgress = 0;
-            c.castTime = effectiveCastTime;
+            c.castTime = (c.juiceActive && abilityId === 'fireball') ? 0 : effectiveCastTime;
 
             // Stop any existing casting loop sound (isochronic generator)
             if (window.ToneSFX) ToneSFX.castingStop();
@@ -18214,6 +18236,8 @@
                 setTimeout(() => {
                     createSkyLightningStrike(targetPos);
                     createZapFlash(targetPos);
+                    // Floating stage text at each zap, like Overpower/Cancel.
+                    if (window.showCombatTextAt) showCombatTextAt(targetPos, 'Zap!', 'lightning');
                 }, delay);
             }
 
@@ -18237,6 +18261,7 @@
 
             // Show combat text
             showCombatText(isPlayer, 'Thunderstorm x' + zapsToPerform, 'lightning');
+            if (window.logCombat && window.combatLine) window.logCombat(isPlayer ? 'blue' : 'red', window.combatLine(isPlayer, ' Zaps ' + zapsToPerform + '!'));
 
             // Start cooldown
             c.cooldowns.chain_lightning = CHAIN_LIGHTNING_COOLDOWN;
