@@ -15,7 +15,7 @@
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css?v=49">
+    <link rel="stylesheet" href="styles.css?v=50">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -95,6 +95,11 @@
                     <span class="menu-btn-accent" aria-hidden="true"></span>
                     <span class="menu-btn-glyph" aria-hidden="true">&#9733;</span>
                     <span class="menu-btn-label">Credits</span>
+                </button>
+                <button class="game-btn menu-btn" id="domBtnCareer">
+                    <span class="menu-btn-accent" aria-hidden="true"></span>
+                    <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
+                    <span class="menu-btn-label">Career</span>
                 </button>
             </div>
         </div>
@@ -214,6 +219,30 @@
                 <div class="credits-line">Built with Babylon.js, Tone.js &amp; PeerJS.</div>
                 <div class="credits-line">&#169; 2026 Volleybolt</div>
                 <button class="game-btn menu-btn menu-btn-ghost" id="creditsBack">
+                    <span class="menu-btn-accent" aria-hidden="true"></span>
+                    <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
+                    <span class="menu-btn-label">Back</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Career stats screen -->
+    <div id="careerScreen" class="arcane-overlay crt-screen">
+        <div class="arcane-scrim">
+            <div class="arcane-embers" aria-hidden="true">
+                <span class="ember"></span><span class="ember"></span><span class="ember"></span>
+                <span class="ember"></span><span class="ember"></span><span class="ember"></span>
+                <span class="ember"></span><span class="ember"></span><span class="ember"></span>
+            </div>
+        </div>
+        <div class="arcane-content">
+            <div class="arcane-title-wrap">
+                <h1 class="arcane-title" data-text="Career">Career</h1>
+            </div>
+            <div class="arcane-buttons settings-panel">
+                <div id="careerList" class="career-list"></div>
+                <button class="game-btn menu-btn menu-btn-ghost" id="careerBack">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
                     <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
                     <span class="menu-btn-label">Back</span>
@@ -14965,6 +14994,22 @@
         }
         window.startSinglesMatch = startSinglesMatch;
 
+        // Render the persisted career stats into #careerList (label : value rows).
+        function populateCareer() {
+            const list = document.getElementById('careerList');
+            if (!list || !window.StatTracker) return;
+            const defs = StatTracker.STAT_DEFINITIONS;
+            const career = StatTracker.getAll('career');
+            list.innerHTML = '';
+            for (const [key, def] of Object.entries(defs)) {
+                const row = document.createElement('div');
+                row.className = 'career-row';
+                const val = Math.round((career[key] || 0) * 100) / 100;   // freeze_time may be fractional
+                row.innerHTML = '<span>' + def.label + '</span><span class="career-val">' + val + '</span>';
+                list.appendChild(row);
+            }
+        }
+
         let domMenuWired = false;
         function wireDOMMenu() {
             if (domMenuWired) return;
@@ -14994,6 +15039,10 @@
             if (btnCredits) btnCredits.addEventListener('click', () => showMenuScreen('creditsScreen', 'menu'));
             const creditsBack = document.getElementById('creditsBack');
             if (creditsBack) creditsBack.addEventListener('click', () => closeMenuScreen());
+            const btnCareer = document.getElementById('domBtnCareer');
+            if (btnCareer) btnCareer.addEventListener('click', () => { populateCareer(); showMenuScreen('careerScreen', 'menu'); });
+            const careerBack = document.getElementById('careerBack');
+            if (careerBack) careerBack.addEventListener('click', () => closeMenuScreen());
         }
         window.wireDOMMenu = wireDOMMenu;
 
