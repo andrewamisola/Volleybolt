@@ -6468,23 +6468,27 @@
                 function renderLog() {
                     logStack.clearControls();
                     for (const runs of logLines) {
-                        // Single-color line: one full-width TextBlock (preserves internal spacing).
+                        // Single-color line: one auto-sized TextBlock. Must auto-size (resizeToFit)
+                        // like the multi-color rows so its height scales WITH the text — a fixed
+                        // px height doesn't scale, so the text outgrows it and overlaps the next
+                        // line when the resolution is increased.
                         if (runs.length === 1) {
-                            const tb = makeRun(runs[0]);
-                            tb.resizeToFit = false; tb.width = "100%";
+                            const tb = makeRun(runs[0]);   // makeRun already sets resizeToFit = true
                             tb.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
                             logStack.addControl(tb);
                             continue;
                         }
                         // Multi-color line (e.g. white numbers): a horizontal row of runs with
-                        // thin spacers between them (Babylon trims run-edge whitespace).
+                        // thin spacers between them (Babylon trims run-edge whitespace). The row
+                        // auto-sizes its height to its run text (adaptHeightToChildren), so it
+                        // scales the same way the single-color lines do.
                         const row = new G.StackPanel();
-                        row.isVertical = false; row.height = "25px";
+                        row.isVertical = false; row.adaptHeightToChildren = true;
                         row.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
                         runs.forEach((run, i) => {
                             if (i > 0) {
                                 const sp = new G.Rectangle();
-                                sp.width = "5px"; sp.height = "25px"; sp.thickness = 0; sp.background = "transparent";
+                                sp.width = "5px"; sp.height = "1px"; sp.thickness = 0; sp.background = "transparent";
                                 row.addControl(sp);
                             }
                             row.addControl(makeRun(run));
