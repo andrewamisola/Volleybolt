@@ -1499,13 +1499,19 @@ body.flipped-view #aiCastBarContainer {
     min-width: 520px;
 }
 #loadingTitle {
-    font-family: 'FF9UI', sans-serif;
-    font-size: 64px;
-    font-weight: 800;
-    color: var(--gold-light);
-    text-shadow: 3px 3px 0 #565656;   /* hard grey shadow */
-    margin-bottom: 36px;
-    letter-spacing: 6px;
+    /* Match the title-screen logo: Ferrum display font + clipped gold gradient. */
+    font-family: 'Ferrum', 'FF9UI', serif;
+    font-size: 72px;
+    font-weight: 700;
+    letter-spacing: 8px;
+    line-height: 1;
+    margin-bottom: 30px;
+    background: linear-gradient(180deg, #ffe9a8 0%, var(--gold-light) 40%, var(--gold) 64%, var(--gold-dark) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(3px 3px 0 #000) drop-shadow(0 0 14px rgba(212, 168, 73, 0.28));
 }
 #loadingCard {
     position: relative;
@@ -1566,17 +1572,8 @@ body.flipped-view #aiCastBarContainer {
     display: flex;
 }
 
-/* Multiplayer Lobby - CRT Style (4:3 centered) */
-#multiplayerLobby {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background: transparent;
-    pointer-events: none; /* Babylon GUI handles interaction */
-    z-index: 9999;
-}
+/* Multiplayer Lobby now uses the shared .arcane-overlay menu system (see #domMenu).
+   Layout/visibility are owned by .arcane-overlay / .arcane-overlay.visible. */
 
 #talentTitle {
     display: none;  /* Using GUI title instead for CRT effects */
@@ -1772,22 +1769,11 @@ body.flipped-view #aiCastBarContainer {
 /* ============================================================
    Multiplayer Lobby — DOM-owned overlay
    ============================================================ */
-#multiplayerLobby {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background: rgba(8, 5, 3, 0.78);
-    pointer-events: auto;
-    z-index: 9999;
-    display: none;
-    align-items: center;
-    justify-content: center;
-}
-
-#multiplayerLobby.visible {
-    display: flex;
+/* Lobby views sit inside .arcane-buttons; only one is shown at a time (JS toggles display).
+   Center their contents to match the centered FF9 title-screen menu. */
+.lobby-view {
+    align-items: center !important;
+    gap: 16px;
 }
 
 .lobby-panel {

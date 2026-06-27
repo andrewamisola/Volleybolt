@@ -15,7 +15,7 @@
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css?v=44">
+    <link rel="stylesheet" href="styles.css?v=46">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -49,51 +49,6 @@
             </div>
             <div id="loadingText">Loading...</div>
             <div id="loadingTip">Block spells with your paddle<br>Parry to send them back faster</div>
-        </div>
-    </div>
-
-    <!-- Multiplayer Lobby Overlay (DOM-owned) -->
-    <div id="multiplayerLobby" class="crt-screen">
-        <div class="lobby-panel">
-            <h1 class="lobby-title">Multiplayer</h1>
-            <p class="lobby-subtitle" id="lobbySubtitle">Challenge a friend to battle!</p>
-
-            <!-- Mode select -->
-            <div class="lobby-view" id="lobbyModeView">
-                <button class="game-btn" id="btnHostGame">Host Game</button>
-                <button class="game-btn" id="btnJoinGame">Join Game</button>
-                <button class="game-btn game-btn-ghost" id="btnBackMenu">Back</button>
-            </div>
-
-            <!-- Host view -->
-            <div class="lobby-view" id="lobbyHostView" style="display:none">
-                <p class="lobby-prompt">Share this code with your opponent:</p>
-                <div class="lobby-code" id="hostCode">------</div>
-                <button class="game-btn game-btn-small" id="btnCopyCode">Copy Code</button>
-                <p class="lobby-status" id="hostStatus">Waiting for opponent...</p>
-                <button class="game-btn game-btn-ghost" id="btnCancelHost">Cancel</button>
-            </div>
-
-            <!-- Join view -->
-            <div class="lobby-view" id="lobbyJoinView" style="display:none">
-                <p class="lobby-prompt">Enter host's room code:</p>
-                <input type="text" class="lobby-input" id="joinInput" placeholder="ABC123" maxlength="6" autocomplete="off" autocapitalize="characters" />
-                <button class="game-btn" id="btnConnect">Connect</button>
-                <p class="lobby-status" id="joinStatus"></p>
-                <button class="game-btn game-btn-ghost" id="btnCancelJoin">Cancel</button>
-            </div>
-
-            <!-- Connected / ready view -->
-            <div class="lobby-view" id="lobbyConnectedView" style="display:none">
-                <p class="lobby-connected-msg">Connected!</p>
-                <p class="lobby-status" id="connectedPing">Ping: --ms</p>
-                <p class="lobby-ready-line" id="readyStatusYou">You: Not Ready</p>
-                <p class="lobby-ready-line" id="readyStatusOpponent">Opponent: Not Ready</p>
-                <button class="game-btn" id="btnReady">Ready Up</button>
-                <button class="game-btn" id="btnStartMatch" style="display:none" disabled>Start Match</button>
-                <p class="lobby-status" id="waitingForHost">Waiting for host to start...</p>
-                <button class="game-btn game-btn-ghost" id="btnDisconnect">Disconnect</button>
-            </div>
         </div>
     </div>
 
@@ -161,6 +116,102 @@
                     <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
                     <span class="menu-btn-label">Back</span>
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Multiplayer Lobby — DOM, shares the arcane-menu system (matches #domMenu / #domModeSelect) -->
+    <div id="multiplayerLobby" class="arcane-overlay crt-screen">
+        <div class="arcane-scrim">
+            <div class="arcane-embers" aria-hidden="true">
+                <span class="ember"></span><span class="ember"></span><span class="ember"></span>
+                <span class="ember"></span><span class="ember"></span><span class="ember"></span>
+                <span class="ember"></span><span class="ember"></span><span class="ember"></span>
+            </div>
+        </div>
+        <div class="arcane-content">
+            <div class="arcane-title-wrap">
+                <h1 class="arcane-title" data-text="Multiplayer">Multiplayer</h1>
+                <div class="arcane-divider"></div>
+                <div class="arcane-tagline" id="lobbySubtitle">Challenge a friend to battle!</div>
+            </div>
+            <div class="arcane-buttons">
+                <!-- Mode select -->
+                <div class="lobby-view" id="lobbyModeView">
+                    <button class="game-btn menu-btn is-primary" id="btnHostGame">
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#9889;</span>
+                        <span class="menu-btn-label">Host Game</span>
+                    </button>
+                    <button class="game-btn menu-btn" id="btnJoinGame">
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
+                        <span class="menu-btn-label">Join Game</span>
+                    </button>
+                    <button class="game-btn menu-btn menu-btn-ghost" id="btnBackMenu">
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
+                        <span class="menu-btn-label">Back</span>
+                    </button>
+                </div>
+
+                <!-- Host view -->
+                <div class="lobby-view" id="lobbyHostView" style="display:none">
+                    <p class="lobby-prompt">Share this code with your opponent:</p>
+                    <div class="lobby-code" id="hostCode">------</div>
+                    <button class="game-btn menu-btn" id="btnCopyCode">
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#9112;</span>
+                        <span class="menu-btn-label">Copy Code</span>
+                    </button>
+                    <p class="lobby-status" id="hostStatus">Waiting for opponent...</p>
+                    <button class="game-btn menu-btn menu-btn-ghost" id="btnCancelHost">
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
+                        <span class="menu-btn-label">Cancel</span>
+                    </button>
+                </div>
+
+                <!-- Join view -->
+                <div class="lobby-view" id="lobbyJoinView" style="display:none">
+                    <p class="lobby-prompt">Enter host's room code:</p>
+                    <input type="text" class="lobby-input" id="joinInput" placeholder="ABC123" maxlength="6" autocomplete="off" autocapitalize="characters" />
+                    <button class="game-btn menu-btn" id="btnConnect">
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#9889;</span>
+                        <span class="menu-btn-label">Connect</span>
+                    </button>
+                    <p class="lobby-status" id="joinStatus"></p>
+                    <button class="game-btn menu-btn menu-btn-ghost" id="btnCancelJoin">
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
+                        <span class="menu-btn-label">Cancel</span>
+                    </button>
+                </div>
+
+                <!-- Connected / ready view -->
+                <div class="lobby-view" id="lobbyConnectedView" style="display:none">
+                    <p class="lobby-connected-msg">Connected!</p>
+                    <p class="lobby-status" id="connectedPing">Ping: --ms</p>
+                    <p class="lobby-ready-line" id="readyStatusYou">You: Not Ready</p>
+                    <p class="lobby-ready-line" id="readyStatusOpponent">Opponent: Not Ready</p>
+                    <button class="game-btn menu-btn is-primary" id="btnReady">
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#10003;</span>
+                        <span class="menu-btn-label">Ready Up</span>
+                    </button>
+                    <button class="game-btn menu-btn" id="btnStartMatch" style="display:none" disabled>
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
+                        <span class="menu-btn-label">Start Match</span>
+                    </button>
+                    <p class="lobby-status" id="waitingForHost">Waiting for host to start...</p>
+                    <button class="game-btn menu-btn menu-btn-ghost" id="btnDisconnect">
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#10005;</span>
+                        <span class="menu-btn-label">Disconnect</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -1227,9 +1278,18 @@
         // Each spell has different mechanics (cast time, instant, etc.)
         // ============================================================
 
+        // Move the FF9 command-menu pointer to a slot on INPUT (not on successful cast).
+        window.pointCmdSlot = (id) => {
+            if (window.commandMenu && window.commandMenu.setLastCast) window.commandMenu.setLastCast(id);
+        };
+
         function castFromLoadoutSlot(slotIndex, caster = 'player') {
             const spell = PlayerLoadout.getSlot(slotIndex);
             if (!spell) return false;
+
+            // Pointer follows the player's input the instant a key/button is pressed,
+            // even if the cast then fails on mana/cooldown.
+            if (caster === 'player') window.pointCmdSlot(spell.id);
 
             // Get combatant
             const c = caster === 'player' ? (window.combatants ? window.combatants.left : null) : null;
@@ -4057,6 +4117,7 @@
 
             // Game over - return to menu on any key
             if (gameOver && !roundTransitioning && !talentVisible) {
+                hideVictoryScreen();   // also tears down the DOM "click to continue" fallback
                 resetGame();
                 showTalentScreen();
                 return;
@@ -4069,6 +4130,7 @@
             }
 
             if (e.code === 'Space') {
+                if (window.pointCmdSlot) window.pointCmdSlot('parry');
                 if (!waitingToServe && !gameOver && !roundTransitioning && canParry && parryCallback) {
                     // Play parry animation on any attempt (3x speed, start at frame 20, lock for 500ms)
                     if (window.playPlayerAnim) {
@@ -4890,7 +4952,7 @@
             victoryTitle.shadowOffsetY = 5;
             victoryTitle.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
             victoryTitle.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
-            victoryTitle.top = "-80px";
+            victoryTitle.top = "-130px";
             victoryOverlay.addControl(victoryTitle);
             window.guiElements.victoryTitle = victoryTitle;
 
@@ -4907,9 +4969,65 @@
             victorySubtitle.shadowOffsetY = 2;
             victorySubtitle.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
             victorySubtitle.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
-            victorySubtitle.top = "20px";
+            victorySubtitle.top = "-60px";
             victoryOverlay.addControl(victorySubtitle);
             window.guiElements.victorySubtitle = victorySubtitle;
+
+            // --- End-of-match leaderboard (final CAS / PAR / DMG per side) ---
+            // This is where the match stats live now; the in-game window shows live HP/MP.
+            const lbPanel = new BABYLON.GUI.Rectangle("victoryLeaderboard");
+            lbPanel.width = "380px"; lbPanel.height = "150px";
+            lbPanel.background = "rgba(20,26,40,0.82)";
+            lbPanel.color = "#dfe6f2"; lbPanel.thickness = 2; lbPanel.cornerRadius = 8;
+            lbPanel.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
+            lbPanel.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
+            lbPanel.top = "40px";
+            lbPanel.shadowColor = "#000"; lbPanel.shadowBlur = 0; lbPanel.shadowOffsetX = 4; lbPanel.shadowOffsetY = 4;
+            lbPanel.isVisible = false;
+            victoryOverlay.addControl(lbPanel);
+            window.guiElements.victoryLeaderboard = lbPanel;
+
+            const AL = BABYLON.GUI.Control;
+            const lbCell = (txt, color, leftPx, topPx, alignRight, weight) => {
+                const tb = new BABYLON.GUI.TextBlock();
+                tb.text = txt; tb.color = color; tb.fontSize = 20;
+                tb.fontFamily = "'FF9UI', sans-serif"; if (weight) tb.fontWeight = weight;
+                tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
+                tb.resizeToFit = true;
+                tb.horizontalAlignment = alignRight ? AL.HORIZONTAL_ALIGNMENT_RIGHT : AL.HORIZONTAL_ALIGNMENT_LEFT;
+                tb.textHorizontalAlignment = tb.horizontalAlignment;
+                tb.verticalAlignment = AL.VERTICAL_ALIGNMENT_TOP;
+                tb.left = leftPx + "px"; tb.top = topPx + "px";
+                lbPanel.addControl(tb);
+                return tb;
+            };
+            const lbTitle = new BABYLON.GUI.TextBlock();
+            lbTitle.text = "Battle Report"; lbTitle.color = "#f0c050"; lbTitle.fontSize = 20;
+            lbTitle.fontFamily = "'FF9UI', sans-serif"; lbTitle.fontWeight = "600";
+            lbTitle.shadowColor = "#000"; lbTitle.shadowBlur = 0; lbTitle.shadowOffsetX = 2; lbTitle.shadowOffsetY = 2;
+            lbTitle.resizeToFit = true;
+            lbTitle.horizontalAlignment = AL.HORIZONTAL_ALIGNMENT_CENTER;
+            lbTitle.verticalAlignment = AL.VERTICAL_ALIGNMENT_TOP;
+            lbTitle.top = "8px";
+            lbPanel.addControl(lbTitle);
+            // Right-aligned columns measured from the panel's right edge (width 380).
+            const LB_CAS = -210, LB_PAR = -120, LB_DMG = -28;
+            const LB_HDR = 44, LB_BLUE = 78, LB_RED = 110;
+            lbCell("CAS", "#f0c050", LB_CAS, LB_HDR, true, "600");
+            lbCell("PAR", "#f0c050", LB_PAR, LB_HDR, true, "600");
+            lbCell("DMG", "#f0c050", LB_DMG, LB_HDR, true, "600");
+            lbCell("Blue", "#6fb0ff", 18, LB_BLUE, false, "600");
+            const lbBlueCast = lbCell("0", "#ffffff", LB_CAS, LB_BLUE, true);
+            const lbBlueParry = lbCell("0", "#ffffff", LB_PAR, LB_BLUE, true);
+            const lbBlueDmg = lbCell("0", "#ffffff", LB_DMG, LB_BLUE, true);
+            lbCell("Red", "#e76e55", 18, LB_RED, false, "600");
+            const lbRedCast = lbCell("0", "#ffffff", LB_CAS, LB_RED, true);
+            const lbRedParry = lbCell("0", "#ffffff", LB_PAR, LB_RED, true);
+            const lbRedDmg = lbCell("0", "#ffffff", LB_DMG, LB_RED, true);
+            window.guiElements.victoryLeaderboardRefs = {
+                blue: { cast: lbBlueCast, parry: lbBlueParry, dmg: lbBlueDmg },
+                red:  { cast: lbRedCast,  parry: lbRedParry,  dmg: lbRedDmg },
+            };
 
             // Continue button (stone-styled, consistent with menu buttons)
             const continueBtn = BABYLON.GUI.Button.CreateSimpleButton("continueBtn", "Continue");
@@ -4928,7 +5046,7 @@
             continueBtn.paddingBottom = "10px";
             continueBtn.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
             continueBtn.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
-            continueBtn.top = "100px";
+            continueBtn.top = "190px";
             continueBtn.textBlock.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
             continueBtn.isPointerBlocker = true;
             continueBtn.isHitTestVisible = true;
@@ -4942,11 +5060,11 @@
             });
             continueBtn.onPointerDownObservable.add(() => {
                 continueBtn.background = "#2a2520";
-                continueBtn.top = "102px";  // Slight inset like menu buttons
+                continueBtn.top = "192px";  // Slight inset like menu buttons
             });
             continueBtn.onPointerUpObservable.add(() => {
                 continueBtn.background = "#4a4235";
-                continueBtn.top = "100px";
+                continueBtn.top = "190px";
             });
             continueBtn.onPointerClickObservable.add(() => {
                 // Use fade transition to return to menu
@@ -5733,7 +5851,7 @@
                     { id: 'chain_lightning', name: 'Thunderstorm', key: '3',     mana: 2 },
                     { id: 'parry',           name: 'Parry',        key: '␣',     mana: 0 },
                 ];
-                const ROW_H = 42, PAD = 10, TITLE_H = 26, BOX_W = 290;
+                const ROW_H = 36, PAD = 8, TITLE_H = 26, BOX_W = 290;  // tighter rows -> shorter windows
                 const BOX_H = PAD * 2 + cmdSlots.length * ROW_H;
                 // Centered trio layout: [Command] [Spell Info] [Party]. The center (detail)
                 // window sits dead-center; the other two are one SLOT (box + gap) left/right.
@@ -5810,6 +5928,9 @@
                     keyText.text = s.key; keyText.color = "#cdd8ef"; keyText.fontSize = 18;
                     keyText.fontFamily = "'FF9UI', sans-serif";
                     keyText.shadowColor = "#000"; keyText.shadowBlur = 0; keyText.shadowOffsetX = 1; keyText.shadowOffsetY = 1;
+                    // The '␣' open-box space glyph renders low (bottom of the em box) — lift it
+                    // so it reads vertically centered in the key badge like the number keys.
+                    if (s.key === '␣') keyText.top = "-5px";
                     keyBadge.addControl(keyText);
 
                     stack.addControl(row);
@@ -5851,31 +5972,40 @@
                         ref.mana.isVisible = false;
                         ref.cd.isVisible = (cdLabel > 0);
                         ref.cd.text = (cdLabel > 0) ? (cdLabel + "") : "";
-                        ref.hand.alpha = 0;
                         ref.keyBadge.alpha = 0.5;
                     } else if (mode === 'noMana') {
                         ref.name.color = READY_TXT; ref.name.alpha = 0.7;
                         ref.mana.isVisible = true; ref.mana.color = "#5a6680"; ref.mana.alpha = 1;
                         ref.cd.isVisible = false;
-                        ref.hand.alpha = 0;
                         ref.keyBadge.alpha = 1;
                     } else if (mode === 'active') {
                         ref.name.color = "#8fd0ff"; ref.name.alpha = 1;
                         ref.mana.isVisible = (ref.mana.text !== ""); ref.mana.color = "#8fd0ff"; ref.mana.alpha = 1;
                         ref.cd.isVisible = false;
-                        ref.hand.alpha = 1; ref.hand.color = "#8fd0ff";
                         ref.keyBadge.alpha = 1;
                     } else { // castable
-                        ref.name.color = GOLD; ref.name.alpha = 1;
+                        ref.name.color = READY_TXT; ref.name.alpha = 1;
                         ref.mana.isVisible = (ref.mana.text !== ""); ref.mana.color = "#5ad0ff"; ref.mana.alpha = 1;
                         ref.cd.isVisible = false;
-                        ref.hand.alpha = 1; ref.hand.color = "#f0c050";
                         ref.keyBadge.alpha = 1;
                     }
                 }
 
+                // FF9 hand pointer: exactly ONE triangle, floating on the last-cast slot.
+                let lastCastSlotId = cmdSlots[0].id;
+                function refreshCastPointer() {
+                    cmdRefs.forEach(r => { r.hand.alpha = (r.id === lastCastSlotId) ? 1 : 0; });
+                }
+                function setLastCast(id) {
+                    if (!cmdRefs.some(r => r.id === id)) return;
+                    lastCastSlotId = id;
+                    refreshCastPointer();
+                }
+                refreshCastPointer();
+
                 window.commandMenu = {
                     box, titleTab, slots: cmdRefs,
+                    setLastCast,
                     setSlotState: (id, mode, cdSeconds) => applyState(cmdRefs.find(r => r.id === id), mode, cdSeconds),
                 };
                 // Parry is ready at match start (before any parry event fires).
@@ -5973,61 +6103,65 @@
                 statsTab.isVisible = false;
                 guiTexture.addControl(statsTab);
                 const statsTabText = new G.TextBlock();
-                statsTabText.text = "Stats"; statsTabText.color = "#f0c050"; statsTabText.fontSize = 18;
+                statsTabText.text = "Status"; statsTabText.color = "#f0c050"; statsTabText.fontSize = 18;
                 statsTabText.fontFamily = "'FF9UI', sans-serif"; statsTabText.fontWeight = "600";
                 statsTabText.shadowColor = "#000"; statsTabText.shadowBlur = 0; statsTabText.shadowOffsetX = 2; statsTabText.shadowOffsetY = 2;
                 statsTab.addControl(statsTabText);
 
-                // Table geometry (relative to statsBox, 16px padding). Three right-aligned number
-                // columns; `left` for right-aligned controls is the negative distance from the
-                // box's RIGHT edge (box width 290). Right-edges: Cast 168, Parry 224, Dmg 274.
-                const COL_CAST = -142, COL_PARRY = -76, COL_DMG = -16;  // = -(290 - rightEdge), wider gaps
-                const HDR_TOP = 20, ROW_BLUE_TOP = 78, ROW_RED_TOP = 128;  // more vertical breathing room
-                // A left-aligned label (row name).
-                function statsLabel(txt, color, topPx) {
+                // ===== In-game STATUS panel: per-combatant HP / MP with lightweight bars =====
+                // FF-style "#/#" readout. A 3rd stat column is intentionally left blank for now
+                // (undecided); the layout leaves room to add it later. The full match stats
+                // (CAS/PAR/DMG) now live on the end-of-game leaderboard (see victory screen).
+                // Column geometry: [ Name | HP | MP ] per combatant row. Each HP/MP cell is a
+                // vertical stack — label on top, "#/#" below, a very thin bar underlining it.
+                const NAME_X = 16, HP_X = 92, MP_X = 188, HP_BAR_W = 78, MP_BAR_W = 70;
+                // Left-aligned label/number TextBlock.
+                function statusText(txt, color, leftPx, topPx, size, weight) {
                     const tb = new G.TextBlock();
-                    tb.text = txt; tb.color = color; tb.fontSize = 18;
-                    tb.fontFamily = "'FF9UI', sans-serif"; tb.fontWeight = "600";
+                    tb.text = txt; tb.color = color; tb.fontSize = size || 18;
+                    tb.fontFamily = "'FF9UI', sans-serif"; if (weight) tb.fontWeight = weight;
                     tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
                     tb.resizeToFit = true;
                     tb.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
                     tb.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
                     tb.verticalAlignment = ALN.VERTICAL_ALIGNMENT_TOP;
-                    tb.left = "16px"; tb.top = topPx + "px";
-                    statsBox.addControl(tb);
-                    return tb;
-                }
-                // A right-aligned column cell (header label or number).
-                function statsCell(txt, color, leftPx, topPx, size) {
-                    const tb = new G.TextBlock();
-                    tb.text = txt; tb.color = color; tb.fontSize = size || 18;
-                    tb.fontFamily = "'FF9UI', sans-serif";
-                    tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
-                    tb.resizeToFit = true;
-                    tb.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT;
-                    tb.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT;
-                    tb.verticalAlignment = ALN.VERTICAL_ALIGNMENT_TOP;
                     tb.left = leftPx + "px"; tb.top = topPx + "px";
                     statsBox.addControl(tb);
                     return tb;
                 }
-                // Header row.
-                statsCell("CAS", "#f0c050", COL_CAST, HDR_TOP);
-                statsCell("PAR", "#f0c050", COL_PARRY, HDR_TOP);
-                statsCell("DMG", "#f0c050", COL_DMG, HDR_TOP);
-                // Blue row.
-                statsLabel("Blue", "#6fb0ff", ROW_BLUE_TOP);
-                const blueCast = statsCell("0", "#ffffff", COL_CAST, ROW_BLUE_TOP);
-                const blueParry = statsCell("0", "#ffffff", COL_PARRY, ROW_BLUE_TOP);
-                const blueDmg = statsCell("0", "#ffffff", COL_DMG, ROW_BLUE_TOP);
-                // Red row.
-                statsLabel("Red", "#e76e55", ROW_RED_TOP);
-                const redCast = statsCell("0", "#ffffff", COL_CAST, ROW_RED_TOP);
-                const redParry = statsCell("0", "#ffffff", COL_PARRY, ROW_RED_TOP);
-                const redDmg = statsCell("0", "#ffffff", COL_DMG, ROW_RED_TOP);
-                const statsRefs = {
-                    blue: { cast: blueCast, parry: blueParry, dmg: blueDmg },
-                    red:  { cast: redCast,  parry: redParry,  dmg: redDmg },
+                // Very thin bar (underlines the number): dark track + left-anchored colored fill.
+                // Returns the fill (set .width % to show remaining).
+                function statusBar(leftPx, topPx, widthPx, fillColor) {
+                    const track = new G.Rectangle();
+                    track.width = widthPx + "px"; track.height = "3px";
+                    track.left = leftPx + "px"; track.top = topPx + "px";
+                    track.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                    track.verticalAlignment = ALN.VERTICAL_ALIGNMENT_TOP;
+                    track.background = "rgba(12,18,30,0.9)"; track.thickness = 0; track.cornerRadius = 0;
+                    statsBox.addControl(track);
+                    const fill = new G.Rectangle();
+                    fill.height = "100%"; fill.width = "100%";
+                    fill.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                    fill.background = fillColor; fill.thickness = 0; fill.cornerRadius = 0;
+                    track.addControl(fill);
+                    return fill;
+                }
+                // Column-title header row (HP / MP shown once, like table headers).
+                statusText("HP", "#f0c050", HP_X, 10, 14, "600");
+                statusText("MP", "#f0c050", MP_X, 10, 14, "600");
+                // One combatant ROW: Name (col 1) + "#/#" + thin underline bar per stat.
+                function statusRow(label, color, numTop) {
+                    const barTop = numTop + 25;   // clear the number's full line box (no overlap)
+                    statusText(label, color, NAME_X, numTop, 18, "600");
+                    const hp = statusText("--/--", "#ffffff", HP_X, numTop, 16);
+                    const hpFill = statusBar(HP_X, barTop, HP_BAR_W, color);
+                    const mp = statusText("-/-", "#ffffff", MP_X, numTop, 16);
+                    const mpFill = statusBar(MP_X, barTop, MP_BAR_W, "#5ad0ff");
+                    return { hp, hpFill, mp, mpFill };
+                }
+                const statusRefs = {
+                    blue: statusRow("Blue", "#6fb0ff", 42),
+                    red:  statusRow("Red",  "#e76e55", 86),
                 };
 
                 const stripHtml = (h) => (h || "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
@@ -6047,16 +6181,94 @@
                     };
                     return null;
                 }
+                // ----- Combat log: the center window's DEFAULT content. A spell tooltip only
+                // shows while a command row is deliberately hovered; otherwise this scrolls a
+                // running feed of match events ("Blue casts Fireball", "Red does 6 DMG!"). -----
+                const logStack = new G.StackPanel("detailLogStack");
+                logStack.isVertical = true;
+                logStack.width = (DETAIL_W - 32) + "px";
+                logStack.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                logStack.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
+                logStack.left = "16px"; logStack.paddingBottom = "12px";
+                logStack.isVisible = false;
+                detailBox.addControl(logStack);
+
+                const LOG_MAX = 5;   // fits the shorter box (was 6)
+                const logLines = [];   // each entry = array of {text,color} runs; newest renders at bottom
+                const sideColor = (side) => side === 'red' ? '#e76e55' : '#6fb0ff';
+                function makeRun(run) {
+                    const tb = new G.TextBlock();
+                    tb.text = run.text; tb.color = run.color; tb.fontSize = 18;
+                    tb.resizeToFit = true; tb.height = "25px";
+                    tb.fontFamily = "'FF9UI', sans-serif"; tb.fontWeight = "600";
+                    tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
+                    tb.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                    return tb;
+                }
+                function renderLog() {
+                    logStack.clearControls();
+                    for (const runs of logLines) {
+                        // Single-color line: one full-width TextBlock (preserves internal spacing).
+                        if (runs.length === 1) {
+                            const tb = makeRun(runs[0]);
+                            tb.resizeToFit = false; tb.width = "100%";
+                            tb.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                            logStack.addControl(tb);
+                            continue;
+                        }
+                        // Multi-color line (e.g. white numbers): a horizontal row of runs with
+                        // thin spacers between them (Babylon trims run-edge whitespace).
+                        const row = new G.StackPanel();
+                        row.isVertical = false; row.height = "25px";
+                        row.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                        runs.forEach((run, i) => {
+                            if (i > 0) {
+                                const sp = new G.Rectangle();
+                                sp.width = "5px"; sp.height = "25px"; sp.thickness = 0; sp.background = "transparent";
+                                row.addControl(sp);
+                            }
+                            row.addControl(makeRun(run));
+                        });
+                        logStack.addControl(row);
+                    }
+                }
+                function pushLine(runs) {
+                    logLines.push(runs);
+                    while (logLines.length > LOG_MAX) logLines.shift();
+                    renderLog();
+                }
+                window.logCombat = (side, text) => pushLine([{ text, color: sideColor(side) }]);
+                window.logNeutral = (text) => pushLine([{ text, color: '#f0c050' }]);
+                window.logDamage = (side, amount) => pushLine([
+                    { text: (side === 'red' ? 'Red' : 'Blue') + ' does', color: sideColor(side) },
+                    { text: '' + Math.round(amount), color: '#ffffff' },
+                    { text: 'DMG!', color: sideColor(side) },
+                ]);
+                window.clearCombatLog = () => { logLines.length = 0; renderLog(); };
+                window.spellDisplayName = (id) => {
+                    const r = window.ABILITY_REGISTRY && window.ABILITY_REGISTRY[id];
+                    return (r && r.ui && r.ui.name) ||
+                        ({ fireball: 'Fireball', frostbolt: 'Frostbolt', chain_lightning: 'Thunderstorm', parry: 'Parry' })[id] || id;
+                };
+
+                function showLog() {
+                    detailStats.isVisible = false; detailDesc.isVisible = false;
+                    logStack.isVisible = true;
+                    detailTabText.text = "Combat Log";
+                    detailBox.isVisible = true; detailTab.isVisible = true;
+                }
                 function showDetail(id) {
                     const info = spellInfo(id);
-                    if (!info) { hideDetail(); return; }
+                    if (!info) { showLog(); return; }
+                    logStack.isVisible = false;
+                    detailStats.isVisible = true; detailDesc.isVisible = true;
                     detailTabText.text = info.name;
                     setStatsTokens(info.stats);
                     detailDesc.text = info.desc;
                     detailBox.isVisible = true; detailTab.isVisible = true;
                 }
                 function hideDetail() { detailBox.isVisible = false; detailTab.isVisible = false; }
-                // Center window is PERSISTENT mid-match: defaults to the first spell (fireball).
+                // Center window is PERSISTENT mid-match: defaults to the combat log.
                 const DEFAULT_DETAIL_ID = cmdSlots[0].id;
 
                 // Hover wiring — the game never attaches Babylon input and the page is a stack of
@@ -6091,11 +6303,11 @@
                     const found = hitTestRow(e.clientX, e.clientY);
                     if (found === hoveredId) return;
                     hoveredId = found;
-                    // Persistent center: fall back to the default spell instead of hiding.
-                    if (found) showDetail(found); else showDetail(DEFAULT_DETAIL_ID);
+                    // Deliberate hover shows the spell tooltip; otherwise fall back to the log.
+                    if (found) showDetail(found); else showLog();
                 }
                 window.addEventListener('pointermove', onHoverMove, true);
-                window.addEventListener('pointerleave', () => { if (hoveredId) { hoveredId = null; showDetail(DEFAULT_DETAIL_ID); } }, true);
+                window.addEventListener('pointerleave', () => { if (hoveredId) { hoveredId = null; showLog(); } }, true);
 
                 Object.assign(window.commandMenu, { detailBox, detailTab, showDetail, hideDetail, hitTestRow });
                 Object.assign(window.commandMenu, { statsBox, statsTab });
@@ -6122,17 +6334,30 @@
                         hoveredId = null; return;
                     }
 
-                    // Persistent center: if nothing is hovered, keep the default spell shown.
-                    if (hoveredId === null && !detailBox.isVisible) showDetail(DEFAULT_DETAIL_ID);
+                    // Gentle FF9 up/down float on the single visible pointer.
+                    const bob = Math.sin(Date.now() / 260) * 3;
+                    for (const r of cmdRefs) if (r.hand.alpha > 0) r.hand.top = bob.toFixed(2) + "px";
 
-                    // Party Stats window: visibility + live per-match counters.
+                    // Persistent center: if nothing is hovered, keep the combat log shown.
+                    if (hoveredId === null && !detailBox.isVisible) showLog();
+
+                    // Status window: visibility + live HP/MP for both combatants.
                     if (statsBox.isVisible !== inGame) statsBox.isVisible = inGame;
                     if (statsTab.isVisible !== inGame) statsTab.isVisible = inGame;
                     const bl = window.combatants && window.combatants.left, rd = window.combatants && window.combatants.right;
-                    const blS = (bl && bl.matchStats) || { spellsCast: 0, parries: 0, damageDealt: 0 };
-                    const rdS = (rd && rd.matchStats) || { spellsCast: 0, parries: 0, damageDealt: 0 };
-                    statsRefs.blue.cast.text = '' + (blS.spellsCast || 0); statsRefs.blue.parry.text = '' + (blS.parries || 0); statsRefs.blue.dmg.text = '' + Math.round(blS.damageDealt || 0);
-                    statsRefs.red.cast.text  = '' + (rdS.spellsCast || 0); statsRefs.red.parry.text  = '' + (rdS.parries || 0); statsRefs.red.dmg.text  = '' + Math.round(rdS.damageDealt || 0);
+                    const setStatus = (refs, c) => {
+                        if (!c) return;
+                        const maxHp = maxTowerHealth || 20;
+                        const hp = Math.max(0, Math.round(c.towerHealth || 0));
+                        refs.hp.text = hp + '/' + maxHp;
+                        refs.hpFill.width = (Math.max(0, Math.min(1, hp / maxHp)) * 100) + '%';
+                        const maxMp = getMaxMana(c.side) || 3;
+                        const mpNow = c.mana || 0;
+                        refs.mp.text = Math.floor(mpNow) + '/' + maxMp;
+                        refs.mpFill.width = (Math.max(0, Math.min(1, mpNow / maxMp)) * 100) + '%';
+                    };
+                    setStatus(statusRefs.blue, bl);
+                    setStatus(statusRefs.red, rd);
 
                     const lc = localCombatant();
                     if (!lc) return;
@@ -6378,16 +6603,19 @@
             // Make buttons clickable
             fireballBtn.btnBg.isPointerBlocker = true;
             fireballBtn.btnBg.onPointerClickObservable.add(() => {
+                if (window.pointCmdSlot) window.pointCmdSlot('fireball');
                 if (typeof castFireball === 'function') castFireball();
             });
 
             frostboltBtn.btnBg.isPointerBlocker = true;
             frostboltBtn.btnBg.onPointerClickObservable.add(() => {
+                if (window.pointCmdSlot) window.pointCmdSlot('frostbolt');
                 if (typeof castFrostbolt === 'function') castFrostbolt();
             });
 
             parryBtnBg.isPointerBlocker = true;
             parryBtnBg.onPointerClickObservable.add(() => {
+                if (window.pointCmdSlot) window.pointCmdSlot('parry');
                 if (typeof parryCallback === 'function' && parryCallback) parryCallback();
             });
 
@@ -11127,7 +11355,8 @@
                 gainMana(parryer, 1);
 
                 // Per-match parry counter (Party Stats) — attribute to the parrying combatant.
-                { const pc = (parryer === 'player') ? combatants.left : combatants.right; if (pc && pc.matchStats) pc.matchStats.parries++; }
+                { const pc = (parryer === 'player') ? combatants.left : combatants.right; if (pc && pc.matchStats) pc.matchStats.parries++;
+                  if (window.logCombat) { const blue = (parryer === 'player'); window.logCombat(blue ? 'blue' : 'red', (blue ? 'Blue' : 'Red') + ' parries!'); } }
 
                 // Track parry stats (only for local player)
                 if (parryer === 'player') {
@@ -11243,27 +11472,29 @@
                     }
                 }
 
-                // Mirror onto the FF9 GUI command menu's Parry slot.
+                // Mirror onto the FF9 GUI command menu's Parry slot. Pass the cooldown seconds
+                // so the slot shows a countdown like the spells (the success/whiff cooldown was
+                // previously invisible — the slot only dimmed with no timer).
                 if (window.commandMenu && window.commandMenu.setSlotState) {
                     const mode = state === 'ready' ? 'castable' : (state === 'active' ? 'active' : 'cooldown');
-                    window.commandMenu.setSlotState('parry', mode);
+                    window.commandMenu.setSlotState('parry', mode, mode === 'cooldown' ? parryCooldown : undefined);
                 }
             };
 
             // Animate parry cooldown sweep
             let parryCooldownStartTime = 0;
             const animateParryCooldown = () => {
+                if (canParry) return;
                 const sweep = document.getElementById('parrySweep');
-                if (!sweep || canParry) return;
-
                 const elapsed = (Date.now() - parryCooldownStartTime) / 1000;
+                const remaining = parryCooldown - elapsed;
                 const progress = 1 - (elapsed / parryCooldown);
-                if (progress > 0) {
-                    sweep.style.setProperty('--sweep-angle', (progress * 360) + 'deg');
-                    requestAnimationFrame(animateParryCooldown);
-                } else {
-                    sweep.style.setProperty('--sweep-angle', '0deg');
+                if (sweep) sweep.style.setProperty('--sweep-angle', (progress > 0 ? progress * 360 : 0) + 'deg');
+                // Tick the command-menu Parry slot's cooldown countdown each frame.
+                if (window.commandMenu && window.commandMenu.setSlotState && remaining > 0) {
+                    window.commandMenu.setSlotState('parry', 'cooldown', remaining);
                 }
+                if (remaining > 0) requestAnimationFrame(animateParryCooldown);
             };
 
             const startParryCooldownAnimation = () => {
@@ -12464,6 +12695,7 @@
                                     }
                                     // Show Cancel text at collision point (both destroyed)
                                     if (window.showCombatTextAt) showCombatTextAt(midPos, 'Cancel', 'cancel');
+                                    if (window.logNeutral) window.logNeutral('Cancel!');
                                     playSound('cancel', proj.mesh.position.x, 0.7);
                                     toDestroy.push(proj);
                                     toDestroy.push(otherProj);
@@ -12513,6 +12745,7 @@
                                             playSound('overpowered', midPos.x, 0.8);
                                             // Show Overpowered text when one wins
                                             if (window.showCombatTextAt) showCombatTextAt(midPos, 'Overpowered!', 'cancel');
+                                            if (window.logCombat) { const blue = (proj.owner === 'player'); window.logCombat(blue ? 'blue' : 'red', (blue ? 'Blue' : 'Red') + ' Overpowers!'); }
                                         } else if (otherDmg > projDmg) {
                                             // Other wins - destroy this
                                             toDestroy.push(proj);
@@ -12524,6 +12757,7 @@
                                             if (window.createImpactDecal) createImpactDecal({ x: midPos.x, z: midPos.z }, 'overpower', { x: otherProj.velX, z: otherProj.velZ });
                                             playSound('overpowered', midPos.x, 0.8);
                                             if (window.showCombatTextAt) showCombatTextAt(midPos, 'Overpowered!', 'cancel');
+                                            if (window.logCombat) { const blue = (otherProj.owner === 'player'); window.logCombat(blue ? 'blue' : 'red', (blue ? 'Blue' : 'Red') + ' Overpowers!'); }
                                             break;
                                         } else {
                                             // Equal damage - mutual destruction (Cancel)
@@ -12536,6 +12770,7 @@
                                             if (window.createImpactDecal) createImpactDecal({ x: midPos.x, z: midPos.z }, 'fire');
                                             playSound('cancel', midPos.x, 0.8);
                                             if (window.showCombatTextAt) showCombatTextAt(midPos, 'Cancel', 'cancel');
+                                            if (window.logNeutral) window.logNeutral('Cancel!');
                                             break;
                                         }
                                     }
@@ -12567,6 +12802,7 @@
                             if (proj.type === 'frostbolt') {
                                 combatants.left.freezeTime = abilities.frostbolt.freezeDuration;
                                 playerFreezeTime = combatants.left.freezeTime; // Sync legacy
+                                if (window.logCombat) window.logCombat('blue', 'Blue Frozen!');
                                 // Cancel any casting when frozen
                                 if (combatants.left.casting) cancelCasting('player', true);
                                 // Freeze animation in place
@@ -12639,6 +12875,7 @@
                             if (proj.type === 'frostbolt') {
                                 combatants.right.freezeTime = abilities.frostbolt.freezeDuration;
                                 aiFreezeTime = combatants.right.freezeTime; // Sync legacy
+                                if (window.logCombat) window.logCombat('red', 'Red Frozen!');
                                 // Freeze animation in place
                                 if (window.freezeAIAnim) freezeAIAnim();
                                 playSound('frozen', aiPaddle.position.x, 0.8, 2.0);
@@ -12721,6 +12958,7 @@
                                     // Freeze front player
                                     if (teams.left.front) {
                                         teams.left.front.freezeTime = abilities.frostbolt.freezeDuration;
+                                        if (window.logCombat) window.logCombat('blue', 'Blue Frozen!');
                                         // Cancel casting if frozen
                                         if (teams.left.front.casting) {
                                             teams.left.front.casting = null;
@@ -12788,6 +13026,7 @@
                                     // Freeze front AI
                                     if (teams.right.front) {
                                         teams.right.front.freezeTime = abilities.frostbolt.freezeDuration;
+                                        if (window.logCombat) window.logCombat('red', 'Red Frozen!');
                                         // Cancel casting if frozen
                                         if (teams.right.front.casting) {
                                             teams.right.front.casting = null;
@@ -13541,7 +13780,8 @@
             if (!spendMana(caster, abilities.fireball.manaCost)) return;
 
             // Per-match spell-cast counter (Party Stats) — attribute to the casting combatant.
-            { const cc = getCombatantLegacy(caster); if (cc && cc.matchStats) cc.matchStats.spellsCast++; }
+            { const cc = getCombatantLegacy(caster); if (cc && cc.matchStats) cc.matchStats.spellsCast++;
+              if (cc && window.logCombat) { const blue = (cc === combatants.left); window.logCombat(blue ? 'blue' : 'red', (blue ? 'Blue' : 'Red') + ' casts ' + window.spellDisplayName('fireball')); } }
 
             // Track stat (only for local player in single/pvp)
             if (caster === 'player' || (getCombatantLegacy(caster)?.isLocalPlayer)) {
@@ -13589,7 +13829,8 @@
             if (!spendMana(caster, abilities.frostbolt.manaCost)) return;
 
             // Per-match spell-cast counter (Party Stats) — attribute to the casting combatant.
-            { const cc = getCombatantLegacy(caster); if (cc && cc.matchStats) cc.matchStats.spellsCast++; }
+            { const cc = getCombatantLegacy(caster); if (cc && cc.matchStats) cc.matchStats.spellsCast++;
+              if (cc && window.logCombat) { const blue = (cc === combatants.left); window.logCombat(blue ? 'blue' : 'red', (blue ? 'Blue' : 'Red') + ' casts ' + window.spellDisplayName('frostbolt')); } }
 
             // Visual feedback for the local player only
             const _fbC = getCombatantLegacy(caster);
@@ -14088,8 +14329,16 @@
             });
         }
 
+        // Victory-screen dismissal state. _returningToMenu de-dupes the Continue action
+        // (the Babylon button AND the DOM fallback can both fire). _victoryDismiss is the
+        // DOM-level "click anywhere to continue" handler (see showVictoryScreen).
+        let _returningToMenu = false;
+        let _victoryDismiss = null;
+
         // Return to menu with fade transition (used by Continue button on victory screen)
         function returnToMenuTransition() {
+            if (_returningToMenu) return;   // ignore repeat triggers (button + DOM fallback)
+            _returningToMenu = true;
             const overlay = window.guiElements?.transitionOverlay;
 
             if (!overlay) {
@@ -14097,6 +14346,7 @@
                 hideVictoryScreen();
                 resetGame();
                 showTalentScreen();
+                _returningToMenu = false;
                 return;
             }
 
@@ -14153,6 +14403,7 @@
                     animateAlpha(overlay, 1, 0, 400, () => {
                         // Hide overlay when done
                         overlay.isVisible = false;
+                        _returningToMenu = false;
                     });
                 }, 100);  // Small delay for state to settle
             });
@@ -14281,6 +14532,9 @@
 
             document.getElementById('talentScreen').classList.remove('visible');
 
+            // Hide the main menu so its title/buttons don't bleed through behind the lobby.
+            if (window.setDOMMenuVisible) setDOMMenuVisible(false);
+
             // Wire up DOM lobby buttons (one-shot) and show the lobby.
             if (typeof wireDOMLobby === 'function') wireDOMLobby();
             showLobbyView('lobbyModeView');
@@ -14326,6 +14580,19 @@
             return code;
         }
 
+        // Set a menu-button's visible text (the buttons wrap their label in a .menu-btn-label
+        // span for the arcane styling; fall back to textContent for any plain button).
+        function setMenuBtnLabel(btn, text) {
+            if (!btn) return;
+            const lbl = btn.querySelector('.menu-btn-label');
+            if (lbl) lbl.textContent = text; else btn.textContent = text;
+        }
+        function getMenuBtnLabel(btn) {
+            if (!btn) return '';
+            const lbl = btn.querySelector('.menu-btn-label');
+            return lbl ? lbl.textContent : btn.textContent;
+        }
+
         // DOM Lobby wiring — one-shot, called from showMultiplayerLobby().
         let lobbyButtonsWired = false;
         function wireDOMLobby() {
@@ -14356,7 +14623,7 @@
 
             btnBack.addEventListener('click', () => {
                 hideMultiplayerLobby();
-                showTalentScreen();
+                if (window.setDOMMenuVisible) setDOMMenuVisible(true);
             });
 
             const connectJoinHandler = () => {
@@ -14386,9 +14653,9 @@
                 if (!code || code === '------') return;
                 if (navigator.clipboard && navigator.clipboard.writeText) {
                     navigator.clipboard.writeText(code).then(() => {
-                        const original = btnCopy.textContent;
-                        btnCopy.textContent = 'Copied!';
-                        setTimeout(() => { btnCopy.textContent = original; }, 1200);
+                        const original = getMenuBtnLabel(btnCopy);
+                        setMenuBtnLabel(btnCopy, 'Copied!');
+                        setTimeout(() => { setMenuBtnLabel(btnCopy, original); }, 1200);
                     }).catch(() => {});
                 }
             });
@@ -14434,6 +14701,23 @@
         // -------------------------------------------------------
         // DOM Main Menu — replaces the Babylon GUI menu (title + buttons)
         // -------------------------------------------------------
+        // Launch a 1v1 singles match (the core mode). Shared by the main-menu
+        // "Start Battle" button and the (currently dormant) mode-select "1v1 Duel".
+        function startSinglesMatch() {
+            setDOMModeSelectVisible(false);
+            gameMode = 'single';
+            doublesConfig = null;
+            maxTowerHealth = SINGLES_MAX_HEALTH;
+            playerTowerHealth = maxTowerHealth;
+            aiTowerHealth = maxTowerHealth;
+            if (combatants.left) combatants.left.towerHealth = maxTowerHealth;
+            if (combatants.right) combatants.right.towerHealth = maxTowerHealth;
+            if (window.setDoublesPaddlesVisible) window.setDoublesPaddlesVisible(false);
+            if (window.resizeStageForMode) window.resizeStageForMode();
+            startGame();
+        }
+        window.startSinglesMatch = startSinglesMatch;
+
         let domMenuWired = false;
         function wireDOMMenu() {
             if (domMenuWired) return;
@@ -14443,9 +14727,10 @@
             domMenuWired = true;
 
             btnStart.addEventListener('click', () => {
-                // Hide the main menu and surface the DOM mode-select sub-menu.
+                // 2v2 disabled for now — Start Battle drops straight into a 1v1 duel,
+                // skipping the mode-select screen (which only offered 1v1 vs 2v2).
                 setDOMMenuVisible(false);
-                setDOMModeSelectVisible(true);
+                startSinglesMatch();
             });
 
             btnMP.addEventListener('click', () => {
@@ -14464,32 +14749,16 @@
             if (!btnDuel || !btn2v2 || !btnBack) return;
             domModeSelectWired = true;
 
-            // 1v1 Duel — mirrors the original Babylon "1v1 Duel" handler exactly.
+            // 1v1 Duel — the core mode (mode select is dormant; Start Battle launches this directly).
             btnDuel.addEventListener('click', () => {
-                setDOMModeSelectVisible(false);
-                gameMode = 'single';
-                doublesConfig = null;
-                maxTowerHealth = SINGLES_MAX_HEALTH;
-                playerTowerHealth = maxTowerHealth;
-                aiTowerHealth = maxTowerHealth;
-                if (combatants.left) combatants.left.towerHealth = maxTowerHealth;
-                if (combatants.right) combatants.right.towerHealth = maxTowerHealth;
-                if (window.setDoublesPaddlesVisible) window.setDoublesPaddlesVisible(false);
-                if (window.resizeStageForMode) window.resizeStageForMode();
-                startGame();
+                startSinglesMatch();
             });
 
-            // 2v2 (AI Partner) — mirrors the original Babylon "2v2" handler exactly.
+            // 2v2 (AI Partner) — DISABLED for now to focus on core 1v1 gameplay. The handler is
+            // intentionally a no-op; re-enable by restoring the doubles setup + repointing
+            // Start Battle back to the mode-select screen (setDOMModeSelectVisible).
             btn2v2.addEventListener('click', () => {
-                setDOMModeSelectVisible(false);
-                gameMode = 'doubles_ai';
-                doublesConfig = { enabled: true, rotation: 'after_round' };
-                initDoublesCombatants();
-                if (window.assignDoublesPaddles) window.assignDoublesPaddles();
-                if (window.loadDoublesCharacters) window.loadDoublesCharacters();
-                if (window.createFrontCastBars) window.createFrontCastBars();
-                if (window.resizeStageForMode) window.resizeStageForMode();
-                startGame();
+                /* 2v2 disabled */
             });
 
             // Back — return to the main menu.
@@ -14572,7 +14841,7 @@
                 oppEl.classList.toggle('ready', remoteReady);
                 oppEl.classList.toggle('not-ready', !remoteReady);
             }
-            if (btnReady) btnReady.textContent = localReady ? 'Cancel Ready' : 'Ready Up';
+            if (btnReady) setMenuBtnLabel(btnReady, localReady ? 'Cancel Ready' : 'Ready Up');
 
             if (isHost) {
                 if (btnStart) {
@@ -16185,11 +16454,36 @@
             const parryButton = document.getElementById('parryButton');
             if (parryButton) parryButton.style.display = 'none';
 
+            // Populate + show the end-of-match leaderboard from the final per-combatant stats
+            // (matchStats are still intact here; resetGame() clears them on Continue).
+            const lbRefs = window.guiElements.victoryLeaderboardRefs;
+            if (lbRefs) {
+                const blS = (window.combatants && window.combatants.left && window.combatants.left.matchStats) || { spellsCast: 0, parries: 0, damageDealt: 0 };
+                const rdS = (window.combatants && window.combatants.right && window.combatants.right.matchStats) || { spellsCast: 0, parries: 0, damageDealt: 0 };
+                lbRefs.blue.cast.text = '' + (blS.spellsCast || 0); lbRefs.blue.parry.text = '' + (blS.parries || 0); lbRefs.blue.dmg.text = '' + Math.round(blS.damageDealt || 0);
+                lbRefs.red.cast.text  = '' + (rdS.spellsCast || 0); lbRefs.red.parry.text  = '' + (rdS.parries || 0); lbRefs.red.dmg.text  = '' + Math.round(rdS.damageDealt || 0);
+            }
+            if (window.guiElements.victoryLeaderboard) window.guiElements.victoryLeaderboard.isVisible = true;
+
             // Show the overlay and its children
             overlay.isVisible = true;
             if (title) title.isVisible = true;
             if (subtitle) subtitle.isVisible = true;
             if (window.guiElements.continueBtn) window.guiElements.continueBtn.isVisible = true;
+
+            // Babylon GUI pointer input becomes unreliable after a full match (clicks stop
+            // reaching the Continue button), so accept a DOM-level click/tap ANYWHERE to
+            // continue — DOM input is the reliable channel (same rationale as the keyboard
+            // "press any key" fallback). Arm it after a short delay so the click/keypress
+            // that ended the match doesn't instantly dismiss the victory screen.
+            if (_victoryDismiss) document.removeEventListener('pointerdown', _victoryDismiss, true);
+            _victoryDismiss = () => returnToMenuTransition();
+            const armed = _victoryDismiss;
+            setTimeout(() => {
+                if (gameOver && _victoryDismiss === armed) {
+                    document.addEventListener('pointerdown', _victoryDismiss, true);
+                }
+            }, 500);
         }
 
         function hideVictoryScreen() {
@@ -16207,6 +16501,14 @@
                 if (window.guiElements.continueBtn) {
                     window.guiElements.continueBtn.isVisible = false;
                 }
+                if (window.guiElements.victoryLeaderboard) {
+                    window.guiElements.victoryLeaderboard.isVisible = false;
+                }
+            }
+            // Tear down the DOM "click anywhere to continue" fallback.
+            if (_victoryDismiss) {
+                document.removeEventListener('pointerdown', _victoryDismiss, true);
+                _victoryDismiss = null;
             }
         }
 
@@ -16232,6 +16534,7 @@
             for (const c of (isDoublesMode() ? getAllCombatants() : [combatants.left, combatants.right])) {
                 if (c && c.matchStats) c.matchStats = { spellsCast: 0, parries: 0, damageDealt: 0 };
             }
+            if (window.clearCombatLog) window.clearCombatLog();
             resetRound();
 
             // Hide gameplay UI when resetting (menu state)
@@ -16911,6 +17214,16 @@
 
         const CHAIN_LIGHTNING_COOLDOWN = 30;  // 30 second cooldown
         const CHAIN_LIGHTNING_MAX_ZAPS = 3;  // Max 3 projectiles per cast
+        // True if there is at least one enemy projectile incoming for this caster to zap.
+        function chainLightningHasTarget(caster) {
+            const c = getCombatantLegacy(caster);
+            if (!c) return false;
+            const casterOwner = (caster === 'player') ? 'player' : 'ai';
+            const incomingVelDir = (caster === 'player') ? -1 : 1;
+            return projectiles.some(p => p.owner !== casterOwner && p.mesh && !p.mesh.isDisposed()
+                && Math.sign(p.velX) === incomingVelDir);
+        }
+
         // Cast Chain Lightning (instant cast, costs 2 mana)
         function castChainLightning(caster) {
             const c = getCombatantLegacy(caster);
@@ -16924,6 +17237,12 @@
             // Check mana
             if (c.mana < abilities.chain_lightning.manaCost) return false;
 
+            // No target = no cast: don't spend mana or cooldown, just signal the whiff.
+            if (!chainLightningHasTarget(caster)) {
+                showCombatText(isPlayer, 'NO TARGET', 'lightning');
+                return false;
+            }
+
             // Spend mana
             c.mana -= abilities.chain_lightning.manaCost;
             if (isPlayer) playerMana = c.mana;
@@ -16931,6 +17250,7 @@
 
             // Per-match spell-cast counter (Party Stats) — attribute to the casting combatant.
             if (c.matchStats) c.matchStats.spellsCast++;
+            if (window.logCombat) { const blue = (c === combatants.left); window.logCombat(blue ? 'blue' : 'red', (blue ? 'Blue' : 'Red') + ' casts ' + window.spellDisplayName('chain_lightning')); }
 
             // Visual feedback for the local player only
             if ((isPlayer || c.isLocalPlayer) && window.flashAbilitySlot) {
@@ -17423,6 +17743,12 @@
             // Get combatant and use its paddle position
             const c = getCombatantLegacy(caster);
             if (!c || !c.paddle) return;  // Safety check for doubles mode
+
+            // Per-match spell-cast counter + combat log — the cast-time path fires here
+            // (legacy castFireball() covers the instant on-screen-button path).
+            if (c.matchStats) c.matchStats.spellsCast++;
+            if (window.logCombat) { const blue = (c === combatants.left); window.logCombat(blue ? 'blue' : 'red', (blue ? 'Blue' : 'Red') + ' casts ' + window.spellDisplayName('fireball')); }
+
             const paddle = c.paddle;
             const isLeft = c.side === 'left';
 
@@ -17858,7 +18184,8 @@
             }
             // Per-match damage counter (Party Stats) — attribute to the ATTACKER, i.e. the
             // combatant on the opposite side of the tower being damaged.
-            { const atk = isPlayerTower ? combatants.right : combatants.left; if (atk && atk.matchStats) atk.matchStats.damageDealt += damage; }
+            { const atk = isPlayerTower ? combatants.right : combatants.left; if (atk && atk.matchStats) atk.matchStats.damageDealt += damage;
+              if (window.logDamage) window.logDamage(isPlayerTower ? 'red' : 'blue', damage); }
             // LEGACY - sync tower health variables
             if (isPlayerTower) {
                 playerTowerHealth = combatant ? combatant.towerHealth : Math.max(0, playerTowerHealth - damage);
