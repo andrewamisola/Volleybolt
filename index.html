@@ -424,11 +424,6 @@
     <!-- All in-game DOM HUD lives in one scale layer: authored at 1920x1080, scaled as a
          single unit by --ui-scale so it's "baked into" the game render. -->
     <div id="hudScaleLayer">
-    <!-- Volume control: inside the scale layer so it scales with the game, not the browser -->
-    <div id="volumeControl">
-        <span id="volumeIcon">🔊</span>
-        <input type="range" id="volumeSlider" min="0" max="100" value="50">
-    </div>
     <!-- MOBA-style Ability Bar -->
     <div id="abilityBar">
         <div id="fireballSlot" class="ability-slot ready" data-ability="fireball">
@@ -13988,40 +13983,6 @@
             document.getElementById('chainLightningSlot').addEventListener('click', () => {
                 if (!gameOver && roundActive && !roundTransitioning) {
                     castFromLoadoutSlot(2, 'player');
-                }
-            });
-            // Volume slider with localStorage persistence
-            const volumeSlider = document.getElementById('volumeSlider');
-            const volumeIcon = document.getElementById('volumeIcon');
-
-            // Load saved volume from localStorage
-            const savedVolume = localStorage.getItem('volleybolt_volume');
-            if (savedVolume !== null) {
-                volumeSlider.value = savedVolume;
-                const vol = savedVolume / 100;
-                setMasterVolume(vol);
-                volumeIcon.textContent = vol === 0 ? '🔇' : vol < 0.5 ? '🔉' : '🔊';
-            }
-
-            volumeSlider.addEventListener('input', (e) => {
-                const vol = e.target.value / 100;
-                setMasterVolume(vol);
-                volumeIcon.textContent = vol === 0 ? '🔇' : vol < 0.5 ? '🔉' : '🔊';
-                // Save to localStorage
-                localStorage.setItem('volleybolt_volume', e.target.value);
-            });
-            volumeIcon.addEventListener('click', () => {
-                if (volumeSlider.value > 0) {
-                    volumeSlider.dataset.prevValue = volumeSlider.value;
-                    volumeSlider.value = 0;
-                    setMasterVolume(0);
-                    volumeIcon.textContent = '🔇';
-                    localStorage.setItem('volleybolt_volume', '0');
-                } else {
-                    volumeSlider.value = volumeSlider.dataset.prevValue || 50;
-                    setMasterVolume(volumeSlider.value / 100);
-                    volumeIcon.textContent = volumeSlider.value < 50 ? '🔉' : '🔊';
-                    localStorage.setItem('volleybolt_volume', volumeSlider.value);
                 }
             });
         }
