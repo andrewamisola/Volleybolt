@@ -2462,3 +2462,18 @@ body.flipped-view #aiCastBarContainer {
 .arcane-buttons .menu-btn:hover .menu-btn-label {
     color: #fff4c2;   /* brighter cream on hover */
 }
+
+/* ---- Settings screen rows ---- */
+.settings-panel { gap: 10px; align-items: stretch; min-width: 420px; }
+.settings-section-label {
+    font-family: 'FF9UI', sans-serif; font-size: 22px; color: var(--ff9-gold);
+    text-shadow: var(--ff9-shadow); margin-top: 8px; letter-spacing: 1px; text-align: left;
+}
+.settings-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    font-family: 'FF9UI', sans-serif; font-size: 22px; color: #e7ecf6;
+    text-shadow: var(--ff9-shadow); padding: 2px 4px;
+}
+.settings-row > span { min-width: 110px; text-align: left; }
+.settings-slider { flex: 1; accent-color: var(--ff9-gold); height: 6px; cursor: pointer; }
+.settings-toggle { width: 22px; height: 22px; accent-color: var(--ff9-gold); cursor: pointer; }

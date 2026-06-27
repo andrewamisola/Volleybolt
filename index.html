@@ -15,7 +15,7 @@
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css?v=46">
+    <link rel="stylesheet" href="styles.css?v=47">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -81,6 +81,11 @@
                     <span class="menu-btn-glyph" aria-hidden="true">&#9889;</span>
                     <span class="menu-btn-label">Multiplayer</span>
                 </button>
+                <button class="game-btn menu-btn" id="domBtnSettings">
+                    <span class="menu-btn-accent" aria-hidden="true"></span>
+                    <span class="menu-btn-glyph" aria-hidden="true">&#9881;</span>
+                    <span class="menu-btn-label">Settings</span>
+                </button>
             </div>
         </div>
     </div>
@@ -112,6 +117,39 @@
                     <span class="menu-btn-label">2v2 (AI Partner)</span>
                 </button>
                 <button class="game-btn menu-btn menu-btn-ghost" id="domBtnModeBack">
+                    <span class="menu-btn-accent" aria-hidden="true"></span>
+                    <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
+                    <span class="menu-btn-label">Back</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings screen — arcane menu system (Audio + Graphics) -->
+    <div id="settingsScreen" class="arcane-overlay crt-screen">
+        <div class="arcane-scrim">
+            <div class="arcane-embers" aria-hidden="true">
+                <span class="ember"></span><span class="ember"></span><span class="ember"></span>
+                <span class="ember"></span><span class="ember"></span><span class="ember"></span>
+                <span class="ember"></span><span class="ember"></span><span class="ember"></span>
+            </div>
+        </div>
+        <div class="arcane-content">
+            <div class="arcane-title-wrap">
+                <h1 class="arcane-title" data-text="Settings">Settings</h1>
+            </div>
+            <div class="arcane-buttons settings-panel">
+                <div class="settings-section-label">Audio</div>
+                <label class="settings-row"><span>Master</span>
+                    <input type="range" class="settings-slider" id="setMaster" min="0" max="100"></label>
+                <label class="settings-row"><span>Music</span>
+                    <input type="range" class="settings-slider" id="setMusic" min="0" max="100"></label>
+                <label class="settings-row"><span>SFX</span>
+                    <input type="range" class="settings-slider" id="setSfx" min="0" max="100"></label>
+                <div class="settings-section-label">Graphics</div>
+                <label class="settings-row"><span>Fullscreen</span>
+                    <input type="checkbox" class="settings-toggle" id="setFullscreen"></label>
+                <button class="game-btn menu-btn menu-btn-ghost" id="settingsBack">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
                     <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
                     <span class="menu-btn-label">Back</span>
@@ -14879,6 +14917,9 @@
             btnMP.addEventListener('click', () => {
                 showMultiplayerLobby();
             });
+
+            const btnSettings = document.getElementById('domBtnSettings');
+            if (btnSettings) btnSettings.addEventListener('click', () => openSettings('menu'));
         }
         window.wireDOMMenu = wireDOMMenu;
 
@@ -14945,6 +14986,68 @@
             }
         }
         window.setDOMMenuVisible = setDOMMenuVisible;
+
+        // ---- Shared menu-screen nav: show ONE arcane screen at a time (no bleed-through). ----
+        const MENU_SCREENS = ['settingsScreen', 'howToPlayScreen', 'careerScreen', 'creditsScreen'];
+        let _menuScreenReturn = 'menu';   // where Back goes: 'menu' or 'pause'
+        function hideAllMenuScreens() {
+            MENU_SCREENS.forEach(id => { const el = document.getElementById(id); if (el) el.classList.remove('visible'); });
+        }
+        function showMenuScreen(id, from = 'menu') {
+            _menuScreenReturn = from;
+            if (from === 'menu') setDOMMenuVisible(false);
+            if (from === 'pause') { const ov = document.getElementById('pauseOverlay'); if (ov) ov.style.display = 'none'; }
+            hideAllMenuScreens();
+            const el = document.getElementById(id);
+            if (el) el.classList.add('visible');
+        }
+        function closeMenuScreen() {
+            hideAllMenuScreens();
+            if (_menuScreenReturn === 'pause') {
+                const ov = document.getElementById('pauseOverlay'); if (ov) ov.style.display = 'flex';
+            } else {
+                setDOMMenuVisible(true);
+            }
+        }
+        window.showMenuScreen = showMenuScreen;
+        window.closeMenuScreen = closeMenuScreen;
+
+        // ---- Settings screen wiring (one-shot) ----
+        let settingsWired = false;
+        function wireSettingsScreen() {
+            if (settingsWired) return;
+            const $ = (id) => document.getElementById(id);
+            const master = $('setMaster'), music = $('setMusic'), sfx = $('setSfx'),
+                  full = $('setFullscreen'), back = $('settingsBack');
+            if (!master) return;
+            settingsWired = true;
+            master.addEventListener('input', e => Settings.set('master', parseInt(e.target.value, 10)));
+            music.addEventListener('input',  e => Settings.set('music',  parseInt(e.target.value, 10)));
+            sfx.addEventListener('input',    e => Settings.set('sfx',    parseInt(e.target.value, 10)));
+            full.addEventListener('change', e => {
+                const want = e.target.checked;
+                if (want && document.documentElement.requestFullscreen) {
+                    document.documentElement.requestFullscreen().catch(() => { e.target.checked = false; });
+                } else if (!want && document.exitFullscreen && document.fullscreenElement) {
+                    document.exitFullscreen().catch(() => {});
+                }
+            });
+            // Keep the toggle in sync with actual fullscreen state (Esc/F11 exit).
+            document.addEventListener('fullscreenchange', () => {
+                full.checked = !!document.fullscreenElement;
+                Settings.set('fullscreen', !!document.fullscreenElement);
+            });
+            back.addEventListener('click', () => closeMenuScreen());
+        }
+        function openSettings(from = 'menu') {
+            wireSettingsScreen();
+            document.getElementById('setMaster').value = Settings.values.master;
+            document.getElementById('setMusic').value = Settings.values.music;
+            document.getElementById('setSfx').value = Settings.values.sfx;
+            document.getElementById('setFullscreen').checked = !!document.fullscreenElement;
+            showMenuScreen('settingsScreen', from);
+        }
+        window.openSettings = openSettings;
 
         // Send a LEAVE message to the opponent (best-effort; ignore errors)
         function sendLeaveMessage(reason) {
