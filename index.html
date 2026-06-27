@@ -14280,10 +14280,12 @@
                 '<div style="background:#2a2438;border:3px solid #5a4a78;border-radius:10px;padding:28px 44px;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.5)">' +
                 '<div style="color:#f0c050;font-family:\'FF9UI\',serif;font-size:40px;letter-spacing:2px;margin-bottom:22px">Paused</div>' +
                 '<button id="pauseResumeBtn" class="game-btn menu-btn" style="display:block;width:240px;margin:10px auto">Resume</button>' +
+                '<button id="pauseSettingsBtn" class="game-btn menu-btn" style="display:block;width:240px;margin:10px auto">Settings</button>' +
                 '<button id="pauseQuitBtn" class="game-btn menu-btn" style="display:block;width:240px;margin:10px auto">Quit to Menu</button>' +
                 '</div>';
             document.body.appendChild(ov);
             ov.querySelector('#pauseResumeBtn').addEventListener('click', () => GameSM.resumeMatch());
+            ov.querySelector('#pauseSettingsBtn').addEventListener('click', () => window.openSettings('pause'));
             ov.querySelector('#pauseQuitBtn').addEventListener('click', () => {
                 paused = false;
                 ov.style.display = 'none';
