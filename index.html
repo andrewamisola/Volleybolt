@@ -3136,6 +3136,49 @@
         window.setMusicVolume = setMusicVolume;
         window.setSfxVolume = setSfxVolume;
 
+        // ---- Persistent player settings (audio + fullscreen) -> localStorage ----
+        const Settings = (() => {
+            const KEY = 'volleybolt_settings';
+            const DEFAULTS = { master: 50, music: 50, sfx: 50, fullscreen: false };
+            const values = { ...DEFAULTS };
+
+            function load() {
+                try {
+                    const raw = localStorage.getItem(KEY);
+                    if (raw) {
+                        const saved = JSON.parse(raw);
+                        for (const k of Object.keys(DEFAULTS)) {
+                            if (saved[k] !== undefined) values[k] = saved[k];
+                        }
+                    } else {
+                        // One-time migration of the old single-volume key into master.
+                        const oldVol = localStorage.getItem('volleybolt_volume');
+                        if (oldVol !== null) values.master = Math.max(0, Math.min(100, parseInt(oldVol, 10) || 50));
+                    }
+                } catch (e) { console.warn('Settings: load failed', e); }
+                return values;
+            }
+            function save() {
+                try { localStorage.setItem(KEY, JSON.stringify(values)); }
+                catch (e) { console.warn('Settings: save failed', e); }
+            }
+            function applyAudio() {
+                if (window.setMasterVolume) window.setMasterVolume(values.master / 100);
+                if (window.setMusicVolume) window.setMusicVolume(values.music / 100);
+                if (window.setSfxVolume)   window.setSfxVolume(values.sfx / 100);
+            }
+            function set(key, value) {
+                values[key] = value;
+                if (key === 'master') { if (window.setMasterVolume) window.setMasterVolume(value / 100); }
+                else if (key === 'music') { if (window.setMusicVolume) window.setMusicVolume(value / 100); }
+                else if (key === 'sfx')   { if (window.setSfxVolume)   window.setSfxVolume(value / 100); }
+                save();
+            }
+            return { values, load, save, applyAudio, set };
+        })();
+        window.Settings = Settings;
+        Settings.load();   // load on boot; audio applied when Tone initializes (see doToneInit)
+
         // Load a sound file into a buffer
         async function loadSound(name, url) {
             try {
@@ -3551,6 +3594,9 @@
             // Mark as fully initialized - MUST be at the end after all synths created
             toneStarted = true;
             toneInitializing = false;
+
+            // Push persisted volumes onto the freshly-created buses/master.
+            if (window.Settings) window.Settings.applyAudio();
 
             // If we're in the menu, start the music now that audio is ready
             if (gameState === 'menu' && window.ToneSFX) {
