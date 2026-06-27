@@ -2486,6 +2486,15 @@ body.flipped-view #aiCastBarContainer {
 }
 .htp-key { min-width: 130px; color: var(--ff9-gold); font-weight: 600; }
 .htp-objective { display: block; margin-top: 10px; max-width: 520px; line-height: 1.5; }
+.htp-panel { min-width: 460px; max-width: 560px; }
+.htp-section {
+    font-family: 'FF9UI', sans-serif; font-size: 20px; color: var(--ff9-gold);
+    text-shadow: var(--ff9-shadow); text-align: left; letter-spacing: 1px; margin-top: 10px;
+}
+.htp-note {
+    font-family: 'FF9UI', sans-serif; font-size: 18px; color: #cdd6e8;
+    text-shadow: var(--ff9-shadow); text-align: left; line-height: 1.5; max-width: 540px;
+}
 
 /* ---- Credits ---- */
 .credits-line {

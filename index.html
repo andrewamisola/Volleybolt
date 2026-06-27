@@ -15,7 +15,7 @@
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css?v=51">
+    <link rel="stylesheet" href="styles.css?v=52">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -186,11 +186,15 @@
             <div class="arcane-title-wrap">
                 <h1 class="arcane-title" data-text="How to Play">How to Play</h1>
             </div>
-            <div class="arcane-buttons settings-panel">
+            <div class="arcane-buttons settings-panel htp-panel">
+                <div class="htp-section">Controls</div>
                 <div class="htp-row"><span class="htp-key">W / S</span><span>Move up / down</span></div>
                 <div class="htp-row"><span class="htp-key">1 / 2 / 3</span><span>Cast Fireball / Frostbolt / Thunderstorm</span></div>
                 <div class="htp-row"><span class="htp-key">Space</span><span>Parry an incoming spell</span></div>
-                <div class="htp-row htp-objective">Block and parry the enemy's spells, then return fire to destroy their tower.</div>
+                <div class="htp-section">The Battle</div>
+                <div class="htp-note">Block and parry the enemy's spells, then return fire to topple their tower.</div>
+                <div class="htp-note">It's a tug of war across five fronts (your Core &rarr; Midfield &rarr; their Core). Win a round and the line pushes toward the enemy core; lose and you're driven back toward yours. Topple their tower at the enemy core to win &mdash; fall at your own core and it's over.</div>
+                <div class="htp-note">Towers regrow about a quarter of their health each round the fight is elsewhere, so press through instead of stalling. And the deeper the enemy pushes into your ground, the more mana you draw &mdash; hold the line and turn the tide.</div>
                 <button class="game-btn menu-btn menu-btn-ghost" id="howToBack">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
                     <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
