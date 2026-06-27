@@ -3279,7 +3279,7 @@
                     } else {
                         // One-time migration of the old single-volume key into master.
                         const oldVol = localStorage.getItem('volleybolt_volume');
-                        if (oldVol !== null) values.master = Math.max(0, Math.min(100, parseInt(oldVol, 10) || 50));
+                        if (oldVol !== null) { const n = parseInt(oldVol, 10); values.master = Number.isNaN(n) ? 50 : Math.max(0, Math.min(100, n)); }
                     }
                 } catch (e) { console.warn('Settings: load failed', e); }
                 return values;
@@ -14349,6 +14349,12 @@
         document.addEventListener('keydown', (e) => {
             if (e.code !== 'Escape') return;
             if (window.TalentState && TalentState.isSelectingTalent) return;  // talent panel owns Esc then
+            // If a menu screen (Settings/How to Play/Career/Credits) is open, Esc closes it
+            // (routes back to its origin — main menu or pause) instead of toggling pause/resume.
+            if (typeof MENU_SCREENS !== 'undefined' &&
+                MENU_SCREENS.some(id => document.getElementById(id)?.classList.contains('visible'))) {
+                closeMenuScreen(); e.preventDefault(); return;
+            }
             if (GameSM.state === 'match') { GameSM.enterPause(); e.preventDefault(); }
             else if (GameSM.state === 'pause') { GameSM.resumeMatch(); e.preventDefault(); }
         });
