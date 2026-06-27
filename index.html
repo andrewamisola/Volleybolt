@@ -9291,6 +9291,21 @@
             }
             window.updateAllAnimations = updateAllAnimations;
 
+            // The cast clip leans the wizard's spine forward (~10% head drop), jarring for a paddle.
+            // Cheap fix: scale the model up while casting. The model root sits at the feet (paddle =
+            // ground), so scaling raises the head without the feet floating. Lerped + tunable by sight.
+            window._castScaleFactor = 1.1;
+            window.applyCastScale = (c) => {
+                if (!c || !c.modelRoot) return;
+                if (c._baseScale === undefined) c._baseScale = c.modelRoot.scaling.clone();
+                const casting = (c.currentAnim === 'cast_loop' || c.currentAnim === 'cast_release' || c.currentAnim === 'parry');
+                const f = casting ? window._castScaleFactor : 1;
+                const s = c.modelRoot.scaling, k = 0.25;   // lerp toward target each frame (no pop)
+                s.x += (c._baseScale.x * f - s.x) * k;
+                s.y += (c._baseScale.y * f - s.y) * k;
+                s.z += (c._baseScale.z * f - s.z) * k;
+            };
+
             // Unified freeze/unfreeze for combatants
             window.combatantFreezeAnim = (combatant) => {
                 if (!combatant || !combatant.animations) return;
@@ -13816,6 +13831,8 @@
             scene.onBeforeRenderObservable.add(() => {
                 // Always update animations (menu dancing, etc.) - runs in all states
                 if (window.updateAllAnimations) updateAllAnimations();
+                // Scale the model up during casting so the cast crouch doesn't shrink the wizard.
+                if (window.applyCastScale) { applyCastScale(combatants.left); applyCastScale(combatants.right); }
 
                 // Skip game logic when in menu, game over, or paused (Esc pause menu)
                 if (gameState !== "playing" || gameOver || paused) return;
