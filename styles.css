@@ -2493,6 +2493,7 @@ body.flipped-view #aiCastBarContainer {
     text-shadow: var(--ff9-shadow); text-align: center;
 }
 .credits-title { font-size: 30px; color: var(--ff9-gold); margin-bottom: 6px; }
+.credits-author { color: var(--ff9-gold); font-size: 24px; margin: 6px 0; }
 
 /* ---- Career list ---- */
 .career-list { display: flex; flex-direction: column; gap: 4px; max-height: 46vh; overflow-y: auto; }
