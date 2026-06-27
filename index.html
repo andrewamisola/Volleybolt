@@ -4115,12 +4115,12 @@
             // Any action starts the round when waiting
             const talentVisible = document.getElementById('talentScreen').classList.contains('visible');
 
-            // Game over - return to menu on any key
+            // Game over - continue on ENTER or click only (NOT space, which is the parry key,
+            // so reflexive parry-spamming at match end no longer skips the Battle Report).
+            // Still grace-gated; routed through the shared transition for de-dup with the click.
             if (gameOver && !roundTransitioning && !talentVisible) {
-                hideVictoryScreen();   // also tears down the DOM "click to continue" fallback
-                resetGame();
-                showTalentScreen();
-                return;
+                if (e.code === 'Enter' || e.code === 'NumpadEnter') returnToMenuTransition();
+                return;  // swallow all other keys during game over
             }
 
             if (waitingToServe && !gameOver && !talentVisible && !roundTransitioning) {
@@ -4952,7 +4952,7 @@
             victoryTitle.shadowOffsetY = 5;
             victoryTitle.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
             victoryTitle.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
-            victoryTitle.top = "-130px";
+            victoryTitle.top = "-135px";
             victoryOverlay.addControl(victoryTitle);
             window.guiElements.victoryTitle = victoryTitle;
 
@@ -4981,7 +4981,7 @@
             lbPanel.color = "#dfe6f2"; lbPanel.thickness = 2; lbPanel.cornerRadius = 8;
             lbPanel.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
             lbPanel.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
-            lbPanel.top = "40px";
+            lbPanel.top = "20px";
             lbPanel.shadowColor = "#000"; lbPanel.shadowBlur = 0; lbPanel.shadowOffsetX = 4; lbPanel.shadowOffsetY = 4;
             lbPanel.isVisible = false;
             victoryOverlay.addControl(lbPanel);
@@ -5046,7 +5046,7 @@
             continueBtn.paddingBottom = "10px";
             continueBtn.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
             continueBtn.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
-            continueBtn.top = "190px";
+            continueBtn.top = "160px";
             continueBtn.textBlock.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
             continueBtn.isPointerBlocker = true;
             continueBtn.isHitTestVisible = true;
@@ -5060,11 +5060,11 @@
             });
             continueBtn.onPointerDownObservable.add(() => {
                 continueBtn.background = "#2a2520";
-                continueBtn.top = "192px";  // Slight inset like menu buttons
+                continueBtn.top = "162px";  // Slight inset like menu buttons
             });
             continueBtn.onPointerUpObservable.add(() => {
                 continueBtn.background = "#4a4235";
-                continueBtn.top = "190px";
+                continueBtn.top = "160px";
             });
             continueBtn.onPointerClickObservable.add(() => {
                 // Use fade transition to return to menu
@@ -6079,6 +6079,75 @@
                 detailTabText.shadowColor = "#000"; detailTabText.shadowBlur = 0; detailTabText.shadowOffsetX = 2; detailTabText.shadowOffsetY = 2;
                 detailTab.addControl(detailTabText);
 
+                // ----- Floating spell tooltip: a LAYER that stacks OVER the trio on hover (it's
+                // fine for it to obscure the combat log). Bigger than the trio windows so the full
+                // spell description fits even when it's long. Hidden unless a row is hovered. -----
+                const TIP_W = 460, TIP_H = 210;
+                const tipBox = new G.Rectangle("commandTipBox");
+                tipBox.width = TIP_W + "px"; tipBox.height = TIP_H + "px";
+                tipBox.background = STEEL; tipBox.color = RIM; tipBox.thickness = 2; tipBox.cornerRadius = 8;
+                tipBox.clipChildren = false;
+                tipBox.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_CENTER;
+                tipBox.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
+                tipBox.left = "0px"; tipBox.top = "-16px";   // over the center window, extends up + out
+                tipBox.shadowColor = "#000"; tipBox.shadowBlur = 0; tipBox.shadowOffsetX = 6; tipBox.shadowOffsetY = 6;
+                tipBox.zIndex = 60;   // float above the trio windows (z0); below transitions (z900)
+                tipBox.isVisible = false;
+                guiTexture.addControl(tipBox);
+
+                // Stats line (mana / cast / cooldown) — single TextBlock keeps the group spacing.
+                const tipStats = new G.TextBlock("tipStats");
+                tipStats.fontSize = 18; tipStats.color = "#ffffff";
+                tipStats.fontFamily = "'FF9UI', sans-serif";
+                tipStats.shadowColor = "#000"; tipStats.shadowBlur = 0; tipStats.shadowOffsetX = 2; tipStats.shadowOffsetY = 2;
+                tipStats.resizeToFit = false; tipStats.height = "24px"; tipStats.width = (TIP_W - 32) + "px";
+                tipStats.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                tipStats.verticalAlignment = ALN.VERTICAL_ALIGNMENT_TOP;
+                tipStats.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                tipStats.textVerticalAlignment = ALN.VERTICAL_ALIGNMENT_TOP;
+                tipStats.left = "16px"; tipStats.top = "14px";
+                tipBox.addControl(tipStats);
+
+                const tipDesc = new G.TextBlock("tipDesc");
+                tipDesc.color = "#eef2fb"; tipDesc.fontSize = 18;
+                tipDesc.fontFamily = "'FF9UI', sans-serif";
+                tipDesc.shadowColor = "#000"; tipDesc.shadowBlur = 0; tipDesc.shadowOffsetX = 2; tipDesc.shadowOffsetY = 2;
+                tipDesc.textWrapping = true; tipDesc.lineSpacing = "7px";
+                tipDesc.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                tipDesc.verticalAlignment = ALN.VERTICAL_ALIGNMENT_TOP;
+                tipDesc.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                tipDesc.textVerticalAlignment = ALN.VERTICAL_ALIGNMENT_TOP;
+                tipDesc.left = "16px"; tipDesc.top = "46px";
+                tipDesc.width = (TIP_W - 32) + "px"; tipDesc.height = (TIP_H - 60) + "px";
+                tipBox.addControl(tipDesc);
+
+                // Spell-name tab on the tooltip (overhangs the top border, near the left edge).
+                const tipTab = new G.Rectangle("commandTipTab");
+                tipTab.width = "150px"; tipTab.height = TITLE_H + "px";
+                tipTab.background = STEEL; tipTab.color = RIM; tipTab.thickness = 2; tipTab.cornerRadius = 6;
+                tipTab.clipChildren = false;
+                tipTab.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_CENTER;
+                tipTab.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
+                tipTab.left = (-TIP_W / 2 + 16 + 75) + "px"; tipTab.top = (-(16 + TIP_H - 4)) + "px";
+                tipTab.zIndex = 60;
+                tipTab.isVisible = false;
+                guiTexture.addControl(tipTab);
+                const tipTabText = new G.TextBlock();
+                tipTabText.text = ""; tipTabText.color = "#f0c050"; tipTabText.fontSize = 18;
+                tipTabText.fontFamily = "'FF9UI', sans-serif"; tipTabText.fontWeight = "600";
+                tipTabText.shadowColor = "#000"; tipTabText.shadowBlur = 0; tipTabText.shadowOffsetX = 2; tipTabText.shadowOffsetY = 2;
+                tipTab.addControl(tipTabText);
+
+                function showTip(id) {
+                    const info = spellInfo(id);
+                    if (!info) { hideTip(); return; }
+                    tipTabText.text = info.name;
+                    tipStats.text = info.stats;
+                    tipDesc.text = info.desc;
+                    tipBox.isVisible = true; tipTab.isVisible = true;
+                }
+                function hideTip() { tipBox.isVisible = false; tipTab.isVisible = false; }
+
                 // ----- Party Stats window: the RIGHT window of the trio. Persistent two-row
                 // table (Blue Tower / Red Tower) x three columns (Cast / Parry / Dmg). -----
                 const statsBox = new G.Rectangle("commandStatsBox");
@@ -6303,11 +6372,12 @@
                     const found = hitTestRow(e.clientX, e.clientY);
                     if (found === hoveredId) return;
                     hoveredId = found;
-                    // Deliberate hover shows the spell tooltip; otherwise fall back to the log.
-                    if (found) showDetail(found); else showLog();
+                    // The center window always shows the combat log; the spell tooltip is a
+                    // separate LAYER that floats over it only while a row is hovered.
+                    if (found) showTip(found); else hideTip();
                 }
                 window.addEventListener('pointermove', onHoverMove, true);
-                window.addEventListener('pointerleave', () => { if (hoveredId) { hoveredId = null; showLog(); } }, true);
+                window.addEventListener('pointerleave', () => { if (hoveredId) { hoveredId = null; hideTip(); } }, true);
 
                 Object.assign(window.commandMenu, { detailBox, detailTab, showDetail, hideDetail, hitTestRow });
                 Object.assign(window.commandMenu, { statsBox, statsTab });
@@ -6330,6 +6400,7 @@
                     if (titleTab.isVisible !== inGame) titleTab.isVisible = inGame;
                     if (!inGame) {
                         if (detailBox.isVisible) hideDetail();
+                        hideTip();
                         statsBox.isVisible = false; statsTab.isVisible = false;
                         hoveredId = null; return;
                     }
@@ -6338,8 +6409,8 @@
                     const bob = Math.sin(Date.now() / 260) * 3;
                     for (const r of cmdRefs) if (r.hand.alpha > 0) r.hand.top = bob.toFixed(2) + "px";
 
-                    // Persistent center: if nothing is hovered, keep the combat log shown.
-                    if (hoveredId === null && !detailBox.isVisible) showLog();
+                    // Center window is ALWAYS the combat log now (tooltip is a separate layer).
+                    if (!detailBox.isVisible) showLog();
 
                     // Status window: visibility + live HP/MP for both combatants.
                     if (statsBox.isVisible !== inGame) statsBox.isVisible = inGame;
@@ -11074,6 +11145,13 @@
                 while (projectiles.length > 0) {
                     destroyProjectile(projectiles[0]);
                 }
+                // Flush fading-out trails NOW (destroyProjectile defers fireball/frost trails to
+                // lingeringTrails to fade over TRAIL_LINGER_TIME) — otherwise they keep fading
+                // in the menu after a continue.
+                for (const t of lingeringTrails) {
+                    try { if (t.trail) t.trail.dispose(); if (t.trailMat) t.trailMat.dispose(); } catch (e) {}
+                }
+                lingeringTrails.length = 0;
                 // Also clean up any orphaned particle systems. Dispose EVERY transient spell effect
                 // (fire/ice/grav cores, magmaBurst, shieldSparks, etc.) rather than a name whitelist
                 // that silently misses effects -> they used to linger and finish their lifetime after
@@ -14334,11 +14412,18 @@
         // DOM-level "click anywhere to continue" handler (see showVictoryScreen).
         let _returningToMenu = false;
         let _victoryDismiss = null;
+        let victoryContinueAt = 0;   // Continue is ignored until this time (grace to read the report)
+        const VICTORY_CONTINUE_GRACE_MS = 1500;
 
         // Return to menu with fade transition (used by Continue button on victory screen)
         function returnToMenuTransition() {
+            // Grace period: ignore continue spam so the Battle Report is actually readable.
+            if (Date.now() < victoryContinueAt) return;
             if (_returningToMenu) return;   // ignore repeat triggers (button + DOM fallback)
             _returningToMenu = true;
+            // Clear any lingering match VFX so they don't bleed into the menu.
+            if (window.clearAllProjectiles) clearAllProjectiles();
+            if (window.clearAllLightningFX) clearAllLightningFX();
             const overlay = window.guiElements?.transitionOverlay;
 
             if (!overlay) {
@@ -16418,15 +16503,13 @@
 
             if (!overlay || !title || !subtitle) return;
 
-            // Configure for victory or defeat
+            // Configure for victory or defeat (subtitle removed — just title + Battle Report).
             if (isVictory) {
                 title.text = "Victory!";
                 title.color = "#ffd700";  // Gold
-                subtitle.text = "You have conquered the arena!";
             } else {
                 title.text = "Defeat";
                 title.color = "#c04040";  // Red
-                subtitle.text = "The enemy has prevailed...";
             }
 
             // Hide the regular message
@@ -16465,25 +16548,21 @@
             }
             if (window.guiElements.victoryLeaderboard) window.guiElements.victoryLeaderboard.isVisible = true;
 
-            // Show the overlay and its children
+            // Show the overlay and its children (subtitle stays hidden).
             overlay.isVisible = true;
             if (title) title.isVisible = true;
-            if (subtitle) subtitle.isVisible = true;
+            if (subtitle) subtitle.isVisible = false;
             if (window.guiElements.continueBtn) window.guiElements.continueBtn.isVisible = true;
 
             // Babylon GUI pointer input becomes unreliable after a full match (clicks stop
             // reaching the Continue button), so accept a DOM-level click/tap ANYWHERE to
             // continue — DOM input is the reliable channel (same rationale as the keyboard
-            // "press any key" fallback). Arm it after a short delay so the click/keypress
-            // that ended the match doesn't instantly dismiss the victory screen.
+            // fallback). A grace window (victoryContinueAt) makes continue spam a no-op so the
+            // Battle Report stays readable; returnToMenuTransition enforces it for all triggers.
+            victoryContinueAt = Date.now() + VICTORY_CONTINUE_GRACE_MS;
             if (_victoryDismiss) document.removeEventListener('pointerdown', _victoryDismiss, true);
             _victoryDismiss = () => returnToMenuTransition();
-            const armed = _victoryDismiss;
-            setTimeout(() => {
-                if (gameOver && _victoryDismiss === armed) {
-                    document.addEventListener('pointerdown', _victoryDismiss, true);
-                }
-            }, 500);
+            document.addEventListener('pointerdown', _victoryDismiss, true);
         }
 
         function hideVictoryScreen() {
