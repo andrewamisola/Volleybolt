@@ -1866,6 +1866,9 @@
 
         // Update cast bar UI for a combatant (unified for both sides)
         function updateCombatantCastBarUI(combatant, name, element, progress) {
+            // Guard non-finite progress (instant casts have castTime 0 -> 0/0 = NaN, which throws
+            // when assigned to a <progress> element's value).
+            progress = (typeof progress === 'number' && isFinite(progress)) ? Math.max(0, Math.min(1, progress)) : 0;
             const ui = getCombatantUIElements(combatant);
             const label = document.getElementById(ui.castBarLabel);
             const progressBar = document.getElementById(ui.castBarProgress);
