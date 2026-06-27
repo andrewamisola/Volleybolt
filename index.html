@@ -15,7 +15,7 @@
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
     <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css?v=54">
+    <link rel="stylesheet" href="styles.css?v=56">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -154,6 +154,9 @@
                 <h1 class="arcane-title" data-text="Settings">Settings</h1>
             </div>
             <div class="arcane-buttons settings-panel">
+                <div class="settings-section-label">Player</div>
+                <label class="settings-row"><span>Name</span>
+                    <input type="text" class="settings-input" id="setName" maxlength="16" placeholder="Blue" autocomplete="off" spellcheck="false"></label>
                 <div class="settings-section-label">Audio</div>
                 <label class="settings-row"><span>Master</span>
                     <input type="range" class="settings-slider" id="setMaster" min="0" max="100"></label>
@@ -1164,7 +1167,7 @@
                     element: 'fire',
                     type: SPELL_TYPES.DAMAGE,
                     icon: '🔥',
-                    description: 'Hurl a <span class="tt-spell">Fireball</span> that deals <span class="tt-value">2</span> <span class="tt-fire">Fire</span> damage. Damage increases with <span class="tt-mechanic">Volleys</span>, up to <span class="tt-value">5</span>.',
+                    description: 'Hurl a <span class="tt-spell">Fireball</span> that deals <span class="tt-value">2</span> <span class="tt-fire">Fire</span> damage. Damage increases with <span class="tt-mechanic">Volleys</span>, up to <span class="tt-value">6</span>.',
                     shortDesc: 'Volley scaling damage',
                     manaCost: 1,
                     cooldown: 4,
@@ -2005,7 +2008,7 @@
                 ui: {
                     name: 'Fireball', key: '1', iconClass: 'fireball-icon', manaCostLabel: '1',
                     castLabel: '1s Cast', cooldownLabel: '4s CD',
-                    description: 'Hurl a <span class="tt-spell">Fireball</span> that deals <span class="tt-value">2</span> <span class="tt-fire">Fire</span> damage. Damage increases with <span class="tt-mechanic">Volleys</span>, up to <span class="tt-value">5</span>.'
+                    description: 'Hurl a <span class="tt-spell">Fireball</span> that deals <span class="tt-value">2</span> <span class="tt-fire">Fire</span> damage. Damage increases with <span class="tt-mechanic">Volleys</span>, up to <span class="tt-value">6</span>.'
                 }
             },
             frostbolt: {
@@ -2017,10 +2020,10 @@
                 }
             },
             chain_lightning: {
-                gameplay: { cooldown: 30, castTime: 0, manaCost: 2, maxZaps: 3 },  // castTime here matches legacy `abilities` (unused); real 0.4s cast is governed by AbilityRegistry/startCasting and shown in ui.castLabel
+                gameplay: { cooldown: 30, castTime: 0, manaCost: 2, maxZaps: 3 },  // instant: cast via castChainLightning(), not startCasting() — no windup
                 ui: {
                     name: 'Thunderstorm', key: '3', iconClass: 'chainlightning-icon', manaCostLabel: '2',
-                    castLabel: '0.4s Cast', cooldownLabel: '30s CD',
+                    castLabel: 'Instant', cooldownLabel: '30s CD',
                     description: 'Call down lightning to <span class="tt-mechanic">Zap</span> up to <span class="tt-value">3</span> incoming Enemy projectiles, destroying them. Gain <span class="tt-value">1</span> Mana for each projectile destroyed.'
                 }
             }
@@ -3272,7 +3275,7 @@
         // ---- Persistent player settings (audio + fullscreen) -> localStorage ----
         const Settings = (() => {
             const KEY = 'volleybolt_settings';
-            const DEFAULTS = { master: 50, music: 50, sfx: 50, fullscreen: false };
+            const DEFAULTS = { master: 50, music: 50, sfx: 50, fullscreen: false, playerName: '' };
             const values = { ...DEFAULTS };
 
             function load() {
@@ -3311,6 +3314,60 @@
         })();
         window.Settings = Settings;
         Settings.load();   // load on boot; audio applied when Tone initializes (see doToneInit)
+
+        // ---- Player display name. "Blue" is the placeholder for the local player's team; the
+        // player can set a real name in Settings and it replaces "Blue" everywhere it's shown.
+        // (Web build — no Steam username to read; defaults to "Blue".) "Red" = the AI/opponent. ----
+        window.getPlayerName = function () {
+            const n = (((window.Settings && Settings.values.playerName) || '') + '').trim();
+            return n || 'Blue';
+        };
+        // Combat-log name: truncate to a short form so the ACTION stays readable
+        // ("xXDrago… parries!"). maxChars is the only knob — lower it for tighter lines.
+        window.shortPlayerName = function (maxChars) {
+            const n = window.getPlayerName(), m = maxChars || 8;
+            return n.length > m ? n.slice(0, m - 1) + '…' : n;
+        };
+        window.sideName = function (isBlue) { return isBlue ? window.shortPlayerName() : 'Red'; };
+        // Persistent labels (status panel, leaderboard) register here so a name change refreshes
+        // them live; combat-log lines read the name fresh each event so they need no registry.
+        // Fit a name into a fixed-width slot at CONSTANT size: full name while it fits, else
+        // ellipsis-truncate (no font shrinking — keeps the panel text uniform).
+        window._nameMeasCtx = document.createElement('canvas').getContext('2d');
+        window.fitPlayerName = function (tb, maxW, baseSize) {
+            const base = baseSize || 16, ctx = window._nameMeasCtx, name = window.getPlayerName();
+            tb.fontSize = base; ctx.font = "600 " + base + "px 'FF9UI', sans-serif";
+            if (ctx.measureText(name).width <= maxW) { tb.text = name; return; }
+            let s = name;
+            while (s.length > 1 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1);
+            tb.text = s + '…';
+        };
+        window._playerNameLabels = [];
+        // fitWidth (optional) = fixed slot to fit into; without it the label just takes the full name.
+        window.registerPlayerNameLabel = function (tb, fitWidth) {
+            if (!tb) return;
+            const apply = fitWidth ? function () { window.fitPlayerName(tb, fitWidth); }
+                                   : function () { tb.text = window.getPlayerName(); };
+            window._playerNameLabels.push(apply);
+            apply();
+        };
+        window.refreshPlayerName = function () { window._playerNameLabels.forEach(function (fn) { fn(); }); };
+        // Combat-log line: compose "{name}{suffix}" but truncate the NAME (ellipsis) so the whole
+        // line fits the log box — the ACTION at the end (" casts Frostbolt") is always preserved.
+        window._combatLogWidth = 9999;   // overwritten with the real box content width when the log GUI builds
+        window.fitLogName = function (isBlue, reservedW) {
+            const ctx = window._nameMeasCtx; ctx.font = "600 16px 'FF9UI', sans-serif";
+            const avail = (window._combatLogWidth - 6) - (reservedW || 0);   // 6px safety margin
+            const base = isBlue ? window.getPlayerName() : 'Red';
+            if (ctx.measureText(base).width <= avail) return base;
+            let s = base;
+            while (s.length > 1 && ctx.measureText(s + '…').width > avail) s = s.slice(0, -1);
+            return s + '…';
+        };
+        window.combatLine = function (isBlue, suffix) {
+            const ctx = window._nameMeasCtx; ctx.font = "600 16px 'FF9UI', sans-serif";
+            return window.fitLogName(isBlue, ctx.measureText(suffix).width) + suffix;
+        };
 
         // Load a sound file into a buffer
         async function loadSound(name, url) {
@@ -3644,7 +3701,11 @@
                 iceShatter: 'sfx/ice-shatter.wav',
                 cancel: 'sfx/cancel.wav',
                 overpowered: 'sfx/overpowered.wav',
-                lightning: 'sfx/lightning.wav'
+                lightning: 'sfx/lightning.wav',
+                footstep: 'sfx/footstep.wav',
+                footstep_2: 'sfx/footstep_2.wav',
+                footstep_3: 'sfx/footstep_3.wav',
+                footstep_4: 'sfx/footstep_4.wav'
             };
 
             // Looping casting sounds - separate for player and AI with panning
@@ -3689,6 +3750,10 @@
             if (synths.samples.parry) synths.samples.parry.volume.value = -10;
             // Lower overpowered volume
             if (synths.samples.overpowered) synths.samples.overpowered.volume.value = -10;
+            // Footstep pool: bring them up so they're clearly audible (dirt samples are quiet).
+            // Tune down later if too hot.
+            window.FOOTSTEP_POOL = ['footstep', 'footstep_2', 'footstep_3', 'footstep_4'];
+            window.FOOTSTEP_POOL.forEach((n) => { if (synths.samples[n]) synths.samples[n].volume.value = 0; });
 
             // ========================================
             // BACKGROUND MUSIC - Looping 8-bit track
@@ -3975,6 +4040,20 @@
                 // setTimeout(() => synths.bell.triggerAttackRelease(N.B5, "4n"), 50);
                 // 8-bit crushed sample layer
                 playSample('parry');
+            },
+
+            // Footstep while walking — dirt sample with a slight random pitch each step so a
+            // repeated walk cycle doesn't sound machine-gun identical.
+            footstep: async () => {
+                if (!toneStarted) await initToneJS();
+                const pool = window.FOOTSTEP_POOL || ['footstep'];
+                const name = pool[Math.floor(Math.random() * pool.length)];   // random variation
+                const s = synths.samples && synths.samples[name];
+                if (s && s.loaded) {
+                    try { s.stop(); } catch (e) {}
+                    s.playbackRate = 0.92 + Math.random() * 0.16;   // ±8% pitch wobble
+                    s.start();
+                }
             },
 
             // Gate damage - crushed sample only
@@ -4769,9 +4848,9 @@
             window.guiElements.playerHealthPanel = playerHealthPanel;
 
             const playerHealthLabel = new BABYLON.GUI.TextBlock();
-            playerHealthLabel.text = "Blue Tower";
+            playerHealthLabel.text = window.getPlayerName() + " Tower";
             playerHealthLabel.color = "#f0c050";
-            playerHealthLabel.fontSize = 18;
+            playerHealthLabel.fontSize = 16;
             playerHealthLabel.fontFamily = "'FF9UI', sans-serif";
             playerHealthLabel.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             playerHealthLabel.shadowColor = "#000";  // black pixel shadow -- match the command menu / other gold text
@@ -4826,7 +4905,7 @@
             const playerHealthPercent = new BABYLON.GUI.TextBlock();
             playerHealthPercent.text = "100%";
             playerHealthPercent.color = "#209cee";
-            playerHealthPercent.fontSize = 18;
+            playerHealthPercent.fontSize = 16;
             playerHealthPercent.fontFamily = "'FF9UI', sans-serif";
             playerHealthPercent.width = "100px";
             playerHealthPercent.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -4850,7 +4929,7 @@
             const aiHealthLabel = new BABYLON.GUI.TextBlock();
             aiHealthLabel.text = "Red Tower";
             aiHealthLabel.color = "#f0c050";
-            aiHealthLabel.fontSize = 18;
+            aiHealthLabel.fontSize = 16;
             aiHealthLabel.fontFamily = "'FF9UI', sans-serif";
             aiHealthLabel.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             aiHealthLabel.shadowColor = "#000";  // black pixel shadow -- match the command menu / other gold text
@@ -4874,7 +4953,7 @@
             const aiHealthPercent = new BABYLON.GUI.TextBlock();
             aiHealthPercent.text = "100%";
             aiHealthPercent.color = "#e76e55";
-            aiHealthPercent.fontSize = 18;
+            aiHealthPercent.fontSize = 16;
             aiHealthPercent.fontFamily = "'FF9UI', sans-serif";
             aiHealthPercent.width = "100px";
             aiHealthPercent.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -5207,7 +5286,7 @@
             lbCell("CAS", "#f0c050", LB_CAS, LB_HDR, true, "600");
             lbCell("PAR", "#f0c050", LB_PAR, LB_HDR, true, "600");
             lbCell("DMG", "#f0c050", LB_DMG, LB_HDR, true, "600");
-            lbCell("Blue", "#6fb0ff", 18, LB_BLUE, false, "600");
+            window.registerPlayerNameLabel(lbCell(window.getPlayerName(), "#6fb0ff", 18, LB_BLUE, false, "600"), 120);
             const lbBlueCast = lbCell("0", "#ffffff", LB_CAS, LB_BLUE, true);
             const lbBlueParry = lbCell("0", "#ffffff", LB_PAR, LB_BLUE, true);
             const lbBlueDmg = lbCell("0", "#ffffff", LB_DMG, LB_BLUE, true);
@@ -5637,7 +5716,7 @@
             netStatusText.text = "";
             netStatusText.color = "#6ad26a";
             netStatusText.fontFamily = "'FF9UI', sans-serif";
-            netStatusText.fontSize = 18;
+            netStatusText.fontSize = 16;
             netStatusText.height = "22px";
             netStatusText.width = "120px";
             netStatusText.top = "10px";
@@ -5820,7 +5899,7 @@
             const playerCastLabel = new BABYLON.GUI.TextBlock();
             playerCastLabel.text = "Fireball";
             playerCastLabel.color = "#f0c050";
-            playerCastLabel.fontSize = 18;
+            playerCastLabel.fontSize = 16;
             playerCastLabel.fontFamily = "'FF9UI', sans-serif";
             playerCastLabel.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             playerCastLabel.shadowColor = "#000";
@@ -5876,7 +5955,7 @@
             const aiCastLabel = new BABYLON.GUI.TextBlock();
             aiCastLabel.text = "Fireball";
             aiCastLabel.color = "#e76e55";
-            aiCastLabel.fontSize = 18;
+            aiCastLabel.fontSize = 16;
             aiCastLabel.fontFamily = "'FF9UI', sans-serif";
             aiCastLabel.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             aiCastLabel.shadowColor = "#000";
@@ -6042,11 +6121,19 @@
                     { id: 'chain_lightning', name: 'Thunderstorm', key: '3',     mana: 2 },
                     { id: 'parry',           name: 'Parry',        key: '␣',     mana: 0 },
                 ];
-                const ROW_H = 36, PAD = 8, TITLE_H = 26, BOX_W = 290;  // tighter rows -> shorter windows
+                const ROW_H = 36, PAD = 8, TITLE_H = 26;
+                // Trio widths: command narrower, status longer, combat-log centered. Total ≈ old 3×320.
+                const CMD_W = 280, DET_W = 320, STAT_W = 360, BOX_W = CMD_W;
                 const BOX_H = PAD * 2 + cmdSlots.length * ROW_H;
-                // Centered trio layout: [Command] [Spell Info] [Party]. The center (detail)
-                // window sits dead-center; the other two are one SLOT (box + gap) left/right.
-                const GAP = 14, SLOT = BOX_W + GAP, TAB_W = 150, TAB_OFF = -BOX_W / 2 + 16 + TAB_W / 2;  // TAB_OFF = -54
+                // Centered trio: [Command] [Combat Log] [Status]. The center (detail) window sits
+                // dead-center; command/status flank it by their OWN widths + GAP.
+                const GAP = 14, TAB_W = 150, BOTTOM_PAD = 44;   // lift the trio off the bottom edge (was 16)
+                const tabOff = (w) => -w / 2 + 16 + TAB_W / 2;   // a tab hugs its box's left edge
+                const TAB_OFF = tabOff(CMD_W);
+                const TRIO_L = -(CMD_W + DET_W + STAT_W + 2 * GAP) / 2;   // center the whole trio (keeps the cluster balanced)
+                const CMD_LEFT  = TRIO_L + CMD_W / 2;
+                const DET_LEFT  = TRIO_L + CMD_W + GAP + DET_W / 2;
+                const STAT_LEFT = TRIO_L + CMD_W + GAP + DET_W + GAP + STAT_W / 2;
                 const STEEL = "rgba(46,56,76,0.94)", RIM = "#dfe6f2", TXT = "#f4f7ff";
 
                 const box = new G.Rectangle("commandBox");
@@ -6056,7 +6143,7 @@
                 box.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_CENTER;
                 box.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
                 // Command is the LEFT window of the centered trio (one SLOT left of center).
-                box.left = (-SLOT) + "px"; box.top = "-16px";
+                box.left = CMD_LEFT + "px"; box.top = (-BOTTOM_PAD) + "px";
                 box.shadowColor = "#000"; box.shadowBlur = 0; box.shadowOffsetX = 4; box.shadowOffsetY = 4;
                 box.isVisible = false;
                 guiTexture.addControl(box);
@@ -6073,13 +6160,13 @@
                     row.width = "100%"; row.height = ROW_H + "px"; row.thickness = 0; row.background = "transparent";
 
                     const hand = new G.TextBlock();
-                    hand.text = "▶"; hand.color = "#f0c050"; hand.fontSize = 18;
+                    hand.text = "▶"; hand.color = "#f0c050"; hand.fontSize = 16;
                     hand.width = "20px"; hand.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
                     hand.left = "0px"; hand.alpha = 0;
                     row.addControl(hand);
 
                     const name = new G.TextBlock();
-                    name.text = s.name; name.color = TXT; name.fontSize = 18;
+                    name.text = s.name; name.color = TXT; name.fontSize = 16;
                     name.fontFamily = "'FF9UI', sans-serif"; name.fontWeight = "600";
                     name.shadowColor = "#000"; name.shadowBlur = 0; name.shadowOffsetX = 2; name.shadowOffsetY = 2;
                     name.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
@@ -6090,7 +6177,7 @@
                     const manaRight = (s.key.length > 1 ? "-60px" : "-34px");
                     const mana = new G.TextBlock();
                     mana.text = s.mana > 0 ? "●".repeat(s.mana) : "";
-                    mana.color = "#5ad0ff"; mana.fontSize = 18;
+                    mana.color = "#5ad0ff"; mana.fontSize = 16;
                     mana.shadowColor = "#000"; mana.shadowBlur = 0; mana.shadowOffsetX = 1; mana.shadowOffsetY = 1;
                     mana.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT;
                     mana.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -6100,7 +6187,7 @@
 
                     // Cooldown countdown — shown in place of the mana orbs while on CD.
                     const cd = new G.TextBlock();
-                    cd.text = ""; cd.color = "#9aa6bd"; cd.fontSize = 18;
+                    cd.text = ""; cd.color = "#9aa6bd"; cd.fontSize = 16;
                     cd.fontFamily = "'FF9UI', sans-serif";
                     cd.shadowColor = "#000"; cd.shadowBlur = 0; cd.shadowOffsetX = 2; cd.shadowOffsetY = 2;
                     cd.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -6116,7 +6203,7 @@
                     keyBadge.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT; keyBadge.left = "0px";
                     row.addControl(keyBadge);
                     const keyText = new G.TextBlock();
-                    keyText.text = s.key; keyText.color = "#cdd8ef"; keyText.fontSize = 18;
+                    keyText.text = s.key; keyText.color = "#cdd8ef"; keyText.fontSize = 16;
                     keyText.fontFamily = "'FF9UI', sans-serif";
                     keyText.shadowColor = "#000"; keyText.shadowBlur = 0; keyText.shadowOffsetX = 1; keyText.shadowOffsetY = 1;
                     // The '␣' open-box space glyph renders low (bottom of the em box) — lift it
@@ -6140,13 +6227,15 @@
                 // box bottom edge is 16px above container bottom; box top edge is 16+BOX_H above it.
                 // Float the tab's bottom 4px into the box top (so it reads as "attached").
                 // Tab sits near the box's left edge (TAB_OFF), shifted with the command window.
-                titleTab.left = (-SLOT + TAB_OFF) + "px"; titleTab.top = (-(16 + BOX_H - 4)) + "px";
+                titleTab.left = (CMD_LEFT + TAB_OFF) + "px"; titleTab.top = (-(BOTTOM_PAD + BOX_H - 4)) + "px";
                 titleTab.isVisible = false;
                 guiTexture.addControl(titleTab);
                 const titleText = new G.TextBlock();
-                titleText.text = "Command"; titleText.color = "#f0c050"; titleText.fontSize = 18;
+                titleText.text = "COMMAND"; titleText.color = "#ffffff"; titleText.fontSize = 16;
                 titleText.fontFamily = "'FF9UI', sans-serif"; titleText.fontWeight = "600";
-                titleText.shadowColor = "#000"; titleText.shadowBlur = 0; titleText.shadowOffsetX = 2; titleText.shadowOffsetY = 2;
+                titleText.outlineWidth = 2.5;titleText.outlineColor = "#000000";   // crisp black stroke
+                titleText.shadowColor = "#000"; titleText.shadowBlur = 0; titleText.shadowOffsetX = 2; titleText.shadowOffsetY = 2;  // + drop shadow
+                titleText.top = "-3px";   // FF9UI glyphs sit low; nudge up to optically center in the tab
                 titleTab.addControl(titleText);
 
                 // Apply a visual state to one slot. mode: 'castable' | 'noMana' | 'cooldown' | 'active'.
@@ -6204,7 +6293,7 @@
 
                 // ----- Spell Info window: the dead-CENTER steel window of the trio. Persistent;
                 // shows the hovered spell's stats + description (defaults to the first spell). -----
-                const DETAIL_W = BOX_W, DETAIL_H = BOX_H;   // identical to the command window
+                const DETAIL_W = DET_W, DETAIL_H = BOX_H;   // combat-log / detail window (centered)
                 const detailBox = new G.Rectangle("commandDetailBox");
                 detailBox.width = DETAIL_W + "px"; detailBox.height = DETAIL_H + "px";
                 detailBox.background = STEEL; detailBox.color = RIM; detailBox.thickness = 2; detailBox.cornerRadius = 8;
@@ -6212,7 +6301,7 @@
                 detailBox.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_CENTER;
                 detailBox.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
                 // Spell Info is the dead-CENTER window of the trio.
-                detailBox.left = "0px"; detailBox.top = "-16px";
+                detailBox.left = DET_LEFT + "px"; detailBox.top = (-BOTTOM_PAD) + "px";
                 detailBox.shadowColor = "#000"; detailBox.shadowBlur = 0; detailBox.shadowOffsetX = 4; detailBox.shadowOffsetY = 4;
                 detailBox.isVisible = false;
                 guiTexture.addControl(detailBox);
@@ -6233,7 +6322,7 @@
                     // per-token TextBlocks trim their leading/trailing whitespace, which collapsed
                     // the gaps (e.g. "1Mana1s Cast4s CD").
                     const tb = new G.TextBlock();
-                    tb.text = str || ""; tb.resizeToFit = true; tb.fontSize = 18;
+                    tb.text = str || ""; tb.resizeToFit = true; tb.fontSize = 16;
                     tb.fontFamily = "'FF9UI', sans-serif"; tb.color = "#ffffff";
                     tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
                     tb.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
@@ -6242,7 +6331,7 @@
                 }
 
                 const detailDesc = new G.TextBlock();
-                detailDesc.color = "#eef2fb"; detailDesc.fontSize = 18;
+                detailDesc.color = "#eef2fb"; detailDesc.fontSize = 16;
                 detailDesc.fontFamily = "'FF9UI', sans-serif";
                 detailDesc.shadowColor = "#000"; detailDesc.shadowBlur = 0; detailDesc.shadowOffsetX = 2; detailDesc.shadowOffsetY = 2;
                 detailDesc.textWrapping = true; detailDesc.lineSpacing = "7px";
@@ -6261,13 +6350,15 @@
                 detailTab.clipChildren = false;
                 detailTab.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_CENTER;
                 detailTab.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
-                detailTab.left = (TAB_OFF) + "px"; detailTab.top = (-(16 + DETAIL_H - 4)) + "px";
+                detailTab.left = (DET_LEFT + tabOff(DET_W)) + "px"; detailTab.top = (-(BOTTOM_PAD + DETAIL_H - 4)) + "px";
                 detailTab.isVisible = false;
                 guiTexture.addControl(detailTab);
                 const detailTabText = new G.TextBlock();
-                detailTabText.text = ""; detailTabText.color = "#f0c050"; detailTabText.fontSize = 18;
+                detailTabText.text = ""; detailTabText.color = "#ffffff"; detailTabText.fontSize = 16;
                 detailTabText.fontFamily = "'FF9UI', sans-serif"; detailTabText.fontWeight = "600";
-                detailTabText.shadowColor = "#000"; detailTabText.shadowBlur = 0; detailTabText.shadowOffsetX = 2; detailTabText.shadowOffsetY = 2;
+                detailTabText.outlineWidth = 2.5;detailTabText.outlineColor = "#000000";   // crisp black stroke
+                detailTabText.shadowColor = "#000"; detailTabText.shadowBlur = 0; detailTabText.shadowOffsetX = 2; detailTabText.shadowOffsetY = 2;  // + drop shadow
+                detailTabText.top = "-3px";   // optical center (FF9UI low baseline)
                 detailTab.addControl(detailTabText);
 
                 // ----- Floating spell tooltip: a LAYER that stacks OVER the trio on hover (it's
@@ -6286,31 +6377,118 @@
                 tipBox.isVisible = false;
                 guiTexture.addControl(tipBox);
 
-                // Stats line (mana / cast / cooldown) — single TextBlock keeps the group spacing.
-                const tipStats = new G.TextBlock("tipStats");
-                tipStats.fontSize = 18; tipStats.color = "#ffffff";
-                tipStats.fontFamily = "'FF9UI', sans-serif";
-                tipStats.shadowColor = "#000"; tipStats.shadowBlur = 0; tipStats.shadowOffsetX = 2; tipStats.shadowOffsetY = 2;
-                tipStats.resizeToFit = false; tipStats.height = "24px"; tipStats.width = (TIP_W - 32) + "px";
+                // Stats line (mana / cast / cooldown) as colored runs: numbers white,
+                // "Mana" blue, "Cast"/"Instant" yellow (the casting color), cooldown muted.
+                const tipStats = new G.StackPanel("tipStats");
+                tipStats.isVertical = false; tipStats.height = "24px"; tipStats.adaptHeightToChildren = true;
                 tipStats.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
                 tipStats.verticalAlignment = ALN.VERTICAL_ALIGNMENT_TOP;
-                tipStats.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
-                tipStats.textVerticalAlignment = ALN.VERTICAL_ALIGNMENT_TOP;
                 tipStats.left = "16px"; tipStats.top = "14px";
                 tipBox.addControl(tipStats);
+                const TIP_COL = { num: "#ffffff", mana: "#5ad0ff", cast: "#f0c050", cd: "#9aa6bd", def: "#cdd6e8" };
+                function tipStatColor(tok) {
+                    if (/\d/.test(tok)) return TIP_COL.num;                       // any number / time -> white
+                    if (tok === 'Mana') return TIP_COL.mana;                      // mana -> blue
+                    if (tok === 'Cast' || tok === 'Instant' || tok === 'Reaction') return TIP_COL.cast;  // cast -> yellow
+                    if (tok === 'CD') return TIP_COL.cd;                          // cooldown -> muted
+                    return TIP_COL.def;
+                }
+                function tipSpacer(w) {
+                    const sp = new G.Rectangle(); sp.width = w + "px"; sp.height = "1px";
+                    sp.thickness = 0; sp.background = "transparent"; tipStats.addControl(sp);
+                }
+                function setTipStats(str) {
+                    tipStats.clearControls();
+                    const groups = (str || '').split(/\s{2,}/).filter(Boolean);   // big gaps separate groups
+                    groups.forEach((group, gi) => {
+                        if (gi > 0) tipSpacer(16);
+                        group.split(/\s+/).filter(Boolean).forEach((tok, ti) => {
+                            if (ti > 0) tipSpacer(5);
+                            const tb = new G.TextBlock();
+                            tb.text = tok; tb.color = tipStatColor(tok); tb.fontSize = 16;
+                            tb.fontFamily = "'FF9UI', sans-serif"; tb.resizeToFit = true;
+                            tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
+                            tb.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                            tipStats.addControl(tb);
+                        });
+                    });
+                }
 
-                const tipDesc = new G.TextBlock("tipDesc");
-                tipDesc.color = "#eef2fb"; tipDesc.fontSize = 18;
-                tipDesc.fontFamily = "'FF9UI', sans-serif";
-                tipDesc.shadowColor = "#000"; tipDesc.shadowBlur = 0; tipDesc.shadowOffsetX = 2; tipDesc.shadowOffsetY = 2;
-                tipDesc.textWrapping = true; tipDesc.lineSpacing = "7px";
+                // Description body. Base text is white; element words (Fire / Freeze / Lightning
+                // families) get tinted, spell-name mentions stay white. Babylon GUI has no inline
+                // color, so we parse the registry's span markup, measure words on an offscreen
+                // canvas, greedily wrap to lines, and render each line as colored word runs.
+                const DESC_W = TIP_W - 32;
+                const _descMeasCtx = document.createElement('canvas').getContext('2d');
+                const TIP_ELEM = { fire: "#ff7a45", frost: "#79c6ff", bolt: "#ffd24a" };
+                function descWordColor(word, isSpell) {
+                    if (isSpell) return "#ffffff";                       // spell names stay white
+                    const w = word.toLowerCase();
+                    if (/fire|flame|burn|magma|scorch/.test(w)) return TIP_ELEM.fire;
+                    if (/freez|frozen|frost|chill|\bice\b/.test(w)) return TIP_ELEM.frost;
+                    if (/lightning|thunder|\bzap\b|electric|shock|storm/.test(w)) return TIP_ELEM.bolt;
+                    return "#ffffff";                                    // everything else white
+                }
+                function descRuns(html) {
+                    // Parse the controlled span HTML into {text, spell} segments.
+                    const tmp = document.createElement('div'); tmp.innerHTML = html || '';
+                    const out = [];
+                    tmp.childNodes.forEach((n) => {
+                        const text = n.textContent || '';
+                        const spell = (n.nodeType === 1) && /tt-spell/.test(n.className || '');
+                        if (text) out.push({ text, spell });
+                    });
+                    return out;
+                }
+                const tipDesc = new G.StackPanel("tipDesc");
+                tipDesc.isVertical = true; tipDesc.adaptHeightToChildren = true;
+                tipDesc.width = DESC_W + "px";
                 tipDesc.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
                 tipDesc.verticalAlignment = ALN.VERTICAL_ALIGNMENT_TOP;
-                tipDesc.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
-                tipDesc.textVerticalAlignment = ALN.VERTICAL_ALIGNMENT_TOP;
                 tipDesc.left = "16px"; tipDesc.top = "46px";
-                tipDesc.width = (TIP_W - 32) + "px"; tipDesc.height = (TIP_H - 60) + "px";
                 tipBox.addControl(tipDesc);
+                function setTipDesc(html) {
+                    tipDesc.clearControls();
+                    _descMeasCtx.font = "16px 'FF9UI', sans-serif";
+                    const spaceW = _descMeasCtx.measureText(' ').width || 5;
+                    // Flatten spans into colored words.
+                    const words = [];
+                    descRuns(html).forEach((run) => {
+                        run.text.split(/\s+/).filter(Boolean).forEach((w) => {
+                            words.push({ w, color: descWordColor(w, run.spell) });
+                        });
+                    });
+                    // Greedy word-wrap to lines that fit DESC_W (authored px; the ADT scales it).
+                    const lines = []; let line = []; let lineW = 0;
+                    words.forEach(({ w, color }) => {
+                        const ww = _descMeasCtx.measureText(w).width;
+                        const add = (line.length ? spaceW : 0) + ww;
+                        if (line.length && lineW + add > DESC_W) { lines.push(line); line = []; lineW = 0; }
+                        lineW += (line.length ? spaceW : 0) + ww;
+                        line.push({ w, color });
+                    });
+                    if (line.length) lines.push(line);
+                    // Render each line as a horizontal row of colored words + space spacers.
+                    lines.forEach((ln) => {
+                        const row = new G.StackPanel(); row.isVertical = false;
+                        row.height = "26px";   // fixed leading; uniform across lines, scales with the ADT
+                        row.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                        ln.forEach((word, i) => {
+                            if (i > 0) {
+                                const sp = new G.Rectangle();
+                                sp.width = Math.round(spaceW) + "px"; sp.height = "1px";
+                                sp.thickness = 0; sp.background = "transparent"; row.addControl(sp);
+                            }
+                            const tb = new G.TextBlock();
+                            tb.text = word.w; tb.color = word.color; tb.fontSize = 16;
+                            tb.fontFamily = "'FF9UI', sans-serif"; tb.resizeToFit = true;
+                            tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
+                            tb.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
+                            row.addControl(tb);
+                        });
+                        tipDesc.addControl(row);
+                    });
+                }
 
                 // Spell-name tab on the tooltip (overhangs the top border, near the left edge).
                 const tipTab = new G.Rectangle("commandTipTab");
@@ -6324,17 +6502,28 @@
                 tipTab.isVisible = false;
                 guiTexture.addControl(tipTab);
                 const tipTabText = new G.TextBlock();
-                tipTabText.text = ""; tipTabText.color = "#f0c050"; tipTabText.fontSize = 18;
+                tipTabText.text = ""; tipTabText.color = "#ffffff"; tipTabText.fontSize = 16;   // spell name header
                 tipTabText.fontFamily = "'FF9UI', sans-serif"; tipTabText.fontWeight = "600";
-                tipTabText.shadowColor = "#000"; tipTabText.shadowBlur = 0; tipTabText.shadowOffsetX = 2; tipTabText.shadowOffsetY = 2;
+                tipTabText.outlineWidth = 2.5;tipTabText.outlineColor = "#000000";              // crisp black stroke
+                tipTabText.shadowColor = "#000"; tipTabText.shadowBlur = 0; tipTabText.shadowOffsetX = 2; tipTabText.shadowOffsetY = 2;  // + drop shadow for extra pop
+                tipTabText.verticalAlignment = ALN.VERTICAL_ALIGNMENT_CENTER;                  // center in the tab (don't hug the bottom)
+                tipTabText.textVerticalAlignment = ALN.VERTICAL_ALIGNMENT_CENTER;
+                tipTabText.top = "-3px";   // FF9UI glyphs sit low in the line box; nudge up to optically center
                 tipTab.addControl(tipTabText);
 
                 function showTip(id) {
                     const info = spellInfo(id);
                     if (!info) { hideTip(); return; }
-                    tipTabText.text = info.name;
-                    tipStats.text = info.stats;
-                    tipDesc.text = info.desc;
+                    const tabLabel = (info.name || "").toUpperCase();
+                    tipTabText.text = tabLabel;
+                    // Grow the tab horizontally to fit the spell name (min = default 150px), keeping
+                    // its LEFT edge anchored near the tooltip's left edge as it widens rightward.
+                    _descMeasCtx.font = "600 16px 'FF9UI', sans-serif";
+                    const tabW = Math.max(150, Math.ceil(_descMeasCtx.measureText(tabLabel).width) + 48);
+                    tipTab.width = tabW + "px";
+                    tipTab.left = (-TIP_W / 2 + 16 + tabW / 2) + "px";
+                    setTipStats(info.stats);
+                    setTipDesc(info.descHtml || info.desc);
                     tipBox.isVisible = true; tipTab.isVisible = true;
                 }
                 function hideTip() { tipBox.isVisible = false; tipTab.isVisible = false; }
@@ -6342,12 +6531,12 @@
                 // ----- Party Stats window: the RIGHT window of the trio. Persistent two-row
                 // table (Blue Tower / Red Tower) x three columns (Cast / Parry / Dmg). -----
                 const statsBox = new G.Rectangle("commandStatsBox");
-                statsBox.width = BOX_W + "px"; statsBox.height = BOX_H + "px";
+                statsBox.width = STAT_W + "px"; statsBox.height = BOX_H + "px";
                 statsBox.background = STEEL; statsBox.color = RIM; statsBox.thickness = 2; statsBox.cornerRadius = 8;
                 statsBox.clipChildren = false;   // let the title tab overhang the top border
                 statsBox.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_CENTER;
                 statsBox.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
-                statsBox.left = (SLOT) + "px"; statsBox.top = "-16px";
+                statsBox.left = STAT_LEFT + "px"; statsBox.top = (-BOTTOM_PAD) + "px";
                 statsBox.shadowColor = "#000"; statsBox.shadowBlur = 0; statsBox.shadowOffsetX = 4; statsBox.shadowOffsetY = 4;
                 statsBox.isVisible = false;
                 guiTexture.addControl(statsBox);
@@ -6359,13 +6548,15 @@
                 statsTab.clipChildren = false;
                 statsTab.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_CENTER;
                 statsTab.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
-                statsTab.left = (SLOT + TAB_OFF) + "px"; statsTab.top = (-(16 + BOX_H - 4)) + "px";
+                statsTab.left = (STAT_LEFT + tabOff(STAT_W)) + "px"; statsTab.top = (-(BOTTOM_PAD + BOX_H - 4)) + "px";
                 statsTab.isVisible = false;
                 guiTexture.addControl(statsTab);
                 const statsTabText = new G.TextBlock();
-                statsTabText.text = "Status"; statsTabText.color = "#f0c050"; statsTabText.fontSize = 18;
+                statsTabText.text = "STATUS"; statsTabText.color = "#ffffff"; statsTabText.fontSize = 16;
                 statsTabText.fontFamily = "'FF9UI', sans-serif"; statsTabText.fontWeight = "600";
-                statsTabText.shadowColor = "#000"; statsTabText.shadowBlur = 0; statsTabText.shadowOffsetX = 2; statsTabText.shadowOffsetY = 2;
+                statsTabText.outlineWidth = 2.5;statsTabText.outlineColor = "#000000";   // crisp black stroke
+                statsTabText.shadowColor = "#000"; statsTabText.shadowBlur = 0; statsTabText.shadowOffsetX = 2; statsTabText.shadowOffsetY = 2;  // + drop shadow
+                statsTabText.top = "-3px";   // optical center (FF9UI low baseline)
                 statsTab.addControl(statsTabText);
 
                 // ===== In-game STATUS panel: per-combatant HP / MP with lightweight bars =====
@@ -6374,7 +6565,7 @@
                 // (CAS/PAR/DMG) now live on the end-of-game leaderboard (see victory screen).
                 // Column geometry: [ Name | HP | MP ] per combatant row. Each HP/MP cell is a
                 // vertical stack — label on top, "#/#" below, a very thin bar underlining it.
-                const NAME_X = 16, HP_X = 92, MP_X = 188, HP_BAR_W = 78, MP_BAR_W = 70;
+                const NAME_X = 16, HP_X = 120, MP_X = 248, HP_BAR_W = 78, MP_BAR_W = 70;  // name col 16-120; HP/MP spread to fill the 360px status box
                 // Left-aligned label/number TextBlock.
                 function statusText(txt, color, leftPx, topPx, size, weight) {
                     const tb = new G.TextBlock();
@@ -6407,22 +6598,26 @@
                     return fill;
                 }
                 // Column-title header row (HP / MP shown once, like table headers).
-                statusText("HP", "#f0c050", HP_X, 10, 14, "600");
-                statusText("MP", "#f0c050", MP_X, 10, 14, "600");
+                // HP / MP column headers: white with a crisp black stroke (no drop shadow), matching
+                // the window title tabs. statusText() defaults to a drop shadow, so override per-block.
+                function headerStroke(tb) { tb.outlineWidth = 3; tb.outlineColor = "#000000"; }   // keep statusText's drop shadow
+                headerStroke(statusText("HP", "#ffffff", HP_X, 10, 14, "600"));
+                headerStroke(statusText("MP", "#ffffff", MP_X, 10, 14, "600"));
                 // One combatant ROW: Name (col 1) + "#/#" + thin underline bar per stat.
                 function statusRow(label, color, numTop) {
                     const barTop = numTop + 25;   // clear the number's full line box (no overlap)
-                    statusText(label, color, NAME_X, numTop, 18, "600");
+                    const nameLabel = statusText(label, color, NAME_X, numTop, 16, "600");
                     const hp = statusText("--/--", "#ffffff", HP_X, numTop, 16);
                     const hpFill = statusBar(HP_X, barTop, HP_BAR_W, color);
                     const mp = statusText("-/-", "#ffffff", MP_X, numTop, 16);
                     const mpFill = statusBar(MP_X, barTop, MP_BAR_W, "#5ad0ff");
-                    return { hp, hpFill, mp, mpFill };
+                    return { hp, hpFill, mp, mpFill, nameLabel };
                 }
                 const statusRefs = {
-                    blue: statusRow("Blue", "#6fb0ff", 42),
+                    blue: statusRow(window.getPlayerName(), "#6fb0ff", 42),
                     red:  statusRow("Red",  "#e76e55", 86),
                 };
+                window.registerPlayerNameLabel(statusRefs.blue.nameLabel, 96);  // ellipsis-fit the name column (HP starts at x120)
 
                 const stripHtml = (h) => (h || "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
                 function spellInfo(id) {
@@ -6433,11 +6628,13 @@
                             name: u.name,
                             stats: `${u.manaCostLabel} Mana    ${u.castLabel}    ${u.cooldownLabel}`,
                             desc: stripHtml(u.description),
+                            descHtml: u.description,
                         };
                     }
                     if (id === 'parry') return {
                         name: 'Parry', stats: 'Space    Reaction',
                         desc: 'Time it to deflect an incoming projectile back at the enemy. A clean parry returns it faster; a whiff means a longer cooldown.',
+                        descHtml: 'Time it to deflect an incoming projectile back at the enemy. A clean parry returns it faster; a whiff means a longer cooldown.',
                     };
                     return null;
                 }
@@ -6447,6 +6644,7 @@
                 const logStack = new G.StackPanel("detailLogStack");
                 logStack.isVertical = true;
                 logStack.width = (DETAIL_W - 32) + "px";
+                window._combatLogWidth = DETAIL_W - 32;   // budget for name truncation (see combatLine)
                 logStack.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
                 logStack.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
                 logStack.left = "16px"; logStack.paddingBottom = "12px";
@@ -6458,7 +6656,7 @@
                 const sideColor = (side) => side === 'red' ? '#e76e55' : '#6fb0ff';
                 function makeRun(run) {
                     const tb = new G.TextBlock();
-                    tb.text = run.text; tb.color = run.color; tb.fontSize = 18;
+                    tb.text = run.text; tb.color = run.color; tb.fontSize = 16;
                     tb.resizeToFit = true; tb.height = "25px";
                     tb.fontFamily = "'FF9UI', sans-serif"; tb.fontWeight = "600";
                     tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
@@ -6503,11 +6701,18 @@
                 }
                 window.logCombat = (side, text) => pushLine([{ text, color: sideColor(side) }]);
                 window.logNeutral = (text) => pushLine([{ text, color: '#f0c050' }]);
-                window.logDamage = (side, amount) => pushLine([
-                    { text: (side === 'red' ? 'Red' : 'Blue') + ' does', color: sideColor(side) },
-                    { text: '' + Math.round(amount), color: '#ffffff' },
-                    { text: 'DMG!', color: sideColor(side) },
-                ]);
+                window.logDamage = (side, amount) => {
+                    const numTxt = '' + Math.round(amount);
+                    const ctx = window._nameMeasCtx; ctx.font = "600 16px 'FF9UI', sans-serif";
+                    // Reserve room for the rest of the line so the name truncates, not the number.
+                    const reserved = ctx.measureText(' does').width + 10 + ctx.measureText(numTxt).width + ctx.measureText('DMG!').width;
+                    const nm = window.fitLogName(side !== 'red', reserved);
+                    pushLine([
+                        { text: nm + ' does', color: sideColor(side) },
+                        { text: numTxt, color: '#ffffff' },
+                        { text: 'DMG!', color: sideColor(side) },
+                    ]);
+                };
                 window.clearCombatLog = () => { logLines.length = 0; renderLog(); };
                 window.spellDisplayName = (id) => {
                     const r = window.ABILITY_REGISTRY && window.ABILITY_REGISTRY[id];
@@ -6518,7 +6723,7 @@
                 function showLog() {
                     detailStats.isVisible = false; detailDesc.isVisible = false;
                     logStack.isVisible = true;
-                    detailTabText.text = "Combat Log";
+                    detailTabText.text = "COMBAT LOG";
                     detailBox.isVisible = true; detailTab.isVisible = true;
                 }
                 function showDetail(id) {
@@ -6728,7 +6933,7 @@
                 const keyText = new BABYLON.GUI.TextBlock();
                 keyText.text = keyLabel;
                 keyText.color = "#ccc";
-                keyText.fontSize = 18;
+                keyText.fontSize = 16;
                 keyText.fontFamily = "'FF9UI', sans-serif";
                 keyText.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
                 keyText.shadowColor = "#000";
@@ -6849,7 +7054,7 @@
             const parryKeyText = new BABYLON.GUI.TextBlock();
             parryKeyText.text = "SPC";
             parryKeyText.color = "#ccc";
-            parryKeyText.fontSize = 18;
+            parryKeyText.fontSize = 16;
             parryKeyText.fontFamily = "'FF9UI', sans-serif";
             parryKeyText.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             parryKeyText.shadowColor = "#000";
@@ -11629,7 +11834,7 @@
 
                 // Per-match parry counter (Party Stats) — attribute to the parrying combatant.
                 { const pc = (parryer === 'player') ? combatants.left : combatants.right; if (pc && pc.matchStats) pc.matchStats.parries++;
-                  if (window.logCombat) { const blue = (parryer === 'player'); window.logCombat(blue ? 'blue' : 'red', (blue ? 'Blue' : 'Red') + ' parries!'); } }
+                  if (window.logCombat) { const blue = (parryer === 'player'); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' parries!')); } }
 
                 // Track parry stats (only for local player)
                 if (parryer === 'player') {
@@ -12646,6 +12851,24 @@
                     // Set moveDir for animation state machine (0 if at boundary and can't move)
                     playerCombatant.moveDir = canActuallyMove ? moveDir : 0;
 
+                    // Footstep SFX: play on a walking cadence while actually moving. Primed so the
+                    // first step fires promptly when you start walking, then every FOOTSTEP_INTERVAL.
+                    const FOOTSTEP_INTERVAL = 0.32;  // seconds between steps
+                    if (canActuallyMove && moveDir !== 0) {
+                        if (window.footstepTimer === undefined) window.footstepTimer = FOOTSTEP_INTERVAL;
+                        window.footstepTimer += dt;
+                        if (window.footstepTimer >= FOOTSTEP_INTERVAL) {
+                            window.footstepTimer = 0;
+                            if (window.ToneSFX && ToneSFX.footstep) {
+                                // Pan to the player's position on the field (same mechanism as block/parry).
+                                if (window.setTonePan) window.setTonePan(playerActivePaddle.position.x);
+                                ToneSFX.footstep();
+                            }
+                        }
+                    } else {
+                        window.footstepTimer = FOOTSTEP_INTERVAL;  // primed for the next walk
+                    }
+
                     // Retro movement: accumulate and move in discrete steps
                     const STEP_SIZE = 0.3;  // Size of each discrete movement step
                     if (!window.playerMoveAccum) window.playerMoveAccum = 0;
@@ -13018,7 +13241,7 @@
                                             playSound('overpowered', midPos.x, 0.8);
                                             // Show Overpowered text when one wins
                                             if (window.showCombatTextAt) showCombatTextAt(midPos, 'Overpowered!', 'cancel');
-                                            if (window.logCombat) { const blue = (proj.owner === 'player'); window.logCombat(blue ? 'blue' : 'red', (blue ? 'Blue' : 'Red') + ' Overpowers!'); }
+                                            if (window.logCombat) { const blue = (proj.owner === 'player'); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' Overpowers!')); }
                                         } else if (otherDmg > projDmg) {
                                             // Other wins - destroy this
                                             toDestroy.push(proj);
@@ -13030,7 +13253,7 @@
                                             if (window.createImpactDecal) createImpactDecal({ x: midPos.x, z: midPos.z }, 'overpower', { x: otherProj.velX, z: otherProj.velZ });
                                             playSound('overpowered', midPos.x, 0.8);
                                             if (window.showCombatTextAt) showCombatTextAt(midPos, 'Overpowered!', 'cancel');
-                                            if (window.logCombat) { const blue = (otherProj.owner === 'player'); window.logCombat(blue ? 'blue' : 'red', (blue ? 'Blue' : 'Red') + ' Overpowers!'); }
+                                            if (window.logCombat) { const blue = (otherProj.owner === 'player'); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' Overpowers!')); }
                                             break;
                                         } else {
                                             // Equal damage - mutual destruction (Cancel)
@@ -13075,7 +13298,7 @@
                             if (proj.type === 'frostbolt') {
                                 combatants.left.freezeTime = abilities.frostbolt.freezeDuration;
                                 playerFreezeTime = combatants.left.freezeTime; // Sync legacy
-                                if (window.logCombat) window.logCombat('blue', 'Blue Frozen!');
+                                if (window.logCombat) window.logCombat('blue', window.combatLine(true, ' Frozen!'));
                                 // Cancel any casting when frozen
                                 if (combatants.left.casting) cancelCasting('player', true);
                                 // Freeze animation in place
@@ -13231,7 +13454,7 @@
                                     // Freeze front player
                                     if (teams.left.front) {
                                         teams.left.front.freezeTime = abilities.frostbolt.freezeDuration;
-                                        if (window.logCombat) window.logCombat('blue', 'Blue Frozen!');
+                                        if (window.logCombat) window.logCombat('blue', window.combatLine(true, ' Frozen!'));
                                         // Cancel casting if frozen
                                         if (teams.left.front.casting) {
                                             teams.left.front.casting = null;
@@ -14020,7 +14243,7 @@
 
             // Per-match spell-cast counter (Party Stats) — attribute to the casting combatant.
             { const cc = getCombatantLegacy(caster); if (cc && cc.matchStats) cc.matchStats.spellsCast++;
-              if (cc && window.logCombat) { const blue = (cc === combatants.left); window.logCombat(blue ? 'blue' : 'red', (blue ? 'Blue' : 'Red') + ' casts ' + window.spellDisplayName('fireball')); } }
+              if (cc && window.logCombat) { const blue = (cc === combatants.left); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('fireball'))); } }
 
             // Track stat (only for local player in single/pvp)
             if (caster === 'player' || (getCombatantLegacy(caster)?.isLocalPlayer)) {
@@ -14069,7 +14292,7 @@
 
             // Per-match spell-cast counter (Party Stats) — attribute to the casting combatant.
             { const cc = getCombatantLegacy(caster); if (cc && cc.matchStats) cc.matchStats.spellsCast++;
-              if (cc && window.logCombat) { const blue = (cc === combatants.left); window.logCombat(blue ? 'blue' : 'red', (blue ? 'Blue' : 'Red') + ' casts ' + window.spellDisplayName('frostbolt')); } }
+              if (cc && window.logCombat) { const blue = (cc === combatants.left); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('frostbolt'))); } }
 
             // Visual feedback for the local player only
             const _fbC = getCombatantLegacy(caster);
@@ -15119,9 +15342,13 @@
             if (settingsWired) return;
             const $ = (id) => document.getElementById(id);
             const master = $('setMaster'), music = $('setMusic'), sfx = $('setSfx'),
-                  full = $('setFullscreen'), back = $('settingsBack');
+                  full = $('setFullscreen'), back = $('settingsBack'), name = $('setName');
             if (!master) return;
             settingsWired = true;
+            if (name) name.addEventListener('input', e => {
+                Settings.set('playerName', e.target.value.slice(0, 16));
+                if (window.refreshPlayerName) window.refreshPlayerName();
+            });
             master.addEventListener('input', e => Settings.set('master', parseInt(e.target.value, 10)));
             music.addEventListener('input',  e => Settings.set('music',  parseInt(e.target.value, 10)));
             sfx.addEventListener('input',    e => Settings.set('sfx',    parseInt(e.target.value, 10)));
@@ -15145,6 +15372,14 @@
             document.getElementById('setMaster').value = Settings.values.master;
             document.getElementById('setMusic').value = Settings.values.music;
             document.getElementById('setSfx').value = Settings.values.sfx;
+            const nameEl = document.getElementById('setName');
+            if (nameEl) {
+                nameEl.value = Settings.values.playerName || '';
+                // Lock name editing mid-match (Settings opened from pause) to avoid label desync.
+                const inMatch = (from === 'pause');
+                nameEl.disabled = inMatch;
+                nameEl.title = inMatch ? 'Name can only be changed outside of a match' : '';
+            }
             document.getElementById('setFullscreen').checked = !!document.fullscreenElement;
             showMenuScreen('settingsScreen', from);
         }
@@ -15511,21 +15746,21 @@
                 // Host sees canonical view (combatants.left on screen left)
                 if (window.resetCameraToDefault) window.resetCameraToDefault();
                 if (window.applyClientPerspective) window.applyClientPerspective(false);
-                if (window.guiElements.playerHealthLabel) window.guiElements.playerHealthLabel.text = "Blue Tower";
+                if (window.guiElements.playerHealthLabel) window.guiElements.playerHealthLabel.text = window.getPlayerName() + " Tower";
                 if (window.guiElements.aiHealthLabel) window.guiElements.aiHealthLabel.text = "Red Tower";
             } else {
                 combatants.left.inputSource = 'network';
                 combatants.left.isLocalPlayer = false;
                 combatants.right.inputSource = 'local';
                 combatants.right.isLocalPlayer = true;
-                // Joiner: flip camera + swap HUD sides so they see themselves
-                // on the visual left of the screen. Simulation/state stays canonical.
-                if (window.flipCameraForClient) window.flipCameraForClient();
-                if (window.applyClientPerspective) window.applyClientPerspective(true);
-                // After HUD swap: visual-left panel now shows combatants.right (red),
-                // visual-right panel shows combatants.left (blue). Labels follow data.
+                // No flip: the joiner sees the SAME canonical view as the host and simply plays the
+                // right-side (red) character. (Design decision — keep both views identical.)
+                if (window.resetCameraToDefault) window.resetCameraToDefault();
+                if (window.applyClientPerspective) window.applyClientPerspective(false);
+                // Joiner is the right/red side, so their name goes on the RIGHT tower; the left
+                // (blue) tower is the opponent/host (opponent-name exchange still TODO).
                 if (window.guiElements.playerHealthLabel) window.guiElements.playerHealthLabel.text = "Blue Tower";
-                if (window.guiElements.aiHealthLabel) window.guiElements.aiHealthLabel.text = "Red Tower";
+                if (window.guiElements.aiHealthLabel) window.guiElements.aiHealthLabel.text = window.getPlayerName() + " Tower";
             }
 
             // Apply shared upgrade (use same for both in PvP)
@@ -16876,6 +17111,7 @@
                 if (c && c.matchStats) c.matchStats = { spellsCast: 0, parries: 0, damageDealt: 0 };
             }
             if (window.clearCombatLog) window.clearCombatLog();
+            if (window.refreshPlayerName) window.refreshPlayerName();   // re-sync name labels each match
             resetRound();
 
             // Hide gameplay UI when resetting (menu state)
@@ -17591,7 +17827,7 @@
 
             // Per-match spell-cast counter (Party Stats) — attribute to the casting combatant.
             if (c.matchStats) c.matchStats.spellsCast++;
-            if (window.logCombat) { const blue = (c === combatants.left); window.logCombat(blue ? 'blue' : 'red', (blue ? 'Blue' : 'Red') + ' casts ' + window.spellDisplayName('chain_lightning')); }
+            if (window.logCombat) { const blue = (c === combatants.left); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('chain_lightning'))); }
 
             // Visual feedback for the local player only
             if ((isPlayer || c.isLocalPlayer) && window.flashAbilitySlot) {
@@ -18088,7 +18324,7 @@
             // Per-match spell-cast counter + combat log — the cast-time path fires here
             // (legacy castFireball() covers the instant on-screen-button path).
             if (c.matchStats) c.matchStats.spellsCast++;
-            if (window.logCombat) { const blue = (c === combatants.left); window.logCombat(blue ? 'blue' : 'red', (blue ? 'Blue' : 'Red') + ' casts ' + window.spellDisplayName('fireball')); }
+            if (window.logCombat) { const blue = (c === combatants.left); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('fireball'))); }
 
             const paddle = c.paddle;
             const isLeft = c.side === 'left';

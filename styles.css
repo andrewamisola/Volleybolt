@@ -2481,6 +2481,15 @@ body.flipped-view #aiCastBarContainer {
 .settings-row > span { min-width: 110px; text-align: left; }
 .settings-slider { flex: 1; accent-color: var(--ff9-gold); height: 6px; cursor: pointer; }
 .settings-toggle { width: 22px; height: 22px; accent-color: var(--ff9-gold); cursor: pointer; }
+.settings-input {
+    flex: 1; min-width: 0; max-width: 220px;
+    font-family: 'FF9UI', sans-serif; font-size: 20px; color: #fff;
+    background: rgba(8,12,22,0.7); border: 1px solid var(--ff9-gold);
+    border-radius: 4px; padding: 4px 10px; outline: none; text-align: left;
+}
+.settings-input::placeholder { color: #7c8598; }
+.settings-input:focus { border-color: #fff; background: rgba(12,18,30,0.85); }
+.settings-input:disabled { opacity: 0.45; cursor: not-allowed; border-color: #555; }
 
 /* ---- How to Play rows ---- */
 .htp-row {
