@@ -2356,6 +2356,10 @@ body.flipped-view #aiCastBarContainer {
     transform: none;
     align-items: center;
     gap: 88px;
+    /* Scale the whole menu (title + buttons) with the viewport, exactly like the HUD's
+       #hudScaleLayer, so fixed-px text never overflows / overlaps on small windows.
+       --ui-scale is set on #gameContainer (= container width / 1920) and inherits here. */
+    zoom: var(--ui-scale, 1);
 }
 .arcane-title-wrap { align-items: center; }
 .arcane-divider,
