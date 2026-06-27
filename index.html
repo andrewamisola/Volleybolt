@@ -3129,6 +3129,13 @@
         }
         window.setMasterVolume = setMasterVolume;
 
+        // Group-volume setters (0-1). No-op until the buses exist (audio starts on first input).
+        function volToDb(vol) { return vol <= 0 ? -Infinity : 20 * Math.log10(vol); }
+        function setMusicVolume(vol) { if (window.musicBus) window.musicBus.volume.value = volToDb(vol); }
+        function setSfxVolume(vol)   { if (window.sfxBus)   window.sfxBus.volume.value   = volToDb(vol); }
+        window.setMusicVolume = setMusicVolume;
+        window.setSfxVolume = setSfxVolume;
+
         // Load a sound file into a buffer
         async function loadSound(name, url) {
             try {
@@ -3340,8 +3347,13 @@
                 return; // Will retry on next user interaction
             }
 
-            // Stereo panner for therapy sounds (controlled by X position)
-            therapyPanner = new Tone.Panner(0).toDestination();
+            // Group buses: music (ambient/therapy + music track) and SFX (chip sounds) each
+            // feed the master destination, so their volumes can be controlled independently.
+            window.musicBus = new Tone.Volume(0).toDestination();
+            window.sfxBus = new Tone.Volume(0).toDestination();
+
+            // Stereo panner for therapy sounds (controlled by X position) -> music bus (ambient).
+            therapyPanner = new Tone.Panner(0).connect(window.musicBus);
 
             // Very wet reverb for smooth, ambient quality
             therapyReverb = new Tone.Reverb({
@@ -3425,7 +3437,7 @@
             // ========================================
 
             // Stereo panner for 8-bit sounds (controlled by X position)
-            chipPanner = new Tone.Panner(0).toDestination();
+            chipPanner = new Tone.Panner(0).connect(window.sfxBus);
 
             // BitCrusher for that crunchy 8-bit sound
             // bits: 4 = very crunchy, 8 = moderate, 12 = subtle
@@ -3507,7 +3519,7 @@
             // ========================================
 
             // Separate chain for music - only bitcrusher, no panning (centered)
-            const musicBitCrusher = new Tone.BitCrusher(8).toDestination();  // Direct to output, no panning
+            const musicBitCrusher = new Tone.BitCrusher(8).connect(window.musicBus);  // -> music bus
 
             // Music player - loops automatically
             synths.music = new Tone.Player({
