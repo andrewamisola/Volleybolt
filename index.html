@@ -6886,14 +6886,24 @@
                         { text: tail, color: '#ffff40' },
                     ]);
                 };
-                // Juice (ultimate) activation: name in side color, "JUICE!" in bright gold so the
-                // ult clearly stands out from ordinary blue/red action lines.
+                // Juice (ultimate) activation: "<name> activates Juice!" — name + verb in side
+                // color, "Juice!" in bright gold so the ult stands out from ordinary action lines.
                 window.logJuice = (side) => {
                     const ctx = window._nameMeasCtx; ctx.font = "600 16px 'FF9UI', sans-serif";
-                    const nm = window.fitLogName(side !== 'red', ctx.measureText(' JUICE!').width);
+                    const nm = window.fitLogName(side !== 'red', ctx.measureText(' activates Juice!').width);
                     pushLine([
-                        { text: nm, color: sideColor(side) },
-                        { text: 'JUICE!', color: '#ffcf3f' },
+                        { text: nm + ' activates', color: sideColor(side) },
+                        { text: 'Juice!', color: '#ffcf3f' },
+                    ]);
+                };
+                // Frozen: "<name> is Frozen!" — name + verb in side color, "Frozen!" in frost blue
+                // (#8fd0ff, matching the floating Frozen text).
+                window.logFrozen = (side) => {
+                    const ctx = window._nameMeasCtx; ctx.font = "600 16px 'FF9UI', sans-serif";
+                    const nm = window.fitLogName(side !== 'red', ctx.measureText(' is Frozen!').width);
+                    pushLine([
+                        { text: nm + ' is', color: sideColor(side) },
+                        { text: 'Frozen!', color: '#8fd0ff' },
                     ]);
                 };
                 window.clearCombatLog = () => { logLines.length = 0; renderLog(); };
@@ -13577,7 +13587,7 @@
                             if (proj.type === 'frostbolt') {
                                 combatants.left.freezeTime = abilities.frostbolt.freezeDuration;
                                 playerFreezeTime = combatants.left.freezeTime; // Sync legacy
-                                if (window.logCombat) window.logCombat('blue', window.combatLine(true, ' Frozen!'));
+                                if (window.logFrozen) window.logFrozen('blue');
                                 // Cancel any casting when frozen
                                 if (combatants.left.casting) cancelCasting('player', true);
                                 // Freeze animation in place
@@ -13657,7 +13667,7 @@
                             if (proj.type === 'frostbolt') {
                                 combatants.right.freezeTime = abilities.frostbolt.freezeDuration;
                                 aiFreezeTime = combatants.right.freezeTime; // Sync legacy
-                                if (window.logCombat) window.logCombat('red', 'Red Frozen!');
+                                if (window.logFrozen) window.logFrozen('red');
                                 // Freeze animation in place
                                 if (window.freezeAIAnim) freezeAIAnim();
                                 playSound('frozen', aiPaddle.position.x, 0.8, 2.0);
@@ -13740,7 +13750,7 @@
                                     // Freeze front player
                                     if (teams.left.front) {
                                         teams.left.front.freezeTime = abilities.frostbolt.freezeDuration;
-                                        if (window.logCombat) window.logCombat('blue', window.combatLine(true, ' Frozen!'));
+                                        if (window.logFrozen) window.logFrozen('blue');
                                         // Cancel casting if frozen
                                         if (teams.left.front.casting) {
                                             teams.left.front.casting = null;
@@ -13808,7 +13818,7 @@
                                     // Freeze front AI
                                     if (teams.right.front) {
                                         teams.right.front.freezeTime = abilities.frostbolt.freezeDuration;
-                                        if (window.logCombat) window.logCombat('red', 'Red Frozen!');
+                                        if (window.logFrozen) window.logFrozen('red');
                                         // Cancel casting if frozen
                                         if (teams.right.front.casting) {
                                             teams.right.front.casting = null;
