@@ -604,8 +604,12 @@
          the module only re-exported a stubbier subset of playSound/loadAllSounds/etc. that
          shadowed inline. Inline is the single source of truth for audio. -->
     <script type="module" src="js/ui/ui-system.js"></script>
-    <script type="module" src="js/rendering/rendering-utils.js"></script>
-    <script type="module" src="js/systems/game-systems.js"></script>
+    <!-- Removed js/rendering/rendering-utils.js: fully dead. Its palette exports
+         (NES_PALETTE, getNESColors, ...) were referenced by no code anywhere. -->
+    <!-- Removed js/systems/game-systems.js: pure shadow. Every export had an inline
+         twin (getOpponent, getCombatantUIElements, and parallel state copies like
+         playerMana/playerCasting that the real inline game never reads). Inline wins. -->
+
     <!-- Removed js/main.js: diagnostic-only entry whose missing ES-module import caused a
          hard crash. The game runs from the inline script below; main.js was never functional. -->
 
