@@ -1725,7 +1725,7 @@
             c.juiceTimer = JUICE.DURATION;
             if (c.cooldowns) { for (const k in c.cooldowns) c.cooldowns[k] = 0; }   // reset all cooldowns ONCE
             if (window.onJuiceStart) window.onJuiceStart(c);
-            if (window.logCombat && window.combatLine) window.logCombat(c.side === 'left' ? 'blue' : 'red', window.combatLine(c.side === 'left', ' Juice!'));
+            if (window.logJuice) window.logJuice(c.side === 'left' ? 'blue' : 'red');
             return true;
         }
         // Per-frame while bursting: drain the bar 100->0 over the duration + animate/fade the aura.
@@ -6884,6 +6884,16 @@
                     pushLine([
                         { text: nm, color: sideColor(side) },
                         { text: tail, color: '#ffff40' },
+                    ]);
+                };
+                // Juice (ultimate) activation: name in side color, "JUICE!" in bright gold so the
+                // ult clearly stands out from ordinary blue/red action lines.
+                window.logJuice = (side) => {
+                    const ctx = window._nameMeasCtx; ctx.font = "600 16px 'FF9UI', sans-serif";
+                    const nm = window.fitLogName(side !== 'red', ctx.measureText(' JUICE!').width);
+                    pushLine([
+                        { text: nm, color: sideColor(side) },
+                        { text: 'JUICE!', color: '#ffcf3f' },
                     ]);
                 };
                 window.clearCombatLog = () => { logLines.length = 0; renderLog(); };
