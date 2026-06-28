@@ -12083,7 +12083,9 @@
 
                 // Per-match parry counter (Party Stats) — attribute to the parrying combatant.
                 { const pc = (parryer === 'player') ? combatants.left : combatants.right; if (pc && pc.matchStats) pc.matchStats.parries++; if (pc && window.addJuice) window.addJuice(pc, window.JUICE.CHARGE.parry);
-                  if (window.logCombat) { const blue = (parryer === 'player'); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' parries!')); } }
+                  // Skip the log line during a Juice burst — the combatant auto-parries every
+                  // incoming projectile, which would otherwise flood the log with " parries!".
+                  if (window.logCombat && !(pc && pc.juiceActive)) { const blue = (parryer === 'player'); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' parries!')); } }
 
                 // Track parry stats (only for local player)
                 if (parryer === 'player') {

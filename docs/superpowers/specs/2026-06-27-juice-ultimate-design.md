@@ -7,9 +7,17 @@
 ## Goal
 
 A third Status-panel bar ("Juice" — pickle-themed limit break) that fills from a
-combatant's actions and, when full, can be spent (Q) to enter a short **rapid-fire
-burst window**: free mana + halved cooldowns for 8 seconds, with a golden
-"Super-Saiyan" aura as the tell. Fully symmetric — the AI has the identical mechanic.
+combatant's actions and, when full, can be spent (Q) to enter a short **power
+burst window** (8 seconds) with a golden "Super-Saiyan" aura as the tell. Fully
+symmetric — the AI has the identical mechanic.
+
+**Burst behavior (post-rework, shipped):** activation resets all cooldowns **once**;
+mana and cooldowns are otherwise normal during the burst (this replaced the original
+"free mana + halved cooldowns", which was too big a tempo swing). The strength comes
+from quality instead: the caster's fireball still has its cast time but comes out at
+the **full 6-damage tier** — the size and speed of a maxed-out volley — and the
+combatant **auto-perfect-parries** every incoming projectile, ignoring the parry
+cooldown and manual-parry timing window.
 
 ## Core principle
 
@@ -45,15 +53,25 @@ Tuned so a full bar is roughly a round or two of active play. All values are dia
   bar resets to 0, enter Juice mode for `JUICE_DURATION = 8s`.
 - A power-up SFX fires on activation.
 
-## Juice mode (8s)
+## Juice mode (8s) — post-rework
 
-- **Free mana:** while active, casting deducts 0 mana (cost check bypassed).
-- **Halved cooldowns:** cooldowns set after a cast during the window are × 0.5.
-- **No damage change.**
-- **Tells:** golden particle aura on the combatant's character (Super-Saiyan), the
-  command-window border animates gold, COMMAND tab can pulse.
-- Per-frame: decrement timer by `dt`; at ≤0, deactivate — revert aura/border, bar
-  refills from 0. Can't re-trigger while active or below full.
+- **Cooldown reset (once):** on activation, all of the combatant's cooldowns are set
+  to 0 a single time. Cooldowns then tick normally for the rest of the burst.
+- **Normal mana / cooldowns:** no free casts, no cooldown scaling during the window.
+- **Full-tier fireball:** a fireball cast (or spawned) by the juiced combatant comes
+  out at `volleyCount = 4` → 6 damage, scaled to full size and launched at `maxSpeed`,
+  matching a maxed-out volley. Still has its normal cast time.
+- **Auto-perfect-parry:** every projectile that reaches the juiced combatant's paddle
+  is parried (reflected) regardless of parry cooldown or manual-parry timing. The
+  redundant " parries!" combat-log line is suppressed during the burst to avoid
+  flooding the log; the parry sound/VFX still play.
+- **Tells:** golden flame aura on the character, a white silhouette outline so the
+  model stays readable, gold model tint, gold command-window border, and the COMMAND
+  tab title shows "JUICE" while active. "JUICE READY" replaces the tab title when the
+  bar is full and not yet spent.
+- Per-frame: decrement timer by `dt`; the bar drains as time remaining. At ≤0,
+  deactivate — revert aura/outline/tint/border, bar sits empty. Can't re-trigger while
+  active or below full. Juice does not carry across matches (cleared in `resetGame`).
 
 ## Symmetry / AI
 
