@@ -9,3 +9,7 @@ models/p4/
 # Playwright MCP screenshots/logs
 .playwright-mcp/
 **/.DS_Store
+
+# junk / scratch
+grep.exe.stackdump
+.pickle/
