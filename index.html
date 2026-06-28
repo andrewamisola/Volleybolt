@@ -12276,6 +12276,11 @@
                 if (!btn || !btn.activeOverlay) return;
                 btn.activeOverlay.height = Math.max(0, progress * 100) + "%";
             };
+            // Expose to the PvP loop: syncLocalParryUI() lives in a different (outer) scope and
+            // can't see these block-scoped consts — without this it threw "updateParryButtonGUI is
+            // not defined" every network frame, crashing the whole PvP game loop.
+            window.updateParryButtonGUI = updateParryButtonGUI;
+            window.updateParryActiveOverlay = updateParryActiveOverlay;
 
             // Player parry callback - activates parry window
             let parryJustActivated = false;  // Prevent double-activation from rapid input
@@ -16175,6 +16180,12 @@
             // Hide lobby
             hideMultiplayerLobby();
 
+            // Reveal the 3D arena and enter match state. The singles startGame() does this via
+            // GameSM (show3D toggles the canvas visibility, which boot sets to hidden); the MP
+            // path skipped it, so the canvas stayed hidden (blank screen for BOTH peers) and
+            // GameSM stayed in 'menu' (which also broke Esc-pause in PvP).
+            if (window.GameSM) { GameSM.state = 'match'; GameSM.show3D(true); }
+
             // Set game mode to PvP (multiplayer is always 1v1 for now)
             gameMode = 'pvp';
             gameState = 'playing';
@@ -16944,15 +16955,15 @@
             parryCooldown = state.cooldown;
 
             if (state.active) {
-                updateParryButtonGUI('active');
-                updateParryActiveOverlay(state.timer / parryWindow);
+                if (window.updateParryButtonGUI) window.updateParryButtonGUI('active');
+                if (window.updateParryActiveOverlay) window.updateParryActiveOverlay(state.timer / parryWindow);
             } else if (!state.canParry) {
-                updateParryButtonGUI('cooldown');
+                if (window.updateParryButtonGUI) window.updateParryButtonGUI('cooldown');
                 if (state.cooldownMax > 0) {
                     updateParryCooldownSweep(state.cooldown / state.cooldownMax);
                 }
             } else {
-                updateParryButtonGUI('ready');
+                if (window.updateParryButtonGUI) window.updateParryButtonGUI('ready');
                 updateParryCooldownSweep(0);
             }
         }
