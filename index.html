@@ -1723,12 +1723,13 @@
             c.juice = JUICE.MAX;                                   // stays full; drains as duration ticks
             c.juiceActive = true;
             c.juiceTimer = JUICE.DURATION;
+            if (c.cooldowns) { for (const k in c.cooldowns) c.cooldowns[k] = 0; }   // reset all cooldowns ONCE
             if (window.onJuiceStart) window.onJuiceStart(c);
-            if (window.logCombat && window.combatLine) window.logCombat(c.side === 'left' ? 'blue' : 'red', window.combatLine(c.side === 'left', ' Juiced!'));
+            if (window.logCombat && window.combatLine) window.logCombat(c.side === 'left' ? 'blue' : 'red', window.combatLine(c.side === 'left', ' Juice!'));
             return true;
         }
-        // Per-frame: free mana (keep topped) + halved cooldowns (extra dt decrement) + drain the
-        // bar from 100->0 over the burst (= visible duration) + fade the aura with it.
+        // Per-frame while bursting: drain the bar 100->0 over the duration + animate/fade the aura.
+        // (Mana and cooldowns are normal now; cooldowns are reset once at activation instead.)
         function updateJuice(dt) {
             const list = (typeof getAllCombatants === 'function')
                 ? getAllCombatants()
@@ -1736,10 +1737,6 @@
             for (const c of list) {
                 if (!c || !c.juiceActive) continue;
                 if (window._juiceTint) window._juiceTint(c, true);  // re-assert the white-hot tint (hit-flash clobbers it)
-                c.mana = getMaxMana(c.side);                       // free casts
-                if (c.cooldowns) {                                 // halved: extra decrement
-                    for (const k in c.cooldowns) if (c.cooldowns[k] > 0) c.cooldowns[k] = Math.max(0, c.cooldowns[k] - dt);
-                }
                 c.juiceTimer -= dt;
                 const frac = Math.max(0, c.juiceTimer / JUICE.DURATION);
                 c.juice = JUICE.MAX * frac;                        // bar drains = time remaining
@@ -6765,7 +6762,7 @@
                 function headerStroke(tb) { tb.outlineWidth = 3; tb.outlineColor = "#000000"; }   // keep statusText's drop shadow
                 headerStroke(statusText("HP", "#ffffff", HP_X, 10, 14, "600"));
                 headerStroke(statusText("MP", "#ffffff", MP_X, 10, 14, "600"));
-                headerStroke(statusText("Juiced", "#ffffff", JUICE_X, 10, 14, "600"));   // Juice (ultimate)
+                headerStroke(statusText("Juice", "#ffffff", JUICE_X, 10, 14, "600"));   // Juice (ultimate)
                 // One combatant ROW: Name (col 1) + "#/#" + thin underline bar per stat.
                 function statusRow(label, color, numTop) {
                     const barTop = numTop + 25;   // clear the number's full line box (no overlap)
@@ -6876,6 +6873,17 @@
                         { text: nm + ' does', color: sideColor(side) },
                         { text: numTxt, color: '#ffffff' },
                         { text: 'DMG!', color: sideColor(side) },
+                    ]);
+                };
+                // Thunderstorm zap line: name in side color, "Zaps N!" in electric yellow
+                // (#ffff40 — matches the .combat-text.lightning floating text).
+                window.logZap = (side, count) => {
+                    const tail = 'Zaps ' + count + '!';
+                    const ctx = window._nameMeasCtx; ctx.font = "600 16px 'FF9UI', sans-serif";
+                    const nm = window.fitLogName(side !== 'red', ctx.measureText(' ' + tail).width);
+                    pushLine([
+                        { text: nm, color: sideColor(side) },
+                        { text: tail, color: '#ffff40' },
                     ]);
                 };
                 window.clearCombatLog = () => { logLines.length = 0; renderLog(); };
@@ -6993,7 +7001,7 @@
                         refs.mpFill.width = (Math.max(0, Math.min(1, mpNow / maxMp)) * 100) + '%';
                         const juMax = (window.JUICE && window.JUICE.MAX) || 500;
                         const juPct = Math.round(Math.max(0, Math.min(1, (c.juice || 0) / juMax)) * 100);
-                        refs.juice.text = '' + juPct;          // 0–100 % of the 500-point bar
+                        refs.juice.text = juPct + '/100';      // #/# like HP/MP — % of the full bar
                         refs.juiceFill.width = juPct + '%';
                     };
                     setStatus(statusRefs.blue, bl);
@@ -7010,15 +7018,23 @@
                         } else if (!ready) {
                             localJ._juiceReadyPinged = false;
                         }
-                        if (juiceReadyBox.isVisible !== ready) juiceReadyBox.isVisible = ready;
-                        if (ready) juiceReadyBox.alpha = 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(Date.now() / 180));
+                        // Contextual command-tab title: "COMMAND" normally, "JUICE READY" (pulsing
+                        // gold) when the bar is full, "JUICE" while the burst is live. Replaces the
+                        // old separate floating prompt so the HUD reads as one clean element.
+                        if (juiceReadyBox.isVisible) juiceReadyBox.isVisible = false;
+                        const goldPulse = (Math.sin(Date.now() / 180) > 0) ? "#ffe89a" : "#f0c050";
                         if (localJ.juiceActive) {
-                            const gold = (Math.sin(Date.now() / 120) > 0) ? "#ffe89a" : "#f0c050";
-                            box.color = gold;                                          // pulsing gold command border
+                            box.color = goldPulse;                                     // pulsing gold command border
+                            titleText.text = "JUICE";  titleText.color = goldPulse;  titleTab.color = goldPulse;
                             juiceStrip.top = ((localJ === bl ? 42 : 86) - 4) + "px";   // the local player's status row
-                            juiceStrip.color = gold;
+                            juiceStrip.color = goldPulse;
                             if (!juiceStrip.isVisible) juiceStrip.isVisible = true;
+                        } else if (ready) {
+                            titleText.text = "JUICE READY";  titleText.color = goldPulse;  titleTab.color = "#f0c050";
+                            if (box.color !== RIM) box.color = RIM;
+                            if (juiceStrip.isVisible) juiceStrip.isVisible = false;
                         } else {
+                            if (titleText.text !== "COMMAND") { titleText.text = "COMMAND"; titleText.color = "#ffffff"; titleTab.color = RIM; }
                             if (box.color !== RIM) box.color = RIM;
                             if (juiceStrip.isVisible) juiceStrip.isVisible = false;
                         }
@@ -11497,6 +11513,20 @@
                     applyUpgradesToProjectile(proj, 'fireball', owner);
                 }
 
+                // Juice burst: the caster's fireball comes out at the full 6-damage tier — the size
+                // and speed of a maxed-out volley — even though it still has a cast time.
+                if (!isSplitProjectile && !proj.isMagmaBomb) {
+                    const ownerC = (owner === 'player') ? combatants.left : combatants.right;
+                    if (ownerC && ownerC.juiceActive) {
+                        proj.volleyCount = 4;                                              // damage tier = 6
+                        const dir = Math.sign(proj.velX) || (owner === 'player' ? 1 : -1);
+                        const maxSp = (abilities.fireball && abilities.fireball.maxSpeed) || 20;
+                        proj.velX = dir * maxSp; proj.speed = maxSp;                       // speed of a 6-dmg volley
+                        if (window.updateFireballScale) window.updateFireballScale(proj);  // full size
+                        if (window.updateProjectileTier) window.updateProjectileTier(proj);
+                    }
+                }
+
                 setupProjectileSceneFx(proj);
                 projectiles.push(proj);
                 return proj;
@@ -13524,6 +13554,13 @@
                                 continue;
                             }
 
+                            // Juice burst: the juiced player auto–perfect-parries every incoming
+                            // projectile, ignoring the parry cooldown and manual-parry timing window.
+                            if (combatants.left && combatants.left.juiceActive) {
+                                parryProjectile(proj, 'player');
+                                continue;
+                            }
+
                             // Frostbolt freezes on hit and is destroyed
                             if (proj.type === 'frostbolt') {
                                 combatants.left.freezeTime = abilities.frostbolt.freezeDuration;
@@ -13594,6 +13631,13 @@
                                 parryProjectile(proj, 'ai');
                                 playSound('parry', aiPaddle.position.x, 0.5);
                                 // Skip normal collision handling
+                                continue;
+                            }
+
+                            // Juice burst: the juiced AI auto–perfect-parries every incoming
+                            // projectile, ignoring the parry cooldown and timing window (symmetric).
+                            if (combatants.right && combatants.right.juiceActive) {
+                                parryProjectile(proj, 'ai');
                                 continue;
                             }
 
@@ -14225,10 +14269,20 @@
             // --- JUICE (ultimate) tells: subtle low-poly flame aura + white-hot golden model tint. ---
             // White-hot: add a golden emissive boost to the wizard's OWN materials while bursting.
             const JUICE_MODEL_TINT = new BABYLON.Color3(0.5, 0.42, 0.16);
+            const JUICE_OUTLINE_COLOR = new BABYLON.Color3(1, 1, 1);   // white rim so the wizard stays readable under the aura
             const setJuiceModelTint = (c, on) => {
                 const root = c && c.modelRoot;
                 if (!root || !root.getChildMeshes) return;
                 root.getChildMeshes().forEach((mesh) => {
+                    // White silhouette outline for the whole model so the wizard reads clearly under
+                    // the flame aura + gold tint. Re-asserted every frame via updateJuice.
+                    if (on) {
+                        mesh.renderOutline = true;
+                        mesh.outlineColor = JUICE_OUTLINE_COLOR;
+                        mesh.outlineWidth = 0.04;
+                    } else if (mesh.renderOutline) {
+                        mesh.renderOutline = false;
+                    }
                     const mat = mesh.material;
                     if (!mat || mat.emissiveColor === undefined) return;
                     if (on) {
@@ -15151,8 +15205,8 @@
         }
 
         // Victory-screen dismissal state. _returningToMenu de-dupes the Continue action
-        // (the Babylon button AND the DOM fallback can both fire). _victoryDismiss is the
-        // DOM-level "click anywhere to continue" handler (see showVictoryScreen).
+        // (the Babylon button AND the DOM hit-test handler can both fire). _victoryDismiss is the
+        // DOM-level handler that hit-tests clicks against the Continue button (see showVictoryScreen).
         let _returningToMenu = false;
         let _victoryDismiss = null;
         let victoryContinueAt = 0;   // Continue is ignored until this time (grace to read the report)
@@ -17403,13 +17457,28 @@
             if (window.guiElements.continueBtn) window.guiElements.continueBtn.isVisible = true;
 
             // Babylon GUI pointer input becomes unreliable after a full match (clicks stop
-            // reaching the Continue button), so accept a DOM-level click/tap ANYWHERE to
-            // continue — DOM input is the reliable channel (same rationale as the keyboard
-            // fallback). A grace window (victoryContinueAt) makes continue spam a no-op so the
-            // Battle Report stays readable; returnToMenuTransition enforces it for all triggers.
+            // reaching the Continue button). We keep the reliable DOM-pointer channel but
+            // hit-test it against the Continue button's rendered rectangle ourselves, so the
+            // button is the ONLY way to continue — a click anywhere else does nothing. Keyboard
+            // Enter also works. A grace window (victoryContinueAt) keeps the Battle Report readable.
             victoryContinueAt = Date.now() + VICTORY_CONTINUE_GRACE_MS;
             if (_victoryDismiss) document.removeEventListener('pointerdown', _victoryDismiss, true);
-            _victoryDismiss = () => returnToMenuTransition();
+            _victoryDismiss = (e) => {
+                const btn = window.guiElements && window.guiElements.continueBtn;
+                const adt = window.guiTexture;
+                if (!btn || !btn._currentMeasure || !adt || !scene) return;
+                const canvas = scene.getEngine().getRenderingCanvas();
+                if (!canvas) return;
+                const rect = canvas.getBoundingClientRect();
+                if (!rect.width || !rect.height) return;
+                const size = adt.getSize();
+                const x = (e.clientX - rect.left) * (size.width / rect.width);
+                const y = (e.clientY - rect.top) * (size.height / rect.height);
+                const m = btn._currentMeasure;
+                if (x >= m.left && x <= m.left + m.width && y >= m.top && y <= m.top + m.height) {
+                    returnToMenuTransition();
+                }
+            };
             document.addEventListener('pointerdown', _victoryDismiss, true);
         }
 
@@ -17459,7 +17528,12 @@
             resetTalentState();  // Reset talents for new match
             // Reset per-match stat counters (Party Stats window) for all combatants.
             for (const c of (isDoublesMode() ? getAllCombatants() : [combatants.left, combatants.right])) {
-                if (c && c.matchStats) c.matchStats = { spellsCast: 0, parries: 0, damageDealt: 0 };
+                if (!c) continue;
+                if (c.matchStats) c.matchStats = { spellsCast: 0, parries: 0, damageDealt: 0 };
+                // Juice does not carry across matches — clear the bar and end any live burst.
+                if (c.juiceActive && window.onJuiceEnd) { try { window.onJuiceEnd(c); } catch (e) {} }
+                c.juice = 0; c.juiceActive = false; c.juiceTimer = 0;
+                c._juiceReadyPinged = false; c._juiceHot = false;
             }
             if (window.clearCombatLog) window.clearCombatLog();
             if (window.refreshPlayerName) window.refreshPlayerName();   // re-sync name labels each match
@@ -17952,10 +18026,10 @@
                 ? activeUpgrades[0].castTime
                 : ability.castTime;
 
-            // Set combatant casting state. During a Juice burst, Fireball casts instantly.
+            // Set combatant casting state
             c.casting = abilityId;
             c.castProgress = 0;
-            c.castTime = (c.juiceActive && abilityId === 'fireball') ? 0 : effectiveCastTime;
+            c.castTime = effectiveCastTime;
 
             // Stop any existing casting loop sound (isochronic generator)
             if (window.ToneSFX) ToneSFX.castingStop();
@@ -18264,7 +18338,7 @@
 
             // Show combat text
             showCombatText(isPlayer, 'Thunderstorm x' + zapsToPerform, 'lightning');
-            if (window.logCombat && window.combatLine) window.logCombat(isPlayer ? 'blue' : 'red', window.combatLine(isPlayer, ' Zaps ' + zapsToPerform + '!'));
+            if (window.logZap) window.logZap(isPlayer ? 'blue' : 'red', zapsToPerform);
 
             // Start cooldown
             c.cooldowns.chain_lightning = CHAIN_LIGHTNING_COOLDOWN;
