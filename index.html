@@ -593,7 +593,10 @@
     <!-- PeerJS for P2P WebRTC multiplayer -->
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <!-- Modular config files (expose globals on window for the inline game) -->
-    <script type="module" src="js/config/game-config.js"></script>
+    <!-- Removed js/config/game-config.js: dead duplicate. The real config constants are
+         inline `const`s below (gravity, maxMana, tableY, ...); the module only wrote parallel
+         window globals that the inline game never reads. Verified 0 reads before removal. -->
+
     <!-- Removed js/config/ability-registry.js: file does not exist (404). Ability data is
          window.AbilityRegistry, defined inline below. -->
     <script type="module" src="js/audio/audio-system.js"></script>
