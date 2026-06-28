@@ -14271,17 +14271,20 @@
             // --- JUICE (ultimate) tells: subtle low-poly flame aura + white-hot golden model tint. ---
             // White-hot: add a golden emissive boost to the wizard's OWN materials while bursting.
             const JUICE_MODEL_TINT = new BABYLON.Color3(0.5, 0.42, 0.16);
-            const JUICE_OUTLINE_COLOR = new BABYLON.Color3(1, 1, 1);   // white rim so the wizard stays readable under the aura
+            // Team-colored rim so the wizard stays readable under the aura AND reads who's juiced.
+            const JUICE_OUTLINE_BLUE = new BABYLON.Color3(0.43, 0.72, 1.0);   // left  (~#6fb0ff, brightened)
+            const JUICE_OUTLINE_RED  = new BABYLON.Color3(1.0, 0.42, 0.33);   // right (~#e76e55, brightened)
             const setJuiceModelTint = (c, on) => {
                 const root = c && c.modelRoot;
                 if (!root || !root.getChildMeshes) return;
+                const outlineCol = (c.side === 'right') ? JUICE_OUTLINE_RED : JUICE_OUTLINE_BLUE;
                 root.getChildMeshes().forEach((mesh) => {
-                    // White silhouette outline for the whole model so the wizard reads clearly under
-                    // the flame aura + gold tint. Re-asserted every frame via updateJuice.
+                    // Bold team-colored silhouette outline so the wizard reads clearly under the
+                    // flame aura + gold tint. Re-asserted every frame via updateJuice.
                     if (on) {
                         mesh.renderOutline = true;
-                        mesh.outlineColor = JUICE_OUTLINE_COLOR;
-                        mesh.outlineWidth = 0.04;
+                        mesh.outlineColor = outlineCol;
+                        mesh.outlineWidth = 0.07;
                     } else if (mesh.renderOutline) {
                         mesh.renderOutline = false;
                     }
