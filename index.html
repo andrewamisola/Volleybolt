@@ -12276,11 +12276,14 @@
                 if (!btn || !btn.activeOverlay) return;
                 btn.activeOverlay.height = Math.max(0, progress * 100) + "%";
             };
-            // Expose to the PvP loop: syncLocalParryUI() lives in a different (outer) scope and
-            // can't see these block-scoped consts — without this it threw "updateParryButtonGUI is
-            // not defined" every network frame, crashing the whole PvP game loop.
+            // Expose to the PvP loop: these helpers live in this (inner) closure but the PvP sim
+            // functions (simulateNetworkFrame / checkPvPParryHitsForSide / syncLocalParryUI) run in
+            // the OUTER scope and can't see them — calling them there throws "X is not defined" and
+            // freezes the whole PvP loop. parryProjectile freezes the match the instant a parry
+            // connects; the parry-UI ones threw every frame.
             window.updateParryButtonGUI = updateParryButtonGUI;
             window.updateParryActiveOverlay = updateParryActiveOverlay;
+            window.parryProjectile = parryProjectile;
 
             // Player parry callback - activates parry window
             let parryJustActivated = false;  // Prevent double-activation from rapid input
@@ -17096,7 +17099,7 @@
             if (bestProj) {
                 const parryer = side === 'left' ? 'player' : 'ai';
                 const aimDir = inputState ? inputState.moveDir : 0;
-                parryProjectile(bestProj, parryer, aimDir);
+                if (window.parryProjectile) window.parryProjectile(bestProj, parryer, aimDir);
 
                 state.active = false;
                 state.timer = 0;
@@ -17386,7 +17389,7 @@
                         // Lightning Shield auto-block check (left/player)
                         if (combatants.left && combatants.left.lightningShield && combatants.left.lightningShield.charges > 0) {
                             useShieldCharge(combatants.left);
-                            parryProjectile(proj, 'player');
+                            if (window.parryProjectile) window.parryProjectile(proj, 'player');
                             if (!isResimulating) playSound('parry', px, 0.5);
                             continue;
                         }
@@ -17438,7 +17441,7 @@
                         // Lightning Shield auto-block check (right/AI)
                         if (combatants.right && combatants.right.lightningShield && combatants.right.lightningShield.charges > 0) {
                             useShieldCharge(combatants.right);
-                            parryProjectile(proj, 'ai');
+                            if (window.parryProjectile) window.parryProjectile(proj, 'ai');
                             if (!isResimulating) playSound('parry', px, 0.5);
                             continue;
                         }
