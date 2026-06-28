@@ -4818,6 +4818,11 @@
             window.flipCameraForClient = () => {
                 if (window.gameCamera) {
                     const cam = window.gameCamera;
+                    // Kill any in-flight menu/talent camera animation first (see resetCameraToDefault).
+                    if (cam.getScene) {
+                        cam.getScene().stopAnimation(cam);
+                        cam.getScene().stopAnimation(cam.target);
+                    }
                     // Set to gameplay camera with flipped alpha
                     cam.alpha = Math.PI / 2;
                     cam.beta = GAME_CAMERA.beta;
@@ -4831,6 +4836,14 @@
             window.resetCameraToDefault = () => {
                 if (window.gameCamera) {
                     const cam = window.gameCamera;
+                    // Kill any in-flight menu/talent camera animation first, or it keeps
+                    // driving alpha/beta/radius/target every frame and overrides the snap
+                    // below — leaving PvP on the old menu angle. (Single-player avoids this
+                    // by calling stopAnimation in doReadyGoTransition; mirror that here.)
+                    if (cam.getScene) {
+                        cam.getScene().stopAnimation(cam);
+                        cam.getScene().stopAnimation(cam.target);
+                    }
                     // Set to full gameplay camera position
                     cam.alpha = GAME_CAMERA.alpha;
                     cam.beta = GAME_CAMERA.beta;
