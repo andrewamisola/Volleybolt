@@ -2084,6 +2084,14 @@
             combatant.casting = null;
             combatant.castProgress = 0;
             combatant.castTime = 0;
+            // End any active Juice burst at a round boundary so it never carries into the next
+            // round (the burst is spent on activation; the bar drops to 0). A partially-charged
+            // bar is left intact — accumulated Juice still builds across rounds within a match.
+            if (combatant.juiceActive) {
+                if (window.onJuiceEnd) { try { window.onJuiceEnd(combatant); } catch (e) {} }
+                combatant.juiceActive = false; combatant.juiceTimer = 0; combatant.juice = 0;
+                combatant._juiceReadyPinged = false; combatant._juiceHot = false;
+            }
             // Don't reset cooldowns here - that's done separately per round/startRound
             // Don't reset score/towerHealth - that's per-round/match state managed elsewhere
         }
@@ -9368,14 +9376,25 @@
             };
 
             // Unified freeze/unfreeze for combatants
+            const setCombatantFog = (combatant, on) => {
+                // Lift scene (distance) fog off the frozen model so the frost effect reads at full
+                // clarity instead of being hazed out. Paired with the reactive ground-fog cut.
+                if (combatant && combatant.modelRoot && combatant.modelRoot.getChildMeshes) {
+                    combatant.modelRoot.getChildMeshes().forEach(m => { m.applyFog = on; });
+                }
+            };
             window.combatantFreezeAnim = (combatant) => {
-                if (!combatant || !combatant.animations) return;
+                if (!combatant) return;
+                setCombatantFog(combatant, false);   // model ignores fog while frozen
+                if (!combatant.animations) return;
                 Object.values(combatant.animations).forEach(anim => {
                     if (anim) anim.pause();
                 });
             };
             window.combatantUnfreezeAnim = (combatant) => {
-                if (!combatant || !combatant.animations) return;
+                if (!combatant) return;
+                setCombatantFog(combatant, true);    // restore normal fog on the model
+                if (!combatant.animations) return;
                 const currentAnim = combatant.animations[combatant.currentAnim];
                 if (currentAnim) {
                     // Resume with original loop setting (avoid forcing one-shots to loop)
@@ -14214,6 +14233,22 @@
                     if (!projectiles.includes(proj)) {
                         projLastPos.delete(proj);
                     }
+                }
+
+                // Frozen combatants carve a clear bubble in the ground fog around themselves, so the
+                // freeze effect reads fully instead of being hazed out. Center + a small ring widens
+                // the cleared area to comfortably cover the model; refreshed every frame while frozen.
+                const frozenList = (typeof getAllCombatants === 'function') ? getAllCombatants() : [combatants.left, combatants.right];
+                for (const c of frozenList) {
+                    if (!c || !(c.freezeTime > 0)) continue;
+                    const p = (c.paddle && c.paddle.position) || (c.modelRoot && c.modelRoot.position);
+                    if (!p) continue;
+                    const R = 0.8;
+                    fogCuts.push({ x: p.x,     z: p.z,     age: 0, maxAge: FOG_CUT_LIFETIME });
+                    fogCuts.push({ x: p.x + R, z: p.z,     age: 0, maxAge: FOG_CUT_LIFETIME });
+                    fogCuts.push({ x: p.x - R, z: p.z,     age: 0, maxAge: FOG_CUT_LIFETIME });
+                    fogCuts.push({ x: p.x,     z: p.z + R, age: 0, maxAge: FOG_CUT_LIFETIME });
+                    fogCuts.push({ x: p.x,     z: p.z - R, age: 0, maxAge: FOG_CUT_LIFETIME });
                 }
 
                 // Age cuts and remove old ones
