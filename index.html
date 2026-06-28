@@ -16143,6 +16143,11 @@
                     // Confirm inputs were received
                     lastConfirmedRemoteFrame = Math.max(lastConfirmedRemoteFrame, data.frame);
                     break;
+
+                case 'SYNC_HASH':
+                    // Netcode test harness: peer's state hash for a settled frame.
+                    mpCompareHash(data.frame, data.hash);
+                    break;
             }
         }
 
@@ -16172,6 +16177,153 @@
             }
             return h >>> 0;
         }
+
+        // ============================================================
+        // NETCODE TEST HARNESS (MP debugging) — desync detection + telemetry overlay + dbg.*
+        // Both peers run identical deterministic sim, so per-frame state hashes MUST match.
+        // Each peer periodically broadcasts the hash of a settled (past-rollback) frame; the
+        // other compares it to its own hash for that exact frame number and flags divergence.
+        // ============================================================
+        const mpSync = { local: {}, remote: {}, lastOkFrame: -1, desync: null, mismatches: 0, rollbacks: 0, lastRollback: 0 };
+        const MP_SYNC_INTERVAL = 20;        // broadcast a hash every N frames (~0.33s)
+        const MP_SYNC_LAG = MAX_ROLLBACK_FRAMES + 2;   // hash a frame old enough to never roll back
+
+        // FNV-1a over a captureGameState() snapshot (or the live state). Deterministic: numeric
+        // sim fields only, floats quantized to 1e-3 so float noise doesn't read as desync.
+        function hashGameState(snap) {
+            const s = snap || captureGameState();
+            const q = (n) => Math.round((n || 0) * 1000) | 0;
+            let h = 2166136261 >>> 0;
+            const mix = (v) => { h = (h ^ ((v | 0) & 0xffffffff)) >>> 0; h = Math.imul(h, 16777619) >>> 0; };
+            mix(s.frame | 0);
+            for (const side of ['left', 'right']) {
+                const c = s[side] || {}, cd = c.cooldowns || {};
+                mix(q(c.paddleZ)); mix(q(c.moveAccum)); mix(q(c.mana)); mix(q(c.manaRegen));
+                mix(q(c.freezeTime)); mix(q(c.towerHealth)); mix(q(c.castProgress)); mix(q(c.castTime));
+                mix(q(cd.fireball)); mix(q(cd.frostbolt)); mix(q(cd.chain_lightning));
+            }
+            for (const p of (s.projectiles || [])) {
+                mix(p.id | 0); mix(q(p.x)); mix(q(p.y)); mix(q(p.z));
+                mix(q(p.velX)); mix(q(p.velY)); mix(q(p.velZ));
+                mix(p.volleyCount | 0); mix(p.isParried ? 1 : 0); mix(p.bounceCount | 0);
+            }
+            mix(q(s.playerScore)); mix(q(s.aiScore)); mix(s.rngSeed | 0); mix(s.nextProjId | 0);
+            return h >>> 0;
+        }
+        window.hashGameState = hashGameState;
+
+        function mpCompareHash(frame, remoteHash) {
+            const local = mpSync.local[frame];
+            if (local === undefined) { mpSync.remote[frame] = remoteHash; return; }  // we're behind; compare later
+            if (local === remoteHash) {
+                if (frame > mpSync.lastOkFrame) mpSync.lastOkFrame = frame;
+            } else if (!mpSync.desync || frame < mpSync.desync.frame) {
+                mpSync.mismatches++;
+                mpSync.desync = { frame, local, remote: remoteHash };   // keep the EARLIEST divergence (root)
+                console.warn('[MP DESYNC] frame ' + frame + ': local ' + (local >>> 0).toString(16) +
+                             ' != remote ' + (remoteHash >>> 0).toString(16));
+            }
+        }
+
+        // Record a frame's post-sim hash. Called from the normal step AND from rollback resim,
+        // so re-simulated frames overwrite their stale prediction-based hash with the settled one.
+        function mpStoreHash(frame) {
+            if (gameMode !== 'pvp') return;
+            mpSync.local[frame] = hashGameState();
+            const r = mpSync.remote[frame];
+            if (r !== undefined) { mpCompareHash(frame, r); delete mpSync.remote[frame]; }
+        }
+
+        // Periodically broadcast a settled frame's hash, and prune old entries.
+        function mpMaybeSendHash() {
+            if (gameMode !== 'pvp') return;
+            if (currentFrame % MP_SYNC_INTERVAL === 0) {
+                const f = Math.max(0, currentFrame - MP_SYNC_LAG), h = mpSync.local[f];
+                if (h !== undefined && conn && conn.open) {
+                    try { conn.send({ type: 'SYNC_HASH', frame: f, hash: h }); } catch (e) {}
+                }
+            }
+            if (currentFrame % 64 === 0) {
+                const cutoff = currentFrame - 300;
+                for (const k in mpSync.local) if ((k | 0) < cutoff) delete mpSync.local[k];
+                for (const k in mpSync.remote) if ((k | 0) < cutoff) delete mpSync.remote[k];
+            }
+        }
+
+        // ---- Telemetry overlay (auto-on in PvP; F2 toggles; dbg.overlay()) ----
+        let mpOverlayOn = false;
+        function ensureMpOverlay() {
+            let el = document.getElementById('mpDebugOverlay');
+            if (el) return el;
+            el = document.createElement('div');
+            el.id = 'mpDebugOverlay';
+            el.style.cssText = 'position:fixed;top:8px;right:8px;z-index:900;min-width:236px;padding:8px 10px;' +
+                'background:rgba(8,12,20,0.86);border:1px solid #2f8f6f;border-radius:6px;' +
+                'font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;color:#bfe9d8;white-space:pre;' +
+                'pointer-events:none;text-shadow:0 1px 0 #000;display:none';
+            document.body.appendChild(el);
+            return el;
+        }
+        function toggleMpOverlay(on) {
+            mpOverlayOn = (on === undefined) ? !mpOverlayOn : !!on;
+            ensureMpOverlay().style.display = mpOverlayOn ? 'block' : 'none';
+            return mpOverlayOn;
+        }
+        window.toggleMpOverlay = toggleMpOverlay;
+        function updateMpOverlay() {
+            if (!mpOverlayOn || gameMode !== 'pvp') return;
+            const el = ensureMpOverlay();
+            const L = combatants.left || {}, R = combatants.right || {};
+            const lz = (L.paddle && L.paddle.position) ? L.paddle.position.z : 0;
+            const rz = (R.paddle && R.paddle.position) ? R.paddle.position.z : 0;
+            const sync = mpSync.desync
+                ? '❌ DESYNC @' + mpSync.desync.frame + ' (x' + mpSync.mismatches + ')'
+                : (mpSync.lastOkFrame >= 0 ? '✅ in sync (ok@' + mpSync.lastOkFrame + ')' : '… waiting');
+            const inp = pendingNetInput;
+            el.style.borderColor = mpSync.desync ? '#d9534f' : '#2f8f6f';
+            el.textContent =
+                'NETCODE — ' + (isHost ? 'HOST (blue/left)' : 'JOINER (red/right)') + '\n' +
+                'frame ' + currentFrame + '  conf ' + lastConfirmedRemoteFrame + '  lag ' + (currentFrame - lastConfirmedRemoteFrame) + '\n' +
+                'ping ' + (netPing | 0) + 'ms   rollbacks ' + mpSync.rollbacks + ' (last ' + mpSync.lastRollback + ')\n' +
+                'sync ' + sync + '\n' +
+                'input  mv ' + (inp.moveDir | 0) + '  parry ' + (inp.parry ? 1 : 0) + '  fb ' + (inp.fireball ? 1 : 0) + '  frost ' + (inp.frostbolt ? 1 : 0) + '\n' +
+                'proj ' + (projectiles ? projectiles.length : 0) + '\n' +
+                'L hp ' + Math.round(L.towerHealth || 0) + ' mp ' + (L.mana || 0).toFixed(1) + ' z ' + lz.toFixed(2) + (L.juiceActive ? ' JUICE' : '') + '\n' +
+                'R hp ' + Math.round(R.towerHealth || 0) + ' mp ' + (R.mana || 0).toFixed(1) + ' z ' + rz.toFixed(2) + (R.juiceActive ? ' JUICE' : '');
+        }
+
+        // F2 toggles the overlay (works anytime).
+        document.addEventListener('keydown', (e) => { if (e.code === 'F2') { e.preventDefault(); toggleMpOverlay(); } });
+
+        // ---- Console commands ----
+        window.dbg = {
+            help() {
+                console.log('%cVolleybolt MP debug', 'font-weight:bold;color:#2f8f6f');
+                console.log([
+                    'dbg.overlay()         toggle netcode overlay (or press F2)',
+                    'dbg.state()           dump netcode state',
+                    'dbg.hash()            current game-state hash (hex)',
+                    'dbg.sync()            desync report',
+                    'dbg.ping()            current RTT',
+                    'dbg.juice(side?)      activate Juice (default: your side)  [LOCAL poke]',
+                    "dbg.freeze(side?,s?)  freeze a side for s sec (default: opponent, 1s)  [LOCAL poke]",
+                    'dbg.win() / dbg.lose()    force match end',
+                    'dbg.forceDesync()     nudge local RNG to TEST the desync detector',
+                    "side = 'left' | 'right'.  LOCAL pokes change only this peer => will show DESYNC (expected)."
+                ].join('\n'));
+            },
+            overlay() { return toggleMpOverlay(); },
+            state() { return { mode: gameMode, isHost, localSide: (typeof getLocalSide === 'function' ? getLocalSide() : '?'), frame: currentFrame, confirmed: lastConfirmedRemoteFrame, lag: currentFrame - lastConfirmedRemoteFrame, ping: netPing, rollbacks: mpSync.rollbacks, lastOkFrame: mpSync.lastOkFrame, mismatches: mpSync.mismatches, desync: mpSync.desync, projectiles: projectiles ? projectiles.length : 0 }; },
+            hash() { return (hashGameState() >>> 0).toString(16); },
+            sync() { return mpSync.desync ? ('DESYNC @frame ' + mpSync.desync.frame + ' (local ' + (mpSync.desync.local >>> 0).toString(16) + ' != remote ' + (mpSync.desync.remote >>> 0).toString(16) + '), ' + mpSync.mismatches + ' mismatch(es)') : ('in sync; last verified frame ' + mpSync.lastOkFrame); },
+            ping() { return netPing + 'ms'; },
+            juice(side) { const c = combatants[side || (typeof getLocalSide === 'function' ? getLocalSide() : 'left')]; if (!c) return 'no combatant'; c.juice = (window.JUICE && window.JUICE.MAX) || 350; const owner = c.side === 'left' ? 'player' : 'ai'; const r = window.activateJuice ? window.activateJuice(owner) : false; return 'juice ' + c.side + ' -> ' + r; },
+            freeze(side, s) { const c = combatants[side || (typeof getRemoteSide === 'function' ? getRemoteSide() : 'right')]; if (!c) return 'no combatant'; c.freezeTime = s || 1; if (c.side === 'left' && window.freezePlayerAnim) freezePlayerAnim(); if (c.side === 'right' && window.freezeAIAnim) freezeAIAnim(); return 'froze ' + c.side + ' for ' + (s || 1) + 's'; },
+            win() { if (typeof debugForceEnd === 'function') debugForceEnd(true); },
+            lose() { if (typeof debugForceEnd === 'function') debugForceEnd(false); },
+            forceDesync() { netRngSeed = (netRngSeed + 1) >>> 0; console.warn('[dbg] nudged local RNG — overlay should flip to ❌ DESYNC within ~' + MP_SYNC_INTERVAL + ' frames'); return 'nudged'; }
+        };
+        console.log('%c[Volleybolt] MP debug ready — dbg.help() for commands · F2 toggles the netcode overlay', 'color:#2f8f6f');
 
         // Start the multiplayer match
         function startMultiplayerMatch(seed, upgradeId = selectedUpgrade) {
@@ -16251,6 +16403,11 @@
 
             // Start the round
             startRound();
+
+            // Reset netcode test harness + show the telemetry overlay for this match
+            mpSync.local = {}; mpSync.remote = {}; mpSync.lastOkFrame = -1;
+            mpSync.desync = null; mpSync.mismatches = 0; mpSync.rollbacks = 0; mpSync.lastRollback = 0;
+            toggleMpOverlay(true);
 
             // Show gameplay UI (same as single player)
             if (window.guiElements) {
@@ -16612,6 +16769,7 @@
             }
 
             console.log('Rolling back from frame', currentFrame, 'to frame', toFrame);
+            mpSync.rollbacks++; mpSync.lastRollback = currentFrame - toFrame;   // netcode telemetry
 
             // Enable resimulation mode (mutes sounds)
             isResimulating = true;
@@ -16633,6 +16791,9 @@
 
                 // Simulate one frame
                 simulateNetworkFrame(leftInput, rightInput, 1 / TICK_RATE);
+
+                // Overwrite this re-simulated frame's hash with the settled value
+                mpStoreHash(f);
             }
 
             // Trim old state history
@@ -16666,6 +16827,7 @@
                 if (combatants.left) updateCombatantManaUI(combatants.left);
                 if (combatants.right) updateCombatantManaUI(combatants.right);
                 updateScore();
+                updateMpOverlay();   // netcode telemetry overlay
                 pvpUiAccumulator = 0;
             }
 
@@ -16773,8 +16935,14 @@
             // 6. Simulate the frame
             simulateNetworkFrame(leftInput, rightInput, dt);
 
+            // 6b. Record this frame's settled hash for desync detection (keyed by the frame just simulated)
+            mpStoreHash(currentFrame);
+
             // 7. Advance frame counter
             currentFrame++;
+
+            // 7b. Periodically broadcast a settled frame's hash to the peer
+            mpMaybeSendHash();
 
             // Clean up old input history (keep last 60 frames)
             cleanupOldHistory();
