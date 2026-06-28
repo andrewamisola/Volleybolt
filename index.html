@@ -603,12 +603,19 @@
          The complete, coherent audio engine (initToneJS, ToneSFX, synth setup) lives inline;
          the module only re-exported a stubbier subset of playSound/loadAllSounds/etc. that
          shadowed inline. Inline is the single source of truth for audio. -->
-    <script type="module" src="js/ui/ui-system.js"></script>
-    <!-- Removed js/rendering/rendering-utils.js: fully dead. Its palette exports
-         (NES_PALETTE, getNESColors, ...) were referenced by no code anywhere. -->
-    <!-- Removed js/systems/game-systems.js: pure shadow. Every export had an inline
-         twin (getOpponent, getCombatantUIElements, and parallel state copies like
-         playerMana/playerCasting that the real inline game never reads). Inline wins. -->
+    <!-- The js/ module layer was a half-finished extraction that never took over: the
+         real game runs entirely from the inline script below. All of it has been removed
+         after verifying each piece was dead or a pure shadow of inline:
+           - js/ui/ui-system.js: ES-module `export function`s (updateScore, updateManaUI,
+             updateHealthBars, showCastBar, ...) unreachable from the non-module inline game,
+             which has its own copies; plus dead window state writes inline never reads.
+           - js/rendering/rendering-utils.js: palette exports referenced by no code anywhere.
+           - js/systems/game-systems.js: pure shadow; every export had an inline twin, incl.
+             parallel state copies (playerMana/playerCasting) the inline game never reads.
+           - js/audio/audio-system.js: partial shadow of the complete inline audio system.
+           - js/config/game-config.js + the orphaned flat set: dead duplicates.
+         Inline is the single source of truth. Real modularization (inline importing modules)
+         is a future, deliberate job. -->
 
     <!-- Removed js/main.js: diagnostic-only entry whose missing ES-module import caused a
          hard crash. The game runs from the inline script below; main.js was never functional. -->
