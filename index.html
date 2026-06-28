@@ -14975,8 +14975,8 @@
             ov.id = 'pauseOverlay';
             ov.style.cssText = 'position:fixed;inset:0;z-index:700;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.6)';
             ov.innerHTML =
-                '<div style="background:#2a2438;border:3px solid #5a4a78;border-radius:10px;padding:28px 44px;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.5)">' +
-                '<div style="color:#f0c050;font-family:\'FF9UI\',serif;font-size:40px;letter-spacing:2px;margin-bottom:22px">Paused</div>' +
+                '<div style="background:rgba(46,56,76,0.94);border:2px solid #dfe6f2;border-radius:11px;padding:28px 44px;text-align:center;box-shadow:inset 0 0 0 1px rgba(16,24,40,0.7), inset 0 2px 3px rgba(255,255,255,0.14), 0 8px 24px rgba(0,0,0,.55)">' +
+                '<div style="color:#f0c050;font-family:\'FF9UI\',serif;font-size:40px;letter-spacing:2px;margin-bottom:22px;text-shadow:2px 2px 0 #1a1f2a">Paused</div>' +
                 '<button id="pauseResumeBtn" class="game-btn menu-btn" style="display:block;width:240px;margin:10px auto">Resume</button>' +
                 '<button id="pauseSettingsBtn" class="game-btn menu-btn" style="display:block;width:240px;margin:10px auto">Settings</button>' +
                 '<button id="pauseQuitBtn" class="game-btn menu-btn" style="display:block;width:240px;margin:10px auto">Quit to Menu</button>' +
@@ -15210,10 +15210,8 @@
         }
 
         // Victory-screen dismissal state. _returningToMenu de-dupes the Continue action
-        // (the Babylon button AND the DOM hit-test handler can both fire). _victoryDismiss is the
-        // DOM-level handler that hit-tests clicks against the Continue button (see showVictoryScreen).
+        // (the DOM Continue button click and the Enter key both route through it).
         let _returningToMenu = false;
-        let _victoryDismiss = null;
         let victoryContinueAt = 0;   // Continue is ignored until this time (grace to read the report)
         const VICTORY_CONTINUE_GRACE_MS = 1500;
 
@@ -17459,32 +17457,28 @@
             overlay.isVisible = true;
             if (title) title.isVisible = true;
             if (subtitle) subtitle.isVisible = false;
-            if (window.guiElements.continueBtn) window.guiElements.continueBtn.isVisible = true;
-
-            // Babylon GUI pointer input becomes unreliable after a full match (clicks stop
-            // reaching the Continue button). We keep the reliable DOM-pointer channel but
-            // hit-test it against the Continue button's rendered rectangle ourselves, so the
-            // button is the ONLY way to continue — a click anywhere else does nothing. Keyboard
-            // Enter also works. A grace window (victoryContinueAt) keeps the Battle Report readable.
+            // The Babylon GUI Continue button is retired (tan styling clashed with the menu, and
+            // its clicks died after a real match). Continue is now a DOM .game-btn that matches
+            // the main-menu / pause buttons exactly and clicks reliably. Keyboard Enter still works.
+            if (window.guiElements.continueBtn) window.guiElements.continueBtn.isVisible = false;
             victoryContinueAt = Date.now() + VICTORY_CONTINUE_GRACE_MS;
-            if (_victoryDismiss) document.removeEventListener('pointerdown', _victoryDismiss, true);
-            _victoryDismiss = (e) => {
-                const btn = window.guiElements && window.guiElements.continueBtn;
-                const adt = window.guiTexture;
-                if (!btn || !btn._currentMeasure || !adt || !scene) return;
-                const canvas = scene.getEngine().getRenderingCanvas();
-                if (!canvas) return;
-                const rect = canvas.getBoundingClientRect();
-                if (!rect.width || !rect.height) return;
-                const size = adt.getSize();
-                const x = (e.clientX - rect.left) * (size.width / rect.width);
-                const y = (e.clientY - rect.top) * (size.height / rect.height);
-                const m = btn._currentMeasure;
-                if (x >= m.left && x <= m.left + m.width && y >= m.top && y <= m.top + m.height) {
-                    returnToMenuTransition();
-                }
-            };
-            document.addEventListener('pointerdown', _victoryDismiss, true);
+            const contBtn = ensureVictoryContinueBtn();
+            contBtn.disabled = true;                 // grace: greyed out until the report is readable
+            contBtn.style.display = 'block';
+            setTimeout(() => { const b = document.getElementById('victoryContinueBtn'); if (b) b.disabled = false; }, VICTORY_CONTINUE_GRACE_MS);
+        }
+        // DOM Continue button for the Victory/Defeat screen — styled like the menu buttons.
+        function ensureVictoryContinueBtn() {
+            let btn = document.getElementById('victoryContinueBtn');
+            if (btn) return btn;
+            btn = document.createElement('button');
+            btn.id = 'victoryContinueBtn';
+            btn.className = 'game-btn menu-btn';
+            btn.textContent = 'Continue';
+            btn.style.cssText = 'position:fixed;left:50%;top:68%;transform:translateX(-50%);z-index:650;display:none;min-width:260px';
+            document.body.appendChild(btn);
+            btn.addEventListener('click', () => returnToMenuTransition());
+            return btn;
         }
 
         function hideVictoryScreen() {
@@ -17506,11 +17500,9 @@
                     window.guiElements.victoryLeaderboard.isVisible = false;
                 }
             }
-            // Tear down the DOM "click anywhere to continue" fallback.
-            if (_victoryDismiss) {
-                document.removeEventListener('pointerdown', _victoryDismiss, true);
-                _victoryDismiss = null;
-            }
+            // Hide the DOM Continue button.
+            const contBtn = document.getElementById('victoryContinueBtn');
+            if (contBtn) contBtn.style.display = 'none';
         }
 
         function resetGame() {
