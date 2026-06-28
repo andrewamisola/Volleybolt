@@ -599,7 +599,10 @@
 
     <!-- Removed js/config/ability-registry.js: file does not exist (404). Ability data is
          window.AbilityRegistry, defined inline below. -->
-    <script type="module" src="js/audio/audio-system.js"></script>
+    <!-- Removed js/audio/audio-system.js: partial shadow of the inline audio system.
+         The complete, coherent audio engine (initToneJS, ToneSFX, synth setup) lives inline;
+         the module only re-exported a stubbier subset of playSound/loadAllSounds/etc. that
+         shadowed inline. Inline is the single source of truth for audio. -->
     <script type="module" src="js/ui/ui-system.js"></script>
     <script type="module" src="js/rendering/rendering-utils.js"></script>
     <script type="module" src="js/systems/game-systems.js"></script>
