@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Volleybolt — Design System Demo</title>
+    <!-- Web-safe font fallbacks (used when local FF9UI / Ferrum fonts are unavailable) -->
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+    <!-- Design system -->
+    <link rel="stylesheet" href="volleybolt-ui.css">
+    <style>
+        /* ---- Demo page chrome (not part of the design system) ---- */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: #15121b;
+            color: #e8e0d0;
+            font-family: 'FF9UI', 'Press Start 2P', monospace;
+            padding: 48px 32px;
+            min-height: 100vh;
+            -webkit-font-smoothing: auto;
+        }
+
+        .demo-section {
+            margin-bottom: 64px;
+        }
+
+        .demo-heading {
+            font-family: 'FF9UI', 'Press Start 2P', monospace;
+            font-size: 13px;
+            letter-spacing: 4px;
+            color: #8b94a8;
+            text-transform: uppercase;
+            margin-bottom: 28px;
+            border-bottom: 1px solid #2a3040;
+            padding-bottom: 8px;
+        }
+
+        .demo-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-start;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .demo-label {
+            font-family: 'FF9UI', 'Press Start 2P', monospace;
+            font-size: 11px;
+            color: #5a6678;
+            letter-spacing: 2px;
+            margin-bottom: 8px;
+        }
+
+        .demo-block { display: flex; flex-direction: column; gap: 4px; }
+
+        /* Swatch strip */
+        .swatch-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .swatch {
+            width: 64px;
+            height: 48px;
+            border-radius: 3px;
+            border: 1px solid rgba(255,255,255,0.1);
+            position: relative;
+        }
+        .swatch span {
+            position: absolute;
+            bottom: -20px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 9px;
+            color: #5a6678;
+            white-space: nowrap;
+        }
+        .swatch-wrap { display: flex; flex-direction: column; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+<!-- Inline posterize SVG filter (enables pixel-art icon treatment) -->
+<svg style="display:none">
+    <filter id="vb-posterize">
+        <feComponentTransfer>
+            <feFuncR type="discrete" tableValues="0 0.2 0.4 0.6 0.8 1"/>
+            <feFuncG type="discrete" tableValues="0 0.2 0.4 0.6 0.8 1"/>
+            <feFuncB type="discrete" tableValues="0 0.2 0.4 0.6 0.8 1"/>
+        </feComponentTransfer>
+    </filter>
+</svg>
+
+<!-- ==========================================================
+     1. PALETTE
+     ========================================================== -->
+<div class="demo-section">
+    <div class="demo-heading">1 — Color palette</div>
+
+    <div class="demo-label">Gold accents</div>
+    <div class="swatch-grid" style="margin-bottom: 32px;">
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: #f0c050;"><span>#f0c050</span></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:22px;text-align:center;">--vb-gold</div>
+        </div>
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: #d4a849;"><span>#d4a849</span></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:22px;text-align:center;">--vb-gold-mid</div>
+        </div>
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: #8b6914;"><span>#8b6914</span></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:22px;text-align:center;">--vb-gold-dark</div>
+        </div>
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: #ffe9a8;"><span>#ffe9a8</span></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:22px;text-align:center;">--vb-gold-bright</div>
+        </div>
+    </div>
+
+    <div class="demo-label">Steel chrome</div>
+    <div class="swatch-grid" style="margin-bottom: 32px;">
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: rgba(46,56,76,0.94); border:1px solid #dfe6f2;"></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:6px;text-align:center;">--vb-steel-bg</div>
+        </div>
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: rgba(84,96,118,0.90);"></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:6px;text-align:center;">--vb-steel-hi</div>
+        </div>
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: #dfe6f2;"></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:6px;text-align:center;">--vb-rim</div>
+        </div>
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: #f4f7ff;"></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:6px;text-align:center;">--vb-text</div>
+        </div>
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: #fff4c2;"></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:6px;text-align:center;">--vb-text-hover</div>
+        </div>
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: #8b94a8;"></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:6px;text-align:center;">--vb-text-dim</div>
+        </div>
+    </div>
+
+    <div class="demo-label">Team colors</div>
+    <div class="swatch-grid" style="margin-bottom: 32px;">
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: #0078F8;"></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:6px;text-align:center;">--vb-blue</div>
+        </div>
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: #57c4ec;"></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:6px;text-align:center;">blue-gauge-hi</div>
+        </div>
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: #2173ac;"></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:6px;text-align:center;">blue-gauge-lo</div>
+        </div>
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: #5ad0ff;"></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:6px;text-align:center;">--vb-blue-mana</div>
+        </div>
+        <div class="swatch-wrap" style="margin-left:16px;">
+            <div class="swatch" style="background: #F83800;"></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:6px;text-align:center;">--vb-red</div>
+        </div>
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: #ff9e82;"></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:6px;text-align:center;">red-gauge-hi</div>
+        </div>
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: #992f1e;"></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:6px;text-align:center;">red-gauge-lo</div>
+        </div>
+    </div>
+
+    <div class="demo-label">Spell elements</div>
+    <div class="swatch-grid">
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: #ffa040;"></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:6px;text-align:center;">--vb-fire</div>
+        </div>
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: #80d0ff;"></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:6px;text-align:center;">--vb-frost</div>
+        </div>
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: #ffff40;"></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:6px;text-align:center;">--vb-lightning</div>
+        </div>
+        <div class="swatch-wrap">
+            <div class="swatch" style="background: #6ad26a;"></div>
+            <div style="font-size:10px;color:#8b94a8;margin-top:6px;text-align:center;">--vb-success</div>
+        </div>
+    </div>
+</div>
+
+<!-- ==========================================================
+     2. TITLE LOGO
+     ========================================================== -->
+<div class="demo-section">
+    <div class="demo-heading">2 — Title logo</div>
+    <div class="vb-title-wrap" style="display:inline-block; padding:32px 16px;">
+        <h1 class="vb-title" data-text="Volleybolt">Volleybolt</h1>
+        <div class="vb-divider" style="width:340px;"></div>
+        <p class="vb-tagline">[ tagline placeholder ]</p>
+    </div>
+</div>
+
+<!-- ==========================================================
+     3. FF9 PANEL
+     ========================================================== -->
+<div class="demo-section">
+    <div class="demo-heading">3 — FF9 steel panel</div>
+    <div class="demo-row">
+        <div class="demo-block">
+            <div class="demo-label">Panel with tab</div>
+            <div style="display:inline-flex; flex-direction:column; align-items:flex-start;">
+                <div class="vb-panel__tab">COMMAND</div>
+                <div class="vb-panel" style="min-width:240px; min-height:80px;">
+                    <p style="font-size:18px; color:#f4f7ff; text-shadow:2px 2px 0 #000;">Panel content here</p>
+                    <p style="font-size:14px; color:#8b94a8; margin-top:6px;">Secondary info</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="demo-block">
+            <div class="demo-label">Plain panel</div>
+            <div class="vb-panel" style="min-width:280px;">
+                <p style="font-size:18px; color:#f0c050; text-shadow:2px 2px 0 #000; margin-bottom:8px;">Tower Health</p>
+                <p style="font-size:14px; color:#f4f7ff; text-shadow:2px 2px 0 #000;">Blue Tower — 84%</p>
+                <p style="font-size:14px; color:#e76e55; text-shadow:2px 2px 0 #000;">Red Tower — 52%</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==========================================================
+     4. COMMAND MENU (vertical slot list)
+     ========================================================== -->
+<div class="demo-section">
+    <div class="demo-heading">4 — Command menu (ability slots)</div>
+    <div class="demo-row">
+        <div class="demo-block">
+            <div class="demo-label">Normal state</div>
+            <div class="vb-menu">
+                <div class="vb-menu-item is-active">
+                    <span style="flex:1;">Fireball</span>
+                    <span class="vb-menu-item__mana">&#9679;</span>
+                    <span class="vb-menu-item__key">1</span>
+                </div>
+                <div class="vb-menu-item">
+                    <span style="flex:1;">Frostbolt</span>
+                    <span class="vb-menu-item__mana">&#9679;&#9679;</span>
+                    <span class="vb-menu-item__key">2</span>
+                </div>
+                <div class="vb-menu-item">
+                    <span style="flex:1;">Thunderstorm</span>
+                    <span class="vb-menu-item__mana">&#9679;&#9679;</span>
+                    <span class="vb-menu-item__key">3</span>
+                </div>
+                <div class="vb-menu-item">
+                    <span style="flex:1;">Parry</span>
+                    <span class="vb-menu-item__key">&#9251;</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="demo-block">
+            <div class="demo-label">With cooldown / no-mana states</div>
+            <div class="vb-menu">
+                <div class="vb-menu-item">
+                    <span style="flex:1;">Fireball</span>
+                    <span class="vb-menu-item__mana">&#9679;</span>
+                    <span class="vb-menu-item__key">1</span>
+                </div>
+                <div class="vb-menu-item is-disabled">
+                    <span style="flex:1;">Frostbolt</span>
+                    <span style="font-size:11px;color:#8b94a8;flex:0 0 auto;">4s</span>
+                    <span class="vb-menu-item__key">2</span>
+                </div>
+                <div class="vb-menu-item is-disabled">
+                    <span style="flex:1;">Thunderstorm</span>
+                    <span class="vb-menu-item__mana" style="color:#5a6680;">&#9679;&#9679;</span>
+                    <span class="vb-menu-item__key">3</span>
+                </div>
+                <div class="vb-menu-item">
+                    <span style="flex:1;">Parry</span>
+                    <span class="vb-menu-item__key">&#9251;</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==========================================================
+     5. BUTTONS
+     ========================================================== -->
+<div class="demo-section">
+    <div class="demo-heading">5 — Buttons</div>
+    <div class="demo-row">
+        <div class="demo-block">
+            <div class="demo-label">Default</div>
+            <button class="vb-button">Start Battle</button>
+        </div>
+        <div class="demo-block">
+            <div class="demo-label">Primary (breathing glow)</div>
+            <button class="vb-button vb-button--primary">Host Game</button>
+        </div>
+        <div class="demo-block">
+            <div class="demo-label">Ghost / back</div>
+            <button class="vb-button vb-button--ghost">&#8249; Back</button>
+        </div>
+        <div class="demo-block">
+            <div class="demo-label">Small</div>
+            <button class="vb-button vb-button--sm">Copy Code</button>
+        </div>
+        <div class="demo-block">
+            <div class="demo-label">Disabled</div>
+            <button class="vb-button" disabled>Start Match</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==========================================================
+     6. GAUGES
+     ========================================================== -->
+<div class="demo-section">
+    <div class="demo-heading">6 — Gauges &amp; bars</div>
+    <div class="demo-row" style="flex-direction:column;">
+
+        <div class="demo-block">
+            <div class="demo-label">Blue HP — 84%</div>
+            <div class="vb-gauge" style="width:260px;">
+                <div class="vb-gauge__fill vb-gauge__fill--blue" style="--fill: 84%;"></div>
+            </div>
+        </div>
+
+        <div class="demo-block">
+            <div class="demo-label">Red HP — 52% (mirrored, right-anchored)</div>
+            <div class="vb-gauge vb-gauge--red" style="width:260px;">
+                <div class="vb-gauge__fill vb-gauge__fill--red" style="--fill: 52%;"></div>
+            </div>
+        </div>
+
+        <div class="demo-block">
+            <div class="demo-label">Gold cast bar — 66%</div>
+            <div class="vb-gauge" style="width:200px;">
+                <div class="vb-gauge__fill vb-gauge__fill--gold" style="--fill: 66%;"></div>
+            </div>
+        </div>
+
+        <div class="demo-block">
+            <div class="demo-label">Loading bar — 40% (stepped fill)</div>
+            <div class="vb-gauge vb-gauge--load" style="width:420px;">
+                <div class="vb-gauge__fill vb-gauge__fill--load" style="--fill: 40%;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==========================================================
+     7. TOOLTIP
+     ========================================================== -->
+<div class="demo-section">
+    <div class="demo-heading">7 — Tooltip (hover the ability slot)</div>
+    <div class="demo-row">
+        <div class="vb-menu" style="overflow:visible;">
+            <div class="vb-menu-item" style="overflow:visible;">
+                <!-- Wrap the item content so the tooltip positions on the row -->
+                <div class="vb-tooltip-wrap" style="flex:1; display:flex; align-items:center; gap:12px; position:relative;">
+                    <span style="flex:1; font-size:21px;">Fireball</span>
+                    <span class="vb-menu-item__mana">&#9679;</span>
+                    <span class="vb-menu-item__key">1</span>
+
+                    <div class="vb-tooltip">
+                        <div class="vb-tooltip__title">Fireball</div>
+                        <div class="vb-tooltip__stats">
+                            <span><span style="color:#5ad0ff;">* 1 Mana</span> &nbsp; <span style="color:#f4f7ff;">&gt; 1s Cast</span></span>
+                            <span style="color:#c03030;">@ 4s CD</span>
+                        </div>
+                        <hr class="vb-tooltip__divider">
+                        <div class="vb-tooltip__body">
+                            Hurl a <span class="vb-tt-spell">Fireball</span> that deals
+                            <span class="vb-tt-value">2</span>
+                            <span class="vb-tt-fire">Fire</span> damage.
+                            Damage increases with <span class="vb-tt-mechanic">Volleys</span>,
+                            up to <span class="vb-tt-value">5</span>.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="vb-menu-item" style="overflow:visible;">
+                <div class="vb-tooltip-wrap" style="flex:1; display:flex; align-items:center; gap:12px; position:relative;">
+                    <span style="flex:1; font-size:21px;">Frostbolt</span>
+                    <span class="vb-menu-item__mana">&#9679;&#9679;</span>
+                    <span class="vb-menu-item__key">2</span>
+
+                    <div class="vb-tooltip">
+                        <div class="vb-tooltip__title">Frostbolt</div>
+                        <div class="vb-tooltip__stats">
+                            <span><span style="color:#5ad0ff;">* 2 Mana</span> &nbsp; <span style="color:#f4f7ff;">&gt; Instant</span></span>
+                            <span style="color:#c03030;">@ 14s CD</span>
+                        </div>
+                        <hr class="vb-tooltip__divider">
+                        <div class="vb-tooltip__body">
+                            Launch a <span class="vb-tt-spell">Frostbolt</span> that
+                            <span class="vb-tt-frost">Freezes</span> the
+                            <span class="vb-tt-enemy">Enemy</span> for
+                            <span class="vb-tt-value">1</span>
+                            <span class="vb-tt-duration">second</span>.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="vb-menu-item" style="overflow:visible;">
+                <div class="vb-tooltip-wrap" style="flex:1; display:flex; align-items:center; gap:12px; position:relative;">
+                    <span style="flex:1; font-size:21px;">Thunderstorm</span>
+                    <span class="vb-menu-item__mana">&#9679;&#9679;</span>
+                    <span class="vb-menu-item__key">3</span>
+
+                    <div class="vb-tooltip">
+                        <div class="vb-tooltip__title">Thunderstorm</div>
+                        <div class="vb-tooltip__stats">
+                            <span><span style="color:#5ad0ff;">* 2 Mana</span> &nbsp; <span style="color:#f4f7ff;">&gt; Instant</span></span>
+                            <span style="color:#c03030;">@ 30s CD</span>
+                        </div>
+                        <hr class="vb-tooltip__divider">
+                        <div class="vb-tooltip__body">
+                            Call down lightning to <span class="vb-tt-mechanic">Zap</span>
+                            up to <span class="vb-tt-value">3</span> incoming
+                            <span class="vb-tt-enemy">Enemy</span> projectiles, destroying them.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==========================================================
+     8. CAST BUBBLES + COMBAT TEXT
+     ========================================================== -->
+<div class="demo-section">
+    <div class="demo-heading">8 — Cast bubbles &amp; combat text</div>
+    <div class="demo-row" style="align-items:center;">
+        <span class="vb-cast-bubble">Fireball</span>
+        <span class="vb-cast-bubble vb-cast-bubble--blue">Frostbolt</span>
+        <span class="vb-cast-bubble vb-cast-bubble--red">Thunderstorm</span>
+    </div>
+    <div class="demo-row" style="align-items:center; margin-top:16px;">
+        <span class="vb-combat-text">Hit!</span>
+        <span class="vb-combat-text vb-combat-text--fire">Fireball</span>
+        <span class="vb-combat-text vb-combat-text--frost">Frozen!</span>
+        <span class="vb-combat-text vb-combat-text--lightning">Overpowered!</span>
+        <span class="vb-combat-text vb-combat-text--damage">-5</span>
+        <span class="vb-badge">2</span>
+    </div>
+</div>
+
+<!-- ==========================================================
+     9. LOBBY CODE
+     ========================================================== -->
+<div class="demo-section">
+    <div class="demo-heading">9 — Lobby code display</div>
+    <div class="demo-row">
+        <div class="vb-panel" style="display:flex; flex-direction:column; align-items:center; gap:16px; min-width:360px;">
+            <p style="font-size:20px; color:#f4f7ff; text-shadow:2px 2px 0 #000;">Share this code with your opponent:</p>
+            <div class="vb-lobby-code">ARC42</div>
+            <button class="vb-button vb-button--sm">Copy Code</button>
+            <p style="font-size:16px; color:#8b94a8; text-shadow:1px 1px 0 #000;">Waiting for opponent...</p>
+        </div>
+    </div>
+</div>
+
+<!-- ==========================================================
+     10. TITLE-SCREEN MENU (complete layout)
+     ========================================================== -->
+<div class="demo-section">
+    <div class="demo-heading">10 — Title menu screen (complete layout)</div>
+    <div class="vb-menu-screen" style="min-height:500px; border-radius:8px; overflow:hidden;">
+        <div class="vb-title-wrap">
+            <h1 class="vb-title" data-text="Volleybolt">Volleybolt</h1>
+        </div>
+        <ul class="vb-menu-list" role="menu">
+            <li class="vb-menu-list__item" role="menuitem">Start Battle</li>
+            <li class="vb-menu-list__item" role="menuitem">Multiplayer</li>
+            <li class="vb-menu-list__item" role="menuitem">Settings</li>
+            <li class="vb-menu-list__item" role="menuitem">How to Play</li>
+            <li class="vb-menu-list__item" role="menuitem">Credits</li>
+        </ul>
+    </div>
+</div>
+
+<!-- ==========================================================
+     11. CRT OVERLAY (applied to a sample area)
+     ========================================================== -->
+<div class="demo-section">
+    <div class="demo-heading">11 — CRT scanline + vignette overlay</div>
+    <div class="vb-crt" style="
+        background: linear-gradient(135deg, #0a0d16, #1b2233, #0a0808);
+        width: 480px; height: 220px; border-radius:4px; display:flex;
+        align-items:center; justify-content:center; overflow:hidden;">
+        <div style="text-align:center; z-index:1; position:relative;">
+            <div class="vb-title" data-text="ROUND 3" style="font-size:56px; letter-spacing:8px;">ROUND 3</div>
+            <p style="font-size:16px; color:#f4f7ff; text-shadow:2px 2px 0 #000; letter-spacing:4px; margin-top:8px;">
+                STAGE SELECT
+            </p>
+        </div>
+    </div>
+    <p style="font-size:11px; color:#5a6678; margin-top:12px; letter-spacing:1px;">
+        The ::before (scanlines) and ::after (vignette) pseudo-elements are applied via .vb-crt.
+        Use .vb-crt-full for a fixed-position full-screen version.
+    </p>
+</div>
+
+</body>
+</html>

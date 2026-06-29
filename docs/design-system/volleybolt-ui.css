@@ -1,0 +1,1011 @@
+/*
+ * Volleybolt UI — standalone design-system stylesheet
+ * Extracted from index.html + styles.css (v56), 2026-06-29.
+ *
+ * No Babylon.js dependency. No game state. Plain CSS for use on any web page.
+ *
+ * Custom fonts (local, relative to game root):
+ *   FF9UI    → fonts/ff9ui.ttf   (primary UI)
+ *   Ferrum   → fonts/ferrum.otf  (title display)
+ *   Esthetique → fonts/esthetique.otf (decorative)
+ *
+ * Web-safe fallbacks (referenced below):
+ *   'Press Start 2P' — Google Fonts — closest 8-bit feel to FF9UI
+ *   'Cinzel'         — Google Fonts — closest display-weight serif to Ferrum
+ *
+ * To use the fallbacks without the local fonts, add to your page <head>:
+ *   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+ */
+
+/* ============================================================
+   CUSTOM FONTS
+   ============================================================ */
+@font-face {
+    font-family: 'FF9UI';
+    src: url('../../fonts/ff9ui.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'Ferrum';
+    src: url('../../fonts/ferrum.otf') format('opentype');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'Esthetique';
+    src: url('../../fonts/esthetique.otf') format('opentype');
+    font-weight: normal;
+    font-style: normal;
+}
+
+/* ============================================================
+   DESIGN TOKENS  (CSS custom properties on :root)
+   ============================================================ */
+:root {
+    /* --- Gold accent (the single canonical accent colour) --- */
+    --vb-gold:          #f0c050;   /* FF9 gold — headings, labels, icons              */
+    --vb-gold-mid:      #d4a849;   /* mid gold — dividers, gradient midpoint          */
+    --vb-gold-dark:     #8b6914;   /* dark gold — shadow stop, gradient end           */
+    --vb-gold-bright:   #ffe9a8;   /* bright gold — title gradient top stop           */
+    --vb-gold-amber:    #fc9838;   /* NES amber — 3-D / object highlight              */
+
+    /* --- Steel window chrome --- */
+    --vb-steel-bg:      rgba(46,56,76,0.94);    /* panel bg                           */
+    --vb-steel-hi:      rgba(84,96,118,0.90);   /* gradient top (lighter)             */
+    --vb-steel-lo:      rgba(42,52,70,0.93);    /* gradient bottom (deeper)           */
+    --vb-rim:           #dfe6f2;                /* border / light rim                 */
+    --vb-rim-inner:     rgba(16,24,40,0.75);    /* dark inner line — double-border    */
+
+    /* --- Text --- */
+    --vb-text:          #f4f7ff;   /* primary UI text — cream-white                  */
+    --vb-text-hover:    #fff4c2;   /* hovered / selected — warm cream                */
+    --vb-text-dim:      #8b94a8;   /* dimmed — cooldown / disabled                   */
+    --vb-text-shadow:   2px 2px 0 #000;  /* hard pixel shadow, every FF9UI label     */
+
+    /* --- Background tones --- */
+    --vb-bg-game:       #15121b;   /* body / letterbox bars                          */
+    --vb-bg-load:       #0a0808;   /* loading screen full-bleed                      */
+    --vb-bg-menu:       #04050a;   /* menu overlay darkest edge                      */
+    --vb-bg-menu-mid:   #0a0d16;   /* menu overlay centre                            */
+    --vb-bg-menu-glow:  #1b2233;   /* title-screen backdrop ellipse glow             */
+
+    /* --- Team: Blue (left / player) --- */
+    --vb-blue:              #0078F8;   /* NES iconic blue                            */
+    --vb-blue-gauge-hi:     #57c4ec;   /* HP gauge bright end                        */
+    --vb-blue-gauge-lo:     #2173ac;   /* HP gauge deep end                          */
+    --vb-blue-mana:         #5ad0ff;   /* mana orbs / cost text                      */
+    --vb-blue-mana-rim:     #9fe3ff;   /* gauge cyan rim                             */
+    --vb-blue-cast-hi:      #6fb0ff;   /* cast bubble border                         */
+    --vb-blue-hp-text:      #209cee;   /* HP percentage text                         */
+
+    /* --- Team: Red (right / AI) --- */
+    --vb-red:               #F83800;   /* NES iconic red                             */
+    --vb-red-gauge-hi:      #ff9e82;   /* HP gauge bright end (mirrored)             */
+    --vb-red-gauge-lo:      #992f1e;   /* HP gauge deep end                          */
+    --vb-red-text:          #e76e55;   /* team labels / percentages                  */
+    --vb-red-cast-hi:       #ff8a6f;   /* cast bubble border                         */
+
+    /* --- Spell elements --- */
+    --vb-fire:          #ffa040;
+    --vb-frost:         #80d0ff;
+    --vb-lightning:     #ffff40;
+    --vb-success:       #6ad26a;   /* connected / ready                              */
+
+    /* --- Spacing & shape --- */
+    --vb-radius-sm:     3px;    /* cells, tooltip                                   */
+    --vb-radius-md:     8px;    /* panels, command menu box                         */
+    --vb-radius-btn:    11px;   /* buttons                                          */
+    --vb-radius-bar:    7px;    /* loading bar container                            */
+    --vb-pad-panel:     12px 16px;   /* standard panel inner padding               */
+    --vb-panel-shadow:  5px 5px 0 rgba(0,0,0,0.5);  /* hard drop shadow            */
+
+    /* --- Font stacks --- */
+    --vb-font-ui:    'FF9UI', 'Press Start 2P', monospace;
+    --vb-font-title: 'Ferrum', 'Cinzel', serif;
+
+    /* --- Brushed-metal grain (micro diagonal lines at 118°) --- */
+    --vb-grain:
+        repeating-linear-gradient(
+            118deg,
+            rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px,
+            rgba(0,0,0,0.05)        1px, rgba(0,0,0,0.05)        2px,
+            transparent             2px, transparent             4px
+        );
+
+    /* --- FF9 steel gradient (used inside panels) --- */
+    --vb-steel-grad:
+        linear-gradient(180deg,
+            rgba(84,96,118,0.90) 0%,
+            rgba(42,52,70, 0.93) 100%
+        );
+}
+
+/* ============================================================
+   BASE RESET (scoped — only affects .vb-* elements)
+   ============================================================ */
+.vb-panel, .vb-menu, .vb-menu-item, .vb-button, .vb-gauge,
+.vb-tooltip, .vb-crt, .vb-badge, .vb-lobby-code,
+.vb-title, .vb-tagline, .vb-divider, .vb-combat-text {
+    box-sizing: border-box;
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
+}
+
+/* ============================================================
+   VB-PANEL  (FF9 steel window — the universal chrome container)
+   ============================================================ */
+.vb-panel {
+    background:
+        var(--vb-grain),
+        var(--vb-steel-grad);
+    border: 2px solid var(--vb-rim);
+    border-radius: var(--vb-radius-md);
+    box-shadow:
+        inset 0 0 0 1px var(--vb-rim-inner),
+        inset 0 2px 3px rgba(255,255,255,0.22),
+        inset 0 -3px 4px rgba(0,0,0,0.38),
+        var(--vb-panel-shadow);
+    padding: var(--vb-pad-panel);
+    color: var(--vb-text);
+    font-family: var(--vb-font-ui);
+    font-size: 18px;
+}
+
+/* Panel title tab — floats above the panel's top border */
+.vb-panel__tab {
+    display: inline-block;
+    background:
+        var(--vb-grain),
+        var(--vb-steel-grad);
+    border: 2px solid var(--vb-rim);
+    border-radius: 6px;
+    padding: 2px 16px;
+    font-family: var(--vb-font-ui);
+    font-size: 16px;
+    color: #ffffff;
+    text-shadow: var(--vb-text-shadow);
+    letter-spacing: 2px;
+    margin-bottom: -2px;  /* merge with panel top border */
+}
+
+/* ============================================================
+   VB-MENU  (FF9-style vertical command list)
+   Outer container  ============================================ */
+.vb-menu {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1px;
+    padding: 12px 16px;
+    background:
+        repeating-linear-gradient(
+            118deg,
+            rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px,
+            rgba(0,0,0,0.05)        1px, rgba(0,0,0,0.05)        2px,
+            transparent             2px, transparent             4px
+        ),
+        linear-gradient(180deg,
+            rgba(84,96,118,0.92) 0%,
+            rgba(42,52,70, 0.95) 100%
+        );
+    border: 2px solid var(--vb-rim);
+    border-radius: var(--vb-radius-md);
+    box-shadow:
+        inset 0 0 0 1px var(--vb-rim-inner),
+        inset 0 2px 3px rgba(255,255,255,0.22),
+        inset 0 -3px 4px rgba(0,0,0,0.38),
+        6px 6px 0 rgba(0,0,0,0.55);
+    min-width: 216px;
+}
+
+/* ============================================================
+   VB-MENU-ITEM  (one command row with hand pointer)
+   ============================================================ */
+.vb-menu-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 36px;
+    padding-left: 28px;  /* space for the hand pointer */
+    font-family: var(--vb-font-ui);
+    font-size: 21px;
+    color: var(--vb-text);
+    text-shadow: var(--vb-text-shadow);
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.07s ease;
+}
+
+/* Hand pointer (FF9-style triangle) */
+.vb-menu-item::before {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0; height: 0;
+    border-top:    7px solid transparent;
+    border-bottom: 7px solid transparent;
+    border-left:   12px solid var(--vb-text);
+    filter: drop-shadow(2px 2px 0 rgba(8,12,26,0.85));
+    opacity: 0;
+    transition: opacity 0.07s ease;
+}
+.vb-menu-item:hover::before,
+.vb-menu-item.is-active::before { opacity: 1; }
+
+.vb-menu-item:hover,
+.vb-menu-item.is-active { color: var(--vb-text-hover); }
+
+/* Dimmed row (on cooldown / no mana) */
+.vb-menu-item.is-disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+.vb-menu-item.is-disabled::before { opacity: 0 !important; }
+
+/* Mana cost dots */
+.vb-menu-item__mana {
+    order: 2;
+    color: var(--vb-blue-mana);
+    font-size: 10px;
+    letter-spacing: 2px;
+    line-height: 1;
+    text-shadow: var(--vb-text-shadow);
+}
+
+/* Key hint badge */
+.vb-menu-item__key {
+    order: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 3px;
+    background: rgba(16,24,40,0.55);
+    border: 1px solid rgba(206,214,230,0.4);
+    border-radius: 4px;
+    font-family: var(--vb-font-ui);
+    font-size: 11px;
+    color: #cdd8ef;
+    text-shadow: var(--vb-text-shadow);
+}
+
+/* ============================================================
+   VB-BUTTON  (canonical steel-chrome CTA button)
+   ============================================================ */
+.vb-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    min-width: 220px;
+    padding: 14px 32px;
+    font-family: var(--vb-font-ui);
+    font-size: 22px;
+    letter-spacing: 2px;
+    color: #eef2fa;
+    text-shadow: 2px 2px 0 #2a2f3a;
+    background:
+        repeating-linear-gradient(
+            118deg,
+            rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px,
+            rgba(0,0,0,0.05)        1px, rgba(0,0,0,0.05)        2px,
+            transparent             2px, transparent             4px
+        ),
+        linear-gradient(180deg,
+            rgba(86,98,120,0.95) 0%,
+            rgba(44,54,72, 0.97) 100%
+        );
+    border: 2px solid #e0e6f0;
+    border-radius: var(--vb-radius-btn);
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: transform 0.1s ease, border-color 0.15s ease, color 0.15s ease;
+    box-shadow:
+        inset 0 0 0 1px rgba(16,24,40,0.7),
+        inset 0 2px 3px rgba(255,255,255,0.18),
+        inset 0 -3px 4px rgba(0,0,0,0.35),
+        5px 5px 0 rgba(0,0,0,0.5);
+}
+
+.vb-button:hover:not(:disabled) {
+    border-color: #ffffff;
+    color: var(--vb-text-hover);
+    transform: translateY(-2px);
+}
+
+.vb-button:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.vb-button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* Primary action — slow breathing glow */
+.vb-button--primary {
+    animation: vb-primary-breath 2.8s ease-in-out infinite;
+}
+.vb-button--primary:hover {
+    animation: none;
+}
+@keyframes vb-primary-breath {
+    0%, 100% {
+        box-shadow:
+            inset 0 0 0 1px rgba(16,24,40,0.7),
+            5px 5px 0 rgba(0,0,0,0.5),
+            0 0 8px rgba(200,215,240,0.12);
+    }
+    50% {
+        box-shadow:
+            inset 0 0 0 1px rgba(16,24,40,0.7),
+            5px 5px 0 rgba(0,0,0,0.5),
+            0 0 18px rgba(200,215,240,0.4);
+    }
+}
+
+/* Ghost / back button — smaller, muted */
+.vb-button--ghost {
+    min-width: 160px;
+    padding: 10px 24px;
+    font-size: 18px;
+    opacity: 0.8;
+}
+.vb-button--ghost:hover:not(:disabled) {
+    opacity: 1;
+}
+
+/* Small variant */
+.vb-button--sm {
+    min-width: 140px;
+    padding: 8px 20px;
+    font-size: 16px;
+}
+
+/* ============================================================
+   VB-GAUGE  (FF9 HP / cast / mana bar)
+   Usage:
+     <div class="vb-gauge">
+       <div class="vb-gauge__fill vb-gauge__fill--blue" style="--fill: 72%;"></div>
+     </div>
+   ============================================================ */
+.vb-gauge {
+    position: relative;
+    height: 24px;
+    background: linear-gradient(0deg, #160c0d 0%, #2f191b 100%);
+    border: 2px solid var(--vb-blue-mana-rim);  /* cyan rim — same for all teams */
+    border-radius: var(--vb-radius-sm);
+    overflow: hidden;
+    box-shadow: 3px 3px 0 #000;  /* hard offset shadow */
+}
+
+.vb-gauge__fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    width: var(--fill, 100%);
+    border-radius: 2px;
+    transition: width 0.1s linear;
+}
+
+/* Inset sheen (top highlight strip) */
+.vb-gauge__fill::before {
+    content: '';
+    position: absolute;
+    top: 1px;
+    left: 4%;
+    width: 92%;
+    height: 2px;
+    background: rgba(255,255,255,0.5);
+    pointer-events: none;
+}
+
+/* Lit leading edge */
+.vb-gauge__fill::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 3px;
+    height: 100%;
+    background: rgba(220,245,255,0.9);
+    pointer-events: none;
+}
+
+/* Blue team HP fill */
+.vb-gauge__fill--blue {
+    background: linear-gradient(90deg, var(--vb-blue-gauge-lo) 0%, var(--vb-blue-gauge-hi) 100%);
+}
+
+/* Red team HP fill (mirrored — anchors right) */
+.vb-gauge--red .vb-gauge__fill {
+    left: auto;
+    right: 0;
+}
+.vb-gauge--red .vb-gauge__fill::after {
+    right: auto;
+    left: 0;
+}
+.vb-gauge__fill--red {
+    background: linear-gradient(90deg, var(--vb-red-gauge-lo) 0%, var(--vb-red-gauge-hi) 100%);
+}
+
+/* Gold cast bar fill */
+.vb-gauge__fill--gold {
+    background: linear-gradient(90deg, #bf8a30 0%, #ffd96a 100%);
+}
+
+/* Loading bar fill (stepped animation) */
+.vb-gauge__fill--load {
+    background: linear-gradient(180deg, #bfe6ff 0%, #6db4e6 50%, #8fc8ee 100%);
+    transition: width 0.15s steps(8);
+}
+
+/* Loading bar container override */
+.vb-gauge--load {
+    height: 24px;
+    background: rgba(20,28,42,0.9);
+    border: 2px solid #cfd6e4;
+    border-radius: var(--vb-radius-bar);
+    overflow: hidden;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.5), 4px 4px 0 rgba(0,0,0,0.5);
+}
+
+/* ============================================================
+   VB-TOOLTIP  (dark stone panel — ability + item tooltips)
+   Usage:
+     <div class="vb-tooltip-wrap">
+       <div>Hover me</div>
+       <div class="vb-tooltip">...</div>
+     </div>
+   ============================================================ */
+.vb-tooltip-wrap {
+    position: relative;
+    display: inline-block;
+}
+
+.vb-tooltip {
+    position: absolute;
+    bottom: calc(100% + 16px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 280px;
+    background:
+        repeating-linear-gradient(
+            118deg,
+            rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px,
+            rgba(0,0,0,0.05)        1px, rgba(0,0,0,0.05)        2px,
+            transparent             2px, transparent             4px
+        ),
+        linear-gradient(180deg,
+            rgba(84,96,118,0.96) 0%,
+            rgba(42,52,70, 0.97) 100%
+        );
+    border: 2px solid var(--vb-rim);
+    padding: 10px 12px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    z-index: 1000;
+    box-shadow:
+        inset 0 0 0 1px var(--vb-rim-inner),
+        inset 0 2px 3px rgba(255,255,255,0.18),
+        4px 4px 0 rgba(0,0,0,0.55);
+    border-radius: var(--vb-radius-md);
+}
+
+/* Arrow */
+.vb-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: rgba(46,56,76,0.96);
+}
+
+.vb-tooltip-wrap:hover .vb-tooltip { opacity: 1; }
+
+.vb-tooltip__title {
+    font-family: var(--vb-font-ui);
+    font-size: 18px;
+    color: var(--vb-gold);
+    margin-bottom: 10px;
+    text-shadow: 1px 1px 0 #000;
+}
+
+.vb-tooltip__divider {
+    border: none;
+    border-top: 1px solid rgba(206,214,230,0.25);
+    margin: 0 0 8px;
+}
+
+.vb-tooltip__stats {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--vb-font-ui);
+    font-size: 14px;
+    color: var(--vb-text);
+    margin-bottom: 8px;
+}
+
+.vb-tooltip__body {
+    font-family: var(--vb-font-ui);
+    font-size: 16px;
+    color: var(--vb-text);
+    line-height: 1.4;
+    text-shadow: 1px 1px 0 #000;
+}
+
+/* Inline keyword colours */
+.vb-tt-value     { color: #ffd700; font-weight: bold; }
+.vb-tt-spell     { color: var(--vb-gold); font-weight: bold; }
+.vb-tt-mechanic  { color: #b8a060; font-style: italic; }
+.vb-tt-fire      { color: #ff8844; font-weight: bold; }
+.vb-tt-frost     { color: #66ccff; font-weight: bold; }
+.vb-tt-lightning { color: #ffee66; font-weight: bold; }
+.vb-tt-enemy     { color: var(--vb-red-text); font-weight: bold; }
+.vb-tt-mana      { color: #6699ff; font-weight: bold; }
+.vb-tt-duration  { color: #88dd88; }
+.vb-tt-key {
+    color: #aaaaaa;
+    background: #333;
+    padding: 1px 4px;
+    border-radius: 2px;
+    font-size: 13px;
+}
+
+/* ============================================================
+   VB-TITLE  (Ferrum display logo with gold gradient + shimmer)
+   Usage:  <h1 class="vb-title" data-text="Volleybolt">Volleybolt</h1>
+   ============================================================ */
+.vb-title-wrap {
+    position: relative;
+    isolation: isolate;
+    display: inline-block;
+    text-align: center;
+}
+
+/* Bloom behind the text */
+.vb-title-wrap::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 48%;
+    transform: translate(-50%, -50%);
+    width: 780px;
+    height: 360px;
+    background: radial-gradient(ellipse at center,
+        rgba(190,212,255,0.42) 0%,
+        rgba(115,155,238,0.22) 32%,
+        rgba(70,100,200,0.08) 56%,
+        transparent 72%);
+    filter: blur(16px);
+    z-index: -1;
+    pointer-events: none;
+    animation: vb-title-bloom 5s ease-in-out infinite;
+}
+@keyframes vb-title-bloom {
+    0%, 100% { opacity: 0.7; transform: translate(-50%, -50%) scale(1);    }
+    50%       { opacity: 1;   transform: translate(-50%, -50%) scale(1.07); }
+}
+
+.vb-title {
+    position: relative;
+    font-family: var(--vb-font-title);
+    font-size: clamp(48px, 8vw, 108px);
+    font-weight: 700;
+    letter-spacing: 8px;
+    line-height: 1;
+    margin: 0;
+    background: linear-gradient(180deg,
+        var(--vb-gold-bright) 0%,
+        var(--vb-gold)        40%,
+        var(--vb-gold-mid)    64%,
+        var(--vb-gold-dark)   100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(4px 4px 0 #000) drop-shadow(0 0 16px rgba(212,168,73,0.3));
+}
+
+/* Shimmer sweep (requires data-text attribute to match content) */
+.vb-title::before {
+    content: attr(data-text);
+    position: absolute;
+    left: 0;
+    top: 0;
+    letter-spacing: 8px;
+    background: linear-gradient(100deg,
+        transparent 30%,
+        rgba(255,255,255,0.85) 50%,
+        transparent 70%);
+    background-size: 220% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    animation: vb-title-shimmer 5s ease-in-out infinite;
+    pointer-events: none;
+}
+@keyframes vb-title-shimmer {
+    0%   { background-position: 200% 0; opacity: 0; }
+    12%  { opacity: 1; }
+    42%  { background-position: -60% 0; opacity: 0; }
+    100% { background-position: -60% 0; opacity: 0; }
+}
+
+/* Divider line below title */
+.vb-divider {
+    height: 3px;
+    background: linear-gradient(90deg, var(--vb-gold-mid) 0%, var(--vb-gold-dark) 70%, transparent 100%);
+    box-shadow: 0 0 8px rgba(212,168,73,0.5);
+    margin-top: 4px;
+    animation: vb-divider-grow 0.7s ease 0.3s both;
+}
+@keyframes vb-divider-grow { from { width: 0; } to { width: 340px; } }
+
+/* Tagline below divider */
+.vb-tagline {
+    font-family: var(--vb-font-ui);
+    font-size: 16px;
+    letter-spacing: 7px;
+    color: var(--vb-gold-mid);
+    text-shadow: var(--vb-text-shadow);
+    padding-left: 3px;
+    margin-top: 4px;
+}
+
+/* ============================================================
+   VB-MENU-SCREEN  (full-screen title menu backdrop)
+   ============================================================ */
+.vb-menu-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    width: 100%;
+    background: radial-gradient(
+        ellipse 72% 62% at 50% 42%,
+        var(--vb-bg-menu-glow) 0%,
+        var(--vb-bg-menu-mid)  56%,
+        var(--vb-bg-menu)      100%
+    );
+    gap: 64px;
+    position: relative;
+}
+
+/* Copyright footer */
+.vb-menu-screen::after {
+    content: '\00A9 2026 VOLLEYBOLT';
+    position: absolute;
+    bottom: 26px;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    font-family: var(--vb-font-ui);
+    font-size: 14px;
+    letter-spacing: 2px;
+    color: #aab2c4;
+    text-shadow: var(--vb-text-shadow);
+    pointer-events: none;
+}
+
+/* ============================================================
+   VB-MENU-LIST  (the plain-text FF9 command list used on title)
+   ============================================================ */
+.vb-menu-list {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    list-style: none;
+    margin: 0; padding: 0;
+}
+
+.vb-menu-list__item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 6px 18px 6px 48px;  /* 48px = hand pointer clearance */
+    font-family: var(--vb-font-ui);
+    font-size: clamp(28px, 4vw, 46px);
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: var(--vb-gold);
+    text-shadow: var(--vb-text-shadow);
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.12s ease;
+    background: none;
+    border: none;
+    text-align: left;
+}
+
+/* Hand pointer */
+.vb-menu-list__item::before {
+    content: '';
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0; height: 0;
+    border-top:    8px solid transparent;
+    border-bottom: 8px solid transparent;
+    border-left:   13px solid var(--vb-text);
+    filter: drop-shadow(2px 2px 0 rgba(8,12,26,0.85));
+    opacity: 0;
+    transition: opacity 0.08s ease;
+}
+.vb-menu-list__item:hover::before,
+.vb-menu-list__item.is-active::before { opacity: 1; }
+
+.vb-menu-list__item:hover,
+.vb-menu-list__item.is-active { color: var(--vb-text-hover); }
+
+/* ============================================================
+   VB-CRT  (scanline + vignette + flicker overlay)
+   Apply to any element you want to look like a CRT screen.
+   Set position: relative on the parent.
+   ============================================================ */
+.vb-crt {
+    position: relative;
+    overflow: hidden;
+}
+
+.vb-crt::before {
+    /* Scanlines */
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 100;
+    pointer-events: none;
+    mix-blend-mode: multiply;
+    background-image: repeating-linear-gradient(
+        to bottom,
+        rgba(0,0,0,0.18) 0px,
+        rgba(0,0,0,0.18) 1px,
+        rgba(255,255,255,0.0) 1px,
+        rgba(255,255,255,0.0) 2px
+    );
+}
+
+/* Vignette layer */
+.vb-crt::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 99;
+    pointer-events: none;
+    background: radial-gradient(
+        ellipse at center,
+        rgba(0,0,0,0.0)  55%,
+        rgba(0,0,0,0.45) 95%,
+        rgba(0,0,0,0.7)  100%
+    );
+    mix-blend-mode: multiply;
+}
+
+/* Full-screen standalone overlay (add .vb-crt-full to a fixed-position div) */
+.vb-crt-full {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;
+    mix-blend-mode: multiply;
+    background-image: repeating-linear-gradient(
+        to bottom,
+        rgba(0,0,0,0.18) 0px,
+        rgba(0,0,0,0.18) 1px,
+        rgba(255,255,255,0.0) 1px,
+        rgba(255,255,255,0.0) 2px
+    );
+}
+
+.vb-crt-full::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+        ellipse at center,
+        rgba(0,0,0,0.0) 55%,
+        rgba(0,0,0,0.45) 95%,
+        rgba(0,0,0,0.7)  100%
+    );
+    mix-blend-mode: multiply;
+    pointer-events: none;
+}
+
+.vb-crt-full::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.015);
+    mix-blend-mode: overlay;
+    animation: vb-crt-flicker 6s steps(60) infinite;
+    pointer-events: none;
+}
+@keyframes vb-crt-flicker {
+    0%   { opacity: 0.20; }
+    13%  { opacity: 0.55; }
+    27%  { opacity: 0.30; }
+    41%  { opacity: 0.70; }
+    58%  { opacity: 0.40; }
+    74%  { opacity: 0.55; }
+    89%  { opacity: 0.30; }
+    100% { opacity: 0.20; }
+}
+
+/* ============================================================
+   VB-BADGE  (mana-cost or stat badge)
+   ============================================================ */
+.vb-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 6px;
+    background: linear-gradient(180deg, #1a2a3a 0%, #0a1520 100%);
+    border: 2px solid #2a4a6a;
+    border-radius: 4px;
+    font-family: var(--vb-font-ui);
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--vb-blue-mana);
+    text-shadow: var(--vb-text-shadow);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    min-width: 18px;
+}
+
+/* ============================================================
+   VB-COMBAT-TEXT  (floating damage / status text)
+   ============================================================ */
+.vb-combat-text {
+    display: inline-block;
+    font-family: var(--vb-font-ui);
+    font-size: 18px;
+    color: #fff;
+    text-shadow: var(--vb-text-shadow);
+    pointer-events: none;
+    white-space: nowrap;
+    letter-spacing: 1px;
+}
+
+.vb-combat-text--damage   { color: #ff4040; font-size: 12px; }
+.vb-combat-text--fire     { color: var(--vb-fire); }
+.vb-combat-text--frost    { color: var(--vb-frost); }
+.vb-combat-text--lightning{ color: var(--vb-lightning); }
+.vb-combat-text--frozen   { color: #8fd0ff; }
+.vb-combat-text--cancel   { color: var(--vb-lightning); }
+
+/* Cast announcement speech bubble */
+.vb-cast-bubble {
+    display: inline-block;
+    position: relative;
+    padding: 5px 12px 6px;
+    font-family: var(--vb-font-ui);
+    font-size: 18px;
+    color: #f4f7ff;
+    text-shadow: var(--vb-text-shadow);
+    background:
+        repeating-linear-gradient(118deg,
+            rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px,
+            rgba(0,0,0,0.06) 1px, rgba(0,0,0,0.06) 2px,
+            transparent 2px, transparent 4px),
+        linear-gradient(180deg, rgba(84,96,118,0.95), rgba(42,52,70,0.97));
+    border: 2px solid #d3dae8;
+    border-radius: 8px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), 0 3px 0 rgba(0,0,0,0.45);
+}
+
+.vb-cast-bubble::after {
+    content: '';
+    position: absolute;
+    left: 50%; bottom: -8px;
+    transform: translateX(-50%);
+    width: 0; height: 0;
+    border-left:  7px solid transparent;
+    border-right: 7px solid transparent;
+    border-top:   8px solid #d3dae8;
+}
+
+.vb-cast-bubble--blue {
+    border-color: var(--vb-blue-cast-hi);
+    background:
+        repeating-linear-gradient(118deg,
+            rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px,
+            rgba(0,0,0,0.07) 1px, rgba(0,0,0,0.07) 2px,
+            transparent 2px, transparent 4px),
+        linear-gradient(180deg, rgba(58,92,150,0.96), rgba(28,48,88,0.97));
+}
+.vb-cast-bubble--blue::after { border-top-color: var(--vb-blue-cast-hi); }
+
+.vb-cast-bubble--red {
+    border-color: var(--vb-red-cast-hi);
+    background:
+        repeating-linear-gradient(118deg,
+            rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px,
+            rgba(0,0,0,0.07) 1px, rgba(0,0,0,0.07) 2px,
+            transparent 2px, transparent 4px),
+        linear-gradient(180deg, rgba(150,60,58,0.96), rgba(90,30,30,0.97));
+}
+.vb-cast-bubble--red::after { border-top-color: var(--vb-red-cast-hi); }
+
+/* ============================================================
+   VB-LOBBY-CODE  (big letter-spaced code display)
+   ============================================================ */
+.vb-lobby-code {
+    display: inline-block;
+    font-family: var(--vb-font-ui);
+    font-size: 56px;
+    font-weight: 700;
+    letter-spacing: 10px;
+    color: var(--vb-gold);
+    text-shadow: 3px 3px 0 #000;
+    background: rgba(0,0,0,0.4);
+    border: 2px solid var(--vb-rim);
+    padding: 8px 24px;
+    margin: 4px 0;
+}
+
+/* ============================================================
+   ANIMATION HELPERS
+   ============================================================ */
+
+/* Float-up + fade (combat text, notifications) */
+@keyframes vb-float-up {
+    0%   { opacity: 1; transform: translateY(0)   scale(0.8); }
+    20%  { opacity: 1; transform: translateY(-8px) scale(1.1); }
+    100% { opacity: 0; transform: translateY(-60px) scale(1); }
+}
+.vb-anim-float {
+    animation: vb-float-up 2s ease-out forwards;
+}
+
+/* Menu rise-in */
+@keyframes vb-menu-rise {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.vb-anim-rise {
+    animation: vb-menu-rise 0.6s ease both;
+}
+
+/* Damage pop */
+@keyframes vb-damage-pop {
+    0%   { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+    18%  { transform: translate(-50%, -96%) scale(1.18); opacity: 1; }
+    32%  { transform: translate(-50%, -80%) scale(1); }
+    78%  { transform: translate(-50%, -116%) scale(1); opacity: 1; }
+    100% { transform: translate(-50%, -150%) scale(1); opacity: 0; }
+}
+.vb-anim-damage {
+    animation: vb-damage-pop 1.1s steps(7) forwards;
+}
+
+/* ============================================================
+   SVG POSTERIZE FILTER  (embedded inline for ability icons)
+   Include this once in your page body to enable
+   filter: url(#vb-posterize) on images.
+   ============================================================ */
+/*
+  <svg style="display:none">
+    <filter id="vb-posterize">
+      <feComponentTransfer>
+        <feFuncR type="discrete" tableValues="0 0.2 0.4 0.6 0.8 1"/>
+        <feFuncG type="discrete" tableValues="0 0.2 0.4 0.6 0.8 1"/>
+        <feFuncB type="discrete" tableValues="0 0.2 0.4 0.6 0.8 1"/>
+      </feComponentTransfer>
+    </filter>
+  </svg>
+*/
