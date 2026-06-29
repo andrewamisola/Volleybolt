@@ -2138,7 +2138,36 @@
                     castLabel: '1s Cast', cooldownLabel: '4s CD',
                     description: 'Hurl a <span class="tt-spell">Fireball</span> that deals <span class="tt-value">2</span> <span class="tt-fire">Fire</span> damage. Damage increases with <span class="tt-mechanic">Volleys</span>, up to <span class="tt-value">6</span>.'
                 },
-                behavior: {}
+                behavior: {
+                    castType: 'channel',
+                    onCast(ctx, combatant) {
+                        const a = ctx.abilities.fireball;
+                        combatant.casting = 'fireball';
+                        combatant.castProgress = 0;
+                        combatant.castTime = a.castTime;
+                        combatant.pendingManaCost = a.manaCost;
+                        if (!ctx.isResimulating) ctx.deps.castingStart();
+                    },
+                    onPaddleHit(proj, side, ctx) {
+                        const c = ctx.combatants[side];
+                        const px = c.paddleX, pz = c.paddleZ;
+                        const projRadius = proj.hitboxRadius || 0.25;
+                        const paddleHalfWidth = 0.2, paddleHalfDepth = 0.8;
+                        proj.x = side === 'left' ? px + paddleHalfWidth + projRadius : px - paddleHalfWidth - projRadius;
+                        const hitOffset = (proj.z - pz) / paddleHalfDepth;
+                        const currentSpeed = Math.max(Math.sqrt(proj.velX*proj.velX + proj.velZ*proj.velZ), 10);
+                        const angleStrength = hitOffset * 0.7;
+                        proj.velX = currentSpeed * Math.cos(angleStrength) * (proj.velX > 0 ? -1 : 1);
+                        proj.velZ = currentSpeed * Math.sin(angleStrength) * Math.sign(hitOffset || 1);
+                        proj.owner = side === 'left' ? 'player' : 'ai';
+                        proj.volleyCount++;
+                        ctx.deps.updateFireballScale(proj);
+                        if (c && !proj.isParried) c.mana = Math.min(ctx.deps.getMaxMana(side === 'left' ? 'left' : 'right'), c.mana + 0.5);
+                        if (!ctx.isResimulating) ctx.deps.playSound('block', px, 0.6);
+                        return false; // bounced, not consumed
+                    },
+                    onGateHit(proj, side, ctx) { return { damage: Math.min(2 + proj.volleyCount, 6) }; },
+                }
             },
             frostbolt: {
                 gameplay: { cooldown: 7, castTime: 0, baseSpeed: 24, maxSpeed: 24, freezeDuration: 1.0, manaCost: 2 },

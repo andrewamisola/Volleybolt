@@ -123,31 +123,8 @@
                     }
 
                     const hitAbility = ctx.deps.getAbilityDef(proj.type);
-                    if (hitAbility && hitAbility.behavior.onPaddleHit && proj.type === 'frostbolt') {
+                    if (hitAbility && hitAbility.behavior.onPaddleHit) {
                         if (hitAbility.behavior.onPaddleHit(proj, 'left', ctx)) { toDestroy.push(proj); }
-                    } else {
-                        // Bounce fireball with angle based on hit position
-                        proj.x = px + paddleHalfWidth + projRadius;
-
-                        // Hit offset: -1 (bottom edge) to +1 (top edge)
-                        const hitOffset = (proj.z - pz) / paddleHalfDepth;
-
-                        // Pong-style angling: edge hits = sharp angles, center hits = straight
-                        // Use the current speed to maintain momentum but redirect it (min speed 10)
-                        const currentSpeed = Math.max(Math.sqrt(proj.velX * proj.velX + proj.velZ * proj.velZ), 10);
-                        const maxAngle = 0.7;  // ~45 degrees max deflection at edges
-                        const angleStrength = hitOffset * maxAngle;
-
-                        // Redirect velocity: more angle = less forward speed, more sideways
-                        proj.velX = currentSpeed * Math.cos(angleStrength) * (proj.velX > 0 ? -1 : 1);
-                        proj.velZ = currentSpeed * Math.sin(angleStrength) * Math.sign(hitOffset || 1);
-
-                        proj.owner = 'player';
-                        proj.volleyCount++;
-                        D.updateFireballScale(proj);  // Scale up with damage
-                        // Only give block mana if not parried (parry already gives mana)
-                        if (combatants.left && !proj.isParried) combatants.left.mana = Math.min(D.getMaxMana('left'), combatants.left.mana + 0.5);
-                        if (!isResimulating) D.playSound('block', px, 0.6);
                     }
                 }
             }
@@ -170,51 +147,22 @@
                     }
 
                     const hitAbility = ctx.deps.getAbilityDef(proj.type);
-                    if (hitAbility && hitAbility.behavior.onPaddleHit && proj.type === 'frostbolt') {
+                    if (hitAbility && hitAbility.behavior.onPaddleHit) {
                         if (hitAbility.behavior.onPaddleHit(proj, 'right', ctx)) { toDestroy.push(proj); }
-                    } else {
-                        // Bounce fireball with angle based on hit position
-                        proj.x = px - paddleHalfWidth - projRadius;
-
-                        // Hit offset: -1 (bottom edge) to +1 (top edge)
-                        const hitOffset = (proj.z - pz) / paddleHalfDepth;
-
-                        // Pong-style angling: edge hits = sharp angles, center hits = straight
-                        // Use the current speed to maintain momentum but redirect it (min speed 10)
-                        const currentSpeed = Math.max(Math.sqrt(proj.velX * proj.velX + proj.velZ * proj.velZ), 10);
-                        const maxAngle = 0.7;  // ~45 degrees max deflection at edges
-                        const angleStrength = hitOffset * maxAngle;
-
-                        // Redirect velocity: more angle = less forward speed, more sideways
-                        proj.velX = currentSpeed * Math.cos(angleStrength) * (proj.velX > 0 ? -1 : 1);
-                        proj.velZ = currentSpeed * Math.sin(angleStrength) * Math.sign(hitOffset || 1);
-
-                        proj.owner = 'ai';
-                        proj.volleyCount++;
-                        D.updateFireballScale(proj);  // Scale up with damage
-                        // Only give block mana if not parried (parry already gives mana)
-                        if (combatants.right && !proj.isParried) combatants.right.mana = Math.min(D.getMaxMana('right'), combatants.right.mana + 0.5);
-                        if (!isResimulating) D.playSound('block', px, 0.6);
                     }
                 }
             }
 
             // Gate collisions
             if (proj.x < -goalX) {
-                const isPlayerTower = proj.owner === 'ai';
-                // Hit left gate (player's tower)
-                if (proj.type !== 'frostbolt') {
-                    const damage = Math.min(2 + proj.volleyCount, 6);  // Fireball damage
-                    D.dealDamageToTower(isPlayerTower, damage, proj.z);
-                }
+                const hitAbility = ctx.deps.getAbilityDef(proj.type);
+                const res = hitAbility && hitAbility.behavior.onGateHit ? hitAbility.behavior.onGateHit(proj, 'left', ctx) : { damage: Math.min(2 + proj.volleyCount, 6) };
+                if (res && res.damage) D.dealDamageToTower(proj.owner === 'ai', res.damage, proj.z);
                 toDestroy.push(proj);
             } else if (proj.x > goalX) {
-                const isPlayerTower = proj.owner === 'ai';
-                // Hit right gate (AI/guest tower)
-                if (proj.type !== 'frostbolt') {
-                    const damage = Math.min(2 + proj.volleyCount, 6);  // Fireball damage
-                    D.dealDamageToTower(isPlayerTower, damage, proj.z);
-                }
+                const hitAbility = ctx.deps.getAbilityDef(proj.type);
+                const res = hitAbility && hitAbility.behavior.onGateHit ? hitAbility.behavior.onGateHit(proj, 'right', ctx) : { damage: Math.min(2 + proj.volleyCount, 6) };
+                if (res && res.damage) D.dealDamageToTower(proj.owner === 'ai', res.damage, proj.z);
                 toDestroy.push(proj);
             }
 
@@ -275,21 +223,9 @@
         if (combatant.cooldowns[abilityId] > 0) return;
 
         const beh = (ctx.deps.getAbilityDef ? ctx.deps.getAbilityDef(abilityId) : null)?.behavior;
-        if (beh && beh.castType === 'instant') {
+        if (beh && (beh.castType === 'instant' || beh.castType === 'channel' || beh.castType === 'targeted')) {
             beh.onCast(ctx, combatant);
             return;
-        }
-        // (fireball channel path stays as-is for now — migrated in Task 5)
-        if (abilityId === 'fireball') {
-            // Start casting
-            combatant.casting = 'fireball';
-            combatant.castProgress = 0;
-            combatant.castTime = ability.castTime;
-            combatant.pendingManaCost = ability.manaCost;
-
-            if (!isResimulating) {
-                D.castingStart();
-            }
         }
     }
 
