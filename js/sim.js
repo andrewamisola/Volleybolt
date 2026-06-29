@@ -312,9 +312,109 @@
         }
     }
 
+    // --- PvP parry (deterministic timing + hit detection) ---
+    // ctx adds: pvpParryState, projectiles, consts {parryWindow, parryFailCooldown,
+    // parrySuccessCooldown, parryHitboxExtend}. Bubble FX go through ctx.deps.
+
+    function updatePvPParryTimers(dt, ctx) {
+        const { pvpParryState, combatants, consts, deps: D } = ctx;
+        for (const side of ['left', 'right']) {
+            const state = pvpParryState[side];
+            if (state.active) {
+                state.timer -= dt;
+                if (state.timer <= 0) {
+                    state.active = false;
+                    state.timer = 0;
+                    state.cooldown = consts.parryFailCooldown;
+                    state.cooldownMax = consts.parryFailCooldown;
+                    state.canParry = false;
+
+                    D.dissolveActiveParryBubble(combatants[side]);
+                }
+            }
+
+            if (!state.canParry) {
+                state.cooldown -= dt;
+                if (state.cooldown <= 0) {
+                    state.cooldown = 0;
+                    state.cooldownMax = 0;
+                    state.canParry = true;
+                }
+            }
+        }
+    }
+
+    function tryActivatePvPParry(side, ctx) {
+        const { pvpParryState, combatants, isResimulating, consts, deps: D } = ctx;
+        const state = pvpParryState[side];
+        const combatant = combatants[side];
+        if (!combatant || combatant.freezeTime > 0) return;
+        if (!state.canParry || state.active) return;
+
+        state.active = true;
+        state.timer = consts.parryWindow;
+        state.canParry = false;
+        state.cooldown = consts.parryFailCooldown;
+        state.cooldownMax = consts.parryFailCooldown;
+
+        if (!isResimulating && combatant.isLocalPlayer) {
+            D.onParryActivated(combatant, side);
+        }
+    }
+
+    function checkPvPParryHitsForSide(side, inputState, ctx) {
+        const { pvpParryState, combatants, projectiles, consts, deps: D } = ctx;
+        const state = pvpParryState[side];
+        if (!state.active) return;
+
+        const combatant = combatants[side];
+        if (!combatant || combatant.paddleX === undefined) return;
+        const px = combatant.paddleX;   // pure paddle position (mirrored to the mesh)
+        const pz = combatant.paddleZ;
+
+        const incomingVelCheck = side === 'left' ? (proj) => proj.velX < 0 : (proj) => proj.velX > 0;
+        const ownerKey = side === 'left' ? 'player' : 'ai';
+
+        const paddleHalfDepth = 2.0;
+        let bestProj = null;
+        let bestDist = Infinity;
+
+        for (const proj of projectiles) {
+            if (!incomingVelCheck(proj)) continue;
+            if (proj.owner === ownerKey && !proj.isParried) continue;
+
+            const distFromPaddle = proj.x - px;
+            if (distFromPaddle > consts.parryHitboxExtend || distFromPaddle < -0.5) continue;
+
+            if (proj.z < pz - paddleHalfDepth || proj.z > pz + paddleHalfDepth) continue;
+
+            if (distFromPaddle < bestDist) {
+                bestDist = distFromPaddle;
+                bestProj = proj;
+            }
+        }
+
+        if (bestProj) {
+            const parryer = side === 'left' ? 'player' : 'ai';
+            const aimDir = inputState ? inputState.moveDir : 0;
+            D.parryProjectile(bestProj, parryer, aimDir);
+
+            state.active = false;
+            state.timer = 0;
+            state.cooldown = consts.parrySuccessCooldown;
+            state.cooldownMax = consts.parrySuccessCooldown;
+            state.canParry = false;
+
+            D.dissolveActiveParryBubble(combatant);
+        }
+    }
+
     // Bridge to the classic inline script (which calls window.VolleyboltSim.*).
     window.VolleyboltSim = window.VolleyboltSim || {};
     window.VolleyboltSim.updateNetworkProjectiles = updateNetworkProjectiles;
     window.VolleyboltSim.applyNetworkMovement = applyNetworkMovement;
     window.VolleyboltSim.tryNetworkCast = tryNetworkCast;
+    window.VolleyboltSim.updatePvPParryTimers = updatePvPParryTimers;
+    window.VolleyboltSim.tryActivatePvPParry = tryActivatePvPParry;
+    window.VolleyboltSim.checkPvPParryHitsForSide = checkPvPParryHitsForSide;
 })();

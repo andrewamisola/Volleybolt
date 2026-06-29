@@ -17132,107 +17132,11 @@
             sweep.style.setProperty('--sweep-angle', (progress * 360) + 'deg');
         }
 
-        function updatePvPParryTimers(dt) {
-            const D = SIM_DEPS;
-            for (const side of ['left', 'right']) {
-                const state = getPvPParryState(side);
-                if (state.active) {
-                    state.timer -= dt;
-                    if (state.timer <= 0) {
-                        state.active = false;
-                        state.timer = 0;
-                        state.cooldown = parryFailCooldown;
-                        state.cooldownMax = parryFailCooldown;
-                        state.canParry = false;
+        // updatePvPParryTimers lifted to js/sim.js (window.VolleyboltSim).
 
-                        const combatant = combatants[side];
-                        if (combatant && combatant.isLocalPlayer && window.activeParryBubble) {
-                            D.dissolveParryBubble(window.activeParryBubble);
-                            window.activeParryBubble = null;
-                        }
-                    }
-                }
+        // tryActivatePvPParry lifted to js/sim.js (window.VolleyboltSim).
 
-                if (!state.canParry) {
-                    state.cooldown -= dt;
-                    if (state.cooldown <= 0) {
-                        state.cooldown = 0;
-                        state.cooldownMax = 0;
-                        state.canParry = true;
-                    }
-                }
-            }
-        }
-
-        function tryActivatePvPParry(side) {
-            const D = SIM_DEPS;
-            const state = getPvPParryState(side);
-            const combatant = combatants[side];
-            if (!combatant || combatant.freezeTime > 0) return;
-            if (!state.canParry || state.active) return;
-
-            state.active = true;
-            state.timer = parryWindow;
-            state.canParry = false;
-            state.cooldown = parryFailCooldown;
-            state.cooldownMax = parryFailCooldown;
-
-            if (!isResimulating && combatant.isLocalPlayer) {
-                const paddle = side === 'left' ? playerPaddle : aiPaddle;
-                if (paddle) D.playSound('spellReady', combatant.paddleX, 0.15);
-                if (paddle) window.activeParryBubble = D.createParryBubble(paddle, side === 'right');
-            }
-        }
-
-        function checkPvPParryHitsForSide(side, inputState) {
-            const D = SIM_DEPS;
-            const state = getPvPParryState(side);
-            if (!state.active) return;
-
-            const combatant = combatants[side];
-            if (!combatant || combatant.paddleX === undefined) return;
-            const px = combatant.paddleX;   // pure paddle position (mirrored to the mesh)
-            const pz = combatant.paddleZ;
-
-            const incomingVelCheck = side === 'left' ? (proj) => proj.velX < 0 : (proj) => proj.velX > 0;
-            const ownerKey = side === 'left' ? 'player' : 'ai';
-
-            const paddleHalfDepth = 2.0;
-            let bestProj = null;
-            let bestDist = Infinity;
-
-            for (const proj of projectiles) {
-                if (!incomingVelCheck(proj)) continue;
-                if (proj.owner === ownerKey && !proj.isParried) continue;
-
-                const distFromPaddle = proj.x - px;
-                if (distFromPaddle > parryHitboxExtend || distFromPaddle < -0.5) continue;
-
-                if (proj.z < pz - paddleHalfDepth || proj.z > pz + paddleHalfDepth) continue;
-
-                if (distFromPaddle < bestDist) {
-                    bestDist = distFromPaddle;
-                    bestProj = proj;
-                }
-            }
-
-            if (bestProj) {
-                const parryer = side === 'left' ? 'player' : 'ai';
-                const aimDir = inputState ? inputState.moveDir : 0;
-                D.parryProjectile(bestProj, parryer, aimDir);
-
-                state.active = false;
-                state.timer = 0;
-                state.cooldown = parrySuccessCooldown;
-                state.cooldownMax = parrySuccessCooldown;
-                state.canParry = false;
-
-                if (combatant.isLocalPlayer && window.activeParryBubble) {
-                    D.dissolveParryBubble(window.activeParryBubble);
-                    window.activeParryBubble = null;
-                }
-            }
-        }
+        // checkPvPParryHitsForSide lifted to js/sim.js (window.VolleyboltSim).
 
         function syncLocalParryUI() {
             if (gameMode !== 'pvp' || isResimulating) return;
@@ -17261,6 +17165,15 @@
         // Simulate one frame of gameplay deterministically
         function simulateNetworkFrame(leftInput, rightInput, dt) {
             const D = SIM_DEPS;
+            const VS = window.VolleyboltSim;
+            // Unified context handed to every lifted sim function (js/sim.js). isResimulating
+            // is a per-frame snapshot (it doesn't change mid-frame). consts come from the
+            // single inline definitions, so there is no duplicated tuning.
+            const simCtx = {
+                projectiles, combatants, abilities, pvpParryState, isResimulating,
+                consts: { parryWindow, parryFailCooldown, parrySuccessCooldown, parryHitboxExtend },
+                deps: D,
+            };
             // Update freeze timers
             if (combatants.left && combatants.left.freezeTime > 0) {
                 combatants.left.freezeTime -= dt;
@@ -17271,20 +17184,20 @@
                 if (combatants.right.freezeTime < 0) combatants.right.freezeTime = 0;
             }
 
-            // Update parry system (PvP)
-            updatePvPParryTimers(dt);
+            // Update parry system (PvP) — lifted to js/sim.js
+            VS.updatePvPParryTimers(dt, simCtx);
 
             // Process parry inputs
             if (leftInput.parry) {
-                tryActivatePvPParry('left');
+                VS.tryActivatePvPParry('left', simCtx);
             }
             if (rightInput.parry) {
-                tryActivatePvPParry('right');
+                VS.tryActivatePvPParry('right', simCtx);
             }
 
             // Check parry hits for both sides
-            checkPvPParryHitsForSide('left', leftInput);
-            checkPvPParryHitsForSide('right', rightInput);
+            VS.checkPvPParryHitsForSide('left', leftInput, simCtx);
+            VS.checkPvPParryHitsForSide('right', rightInput, simCtx);
             D.syncLocalParryUI();
 
             // Update cooldowns
@@ -17329,27 +17242,25 @@
             // Apply movement inputs
             if (combatants.left) combatants.left.lastMoveDir = leftInput.moveDir;
             if (combatants.right) combatants.right.lastMoveDir = rightInput.moveDir;
-            const VS = window.VolleyboltSim;
-            VS.applyNetworkMovement(combatants.left, leftInput.moveDir, dt, { deps: D });
-            VS.applyNetworkMovement(combatants.right, rightInput.moveDir, dt, { deps: D });
+            VS.applyNetworkMovement(combatants.left, leftInput.moveDir, dt, simCtx);
+            VS.applyNetworkMovement(combatants.right, rightInput.moveDir, dt, simCtx);
 
             // Process ability inputs
-            const castCtx = { abilities, isResimulating, deps: D };
             if (leftInput.fireball && combatants.left) {
-                VS.tryNetworkCast(combatants.left, 'fireball', castCtx);
+                VS.tryNetworkCast(combatants.left, 'fireball', simCtx);
             }
             if (leftInput.frostbolt && combatants.left) {
-                VS.tryNetworkCast(combatants.left, 'frostbolt', castCtx);
+                VS.tryNetworkCast(combatants.left, 'frostbolt', simCtx);
             }
             if (rightInput.fireball && combatants.right) {
-                VS.tryNetworkCast(combatants.right, 'fireball', castCtx);
+                VS.tryNetworkCast(combatants.right, 'fireball', simCtx);
             }
             if (rightInput.frostbolt && combatants.right) {
-                VS.tryNetworkCast(combatants.right, 'frostbolt', castCtx);
+                VS.tryNetworkCast(combatants.right, 'frostbolt', simCtx);
             }
 
             // Update projectiles (lifted to js/sim.js — window.VolleyboltSim)
-            window.VolleyboltSim.updateNetworkProjectiles(dt, { projectiles, combatants, abilities, isResimulating, deps: D });
+            VS.updateNetworkProjectiles(dt, simCtx);
 
             // Check win conditions
             if (combatants.left && combatants.left.towerHealth <= 0) {
@@ -17396,8 +17307,19 @@
             // --- presentation effects (gated by !isResimulating at call sites) ---
             playSound: (name, x, vol, pitch) => playSound(name, x, vol, pitch),
             showFrozenText: (isLocal) => showFrozenText(isLocal),
-            createParryBubble: (paddle, isRight) => (window.createParryBubble ? createParryBubble(paddle, isRight) : null),
-            dissolveParryBubble: (bubble) => { if (window.dissolveParryBubble) dissolveParryBubble(bubble); },
+            // parry bubble FX: encapsulate window.activeParryBubble + paddle mesh so the sim stays clean
+            onParryActivated: (combatant, side) => {
+                const paddle = side === 'left' ? playerPaddle : aiPaddle;
+                if (!paddle) return;
+                playSound('spellReady', combatant.paddleX, 0.15);
+                window.activeParryBubble = (window.createParryBubble ? createParryBubble(paddle, side === 'right') : null);
+            },
+            dissolveActiveParryBubble: (combatant) => {
+                if (combatant && combatant.isLocalPlayer && window.activeParryBubble) {
+                    if (window.dissolveParryBubble) dissolveParryBubble(window.activeParryBubble);
+                    window.activeParryBubble = null;
+                }
+            },
             castingStart: () => { if (window.ToneSFX) ToneSFX.castingStart(); },
         };
 
