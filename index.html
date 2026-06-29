@@ -11413,6 +11413,9 @@
                 }, scene);
                 const startY = options.startY !== undefined ? options.startY : (isSplitProjectile ? 0.35 : 0.7);
                 proj.mesh.position.set(startX, startY, startZ);
+                // Authoritative sim position (decoupled from the mesh). The PvP sim advances
+                // proj.x/y/z as pure numbers; the mesh is mirrored from them after the tick.
+                proj.x = startX; proj.y = startY; proj.z = startZ;
                 proj.mesh.rotationQuaternion = BABYLON.Quaternion.Identity();
                 // Projectiles no longer cast into the dynamic sun shadow map -- they use a
                 // soft blob shadow instead (see setupProjectileSceneFx). Reduces the fireball's
@@ -11641,6 +11644,8 @@
                     flat: true
                 }, scene);
                 proj.mesh.position.set(startX, 0.7, startZ);
+                // Authoritative sim position (decoupled from the mesh); see spawnFireball.
+                proj.x = startX; proj.y = 0.7; proj.z = startZ;
                 proj.mesh.material = frostCoreMat;
                 proj.mesh.rotationQuaternion = BABYLON.Quaternion.Identity();
                 // Projectiles no longer cast into the dynamic sun shadow map -- they use a
@@ -16625,9 +16630,9 @@
                     id: p.id,
                     type: p.type || 'fireball',
                     owner: p.owner,
-                    x: p.mesh ? p.mesh.position.x : 0,
-                    y: p.mesh ? p.mesh.position.y : 0,
-                    z: p.mesh ? p.mesh.position.z : 0,
+                    x: p.x !== undefined ? p.x : (p.mesh ? p.mesh.position.x : 0),
+                    y: p.y !== undefined ? p.y : (p.mesh ? p.mesh.position.y : 0),
+                    z: p.z !== undefined ? p.z : (p.mesh ? p.mesh.position.z : 0),
                     velX: p.velX,
                     velY: p.velY || 0,
                     velZ: p.velZ,
@@ -16769,7 +16774,10 @@
             for (const sp of stateProjectiles) {
                 const existing = currentById[sp.id];
                 if (existing) {
-                    // Update position and velocity
+                    // Restore the authoritative sim position (resimulated frames read these)
+                    existing.x = sp.x;
+                    existing.y = sp.y;
+                    existing.z = sp.z;
                     if (existing.mesh) {
                         existing.mesh.position.x = sp.x;
                         existing.mesh.position.y = sp.y;
@@ -16801,6 +16809,9 @@
                         newProj.volleyCount = sp.volleyCount;
                         newProj.isParried = sp.isParried;
                         newProj.parriedBy = sp.parriedBy;
+                        newProj.x = sp.x;
+                        newProj.y = sp.y;
+                        newProj.z = sp.z;
                         if (newProj.mesh) {
                             newProj.mesh.position.y = sp.y;
                         }
@@ -17424,18 +17435,18 @@
                     continue;
                 }
 
-                // Move projectile
-                proj.mesh.position.x += proj.velX * dt;
-                proj.mesh.position.z += proj.velZ * dt;
+                // Move projectile (pure sim position; mesh is mirrored at the end of the loop)
+                proj.x += proj.velX * dt;
+                proj.z += proj.velZ * dt;
 
                 // Gravity for lobbed projectiles
                 if (proj.velY !== undefined && proj.velY !== 0) {
                     proj.velY += gravity * dt;
-                    proj.mesh.position.y += proj.velY * dt;
+                    proj.y += proj.velY * dt;
 
                     // Projectiles bounce on table
-                    if (proj.mesh.position.y < tableY + 0.3) {
-                        proj.mesh.position.y = tableY + 0.3;
+                    if (proj.y < tableY + 0.3) {
+                        proj.y = tableY + 0.3;
                         proj.bounceCount = (proj.bounceCount || 0) + 1;
                         if (proj.bounceCount >= 2) {
                             proj.velY = 0;
@@ -17447,15 +17458,15 @@
 
                 // Wall collisions
                 const halfDepth = tableDepth / 2 - 0.5;
-                if (proj.mesh.position.z < -halfDepth) {
-                    proj.mesh.position.z = -halfDepth;
+                if (proj.z < -halfDepth) {
+                    proj.z = -halfDepth;
                     proj.velZ = -proj.velZ;
-                    if (!isResimulating) playSound('woosh', proj.mesh.position.x, 0.5);
+                    if (!isResimulating) playSound('woosh', proj.x, 0.5);
                 }
-                if (proj.mesh.position.z > halfDepth) {
-                    proj.mesh.position.z = halfDepth;
+                if (proj.z > halfDepth) {
+                    proj.z = halfDepth;
                     proj.velZ = -proj.velZ;
-                    if (!isResimulating) playSound('woosh', proj.mesh.position.x, 0.5);
+                    if (!isResimulating) playSound('woosh', proj.x, 0.5);
                 }
 
                 // Paddle collisions
@@ -17465,13 +17476,13 @@
                 const maxHitHeight = 1.3;
 
                 // Left paddle (player) collision
-                if (proj.velX < 0 && proj.mesh.position.y < maxHitHeight) {
+                if (proj.velX < 0 && proj.y < maxHitHeight) {
                     const px = playerPaddle.position.x;
                     const pz = playerPaddle.position.z;
-                    if (proj.mesh.position.x - projRadius < px + paddleHalfWidth &&
-                        proj.mesh.position.x > px - paddleHalfWidth &&
-                        proj.mesh.position.z > pz - paddleHalfDepth - 0.75 &&
-                        proj.mesh.position.z < pz + paddleHalfDepth + 0.75) {
+                    if (proj.x - projRadius < px + paddleHalfWidth &&
+                        proj.x > px - paddleHalfWidth &&
+                        proj.z > pz - paddleHalfDepth - 0.75 &&
+                        proj.z < pz + paddleHalfDepth + 0.75) {
 
                         // Lightning Shield auto-block check (left/player)
                         if (combatants.left && combatants.left.lightningShield && combatants.left.lightningShield.charges > 0) {
@@ -17491,10 +17502,10 @@
                             toDestroy.push(proj);
                         } else {
                             // Bounce fireball with angle based on hit position
-                            proj.mesh.position.x = px + paddleHalfWidth + projRadius;
+                            proj.x = px + paddleHalfWidth + projRadius;
 
                             // Hit offset: -1 (bottom edge) to +1 (top edge)
-                            const hitOffset = (proj.mesh.position.z - pz) / paddleHalfDepth;
+                            const hitOffset = (proj.z - pz) / paddleHalfDepth;
 
                             // Pong-style angling: edge hits = sharp angles, center hits = straight
                             // Use the current speed to maintain momentum but redirect it (min speed 10)
@@ -17517,13 +17528,13 @@
                 }
 
                 // Right paddle (AI/guest) collision
-                if (proj.velX > 0 && proj.mesh.position.y < maxHitHeight) {
+                if (proj.velX > 0 && proj.y < maxHitHeight) {
                     const px = aiPaddle.position.x;
                     const pz = aiPaddle.position.z;
-                    if (proj.mesh.position.x + projRadius > px - paddleHalfWidth &&
-                        proj.mesh.position.x < px + paddleHalfWidth &&
-                        proj.mesh.position.z > pz - paddleHalfDepth - 0.75 &&
-                        proj.mesh.position.z < pz + paddleHalfDepth + 0.75) {
+                    if (proj.x + projRadius > px - paddleHalfWidth &&
+                        proj.x < px + paddleHalfWidth &&
+                        proj.z > pz - paddleHalfDepth - 0.75 &&
+                        proj.z < pz + paddleHalfDepth + 0.75) {
 
                         // Lightning Shield auto-block check (right/AI)
                         if (combatants.right && combatants.right.lightningShield && combatants.right.lightningShield.charges > 0) {
@@ -17543,10 +17554,10 @@
                             toDestroy.push(proj);
                         } else {
                             // Bounce fireball with angle based on hit position
-                            proj.mesh.position.x = px - paddleHalfWidth - projRadius;
+                            proj.x = px - paddleHalfWidth - projRadius;
 
                             // Hit offset: -1 (bottom edge) to +1 (top edge)
-                            const hitOffset = (proj.mesh.position.z - pz) / paddleHalfDepth;
+                            const hitOffset = (proj.z - pz) / paddleHalfDepth;
 
                             // Pong-style angling: edge hits = sharp angles, center hits = straight
                             // Use the current speed to maintain momentum but redirect it (min speed 10)
@@ -17569,23 +17580,28 @@
                 }
 
                 // Gate collisions
-                if (proj.mesh.position.x < -goalX) {
+                if (proj.x < -goalX) {
                     const isPlayerTower = proj.owner === 'ai';
                     // Hit left gate (player's tower)
                     if (proj.type !== 'frostbolt') {
                         const damage = Math.min(2 + proj.volleyCount, 6);  // Fireball damage
-                        dealDamageToTower(isPlayerTower, damage, proj.mesh.position.z);
+                        dealDamageToTower(isPlayerTower, damage, proj.z);
                     }
                     toDestroy.push(proj);
-                } else if (proj.mesh.position.x > goalX) {
+                } else if (proj.x > goalX) {
                     const isPlayerTower = proj.owner === 'ai';
                     // Hit right gate (AI/guest tower)
                     if (proj.type !== 'frostbolt') {
                         const damage = Math.min(2 + proj.volleyCount, 6);  // Fireball damage
-                        dealDamageToTower(isPlayerTower, damage, proj.mesh.position.z);
+                        dealDamageToTower(isPlayerTower, damage, proj.z);
                     }
                     toDestroy.push(proj);
                 }
+
+                // Render mirror: copy the authoritative sim position onto the mesh.
+                // This is the only mesh write in the projectile sim; the physics above is
+                // pure number math, ready to lift into a Babylon-free module.
+                if (proj.mesh) proj.mesh.position.set(proj.x, proj.y, proj.z);
             }
 
             // Destroy projectiles
