@@ -2147,7 +2147,31 @@
                     castLabel: 'Instant', cooldownLabel: '7s CD',
                     description: 'Launch a <span class="tt-spell">Frostbolt</span> that <span class="tt-mechanic">Freezes</span> the Enemy for <span class="tt-value">1</span> second. Cancels enemy projectiles on contact. Freeze stops Mana regeneration and interrupts Casting.'
                 },
-                behavior: {}
+                behavior: {
+                    castType: 'instant',
+                    onCast(ctx, combatant) {
+                        const a = ctx.abilities.frostbolt;
+                        const owner = combatant.side === 'left' ? 'player' : 'ai';
+                        combatant.mana -= a.manaCost;
+                        combatant.cooldowns.frostbolt = a.cooldown;
+                        const velX = combatant.side === 'left' ? a.baseSpeed : -a.baseSpeed;
+                        const startX = combatant.side === 'left' ? combatant.paddleX + 1 : combatant.paddleX - 1;
+                        if (!ctx.isResimulating) ctx.deps.playSound('frostboltCast', startX, 0.7);
+                        ctx.deps.spawnFrostbolt(owner, startX, combatant.paddleZ, velX, 0); // factory assigns id
+                    },
+                    onPaddleHit(proj, side, ctx) {
+                        // side is the paddle being hit: 'left' or 'right'
+                        const c = ctx.combatants[side];
+                        c.freezeTime = ctx.abilities.frostbolt.freezeDuration;
+                        if (!ctx.isResimulating) {
+                            const px = c.paddleX;
+                            ctx.deps.playSound('frozen', px, 0.7);
+                            ctx.deps.showFrozenText(!!(c && c.isLocalPlayer));
+                        }
+                        return true; // consumed (destroy)
+                    },
+                    onGateHit(proj, side, ctx) { return null; }, // fizzle, no tower damage
+                },
             },
             thunderstorm: {
                 gameplay: { cooldown: 30, castTime: 0, manaCost: 2, maxZaps: 3 },  // instant: cast via castThunderstorm(), not startCasting() — no windup
@@ -17242,6 +17266,7 @@
                 }
             },
             castingStart: () => { if (window.ToneSFX) ToneSFX.castingStart(); },
+            getAbilityDef: (id) => getAbilityDef(id),
         };
 
         // updateNetworkProjectiles lifted to js/sim.js (window.VolleyboltSim).

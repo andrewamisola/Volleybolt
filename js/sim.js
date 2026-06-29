@@ -122,14 +122,9 @@
                         continue;
                     }
 
-                    if (proj.type === 'frostbolt') {
-                        // Freeze left player
-                        combatants.left.freezeTime = abilities.frostbolt.freezeDuration;
-                        if (!isResimulating) {
-                            D.playSound('frozen', px, 0.7);
-                            D.showFrozenText(!!(combatants.left && combatants.left.isLocalPlayer));
-                        }
-                        toDestroy.push(proj);
+                    const hitAbility = ctx.deps.getAbilityDef(proj.type);
+                    if (hitAbility && hitAbility.behavior.onPaddleHit && proj.type === 'frostbolt') {
+                        if (hitAbility.behavior.onPaddleHit(proj, 'left', ctx)) { toDestroy.push(proj); }
                     } else {
                         // Bounce fireball with angle based on hit position
                         proj.x = px + paddleHalfWidth + projRadius;
@@ -174,14 +169,9 @@
                         continue;
                     }
 
-                    if (proj.type === 'frostbolt') {
-                        // Freeze right player
-                        combatants.right.freezeTime = abilities.frostbolt.freezeDuration;
-                        if (!isResimulating) {
-                            D.playSound('frozen', px, 0.7);
-                            D.showFrozenText(!!(combatants.right && combatants.right.isLocalPlayer));
-                        }
-                        toDestroy.push(proj);
+                    const hitAbility = ctx.deps.getAbilityDef(proj.type);
+                    if (hitAbility && hitAbility.behavior.onPaddleHit && proj.type === 'frostbolt') {
+                        if (hitAbility.behavior.onPaddleHit(proj, 'right', ctx)) { toDestroy.push(proj); }
                     } else {
                         // Bounce fireball with angle based on hit position
                         proj.x = px - paddleHalfWidth - projRadius;
@@ -284,22 +274,13 @@
         if (combatant.mana < ability.manaCost) return;
         if (combatant.cooldowns[abilityId] > 0) return;
 
-        if (abilityId === 'frostbolt') {
-            // Instant cast
-            combatant.mana -= ability.manaCost;
-            combatant.cooldowns.frostbolt = ability.cooldown;
-            const side = combatant.side === 'left' ? 'player' : 'ai';
-            // Pure paddle position (mirrored to the mesh) for the spawn point.
-            const velX = combatant.side === 'left' ? ability.baseSpeed : -ability.baseSpeed;
-            const startX = combatant.side === 'left' ? combatant.paddleX + 1 : combatant.paddleX - 1;
-
-            if (!isResimulating) {
-                D.playSound('frostboltCast', startX, 0.7);
-            }
-
-            // spawnFrostbolt assigns proj.id itself now (single allocation point in the factory).
-            D.spawnFrostbolt(side, startX, combatant.paddleZ, velX, 0);
-        } else if (abilityId === 'fireball') {
+        const beh = (ctx.deps.getAbilityDef ? ctx.deps.getAbilityDef(abilityId) : null)?.behavior;
+        if (beh && beh.castType === 'instant') {
+            beh.onCast(ctx, combatant);
+            return;
+        }
+        // (fireball channel path stays as-is for now — migrated in Task 5)
+        if (abilityId === 'fireball') {
             // Start casting
             combatant.casting = 'fireball';
             combatant.castProgress = 0;
