@@ -2137,7 +2137,8 @@
                     name: 'Fireball', key: '1', iconClass: 'fireball-icon', manaCostLabel: '1',
                     castLabel: '1s Cast', cooldownLabel: '4s CD',
                     description: 'Hurl a <span class="tt-spell">Fireball</span> that deals <span class="tt-value">2</span> <span class="tt-fire">Fire</span> damage. Damage increases with <span class="tt-mechanic">Volleys</span>, up to <span class="tt-value">6</span>.'
-                }
+                },
+                behavior: {}
             },
             frostbolt: {
                 gameplay: { cooldown: 7, castTime: 0, baseSpeed: 24, maxSpeed: 24, freezeDuration: 1.0, manaCost: 2 },
@@ -2145,7 +2146,8 @@
                     name: 'Frostbolt', key: '2', iconClass: 'frostbolt-icon', manaCostLabel: '2',
                     castLabel: 'Instant', cooldownLabel: '7s CD',
                     description: 'Launch a <span class="tt-spell">Frostbolt</span> that <span class="tt-mechanic">Freezes</span> the Enemy for <span class="tt-value">1</span> second. Cancels enemy projectiles on contact. Freeze stops Mana regeneration and interrupts Casting.'
-                }
+                },
+                behavior: {}
             },
             chain_lightning: {
                 gameplay: { cooldown: 30, castTime: 0, manaCost: 2, maxZaps: 3 },  // instant: cast via castChainLightning(), not startCasting() — no windup
@@ -2153,7 +2155,8 @@
                     name: 'Thunderstorm', key: '3', iconClass: 'chainlightning-icon', manaCostLabel: '2',
                     castLabel: 'Instant', cooldownLabel: '30s CD',
                     description: 'Call down lightning to <span class="tt-mechanic">Zap</span> up to <span class="tt-value">3</span> incoming Enemy projectiles, destroying them.'
-                }
+                },
+                behavior: {}
             }
         };
         window.ABILITY_REGISTRY = ABILITY_REGISTRY;
