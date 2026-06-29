@@ -552,36 +552,7 @@
         </div>
     </div><!-- /abilityBar -->
 
-    <!-- Upgrade Points HUD -->
-    <div id="upgradePointsHUD">
-        <span class="upgrade-points-icon">⭐</span>
-        <span class="upgrade-points-value" id="upgradePointsValue">0</span>
-    </div>
-
-    <!-- Talent Selection Panel -->
-    <div id="talentPanel" class="talent-panel">
-        <div class="talent-panel-header">
-            <span class="talent-panel-icon">🔥</span>
-            <span class="talent-panel-title">Fireball Upgrades</span>
-            <span class="talent-panel-tier">Tier 1</span>
-        </div>
-        <div class="talent-panel-progression">
-            <div class="tier-node tier-1 active">1</div>
-            <div class="tier-connector"></div>
-            <div class="tier-node tier-2 locked">2</div>
-            <div class="tier-connector"></div>
-            <div class="tier-node tier-3 locked">3</div>
-        </div>
-        <div class="talent-choices">
-            <!-- Populated by JavaScript -->
-        </div>
-        <div class="talent-panel-footer">
-            <span class="talent-points-display">
-                <span class="points-icon">⭐</span>
-                <span class="points-value">1</span> Upgrade Point Available
-            </span>
-        </div>
-    </div>
+    <!-- Upgrade Points HUD + Talent Selection Panel REMOVED (2026-06-29) with the talent system. -->
     </div><!-- /hudScaleLayer -->
     </div><!-- /gameContainer -->
 
@@ -1661,9 +1632,6 @@
                 // Per-match stat counters (Party Stats window). Reset at match start.
                 matchStats: { spellsCast: 0, parries: 0, damageDealt: 0 },
 
-                // Upgrades
-                upgrades: [],
-
                 // 3D References (assigned after scene init)
                 paddle: null,
                 castBar3D: null,
@@ -2128,7 +2096,6 @@
         // this. Canonical cooldowns are the live gameplay values.
         //   gameplay = deterministic stats read at cast/spawn (sim-safe)
         //   ui       = display strings (name/key/icon/labels/description)
-        // UpgradeRegistry stays separate, linked by ability id.
         // ============================================================
         const ABILITY_REGISTRY = {
             fireball: {
@@ -2273,743 +2240,14 @@
         }
 
         // ==========================================
-        // UPGRADE REGISTRY - Talent/Upgrade System
-        // ==========================================
-        const UpgradeRegistry = {
-            // === FIREBALL UPGRADES ===
-            magma_lob: {
-                id: 'magma_lob',
-                name: 'Magma Lob',
-                baseAbility: 'fireball',
-                tier: 1,
-                icon: '🌋',
-                description: 'Fireball soars high, then explodes into 2 slow-rolling magma bombs.',
-                effects: [
-                    'Fireball arcs high into the sky',
-                    'Explodes at apex into 2 magma bombs',
-                    'Bombs bounce once then roll'
-                ],
-                // Override base ability stats
-                castTime: 1.0,   // 1 second cast (same as base fireball)
-                cooldown: 8,     // 8 second cooldown
-                manaCost: 2,     // Costs 2 mana (more than base fireball)
-                // Modifier function applied to projectile on spawn
-                onSpawn: (proj) => {
-                    proj.isLob = true;
-                    proj.hasSplit = false;
-
-                    // Calculate arc so apex is exactly at midline (x=0)
-                    proj.velX *= 0.8;  // Forward speed
-                    proj.lobGravity = 8;  // Fixed gravity
-
-                    // Physics: time to midline = distance / velX
-                    // At apex, velY = 0, so: time to apex = initial_velY / gravity
-                    // For apex at midline: initial_velY = gravity * (distance / velX)
-                    const distanceToMid = Math.abs(proj.mesh.position.x);
-                    const timeToMid = distanceToMid / Math.abs(proj.velX);
-                    proj.velY = proj.lobGravity * timeToMid;
-
-                    // No curve - clean arc
-                    proj.lobCurve = 0;
-                },
-                // Called every frame for this projectile
-                onUpdate: (proj, dt) => {
-                    // Gravity pulls the lob down
-                    if (proj.isLob && !proj.hasSplit) {
-                        proj.velY -= proj.lobGravity * dt;
-                        proj.mesh.position.y += proj.velY * dt;
-
-                        // Apply random curve drift
-                        if (proj.lobCurve) {
-                            proj.velZ += proj.lobCurve * dt;
-                        }
-
-                        // Keep above ground (shouldn't hit before split)
-                        if (proj.mesh.position.y < 0.3) {
-                            proj.mesh.position.y = 0.3;
-                            proj.velY = 0;
-                        }
-                    }
-
-                    // Bouncing magma bombs - real physics on the FLOOR!
-                    if (proj.isMagmaBomb) {
-                        const groundLevel = 0.22;  // Ball radius - sits on floor, not through it
-
-                        // Always apply gravity
-                        proj.velY -= 12 * dt;
-                        proj.mesh.position.y += proj.velY * dt;
-
-                        // Bounce off ground! (limited to 1 bounce)
-                        if (proj.mesh.position.y <= groundLevel) {
-                            proj.mesh.position.y = groundLevel;
-
-                            // Only bounce if we haven't used our one bounce yet
-                            if (proj.bounceCount < 1) {
-                                proj.velY = Math.abs(proj.velY) * 0.65;  // Bounce with energy loss
-                                proj.bounceCount++;
-                            } else {
-                                // After 1 bounce, roll along ground
-                                proj.velY = 0;
-                            }
-                        }
-
-                        // Slight air friction
-                        proj.velX *= 0.998;
-                        proj.velZ *= 0.998;
-
-                        // Minimum velocity - don't let bombs get stuck!
-                        const minVelX = 5;
-                        if (Math.abs(proj.velX) < minVelX) {
-                            proj.velX = Math.sign(proj.velX) * minVelX || minVelX;  // Keep moving forward
-                        }
-
-                        // Spin based on movement
-                        if (proj.mesh.rotationQuaternion) {
-                            const speed = Math.sqrt(proj.velX * proj.velX + proj.velZ * proj.velZ);
-                            const rollSpeed = speed * 5;
-                            const rollAxis = new BABYLON.Vector3(-proj.velZ, 0, proj.velX).normalize();
-                            if (rollAxis.length() > 0.01) {
-                                const rollQuat = BABYLON.Quaternion.RotationAxis(rollAxis, rollSpeed * dt);
-                                proj.mesh.rotationQuaternion = rollQuat.multiply(proj.mesh.rotationQuaternion);
-                            }
-                        }
-                    }
-                },
-                // Check if should split - slightly before midline for easier hits
-                shouldSplit: (proj) => {
-                    if (!proj.isLob || proj.hasSplit) return false;
-                    // Split a bit before midline (x=-2 for player, x=2 for AI)
-                    const crossingMid = (proj.owner === 'player' && proj.mesh.position.x >= -2) ||
-                                       (proj.owner === 'ai' && proj.mesh.position.x <= 2);
-                    return crossingMid;
-                },
-                // Create split projectiles with explosion effect
-                onSplit: (proj, spawnFunc) => {
-                    proj.hasSplit = true;
-                    const baseX = proj.mesh.position.x;
-                    const baseY = proj.mesh.position.y;
-                    const baseZ = proj.mesh.position.z;
-
-                    // === EXPLOSION EFFECT ===
-                    // Play explosion sound
-                    playSound('fireballCast', baseX, 1.0, 0.7);  // Lower pitch for boom
-
-                    // Create burst particles at split point
-                    const burstParticles = new BABYLON.ParticleSystem("magmaBurst", 100, scene);
-                    burstParticles.particleTexture = window.flareTexture;
-                    burstParticles.emitter = new BABYLON.Vector3(baseX, baseY, baseZ);
-                    burstParticles.minEmitBox = BABYLON.Vector3.Zero();
-                    burstParticles.maxEmitBox = BABYLON.Vector3.Zero();
-                    burstParticles.color1 = new BABYLON.Color4(1, 0.6, 0.1, 1);
-                    burstParticles.color2 = new BABYLON.Color4(1, 0.3, 0, 1);
-                    burstParticles.colorDead = new BABYLON.Color4(0.5, 0.1, 0, 0);
-                    burstParticles.minSize = 0.4;
-                    burstParticles.maxSize = 1.0;
-                    burstParticles.minLifeTime = 0.3;
-                    burstParticles.maxLifeTime = 0.6;
-                    burstParticles.emitRate = 0;  // Manual burst
-                    burstParticles.manualEmitCount = 60;
-                    burstParticles.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
-                    burstParticles.direction1 = new BABYLON.Vector3(-4, -2, -4);
-                    burstParticles.direction2 = new BABYLON.Vector3(4, 4, 4);
-                    burstParticles.minEmitPower = 5;
-                    burstParticles.maxEmitPower = 10;
-                    burstParticles.gravity = new BABYLON.Vector3(0, -8, 0);
-                    burstParticles.start();
-
-                    // Clean up burst after animation
-                    setTimeout(() => {
-                        burstParticles.stop();
-                        burstParticles.dispose();
-                    }, 800);
-
-                    // Spawn two magma bombs - MORE variation so they don't hit at same time
-                    const baseVelX = proj.velX * 0.5;
-
-                    // Each bomb gets noticeably different speed
-                    const splitSeed = proj.id || 0;
-                    const velX1 = baseVelX * deterministicRange(splitSeed + 1, 0.6, 1.1);  // 60-110% - one slower
-                    const velX2 = baseVelX * deterministicRange(splitSeed + 2, 0.9, 1.4);  // 90-140% - one faster
-
-                    // Different upward pops - deterministic variation
-                    const popUp1 = deterministicRange(splitSeed + 3, 1, 5);
-                    const popUp2 = deterministicRange(splitSeed + 4, 3, 7);  // Higher range
-
-                    // Different spread angles
-                    const zVel1 = deterministicRange(splitSeed + 5, 1.5, 4.5);
-                    const zVel2 = -deterministicRange(splitSeed + 6, 2, 5);
-
-                    // Spawn at apex height with varied velocities (bounceCount limits to 1 bounce)
-                    const bombOptions1 = { isMagmaBomb: true, startY: baseY, velY: popUp1, bounceCount: 0 };
-                    const bombOptions2 = { isMagmaBomb: true, startY: baseY, velY: popUp2, bounceCount: 0 };
-                    spawnFunc(proj.owner, baseX, baseZ + 0.3, velX1, zVel1, true, bombOptions1);
-                    spawnFunc(proj.owner, baseX, baseZ - 0.3, velX2, zVel2, true, bombOptions2);
-
-                    return true;  // Signal to destroy original
-                }
-            },
-
-            pyroblast: {
-                id: 'pyroblast',
-                name: 'Pyroblast',
-                baseAbility: 'fireball',
-                tier: 1,
-                icon: '☄️',
-                description: 'A devastating 3-second cast that deals massive damage.',
-                effects: [
-                    '3 second cast time',
-                    'Deals 5 damage on hit',
-                    'Cannot be blocked, only parried'
-                ],
-                // This upgrade changes the base ability stats
-                modifyAbility: {
-                    castTime: 3.0,
-                    baseDamage: 5
-                },
-                onSpawn: (proj) => {
-                    proj.isPyroblast = true;
-                    proj.damage = 5;
-                    // Make it bigger and more dramatic
-                    if (proj.mesh) proj.mesh.scaling.setAll(1.5);
-                }
-            },
-
-            // === FROST BOLT UPGRADES ===
-            frostbite: {
-                id: 'frostbite',
-                name: 'Frostbite',
-                baseAbility: 'frostbolt',
-                tier: 1,
-                icon: '🥶',
-                description: 'Hitting a frozen target extends the freeze duration.',
-                effects: [
-                    '+0.3s freeze duration on frozen targets',
-                    'Encourages combo plays'
-                ],
-                // Applied when frostbolt hits
-                onHit: (target, currentFreezeTime) => {
-                    // If target already frozen, extend duration
-                    if (currentFreezeTime > 0) {
-                        return currentFreezeTime + 0.3;  // Extend by 0.3s
-                    }
-                    return 1.0;  // Normal freeze duration
-                }
-            },
-
-            glacial_cascade: {
-                id: 'glacial_cascade',
-                name: 'Glacial Cascade',
-                baseAbility: 'frostbolt',
-                tier: 1,
-                icon: '❄️',
-                description: 'Frost bolt leaves a chilling trail that slows projectiles.',
-                effects: [
-                    'Leaves icy trail behind',
-                    'Enemy projectiles passing through are slowed 30%'
-                ],
-                onSpawn: (proj) => {
-                    proj.leavesTrail = true;
-                    proj.trailPositions = [];
-                },
-                onUpdate: (proj, dt) => {
-                    // Record trail positions
-                    if (proj.leavesTrail && proj.mesh) {
-                        proj.trailPositions.push({
-                            x: proj.mesh.position.x,
-                            z: proj.mesh.position.z,
-                            time: 2.0  // Trail lasts 2 seconds
-                        });
-                    }
-                }
-            },
-
-            // === CHAIN LIGHTNING UPGRADES ===
-            thunderstorm_base: {
-                id: 'thunderstorm_base',
-                name: 'Thunderstorm',
-                baseAbility: 'thunderstorm',
-                tier: 1,
-                icon: '⚡',
-                element: 'lightning',
-                description: 'Channel to zap incoming projectiles. Converts zapped projectiles into shield charges that auto-block attacks.',
-                effects: [
-                    'Drains 1 mana per second while channeling',
-                    'Zaps enemy projectiles within range',
-                    'Each zapped projectile = 1 shield charge',
-                    'Shield charges auto-block incoming attacks'
-                ],
-                // Thunderstorm specific properties
-                castType: 'channel_drain',
-                manaDrainPerSecond: 1,
-                maxChannelTime: 10,
-                zapRange: 6,
-                zapInterval: 0.15
-            },
-            extended_reach: {
-                id: 'extended_reach',
-                name: 'Extended Reach',
-                baseAbility: 'thunderstorm',
-                tier: 2,
-                icon: '⚡',
-                description: 'Increases Thunderstorm zap range.',
-                effects: [
-                    'Zap range increased from 6 to 9'
-                ],
-                zapRangeBonus: 3
-            },
-            mana_efficiency: {
-                id: 'mana_efficiency',
-                name: 'Mana Efficiency',
-                baseAbility: 'thunderstorm',
-                tier: 2,
-                icon: '⚡',
-                description: 'Reduces mana drain while channeling.',
-                effects: [
-                    'Mana drain reduced to 0.7 per second'
-                ],
-                manaDrainMultiplier: 0.7
-            },
-            overcharge: {
-                id: 'overcharge',
-                name: 'Overcharge',
-                baseAbility: 'thunderstorm',
-                tier: 3,
-                icon: '⚡',
-                description: 'Shield charges also reflect projectiles with bonus speed.',
-                effects: [
-                    'Auto-blocked projectiles are reflected at 1.5x speed',
-                    'Reflected projectiles deal +1 damage'
-                ],
-                reflectSpeedMultiplier: 1.5,
-                reflectDamageBonus: 1
-            },
-            static_field: {
-                id: 'static_field',
-                name: 'Static Field',
-                baseAbility: 'thunderstorm',
-                tier: 3,
-                icon: '⚡',
-                description: 'While shield is active, nearby enemy projectiles are slowed.',
-                effects: [
-                    'Enemy projectiles within 4 units are slowed 40%',
-                    'Creates visible static field aura'
-                ],
-                slowRadius: 4,
-                slowAmount: 0.4
-            }
-        };
-
-        // ==========================================
-        // TALENT TREE - HotS-style progression
-        // ==========================================
-        const TalentTree = {
-            fireball: {
-                abilityId: 'fireball',
-                abilityName: 'Fireball',
-                icon: '🔥',
-                tiers: {
-                    1: { choices: ['magma_lob', 'pyroblast'] },
-                    2: { choices: ['inferno_trail', 'blazing_speed'] },
-                    3: { choices: ['phoenix_fire', 'hellfire_barrage'] }
-                }
-            },
-            frostbolt: {
-                abilityId: 'frostbolt',
-                abilityName: 'Frostbolt',
-                icon: '❄️',
-                tiers: {
-                    1: { choices: ['frostbite', 'glacial_cascade'] },
-                    2: { choices: ['frozen_orb', 'permafrost'] },
-                    3: { choices: ['absolute_zero', 'ice_age'] }
-                }
-            },
-            thunderstorm: {
-                abilityId: 'thunderstorm',
-                abilityName: 'Thunderstorm',
-                icon: '⚡',
-                tiers: {
-                    1: { choices: ['thunderstorm_base'] },
-                    2: { choices: ['extended_reach', 'mana_efficiency'] },
-                    3: { choices: ['overcharge', 'static_field'] }
-                }
-            }
-        };
-
-        // ==========================================
-        // TALENT STATE - Player progression tracking
-        // ==========================================
-        // Active upgrades selected by player/AI (used for projectile behavior)
-        let playerUpgrades = [];
-        let aiUpgrades = [];
-
-        const TalentState = {
-            upgradePoints: 0,
-            totalPointsEarned: 0,
-            abilities: {
-                fireball: { currentTier: 0, selectedTalents: [] },
-                frostbolt: { currentTier: 0, selectedTalents: [] },
-                thunderstorm: { currentTier: 0, selectedTalents: [] }
-            },
-            isSelectingTalent: false,
-            activeAbility: null
-        };
-
-        // Check if an ability can be upgraded
-        function canUpgradeAbility(abilityId) {
-            const state = TalentState.abilities[abilityId];
-            if (!state) return false;
-            if (state.currentTier >= 3) return false;
-            if (TalentState.upgradePoints < 1) return false;
-            return true;
-        }
-
-        // Get available talent choices for an ability
-        function getAvailableChoices(abilityId) {
-            const state = TalentState.abilities[abilityId];
-            const tree = TalentTree[abilityId];
-            if (!state || !tree) return [];
-
-            const nextTier = state.currentTier + 1;
-            if (nextTier > 3) return [];
-
-            return tree.tiers[nextTier].choices.map(id => UpgradeRegistry[id]).filter(Boolean);
-        }
-
-        // Select a talent upgrade
-        function selectTalent(abilityId, upgradeId) {
-            if (!canUpgradeAbility(abilityId)) return false;
-
-            const upgrade = UpgradeRegistry[upgradeId];
-            if (!upgrade || upgrade.baseAbility !== abilityId) return false;
-
-            const state = TalentState.abilities[abilityId];
-            state.selectedTalents.push(upgradeId);
-            state.currentTier++;
-            TalentState.upgradePoints--;
-
-            console.log(`Selected talent: ${upgrade.name} for ${abilityId} (Tier ${state.currentTier})`);
-
-            // Update UI
-            updateUpgradePointsHUD();
-            updateAbilityUpgradeIndicators();
-            hideTalentPanel();
-
-            // Play selection sound
-            playSound('spell_ready', 0, 0.6);
-
-            return true;
-        }
-
-        // Get all active upgrades for an ability (owner: 'player' or 'ai')
-        function getActiveUpgrades(abilityId, owner = 'player') {
-            const upgrades = [];
-            const sourceUpgrades = owner === 'player' ? playerUpgrades : aiUpgrades;
-
-            // Check initial game selection
-            for (const id of sourceUpgrades) {
-                const upgrade = UpgradeRegistry[id];
-                if (upgrade && upgrade.baseAbility === abilityId) {
-                    upgrades.push(upgrade);
-                }
-            }
-
-            // Check in-game talent selections (player only for now)
-            if (owner === 'player') {
-                const state = TalentState.abilities[abilityId];
-                if (state) {
-                    for (const id of state.selectedTalents) {
-                        const upgrade = UpgradeRegistry[id];
-                        if (upgrade && !upgrades.includes(upgrade)) {
-                            upgrades.push(upgrade);
-                        }
-                    }
-                }
-            }
-
-            return upgrades;
-        }
-
-        // Award upgrade points (called on round win)
-        function awardUpgradePoint(count = 1) {
-            TalentState.upgradePoints += count;
-            TalentState.totalPointsEarned += count;
-
-            updateUpgradePointsHUD();
-            updateAbilityUpgradeIndicators();
-
-            // Show notification
-            showUpgradeNotification();
-        }
-
-        // Reset talent state for new match
-        function resetTalentState() {
-            playerUpgrades = [];  // Clear selected upgrades
-            aiUpgrades = [];      // Clear AI upgrades
-            TalentState.upgradePoints = 0;
-            TalentState.totalPointsEarned = 0;
-            for (const state of Object.values(TalentState.abilities)) {
-                state.currentTier = 0;
-                state.selectedTalents = [];
-            }
-            updateUpgradePointsHUD();
-            updateAbilityUpgradeIndicators();
-        }
-
-        // Check if player has an upgrade (checks both initial selection and in-game talents)
-        function hasUpgrade(upgradeId) {
-            // Check initial game selection
-            if (playerUpgrades.includes(upgradeId)) return true;
-            // Check in-game talent selections
-            for (const state of Object.values(TalentState.abilities)) {
-                if (state.selectedTalents.includes(upgradeId)) return true;
-            }
-            return false;
-        }
-
-        // Get upgrade definition
-        function getUpgrade(upgradeId) {
-            return UpgradeRegistry[upgradeId] || null;
-        }
-
-        // Get all upgrades for a base ability
-        function getUpgradesForAbility(abilityId) {
-            return Object.values(UpgradeRegistry).filter(u => u.baseAbility === abilityId);
-        }
-
-        // Apply upgrade to a newly spawned projectile
-        function applyUpgradesToProjectile(proj, abilityId, owner) {
-            // Get active upgrades for this ability
-            const activeUpgrades = getActiveUpgrades(abilityId, owner);
-
-            for (const upgrade of activeUpgrades) {
-                if (upgrade.onSpawn) {
-                    upgrade.onSpawn(proj);
-                }
-            }
-        }
-
-        // Update projectile with upgrade effects (called each frame)
-        function updateProjectileUpgrades(proj, dt) {
-            // Get ability ID from projectile type
-            const abilityId = proj.type || 'fireball';
-            const activeUpgrades = getActiveUpgrades(abilityId, proj.owner);
-
-            for (const upgrade of activeUpgrades) {
-                if (upgrade.onUpdate) {
-                    upgrade.onUpdate(proj, dt);
-                }
-                // Check for split
-                if (upgrade.shouldSplit && upgrade.shouldSplit(proj)) {
-                    if (upgrade.onSplit) {
-                        const shouldDestroy = upgrade.onSplit(proj, window.spawnFireball);
-                        if (shouldDestroy) {
-                            proj.markedForSplit = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        // ==========================================
-        // TALENT SYSTEM UI FUNCTIONS
+        // UPGRADE / TALENT SYSTEM — REMOVED (2026-06-29)
+        // Parked by the Director; roguelike campaign TBD.
+        // All talent/upgrade functions deleted: UpgradeRegistry, TalentTree,
+        // TalentState, selectTalent, getActiveUpgrades, hasUpgrade,
+        // applyUpgradesToProjectile, updateProjectileUpgrades, and all
+        // HUD/panel UI helpers.
         // ==========================================
 
-        // Update the upgrade points HUD display
-        function updateUpgradePointsHUD() {
-            const hud = document.getElementById('upgradePointsHUD');
-            const value = document.getElementById('upgradePointsValue');
-
-            if (hud && value) {
-                value.textContent = TalentState.upgradePoints;
-
-                if (TalentState.totalPointsEarned > 0) {
-                    hud.classList.add('visible');
-                }
-
-                if (TalentState.upgradePoints > 0) {
-                    hud.classList.add('has-points');
-                } else {
-                    hud.classList.remove('has-points');
-                }
-            }
-        }
-
-        // Update ability slot indicators
-        function updateAbilityUpgradeIndicators() {
-            const abilitySlots = {
-                fireball: document.getElementById('fireballSlot'),
-                frostbolt: document.getElementById('frostboltSlot')
-            };
-
-            for (const [abilityId, slot] of Object.entries(abilitySlots)) {
-                if (!slot) continue;
-
-                const canUpgrade = canUpgradeAbility(abilityId);
-
-                if (canUpgrade) {
-                    slot.classList.add('upgradeable');
-                } else {
-                    slot.classList.remove('upgradeable');
-                }
-            }
-        }
-
-        // Show the talent panel for an ability
-        function showTalentPanel(abilityId) {
-            if (!canUpgradeAbility(abilityId)) return;
-
-            const panel = document.getElementById('talentPanel');
-            if (!panel) return;
-
-            const tree = TalentTree[abilityId];
-            const state = TalentState.abilities[abilityId];
-            const choices = getAvailableChoices(abilityId);
-            const nextTier = state.currentTier + 1;
-
-            // Update header
-            panel.querySelector('.talent-panel-icon').textContent = tree.icon;
-            panel.querySelector('.talent-panel-title').textContent = `${tree.abilityName} Upgrades`;
-            panel.querySelector('.talent-panel-tier').textContent = `Tier ${nextTier}`;
-
-            // Update progression nodes
-            updateTierProgression(panel, state.currentTier);
-
-            // Populate choices
-            const choicesContainer = panel.querySelector('.talent-choices');
-            choicesContainer.innerHTML = '';
-
-            for (const upgrade of choices) {
-                const choiceEl = document.createElement('div');
-                choiceEl.className = 'talent-choice';
-                choiceEl.dataset.upgradeId = upgrade.id;
-
-                choiceEl.innerHTML = `
-                    <span class="talent-choice-icon">${upgrade.icon}</span>
-                    <div class="talent-choice-name">${upgrade.name}</div>
-                    <div class="talent-choice-desc">${upgrade.description}</div>
-                `;
-
-                choiceEl.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    selectTalent(abilityId, upgrade.id);
-                });
-
-                choicesContainer.appendChild(choiceEl);
-            }
-
-            // Update points display
-            panel.querySelector('.points-value').textContent = TalentState.upgradePoints;
-
-            // Show panel
-            panel.classList.add('visible');
-            TalentState.isSelectingTalent = true;
-            TalentState.activeAbility = abilityId;
-        }
-
-        // Update tier progression display
-        function updateTierProgression(panel, currentTier) {
-            const nodes = panel.querySelectorAll('.tier-node');
-            const connectors = panel.querySelectorAll('.tier-connector');
-
-            nodes.forEach((node, index) => {
-                const tier = index + 1;
-                node.classList.remove('completed', 'active', 'locked');
-
-                if (tier <= currentTier) {
-                    node.classList.add('completed');
-                } else if (tier === currentTier + 1) {
-                    node.classList.add('active');
-                } else {
-                    node.classList.add('locked');
-                }
-            });
-
-            connectors.forEach((conn, index) => {
-                const tier = index + 1;
-                conn.classList.remove('completed');
-                if (tier <= currentTier) {
-                    conn.classList.add('completed');
-                }
-            });
-        }
-
-        // Hide the talent panel
-        function hideTalentPanel() {
-            const panel = document.getElementById('talentPanel');
-            if (panel) {
-                panel.classList.remove('visible');
-            }
-            TalentState.isSelectingTalent = false;
-            TalentState.activeAbility = null;
-        }
-
-        // Show upgrade notification
-        function showUpgradeNotification() {
-            // Create floating notification
-            const el = document.createElement('div');
-            el.className = 'floating-notification';
-            el.textContent = '+1 Upgrade Point!';
-            el.style.left = `${window.innerWidth / 2}px`;
-            el.style.top = `${window.innerHeight / 2 - 100}px`;
-            document.body.appendChild(el);
-
-            setTimeout(() => el.remove(), 2000);
-        }
-
-        // Setup talent panel click handlers on ability slots
-        function setupTalentInteraction() {
-            const abilitySlots = ['fireballSlot', 'frostboltSlot'];
-
-            for (const slotId of abilitySlots) {
-                const slot = document.getElementById(slotId);
-                if (!slot) continue;
-
-                const abilityId = slot.dataset.ability;
-
-                // Click on upgrade indicator to open talent panel
-                slot.addEventListener('click', (e) => {
-                    // Check if clicking on upgrade indicator area
-                    if (!canUpgradeAbility(abilityId)) return;
-
-                    // If panel is already open for this ability, close it
-                    if (TalentState.isSelectingTalent && TalentState.activeAbility === abilityId) {
-                        hideTalentPanel();
-                        return;
-                    }
-
-                    // Open panel
-                    showTalentPanel(abilityId);
-                    e.stopPropagation();
-                });
-            }
-
-            // Click outside to close panel
-            document.addEventListener('click', (e) => {
-                if (TalentState.isSelectingTalent) {
-                    const panel = document.getElementById('talentPanel');
-                    if (panel && !panel.contains(e.target)) {
-                        const clickedSlot = e.target.closest('.ability-slot');
-                        if (!clickedSlot || !canUpgradeAbility(clickedSlot.dataset.ability)) {
-                            hideTalentPanel();
-                        }
-                    }
-                }
-            });
-
-            // ESC to close panel
-            document.addEventListener('keydown', (e) => {
-                if (e.code === 'Escape' && TalentState.isSelectingTalent) {
-                    hideTalentPanel();
-                }
-            });
-        }
-
-        // Initialize talent system on game load
-        function initTalentSystem() {
-            setupTalentInteraction();
-            updateUpgradePointsHUD();
-            updateAbilityUpgradeIndicators();
-        }
 
         // LEGACY - sync only, read from combatants.left/right.cooldowns
         let playerFireballCooldown = 0;
@@ -8591,7 +7829,6 @@
             const checkAllLoaded = () => {
                 if (playerModelLoaded && aiModelLoaded && !allModelsLoadedCalled) {
                     allModelsLoadedCalled = true;  // Only do this once
-                    initTalentSystem();
 
                     // Show "Click to Start" button instead of directly showing menu
                     setTimeout(() => {
@@ -10375,7 +9612,6 @@
             } else {
                 loadCharacterModels(); // Original wizard
             }
-            initTalentSystem();
             // Note: Main showTalentScreen is called after models load (see checkAllModelsLoaded)
             // This is a fallback that may run before models are ready
 
@@ -11280,11 +10516,6 @@
                 // Attach roaring fire sound (Tone.js synthesized)
                 const pan = startX / 10;  // Convert X position to -1 to 1 pan
                 proj.loopSound = createFireRoarSound(pan);
-
-                // Apply player upgrades to this projectile (if player owns it and not a split)
-                if (!isSplitProjectile) {
-                    applyUpgradesToProjectile(proj, 'fireball', owner);
-                }
 
                 // Juice burst: the caster's fireball comes out at the full 6-damage tier — the size
                 // and speed of a maxed-out volley — even though it still has a cast time.
@@ -12813,10 +12044,8 @@
                     leftC.castProgress += dt;
                     playerCastProgress = leftC.castProgress; // Sync legacy
 
-                    // Show upgrade name if active (e.g., "Magma Lob" instead of "Fireball")
-                    const playerUpgrades = getActiveUpgrades(leftC.casting, 'player');
                     const playerAbility = getAbility(leftC.casting);
-                    const playerSpellName = playerUpgrades.length > 0 ? playerUpgrades[0].name : (playerAbility ? playerAbility.name : leftC.casting);
+                    const playerSpellName = playerAbility ? playerAbility.name : leftC.casting;
                     const playerElement = playerAbility ? playerAbility.element : 'fire';
                     updateCombatantCastBarUI(leftC, playerSpellName, playerElement, leftC.castProgress / leftC.castTime);
                     // Update 3D cast bar under player
@@ -12833,10 +12062,8 @@
                     rightC.castProgress += dt;
                     aiCastProgress = rightC.castProgress; // Sync legacy
 
-                    // Show upgrade name if active
-                    const aiUpgrades = getActiveUpgrades(rightC.casting, 'ai');
                     const aiAbility = getAbility(rightC.casting);
-                    const aiSpellName = aiUpgrades.length > 0 ? aiUpgrades[0].name : (aiAbility ? aiAbility.name : rightC.casting);
+                    const aiSpellName = aiAbility ? aiAbility.name : rightC.casting;
                     const aiElement = aiAbility ? aiAbility.element : 'fire';
                     updateCombatantCastBarUI(rightC, aiSpellName, aiElement, rightC.castProgress / rightC.castTime);
                     // Update AI 3D cast bar
@@ -13118,16 +12345,6 @@
                         // Decrement collision grace time
                         if (proj.collisionGraceTime > 0) proj.collisionGraceTime -= dt;
 
-                        // Apply upgrade effects (arc, split, etc.)
-                        if (proj.type === 'fireball' || !proj.type) {
-                            updateProjectileUpgrades(proj, dt);
-
-                            // Check if projectile should be destroyed (split happened)
-                            if (proj.markedForSplit) {
-                                toDestroy.push(proj);
-                                continue;
-                            }
-                        }
 
                         // Fireball flickering animation
                         if (proj.time !== undefined && (proj.type === 'fireball' || !proj.type)) {
@@ -14572,9 +13789,7 @@
 
             // Show floating spell name
             const isPlayer = caster === 'player';
-            const upgrade = combatant.upgrades ? combatant.upgrades.find(u => u.baseAbility === 'frostbolt') : null;
-            const spellName = upgrade ? UpgradeRegistry[upgrade.id].name : 'Frostbolt';
-            showSpellCastText(isPlayer, spellName, 'frost');
+            showSpellCastText(isPlayer, 'Frostbolt', 'frost');
         }
 
 
@@ -14792,7 +14007,6 @@
         }
         document.addEventListener('keydown', (e) => {
             if (e.code !== 'Escape') return;
-            if (window.TalentState && TalentState.isSelectingTalent) return;  // talent panel owns Esc then
             // If a menu screen (Settings/How to Play/Career/Credits) is open, Esc closes it
             // (routes back to its origin — main menu or pause) instead of toggling pause/resume.
             if (typeof MENU_SCREENS !== 'undefined' &&
@@ -15122,45 +14336,26 @@
             }
         }
 
-        // Update ability UI based on selected upgrade
+        // Set the Fireball ability tooltip (talent variants removed 2026-06-29).
         function updateAbilityUI() {
             const fireballSlot = document.getElementById('fireballSlot');
             const fireballIcon = fireballSlot.querySelector('.ability-icon');
             const fireballTooltip = document.getElementById('fireballTooltip');
 
-            // Check if player has magma lob
-            if (playerUpgrades.includes('magma_lob')) {
-                // Keep fireball icon but update tooltip for magma lob
-                fireballIcon.className = 'ability-icon fireball-icon';  // TODO: add magma-icon when texture ready
-                fireballTooltip.innerHTML = `
-                    <div class="tooltip-title">Magma Lob</div>
-                    <div class="tooltip-stats-row">
-                        <div class="tooltip-stats-left">
-                            <span class="tooltip-stat-item mana"><span class="icon">*</span><span class="value">1 Mana</span></span>
-                            <span class="tooltip-stat-item cast"><span class="icon">></span><span class="value">1s Cast</span></span>
-                        </div>
-                        <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">4s CD</span></span>
+            fireballIcon.className = 'ability-icon fireball-icon';
+            fireballTooltip.innerHTML = `
+                <div class="tooltip-title">Fireball</div>
+                <div class="tooltip-stats-row">
+                    <div class="tooltip-stats-left">
+                        <span class="tooltip-stat-item mana"><span class="icon">*</span><span class="value">1 Mana</span></span>
+                        <span class="tooltip-stat-item cast"><span class="icon">></span><span class="value">1s Cast</span></span>
                     </div>
-                    <div class="tooltip-description">
-                        Lob a <span class="tt-spell">Magma Bomb</span> in an arc. At the <span class="tt-mechanic">Midline</span>, it explodes into <span class="tt-value">2</span> bouncing bombs that deal <span class="tt-value">1</span> <span class="tt-fire">Fire</span> damage each.
-                    </div>
-                `;
-            } else {
-                fireballIcon.className = 'ability-icon fireball-icon';
-                fireballTooltip.innerHTML = `
-                    <div class="tooltip-title">Fireball</div>
-                    <div class="tooltip-stats-row">
-                        <div class="tooltip-stats-left">
-                            <span class="tooltip-stat-item mana"><span class="icon">*</span><span class="value">1 Mana</span></span>
-                            <span class="tooltip-stat-item cast"><span class="icon">></span><span class="value">1s Cast</span></span>
-                        </div>
-                        <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">4s CD</span></span>
-                    </div>
-                    <div class="tooltip-description">
-                        Hurl a <span class="tt-spell">Fireball</span> that deals <span class="tt-value">2</span> <span class="tt-fire">Fire</span> damage. Damage increases with <span class="tt-mechanic">Volleys</span>, up to <span class="tt-value">5</span>.
-                    </div>
-                `;
-            }
+                    <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">4s CD</span></span>
+                </div>
+                <div class="tooltip-description">
+                    Hurl a <span class="tt-spell">Fireball</span> that deals <span class="tt-value">2</span> <span class="tt-fire">Fire</span> damage. Damage increases with <span class="tt-mechanic">Volleys</span>, up to <span class="tt-value">5</span>.
+                </div>
+            `;
         }
 
         // Start battle button handler
@@ -15168,16 +14363,7 @@
             // Ensure audio is ready before starting
             await initToneJS();
 
-            // Only add upgrade if not default
-            if (selectedUpgrade && selectedUpgrade !== 'default') {
-                playerUpgrades.push(selectedUpgrade);
-                console.log("Player selected:", selectedUpgrade);
-            } else {
-                console.log("Player using default fireball");
-            }
-
-            // AI uses default fireball (magma_lob disabled)
-            console.log("AI using default fireball");
+            // Talent system removed (2026-06-29) — everyone uses the base Fireball.
 
             // Update ability UI to reflect selected upgrade
             updateAbilityUI();
@@ -16192,12 +15378,9 @@
                 if (window.guiElements.aiHealthLabel) window.guiElements.aiHealthLabel.text = window.getPlayerName() + " Tower";
             }
 
-            // Apply shared upgrade (use same for both in PvP)
+            // Talent system removed (2026-06-29) — shared-upgrade handshake retained as an
+            // inert no-op (selectedUpgrade stays 'default') to keep the MP message shape stable.
             selectedUpgrade = upgradeId || 'default';
-            if (selectedUpgrade && selectedUpgrade !== 'default') {
-                playerUpgrades.push(selectedUpgrade);
-                aiUpgrades.push(selectedUpgrade);
-            }
 
             updateAbilityUI();
 
@@ -17226,7 +16409,6 @@
             if (window.updateStageIndicator) updateStageIndicator();
             if (window.updateManaBarVisibility) updateManaBarVisibility();
             updateScore();
-            resetTalentState();  // Reset talents for new match
             // Reset per-match stat counters (Party Stats window) for all combatants.
             for (const c of (isDoublesMode() ? getAllCombatants() : [combatants.left, combatants.right])) {
                 if (!c) continue;
@@ -17707,13 +16889,9 @@
             const c = getCombatantLegacy(caster);
             if (!c) return false;  // Safety check for doubles mode
 
-            // Get upgrades early for stat overrides
-            const activeUpgrades = getActiveUpgrades(abilityId, caster);
-            const effectiveManaCost = (activeUpgrades.length > 0 && activeUpgrades[0].manaCost)
-                ? activeUpgrades[0].manaCost
-                : ability.manaCost;
+            const effectiveManaCost = ability.manaCost;
 
-            // Check mana (using effective cost from upgrade if present)
+            // Check mana
             if (c.mana < effectiveManaCost) return false;
 
             // Already casting?
@@ -17722,12 +16900,8 @@
             // Store pending mana cost (will be spent when cast completes)
             c.pendingManaCost = effectiveManaCost;
 
-            // Get display name and check for stat overrides (from upgrades)
-            const displayName = activeUpgrades.length > 0 ? activeUpgrades[0].name : ability.name;
-            // Use upgrade's castTime if it has one, otherwise use base ability
-            const effectiveCastTime = (activeUpgrades.length > 0 && activeUpgrades[0].castTime)
-                ? activeUpgrades[0].castTime
-                : ability.castTime;
+            const displayName = ability.name;
+            const effectiveCastTime = ability.castTime;
 
             // Set combatant casting state
             c.casting = abilityId;
@@ -18395,10 +17569,7 @@
             // Fire the spell based on ability type
             if (abilityId === 'fireball') {
                 fireFireball(caster);
-                // Show floating spell name
-                const upgrade = c.upgrades.find(u => u.baseAbility === 'fireball');
-                const spellName = upgrade ? UpgradeRegistry[upgrade.id].name : 'Fireball';
-                showSpellCastText(isPlayer, spellName, 'fire');
+                showSpellCastText(isPlayer, 'Fireball', 'fire');
             } else if (abilityId === 'thunderstorm') {
                 executeThunderstorm(caster);
                 showSpellCastText(isPlayer, 'Thunderstorm', 'lightning');
@@ -18465,11 +17636,7 @@
             const velX = isLeft ? speed : -speed;
             const startZ = paddle.position.z;
 
-            // Check for upgrade cooldown override
-            const activeUpgrades = getActiveUpgrades('fireball', caster);
-            const effectiveCooldown = (activeUpgrades.length > 0 && activeUpgrades[0].cooldown)
-                ? activeUpgrades[0].cooldown
-                : abilities.fireball.cooldown;
+            const effectiveCooldown = abilities.fireball.cooldown;
 
             // Set cooldown using combatant system
             c.cooldowns.fireball = effectiveCooldown;
