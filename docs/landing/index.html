@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Volleybolt — Pong, but you're a wizard</title>
+    <title>Volleybolt — Pong, Evolved.</title>
     <meta name="description" content="Volleybolt is a real-time volley duel of deterministic spellcraft. Rally a volley. Cast spells. Topple their tower.">
 
     <!--
@@ -22,11 +22,9 @@
     <style>
         /* ============================================================
            LANDING PAGE CHROME
-           All values derived from the design-system tokens (:root).
            ============================================================ */
 
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
         html { scroll-behavior: smooth; }
 
         body {
@@ -38,16 +36,13 @@
             overflow-x: hidden;
         }
 
-        /* ---- Utility ---- */
         .lp-container {
             max-width: 960px;
             margin: 0 auto;
             padding: 0 24px;
         }
 
-        .lp-section {
-            padding: 80px 0;
-        }
+        .lp-section { padding: 80px 0; }
 
         .lp-section-label {
             font-family: var(--vb-font-ui);
@@ -60,7 +55,14 @@
         }
 
         /* ============================================================
-           1. HERO
+           1. HERO — seamless, full-bleed, video-backed
+           Z-index stack (bottom to top):
+             0  hero-video      background footage
+             1  #hero::before   dark radial gradient overlay
+             2  #hero::after    scanline texture
+             3  #hero > *       text + CTA content
+             4  .hero-bottom-fade  gradient fade into narrative
+             5  .hero-scroll-hint  above the fade
            ============================================================ */
         #hero {
             min-height: 100vh;
@@ -69,22 +71,46 @@
             align-items: center;
             justify-content: center;
             text-align: center;
-            padding: 64px 24px 80px;
+            padding: 64px 24px 100px;
             position: relative;
-            background: radial-gradient(
-                ellipse 80% 60% at 50% 40%,
-                var(--vb-bg-menu-glow) 0%,
-                var(--vb-bg-menu-mid)  50%,
-                var(--vb-bg-menu)      100%
-            );
+            background: var(--vb-bg-menu); /* fallback when video absent */
             overflow: hidden;
         }
 
-        /* Subtle scanline on hero only — tasteful, not full CRT */
+        /* Hero media slot — looping gameplay video behind everything.
+           Drop in a <source> tag and it "just works". */
+        .hero-video {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 0;
+            opacity: 0.32;  /* dimmed enough that text stays legible */
+            pointer-events: none;
+        }
+
+        /* Dark radial gradient overlay — ensures text contrast over any video */
         #hero::before {
             content: '';
             position: absolute;
             inset: 0;
+            z-index: 1;
+            pointer-events: none;
+            background: radial-gradient(
+                ellipse 80% 60% at 50% 40%,
+                rgba(27,34,51,0.88) 0%,
+                rgba(10,13,22,0.93) 50%,
+                rgba(4,5,10,0.97)   100%
+            );
+        }
+
+        /* Scanline texture */
+        #hero::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            z-index: 2;
             pointer-events: none;
             background-image: repeating-linear-gradient(
                 to bottom,
@@ -93,10 +119,20 @@
                 transparent      1px,
                 transparent      2px
             );
-            z-index: 0;
         }
 
-        #hero > * { position: relative; z-index: 1; }
+        /* All direct children above gradient + scanlines */
+        #hero > * { position: relative; z-index: 3; }
+
+        /* Seamless bottom fade: hero dissolves into the next section */
+        .hero-bottom-fade {
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            height: 180px;
+            background: linear-gradient(to bottom, transparent 0%, var(--vb-bg-game) 100%);
+            z-index: 4;
+            pointer-events: none;
+        }
 
         .hero-eyebrow {
             font-family: var(--vb-font-ui);
@@ -107,42 +143,45 @@
             margin-bottom: 28px;
         }
 
-        /* Override .vb-title-wrap bloom width for the hero (it's 780px fixed in CSS) */
-        #hero .vb-title-wrap::before {
-            width: min(780px, 90vw);
-        }
+        /* Constrain bloom width to viewport */
+        #hero .vb-title-wrap::before { width: min(780px, 90vw); }
 
+        /*
+            HERO HOOK — primary line.
+
+            DEFAULT: "Pong, Evolved."
+
+            Alternatives for owner to consider (change .hero-hook text + <title> above):
+              Option A (default): "Pong, Evolved."  — clean, brand-forward
+              Option B:           "Pong, Enchanted." — more magical, memorable
+              Option C:           "Pong with Spells." — most literal, most clear
+
+            Sub-line ("A real-time volley duel...") may stay regardless of primary choice.
+        */
         .hero-hook {
-            font-family: var(--vb-font-ui);
-            font-size: clamp(18px, 3vw, 28px);
-            color: var(--vb-text);
-            text-shadow: var(--vb-text-shadow);
-            letter-spacing: 2px;
-            margin-top: 36px;
-            max-width: 640px;
+            font-family: var(--vb-font-title);  /* Cinzel on web */
+            font-size: clamp(22px, 4vw, 40px);
+            color: var(--vb-gold);
+            text-shadow: 3px 3px 0 #000;
+            letter-spacing: 4px;
+            margin-top: 40px;
         }
 
         .hero-sub {
             font-family: var(--vb-font-ui);
-            font-size: clamp(13px, 2vw, 18px);
+            font-size: clamp(13px, 2vw, 17px);
             color: var(--vb-text-dim);
             text-shadow: var(--vb-text-shadow);
             letter-spacing: 2px;
-            margin-top: 12px;
-            max-width: 480px;
+            margin-top: 14px;
+            max-width: 520px;
         }
 
-        .hero-ctas {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 16px;
-            justify-content: center;
+        .hero-cta {
             margin-top: 48px;
         }
 
-        .hero-ctas a {
-            text-decoration: none;
-        }
+        .hero-cta a { text-decoration: none; }
 
         .hero-scroll-hint {
             position: absolute;
@@ -154,19 +193,20 @@
             letter-spacing: 3px;
             color: var(--vb-text-dim);
             text-shadow: var(--vb-text-shadow);
+            z-index: 5;    /* above .hero-bottom-fade */
             animation: lp-scroll-pulse 2.5s ease-in-out infinite;
         }
         @keyframes lp-scroll-pulse {
-            0%, 100% { opacity: 0.4; }
-            50%       { opacity: 0.9; }
+            0%, 100% { opacity: 0.35; }
+            50%       { opacity: 0.85; }
         }
 
         /* ============================================================
-           2. NARRATIVE — "Pong, evolved"
+           2. NARRATIVE — no hard top border; seamless from hero
            ============================================================ */
         #narrative {
             background: var(--vb-bg-game);
-            border-top: 1px solid rgba(206,214,230,0.08);
+            /* border-top intentionally removed — hero fades into this section */
         }
 
         .narrative-inner {
@@ -196,11 +236,7 @@
             letter-spacing: 0.5px;
         }
 
-        /* "Game rules" panel — real facts from the How to Play screen */
-        .rules-panel {
-            list-style: none;
-            padding: 0;
-        }
+        .rules-panel { list-style: none; padding: 0; }
 
         .rules-panel li {
             display: flex;
@@ -237,7 +273,7 @@
                 rgba(27,34,51,0.6) 0%,
                 var(--vb-bg-game) 70%
             );
-            border-top: 1px solid rgba(206,214,230,0.08);
+            border-top: 1px solid rgba(206,214,230,0.06);
         }
 
         .arsenal-heading {
@@ -260,30 +296,26 @@
             margin-bottom: 48px;
         }
 
-        /* The command box wrapper — mimics the in-game FF9 window trio,
-           centred on the page. Only shows the Command panel. */
         .arsenal-command-wrap {
             display: flex;
             justify-content: center;
+            /* Extra horizontal room on desktop for the right-side tooltip */
+            padding-right: clamp(0px, 20vw, 340px);
         }
 
-        /* Scale up the command menu for a marketing context */
         .arsenal-command {
             width: 100%;
             max-width: 540px;
         }
 
-        /* Ability rows in the arsenal are larger than the in-game 36px rows */
-        .arsenal-command .vb-menu {
-            width: 100%;
-            max-width: 540px;
-            gap: 2px;
-        }
+        /* Scale rows up for a marketing context */
+        .arsenal-command .vb-menu { width: 100%; max-width: 540px; gap: 2px; }
 
         .arsenal-command .vb-menu-item {
             height: 52px;
             font-size: 24px;
             padding-left: 38px;
+            overflow: visible; /* tooltips must escape the row */
         }
 
         .arsenal-command .vb-menu-item::before {
@@ -294,67 +326,163 @@
         }
 
         .arsenal-command .vb-menu-item__mana {
-            font-size: 13px;
-            letter-spacing: 3px;
+            font-size: 13px; letter-spacing: 3px;
         }
 
         .arsenal-command .vb-menu-item__key {
-            font-size: 13px;
-            min-width: 22px;
-            height: 22px;
+            font-size: 13px; min-width: 22px; height: 22px;
         }
 
-        /* ---- Ability-specific accent colours ---- */
+        /* Ability element accent on hover */
         .arsenal-command .vb-menu-item[data-ability="fireball"]:hover    { color: var(--vb-fire); }
         .arsenal-command .vb-menu-item[data-ability="frostbolt"]:hover   { color: var(--vb-frost); }
-        .arsenal-command .vb-menu-item[data-ability="thunderstorm"]:hover{ color: var(--vb-lightning); }
+        .arsenal-command .vb-menu-item[data-ability="thunderstorm"]:hover { color: var(--vb-lightning); }
 
-        /* Glyph beside the ability name */
         .ability-glyph {
-            font-size: 20px;
-            line-height: 1;
-            flex-shrink: 0;
+            font-size: 20px; line-height: 1; flex-shrink: 0;
             filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.7));
         }
 
-        /* Arsenal tooltip: upward-facing (same as .vb-tooltip but bottom: calc(100% + 8px)) */
-        .arsenal-command .vb-menu-item {
-            position: relative;
-            overflow: visible;
-        }
-
-        /* Position tooltip to the right of the row on desktop,
-           above on mobile */
-        .arsenal-command .vb-tooltip {
-            bottom: auto;
-            top: 50%;
-            left: calc(100% + 16px);
-            transform: translateY(-50%);
-            width: 300px;
-            opacity: 0;
-            transition: opacity 0.15s ease;
-        }
-
-        /* Arrow points left (toward the row) */
-        .arsenal-command .vb-tooltip::after {
-            top: 50%;
-            left: -12px;
-            bottom: auto;
-            transform: translateY(-50%);
-            border-top:    6px solid transparent;
-            border-bottom: 6px solid transparent;
-            border-right:  12px solid rgba(46,56,76,0.96);
-            border-left: none;
-        }
-
-        .arsenal-command .vb-menu-item:hover .vb-tooltip { opacity: 1; }
-
-        /* PANEL TAB for the Command box */
+        /* Panel tab merging trick */
         .arsenal-tab-wrap {
             display: flex;
             align-items: flex-end;
-            margin-bottom: -2px;   /* merge tab bottom border with panel top */
+            margin-bottom: -2px;
             padding-left: 12px;
+        }
+
+        /* ============================================================
+           IN-GAME TOOLTIP — ported faithfully from styles.css
+           Colours match the VISIBLE in-game ability tooltip (Babylon GUI steel panel,
+           index.html TIP_COL + the #abilityBar steel gradient). The DOM parchment
+           tooltip in styles.css is hidden in-game, so it is intentionally NOT used here.
+             gold   = #f0c050   text   = #cdd6e8   rim   = #e4e9f3
+             mana   = #5ad0ff   cast   = #f0c050   cd    = #9aa6bd
+           ============================================================ */
+
+        /* Container — visible in-game ability panel (steel) */
+        .ability-tooltip {
+            position: absolute;
+            /* Default game position: bottom: 100%, left: 50%. Overridden below for landing. */
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            margin-bottom: 16px;
+            width: 280px;
+            background: linear-gradient(180deg,
+                rgba(84,96,118,0.95)  0%,
+                rgba(42,52,70,0.97) 100%);
+            border: 2px solid #e4e9f3;          /* light steel rim */
+            padding: 10px 12px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+            z-index: 1000;
+            box-shadow:
+                0 4px 12px rgba(0,0,0,0.7),
+                inset 0 1px 0 rgba(255,255,255,0.12);
+            border-radius: 3px;
+        }
+
+        /* Trigger: show when the parent ability row is hovered */
+        .vb-menu-item:hover .ability-tooltip { opacity: 1; }
+
+        /* Down-pointing arrow (game default) */
+        .ability-tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%; left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: rgba(42,52,70,0.97);  /* matches steel panel bottom */
+        }
+
+        /* Title row — game: .tooltip-title */
+        .tooltip-title {
+            font-family: 'Press Start 2P', monospace; /* web fallback for FF9UI */
+            font-size: 12px;  /* Press Start 2P reads large; scale down from game's 18px */
+            color: #f0c050;   /* --ff9-gold */
+            margin-bottom: 10px;
+            text-shadow: 1px 1px 0 #000;
+        }
+
+        /* Stats row — game: .tooltip-stats-row */
+        .tooltip-stats-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: 'Press Start 2P', monospace;
+            font-size: 9px;   /* scaled for PS2P */
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(228,233,243,0.25);
+        }
+
+        /* Left cluster — game: .tooltip-stats-left */
+        .tooltip-stats-left {
+            display: flex;
+            gap: 10px;
+            color: #cdd6e8;   /* steel panel text */
+        }
+
+        /* Individual stat token — game: .tooltip-stat-item */
+        .tooltip-stat-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 9px;
+        }
+
+        .tooltip-stat-item .icon { font-size: 9px; }
+        .tooltip-stat-item .value { text-shadow: 1px 1px 0 #000; font-size: 9px; }
+
+        /* Semantic stat colours — exact game values */
+        .tooltip-stat-item.mana     .value { color: #5ad0ff; }  /* visible mana cyan  */
+        .tooltip-stat-item.cast     .value { color: #f0c050; }  /* gold              */
+        .tooltip-stat-item.cooldown .value { color: #9aa6bd; }  /* cooldown grey     */
+
+        /* Description — game: .tooltip-description */
+        .tooltip-description {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 9px;
+            color: #cdd6e8;   /* steel panel text */
+            line-height: 1.6;
+            text-shadow: 1px 1px 0 #000;
+        }
+
+        /* Semantic span colours — exact game values from styles.css */
+        .tt-value     { color: #ffd700; font-weight: bold; }
+        .tt-spell     { color: #f0c050; font-weight: bold; }
+        .tt-mechanic  { color: #b8a060; font-style: italic; }
+        .tt-fire      { color: #ff8844; font-weight: bold; }
+        .tt-frost     { color: #66ccff; font-weight: bold; }
+        .tt-damage    { color: #ff6655; font-weight: bold; }
+        .tt-duration  { color: #88dd88; }
+        .tt-key       { color: #aaaaaa; background: #333; padding: 1px 4px;
+                        border-radius: 2px; font-size: 9px; }
+        .tt-enemy     { color: #e76e55; font-weight: bold; }
+        .tt-lightning { color: #ffee66; font-weight: bold; }
+        .tt-mana      { color: #6699ff; font-weight: bold; }
+
+        /* Override tooltip POSITION for the arsenal context:
+           desktop — pop to the right of the row;
+           mobile  — pop above (see @media below). */
+        .arsenal-command .ability-tooltip {
+            bottom: auto;
+            top: 50%;
+            left: calc(100% + 18px);
+            transform: translateY(-50%);
+            margin-bottom: 0;
+        }
+
+        /* Arrow: point LEFT toward the row (desktop) */
+        .arsenal-command .ability-tooltip::after {
+            top: 50%; left: -12px; bottom: auto;
+            transform: translateY(-50%);
+            border-top:    6px solid transparent;
+            border-bottom: 6px solid transparent;
+            border-right:  12px solid rgba(84,96,118,0.95);  /* matches steel panel left edge */
+            border-left:   none;
         }
 
         /* ============================================================
@@ -366,7 +494,7 @@
                 var(--vb-bg-menu-glow) 0%,
                 var(--vb-bg-game) 70%
             );
-            border-top: 1px solid rgba(206,214,230,0.08);
+            border-top: 1px solid rgba(206,214,230,0.06);
         }
 
         .cta-inner {
@@ -394,35 +522,19 @@
             max-width: 480px;
         }
 
-        .cta-buttons {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 16px;
-            justify-content: center;
+        .cta-button-wrap {
             margin-top: 24px;
         }
 
-        .cta-buttons a {
-            text-decoration: none;
-        }
+        .cta-button-wrap a { text-decoration: none; }
 
-        /* Wishlist — ghost variant with a slightly different treatment */
-        .vb-button--wishlist {
-            min-width: 140px;
-            padding: 10px 24px;
-            font-size: 16px;
-            opacity: 0.75;
-        }
-        .vb-button--wishlist:hover { opacity: 1; }
-
-        /* Placeholder note visible to the reader */
         .placeholder-note {
             font-family: var(--vb-font-ui);
             font-size: 11px;
             color: var(--vb-text-dim);
             letter-spacing: 1px;
             margin-top: 8px;
-            opacity: 0.6;
+            opacity: 0.55;
         }
 
         /* ============================================================
@@ -431,12 +543,17 @@
         #footer {
             border-top: 1px solid rgba(206,214,230,0.1);
             padding: 32px 24px;
+            background: var(--vb-bg-game);
+        }
+
+        .footer-inner {
+            max-width: 960px;
+            margin: 0 auto;
             display: flex;
             flex-wrap: wrap;
             justify-content: space-between;
             align-items: center;
             gap: 12px;
-            background: var(--vb-bg-game);
         }
 
         .footer-copy,
@@ -454,37 +571,31 @@
         @media (max-width: 700px) {
             .lp-section { padding: 56px 0; }
 
-            .narrative-inner {
-                grid-template-columns: 1fr;
-            }
+            .narrative-inner { grid-template-columns: 1fr; }
 
-            /* On mobile, tooltip pops ABOVE the row instead of to the right */
-            .arsenal-command .vb-tooltip {
+            /* Pull the command wrap back — no right-side room for tooltips */
+            .arsenal-command-wrap { padding-right: 0; }
+
+            /* Mobile: tooltip pops ABOVE the row */
+            .arsenal-command .ability-tooltip {
                 top: auto;
                 bottom: calc(100% + 8px);
                 left: 50%;
                 transform: translateX(-50%);
-                width: min(280px, 90vw);
+                width: min(280px, 82vw);
             }
 
-            .arsenal-command .vb-tooltip::after {
-                top: 100%;
-                left: 50%;
-                bottom: auto;
+            /* Arrow: point DOWN (back toward row) on mobile */
+            .arsenal-command .ability-tooltip::after {
+                top: 100%; left: 50%; bottom: auto;
                 transform: translateX(-50%);
-                border-right: 6px solid transparent;
-                border-left:  6px solid transparent;
-                border-top:   8px solid rgba(46,56,76,0.96);
+                border-right:  6px solid transparent;
+                border-left:   6px solid transparent;
+                border-top:    8px solid rgba(42,52,70,0.97);  /* matches steel panel bottom */
                 border-bottom: none;
             }
 
-            .arsenal-command .vb-menu-item {
-                font-size: 18px;
-                height: 46px;
-            }
-
-            .hero-ctas { flex-direction: column; align-items: center; }
-            .cta-buttons { flex-direction: column; align-items: center; }
+            .arsenal-command .vb-menu-item { font-size: 18px; height: 46px; }
         }
 
         @media (max-width: 420px) {
@@ -498,6 +609,23 @@
      HERO
      ================================================================ -->
 <section id="hero">
+
+    <!--
+        HERO MEDIA SLOT — looping gameplay video.
+        When the owner is ready, add a <source> tag inside this element.
+        The video will autoplay, loop silently, and fill the hero background.
+        Recommended: a short 6–15 s capture of live gameplay at 720p or 1080p.
+        The 'poster' attribute shows a static frame while the video loads.
+        TODO: gameplay loop video src + poster frame
+    -->
+    <video class="hero-video" autoplay loop muted playsinline
+           poster=""
+           aria-hidden="true">
+        <!-- TODO: gameplay loop video src
+             <source src="path/to/gameplay-loop.mp4" type="video/mp4">
+        -->
+    </video>
+
     <p class="hero-eyebrow">NOW IN PLAYTEST</p>
 
     <div class="vb-title-wrap">
@@ -505,24 +633,29 @@
     </div>
 
     <!--
-        HOOK LINE selected: "Pong, but you're a wizard."
-        Rationale: truthful summary of the actual game mechanic. Rally a volley (Pong);
-        cast spells (the wizard part). No invented subtitle or brand claim.
+        HOOK LINE — PRIMARY: "Pong, Evolved."
+        Alternatives for owner to choose from:
+          A (default): "Pong, Evolved."   — clean, forward-looking
+          B:           "Pong, Enchanted." — more magical, evocative
+          C:           "Pong with Spells." — most literal and direct
+        To switch: change the text below AND update <title> above.
     -->
-    <p class="hero-hook">Pong, but you're a wizard.</p>
+    <p class="hero-hook">Pong, Evolved.</p>
     <p class="hero-sub">A real-time volley duel of deterministic spellcraft.</p>
 
-    <div class="hero-ctas">
-        <!-- TODO: real link --> <a href="#" class="vb-button vb-button--primary">Join the Playtest</a>
-        <!-- TODO: real link --> <a href="#" class="vb-button">Join Discord</a>
+    <div class="hero-cta">
+        <!-- TODO: real Discord invite --> <a href="#" class="vb-button vb-button--primary">Join Discord</a>
     </div>
+
+    <!-- Bottom fade — hero dissolves seamlessly into the narrative section -->
+    <div class="hero-bottom-fade" aria-hidden="true"></div>
 
     <span class="hero-scroll-hint">&#9660; scroll</span>
 </section>
 
 <!-- ================================================================
-     NARRATIVE — the "Pong, evolved" pitch
-     All facts below are sourced from the in-game How to Play screen.
+     NARRATIVE — "Pong, evolved"
+     All facts sourced from the in-game How to Play screen.
      ================================================================ -->
 <section id="narrative" class="lp-section">
     <div class="lp-container">
@@ -566,153 +699,186 @@
 
 <!-- ================================================================
      ARSENAL — interactive ability showcase
-     Tooltip text is copied verbatim from index.html ability slots.
-     Hover each row to see the real in-game tooltip.
+     Tooltip markup mirrors the in-game DOM tooltip exactly:
+       .ability-tooltip / .tooltip-title / .tooltip-stats-row /
+       .tooltip-stats-left / .tooltip-stat-item.{mana|cast|cooldown} /
+       .tooltip-description / .tt-{value|spell|mechanic|fire|frost|...}
+     All stats and description text copied verbatim from index.html.
      ================================================================ -->
 <section id="arsenal" class="lp-section">
     <div class="lp-container">
         <span class="lp-section-label" style="text-align:center; display:block;">your spells</span>
         <h2 class="arsenal-heading">Your Arsenal</h2>
-        <p class="arsenal-sub">Hover an ability to learn it.</p>
+        <p class="arsenal-sub">Hover an ability to see the in-game tooltip.</p>
 
         <div class="arsenal-command-wrap">
             <div class="arsenal-command">
-                <!-- Tab above the command box, matching the in-game "COMMAND" title tab -->
+
+                <!-- Title tab above the command box -->
                 <div class="arsenal-tab-wrap">
                     <div class="vb-panel__tab">COMMAND</div>
                 </div>
 
                 <div class="vb-menu">
 
-                    <!-- ---- Fireball ---- -->
-                    <!--
-                        Tooltip text source: index.html #fireballTooltip
-                        Stats: 1 Mana · 1s Cast · 4s CD
-                    -->
-                    <div class="vb-menu-item" data-ability="fireball" tabindex="0" role="button" aria-describedby="tt-fireball">
+                    <!-- ============================================
+                         FIREBALL
+                         Source: index.html #fireballTooltip
+                         ============================================ -->
+                    <div class="vb-menu-item" data-ability="fireball"
+                         tabindex="0" role="button" aria-describedby="tt-fireball">
                         <span class="ability-glyph" aria-hidden="true">&#x1F525;</span>
                         <span style="flex:1;">Fireball</span>
                         <span class="vb-menu-item__mana" title="1 Mana">&#9679;</span>
                         <span class="vb-menu-item__key">1</span>
 
-                        <div class="vb-tooltip" id="tt-fireball" role="tooltip">
-                            <div class="vb-tooltip__title">Fireball</div>
-                            <div class="vb-tooltip__stats">
-                                <span>
-                                    <span style="color:var(--vb-blue-mana);">* 1 Mana</span>
-                                    &nbsp;
-                                    <span style="color:var(--vb-text);">&gt; 1s Cast</span>
+                        <div class="ability-tooltip" id="tt-fireball" role="tooltip">
+                            <div class="tooltip-title">Fireball</div>
+                            <div class="tooltip-stats-row">
+                                <div class="tooltip-stats-left">
+                                    <span class="tooltip-stat-item mana">
+                                        <span class="icon">*</span>
+                                        <span class="value">1 Mana</span>
+                                    </span>
+                                    <span class="tooltip-stat-item cast">
+                                        <span class="icon">&gt;</span>
+                                        <span class="value">1s Cast</span>
+                                    </span>
+                                </div>
+                                <span class="tooltip-stat-item cooldown">
+                                    <span class="icon">@</span>
+                                    <span class="value">4s CD</span>
                                 </span>
-                                <span style="color:var(--vb-red-text);">@ 4s CD</span>
                             </div>
-                            <hr class="vb-tooltip__divider">
-                            <div class="vb-tooltip__body">
-                                Hurl a <span class="vb-tt-spell">Fireball</span> that deals
-                                <span class="vb-tt-value">2</span>
-                                <span class="vb-tt-fire">Fire</span> damage.
-                                Damage increases with <span class="vb-tt-mechanic">Volleys</span>,
-                                up to <span class="vb-tt-value">5</span>.
+                            <div class="tooltip-description">
+                                Hurl a <span class="tt-spell">Fireball</span> that deals
+                                <span class="tt-value">2</span>
+                                <span class="tt-fire">Fire</span> damage.
+                                Damage increases with <span class="tt-mechanic">Volleys</span>,
+                                up to <span class="tt-value">5</span>.
                             </div>
                         </div>
                     </div>
 
-                    <!-- ---- Frostbolt ---- -->
-                    <!--
-                        Tooltip text source: index.html #frostboltTooltip
-                        Stats: 2 Mana · Instant · 14s CD
-                    -->
-                    <div class="vb-menu-item" data-ability="frostbolt" tabindex="0" role="button" aria-describedby="tt-frostbolt">
+                    <!-- ============================================
+                         FROSTBOLT
+                         Source: index.html #frostboltTooltip
+                         ============================================ -->
+                    <div class="vb-menu-item" data-ability="frostbolt"
+                         tabindex="0" role="button" aria-describedby="tt-frostbolt">
                         <span class="ability-glyph" aria-hidden="true">&#x2744;</span>
                         <span style="flex:1;">Frostbolt</span>
                         <span class="vb-menu-item__mana" title="2 Mana">&#9679;&#9679;</span>
                         <span class="vb-menu-item__key">2</span>
 
-                        <div class="vb-tooltip" id="tt-frostbolt" role="tooltip">
-                            <div class="vb-tooltip__title">Frostbolt</div>
-                            <div class="vb-tooltip__stats">
-                                <span>
-                                    <span style="color:var(--vb-blue-mana);">* 2 Mana</span>
-                                    &nbsp;
-                                    <span style="color:var(--vb-text);">&gt; Instant</span>
+                        <div class="ability-tooltip" id="tt-frostbolt" role="tooltip">
+                            <div class="tooltip-title">Frostbolt</div>
+                            <div class="tooltip-stats-row">
+                                <div class="tooltip-stats-left">
+                                    <span class="tooltip-stat-item mana">
+                                        <span class="icon">*</span>
+                                        <span class="value">2 Mana</span>
+                                    </span>
+                                    <span class="tooltip-stat-item cast">
+                                        <span class="icon">&gt;</span>
+                                        <span class="value">Instant</span>
+                                    </span>
+                                </div>
+                                <span class="tooltip-stat-item cooldown">
+                                    <span class="icon">@</span>
+                                    <span class="value">14s CD</span>
                                 </span>
-                                <span style="color:var(--vb-red-text);">@ 14s CD</span>
                             </div>
-                            <hr class="vb-tooltip__divider">
-                            <div class="vb-tooltip__body">
-                                Launch a <span class="vb-tt-spell">Frostbolt</span> that
-                                <span class="vb-tt-frost">Freezes</span> the
-                                <span class="vb-tt-enemy">Enemy</span> for
-                                <span class="vb-tt-value">1</span>
-                                <span class="vb-tt-duration">second</span>.
-                                <span class="vb-tt-mechanic">Cancels</span> enemy projectiles on
-                                contact.
-                                <span class="vb-tt-frost">Freeze</span> stops
-                                <span class="vb-tt-mana">Mana</span> regeneration and interrupts
-                                <span class="vb-tt-mechanic">Casting</span>.
+                            <div class="tooltip-description">
+                                Launch a <span class="tt-spell">Frostbolt</span> that
+                                <span class="tt-frost">Freezes</span> the
+                                <span class="tt-enemy">Enemy</span> for
+                                <span class="tt-value">1</span>
+                                <span class="tt-duration">second</span>.
+                                <span class="tt-mechanic">Cancels</span> enemy projectiles
+                                on contact.
+                                <span class="tt-frost">Freeze</span> stops
+                                <span class="tt-mana">Mana</span> regeneration
+                                and interrupts <span class="tt-mechanic">Casting</span>.
                             </div>
                         </div>
                     </div>
 
-                    <!-- ---- Thunderstorm ---- -->
-                    <!--
-                        Tooltip text source: index.html #thunderstormTooltip
-                        Stats: 2 Mana · Instant · 30s CD
-                    -->
-                    <div class="vb-menu-item" data-ability="thunderstorm" tabindex="0" role="button" aria-describedby="tt-thunderstorm">
+                    <!-- ============================================
+                         THUNDERSTORM
+                         Source: index.html #thunderstormTooltip
+                         ============================================ -->
+                    <div class="vb-menu-item" data-ability="thunderstorm"
+                         tabindex="0" role="button" aria-describedby="tt-thunderstorm">
                         <span class="ability-glyph" aria-hidden="true">&#x26A1;</span>
                         <span style="flex:1;">Thunderstorm</span>
                         <span class="vb-menu-item__mana" title="2 Mana">&#9679;&#9679;</span>
                         <span class="vb-menu-item__key">3</span>
 
-                        <div class="vb-tooltip" id="tt-thunderstorm" role="tooltip">
-                            <div class="vb-tooltip__title">Thunderstorm</div>
-                            <div class="vb-tooltip__stats">
-                                <span>
-                                    <span style="color:var(--vb-blue-mana);">* 2 Mana</span>
-                                    &nbsp;
-                                    <span style="color:var(--vb-text);">&gt; Instant</span>
+                        <div class="ability-tooltip" id="tt-thunderstorm" role="tooltip">
+                            <div class="tooltip-title">Thunderstorm</div>
+                            <div class="tooltip-stats-row">
+                                <div class="tooltip-stats-left">
+                                    <span class="tooltip-stat-item mana">
+                                        <span class="icon">*</span>
+                                        <span class="value">2 Mana</span>
+                                    </span>
+                                    <span class="tooltip-stat-item cast">
+                                        <span class="icon">&gt;</span>
+                                        <span class="value">Instant</span>
+                                    </span>
+                                </div>
+                                <span class="tooltip-stat-item cooldown">
+                                    <span class="icon">@</span>
+                                    <span class="value">30s CD</span>
                                 </span>
-                                <span style="color:var(--vb-red-text);">@ 30s CD</span>
                             </div>
-                            <hr class="vb-tooltip__divider">
-                            <div class="vb-tooltip__body">
+                            <div class="tooltip-description">
                                 Call down lightning to
-                                <span class="vb-tt-mechanic">Zap</span> up to
-                                <span class="vb-tt-value">3</span> incoming
-                                <span class="vb-tt-enemy">Enemy</span> projectiles, destroying them.
+                                <span class="tt-mechanic">Zap</span> up to
+                                <span class="tt-value">3</span> incoming
+                                <span class="tt-enemy">Enemy</span>
+                                projectiles, destroying them.
                             </div>
                         </div>
                     </div>
 
-                    <!-- ---- Parry ---- -->
-                    <!--
-                        Tooltip text source: index.html #parryTooltip
-                        Stats: Free · Instant · 0.2s / 3s CD
-                    -->
-                    <div class="vb-menu-item" data-ability="parry" tabindex="0" role="button" aria-describedby="tt-parry">
+                    <!-- ============================================
+                         PARRY
+                         Source: index.html #parryTooltip
+                         ============================================ -->
+                    <div class="vb-menu-item" data-ability="parry"
+                         tabindex="0" role="button" aria-describedby="tt-parry">
                         <span class="ability-glyph" aria-hidden="true">&#x26D4;</span>
                         <span style="flex:1;">Parry</span>
-                        <!-- no mana cost -->
+                        <!-- no mana cost — Parry is Free -->
                         <span class="vb-menu-item__key">&#9251;</span>
 
-                        <div class="vb-tooltip" id="tt-parry" role="tooltip">
-                            <div class="vb-tooltip__title">Parry</div>
-                            <div class="vb-tooltip__stats">
-                                <span>
-                                    <span style="color:var(--vb-success);">* Free</span>
-                                    &nbsp;
-                                    <span style="color:var(--vb-text);">&gt; Instant</span>
+                        <div class="ability-tooltip" id="tt-parry" role="tooltip">
+                            <div class="tooltip-title">Parry</div>
+                            <div class="tooltip-stats-row">
+                                <div class="tooltip-stats-left">
+                                    <span class="tooltip-stat-item mana">
+                                        <span class="icon">*</span>
+                                        <span class="value">Free</span>
+                                    </span>
+                                    <span class="tooltip-stat-item cast">
+                                        <span class="icon">&gt;</span>
+                                        <span class="value">Instant</span>
+                                    </span>
+                                </div>
+                                <span class="tooltip-stat-item cooldown">
+                                    <span class="icon">@</span>
+                                    <span class="value">0.2s&nbsp;/&nbsp;3s CD</span>
                                 </span>
-                                <span style="color:var(--vb-red-text);">@ 0.2s / 3s CD</span>
                             </div>
-                            <hr class="vb-tooltip__divider">
-                            <div class="vb-tooltip__body">
-                                <span class="vb-tt-mechanic">Parry</span> incoming projectiles to
-                                reflect them back with increased speed. Grants
-                                <span class="vb-tt-value">1</span>
-                                <span class="vb-tt-mana">Mana</span> on success.
-                                <span class="vb-tt-value">0.2s</span> CD on hit,
-                                <span class="vb-tt-value">3s</span> CD on miss.
+                            <div class="tooltip-description">
+                                <span class="tt-mechanic">Parry</span> incoming projectiles
+                                to reflect them back with increased speed. Grants
+                                <span class="tt-value">1</span>
+                                <span class="tt-mana">Mana</span> on success.
+                                <span class="tt-value">0.2s</span> CD on hit,
+                                <span class="tt-value">3s</span> CD on miss.
                             </div>
                         </div>
                     </div>
@@ -725,7 +891,7 @@
 </section>
 
 <!-- ================================================================
-     CTA
+     CTA — single Discord button
      ================================================================ -->
 <section id="cta" class="lp-section">
     <div class="lp-container">
@@ -736,23 +902,13 @@
                 Play 1v1 duels in your browser. No install. Real-time rollback netcode.
             </p>
 
-            <div class="cta-buttons">
-                <!--
-                    PLACEHOLDER LINKS — fill in real URLs before publishing.
-                    Three separate CTAs so the owner can point each to its destination.
-                -->
-                <!-- TODO: real playtest link -->
-                <a href="#" class="vb-button vb-button--primary">Join the Playtest</a>
-
-                <!-- TODO: real Discord invite link -->
-                <a href="#" class="vb-button">Join Discord</a>
-
-                <!-- TODO: wishlist / Steam / itch.io link -->
-                <a href="#" class="vb-button vb-button--wishlist vb-button--ghost">Wishlist</a>
+            <div class="cta-button-wrap">
+                <!-- TODO: real Discord invite -->
+                <a href="#" class="vb-button vb-button--primary">Join Discord to Playtest</a>
             </div>
 
             <p class="placeholder-note">
-                &#9650; Links above are placeholders — fill in before publishing.
+                &#9650; Link above is a placeholder — fill in a real Discord invite before publishing.
             </p>
         </div>
     </div>
@@ -763,9 +919,9 @@
      Text sourced from the in-game Credits screen.
      ================================================================ -->
 <footer id="footer">
-    <div class="lp-container" style="width:100%; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px;">
+    <div class="footer-inner">
+        <!-- Credits text sourced verbatim from index.html credits screen -->
         <span class="footer-copy">&#169; 2026 Andrew Amisola &mdash; Volleybolt</span>
-        <!-- Built-with text sourced from in-game Credits screen -->
         <span class="footer-built">Built with Babylon.js &middot; Tone.js &middot; PeerJS</span>
     </div>
 </footer>
