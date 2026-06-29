@@ -4,7 +4,7 @@
 
 **Goal:** Consolidate Volleybolt's four contradictory ability registries into one canonical `ABILITY_REGISTRY`, rename the `chain_lightning` ability to `thunderstorm` everywhere, and make the PvP sim's per-ability logic declarative (each ability declares its own behavior) — without ever changing the determinism golden except where intended.
 
-**Architecture:** `ABILITY_REGISTRY` (index.html) is already the de-facto source of truth (the live `abilities` object derives from it). We extend it with a `behavior` block of pure deterministic callbacks, add a `getAbility(id)` accessor, route the PvP sim (`js/sim.js`) per-ability branches through `behavior.*`, and delete the dead duplicate registries/branches. Behavior callbacks follow the same contract the sim already uses: pure math on `proj.x/y/z`, all effects through `ctx.deps`, presentation gated by `ctx.isResimulating`.
+**Architecture:** `ABILITY_REGISTRY` (index.html) is already the de-facto source of truth (the live `abilities` object derives from it). We extend it with a `behavior` block of pure deterministic callbacks, add a `getAbilityDef(id)` accessor, route the PvP sim (`js/sim.js`) per-ability branches through `behavior.*`, and delete the dead duplicate registries/branches. Behavior callbacks follow the same contract the sim already uses: pure math on `proj.x/y/z`, all effects through `ctx.deps`, presentation gated by `ctx.isResimulating`.
 
 **Tech Stack:** Vanilla JS single-page game; Babylon.js render; PeerJS rollback netcode; `js/sim.js` ES module bridged via `window.VolleyboltSim`. No build step, no unit-test framework.
 
@@ -40,7 +40,7 @@ Run these in the browser via the playwright MCP tools. "VERIFY(golden=X)" means 
 - Modify: `index.html` — `ABILITY_REGISTRY` (~line 2133–2158), and add `getAbility` just after the `abilities` derivation (~line 2165).
 
 **Interfaces:**
-- Produces: `getAbility(id)` → the `ABILITY_REGISTRY[id]` entry (or `undefined`); `window.getAbility` exposed. Used by later tasks and the sim.
+- Produces: `getAbilityDef(id)` → the `ABILITY_REGISTRY[id]` entry (or `undefined`); `window.getAbility` exposed. Used by later tasks and the sim.
 
 - [ ] **Step 1:** In `ABILITY_REGISTRY.chain_lightning.ui.description`, remove the sentence "Gain 1 Mana for each projectile destroyed." (the `<span ...>1</span> Mana for each...` clause). Leave the rest of the description intact.
 
@@ -48,11 +48,11 @@ Run these in the browser via the playwright MCP tools. "VERIFY(golden=X)" means 
 
 ```js
 // Canonical ability accessor — single lookup point for stats + behavior.
-function getAbility(id) { return ABILITY_REGISTRY[id]; }
+function getAbilityDef(id) { return ABILITY_REGISTRY[id]; }
 window.getAbility = getAbility;
 ```
 
-- [ ] **Step 3:** VERIFY(golden=`b1df6797`). Also in the browser console assert `typeof window.getAbility('fireball') === 'object'` and `window.getAbility('fireball').gameplay.cooldown === 4`.
+- [ ] **Step 3:** VERIFY(golden=`b1df6797`). Also in the browser console assert `typeof window.getAbilityDef('fireball') === 'object'` and `window.getAbilityDef('fireball').gameplay.cooldown === 4`.
 
 - [ ] **Step 4:** Commit.
 
@@ -81,7 +81,7 @@ fireball: {
 },
 ```
 
-- [ ] **Step 2:** VERIFY(golden=`b1df6797`). Assert `window.getAbility('frostbolt').behavior && typeof window.getAbility('frostbolt').behavior === 'object'`.
+- [ ] **Step 2:** VERIFY(golden=`b1df6797`). Assert `window.getAbilityDef('frostbolt').behavior && typeof window.getAbilityDef('frostbolt').behavior === 'object'`.
 
 - [ ] **Step 3:** Commit.
 
@@ -124,7 +124,7 @@ Expected: zero hits except any intentionally-left CSS/asset class noted in Step 
 
 - [ ] **Step 4:** `node --check js/sim.js` → expect no output (valid syntax).
 
-- [ ] **Step 5:** VERIFY(golden=`b1df6797`). The rename is hash-neutral: `hashGameState` mixes the cooldown *value*, not the key name. Also assert in console: `'thunderstorm' in window.getAbility('thunderstorm').gameplay === false` is irrelevant; instead assert `window.getAbility('thunderstorm') !== undefined` and `window.getAbility('chain_lightning') === undefined`. Confirm a single-player match: cast Thunderstorm (key 3) and confirm it still zaps incoming projectiles (visual).
+- [ ] **Step 5:** VERIFY(golden=`b1df6797`). The rename is hash-neutral: `hashGameState` mixes the cooldown *value*, not the key name. Also assert in console: `'thunderstorm' in window.getAbilityDef('thunderstorm').gameplay === false` is irrelevant; instead assert `window.getAbilityDef('thunderstorm') !== undefined` and `window.getAbilityDef('chain_lightning') === undefined`. Confirm a single-player match: cast Thunderstorm (key 3) and confirm it still zaps incoming projectiles (visual).
 
 - [ ] **Step 6:** Commit.
 
@@ -142,7 +142,7 @@ git commit -m "Rename chain_lightning -> thunderstorm everywhere (hash-neutral);
 - Modify: `js/sim.js` — `tryNetworkCast` (frostbolt branch ~285–299) and `updateNetworkProjectiles` (frostbolt collision branches ~124–131 left, ~176–183 right; gate fizzle guard ~215/223).
 
 **Interfaces:**
-- Consumes: `getAbility(id)` (Task 1); `ctx` = `{projectiles, combatants, abilities, pvpParryState, isResimulating, consts, deps}`.
+- Consumes: `getAbilityDef(id)` (Task 1); `ctx` = `{projectiles, combatants, abilities, pvpParryState, isResimulating, consts, deps}`.
 - Produces: the behavior-callback contract, used by Tasks 5–6. **`side` is always `'left'/'right'` (the combatant side); callbacks derive the `'player'/'ai'` owner internally when needed.**
   - `behavior.castType: 'instant' | 'channel' | 'targeted'`
   - `behavior.onCast(ctx, combatant)` — cast resolves (spawn / zap). Reads `combatant.side`; no separate side param.
@@ -186,7 +186,7 @@ const ability = abilities[abilityId];
 if (!ability) return;
 if (combatant.mana < ability.manaCost) return;
 if (combatant.cooldowns[abilityId] > 0) return;
-const beh = (ctx.deps.getAbility ? ctx.deps.getAbility(abilityId) : null)?.behavior;
+const beh = (ctx.deps.getAbilityDef ? ctx.deps.getAbilityDef(abilityId) : null)?.behavior;
 if (beh && beh.castType === 'instant') {
     beh.onCast(ctx, combatant);
     return;
@@ -194,12 +194,12 @@ if (beh && beh.castType === 'instant') {
 // (fireball channel path stays as-is for now — migrated in Task 5)
 ```
 
-Add `getAbility: (id) => getAbility(id)` to `SIM_DEPS` in index.html so the module can reach the registry.
+Add `getAbility: (id) => getAbilityDef(id)` to `SIM_DEPS` in index.html so the module can reach the registry.
 
 - [ ] **Step 3:** In `js/sim.js` `updateNetworkProjectiles`, replace the left+right `if (proj.type === 'frostbolt') { freeze… } else { bounce… }` so the frostbolt arm calls the behavior. For the left paddle:
 
 ```js
-const hitAbility = ctx.deps.getAbility(proj.type);
+const hitAbility = ctx.deps.getAbilityDef(proj.type);
 if (hitAbility && hitAbility.behavior.onPaddleHit && proj.type === 'frostbolt') {
     if (hitAbility.behavior.onPaddleHit(proj, 'left', ctx)) { toDestroy.push(proj); }
 } else {
@@ -210,7 +210,7 @@ Mirror for the right paddle with `'right'`. Keep the Lightning-Shield auto-block
 
 - [ ] **Step 4:** For gate fizzle, the existing guard `if (proj.type !== 'frostbolt')` already encodes frostbolt's `onGateHit → null`. Leave it for now (fully generalized in Task 7); do not regress it.
 
-- [ ] **Step 5:** `node --check js/sim.js`. Then VERIFY(golden=`b1df6797`) — frostbolt behaves identically, so the golden must NOT move. Additionally spy: wrap `getAbility('frostbolt').behavior.onPaddleHit` and confirm it is invoked during a scripted frostbolt-into-paddle scenario, with the fold still `b1df6797`.
+- [ ] **Step 5:** `node --check js/sim.js`. Then VERIFY(golden=`b1df6797`) — frostbolt behaves identically, so the golden must NOT move. Additionally spy: wrap `getAbilityDef('frostbolt').behavior.onPaddleHit` and confirm it is invoked during a scripted frostbolt-into-paddle scenario, with the fold still `b1df6797`.
 
 - [ ] **Step 6:** Commit.
 
@@ -278,7 +278,7 @@ if (beh && (beh.castType === 'instant' || beh.castType === 'channel' || beh.cast
 - [ ] **Step 3:** In `js/sim.js` `updateNetworkProjectiles`, replace the fireball `else` bounce arm (both paddles) with the behavior dispatch, unifying the frostbolt/fireball handling from Task 4:
 
 ```js
-const hitAbility = ctx.deps.getAbility(proj.type);
+const hitAbility = ctx.deps.getAbilityDef(proj.type);
 if (hitAbility && hitAbility.behavior.onPaddleHit) {
     if (hitAbility.behavior.onPaddleHit(proj, 'left', ctx)) toDestroy.push(proj);
 }
@@ -289,12 +289,12 @@ if (hitAbility && hitAbility.behavior.onPaddleHit) {
 
 ```js
 if (proj.x < -goalX) {
-    const hitAbility = ctx.deps.getAbility(proj.type);
+    const hitAbility = ctx.deps.getAbilityDef(proj.type);
     const res = hitAbility && hitAbility.behavior.onGateHit ? hitAbility.behavior.onGateHit(proj, 'left', ctx) : { damage: Math.min(2 + proj.volleyCount, 6) };
     if (res && res.damage) ctx.deps.dealDamageToTower(proj.owner === 'ai', res.damage, proj.z);
     toDestroy.push(proj);
 } else if (proj.x > goalX) {
-    const hitAbility = ctx.deps.getAbility(proj.type);
+    const hitAbility = ctx.deps.getAbilityDef(proj.type);
     const res = hitAbility && hitAbility.behavior.onGateHit ? hitAbility.behavior.onGateHit(proj, 'right', ctx) : { damage: Math.min(2 + proj.volleyCount, 6) };
     if (res && res.damage) ctx.deps.dealDamageToTower(proj.owner === 'ai', res.damage, proj.z);
     toDestroy.push(proj);
