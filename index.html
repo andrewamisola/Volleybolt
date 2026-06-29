@@ -11830,10 +11830,14 @@
             const AI_RNG_SEED = 0xA1DE;  // fixed constant; stable seed offset for per-frame RNG
 
             const DEFAULT_AI_PARAMS = {
-                reactionFrames:   0,      // extra lag frames before decision takes effect (difficulty knob)
-                aimError:         0,      // max Z-offset error on cast targeting, world units (difficulty knob)
-                parryTimingError: 0,      // extra frames before parry fires (difficulty knob)
-                castAggression:   1.0,    // multiplier on cast-readiness threshold
+                reactionFrames:   0,      // (reserved) extra lag frames before a decision takes effect
+                aimError:         0.6,    // POSITIONING error: max |Z| world-unit offset the paddle parks
+                                          //   off the true intercept (stable per think-cycle). The main
+                                          //   difficulty lever — 0 = perfect positioning.
+                parryTimingError: 0.25,   // fraction of parry opportunities the AI whiffs (per-projectile,
+                                          //   deterministic). 0 = never whiffs, 1 = never parries.
+                castAggression:   0.75,   // fraction of cast opportunities the AI takes (per think-cycle).
+                                          //   1.0 = casts every chance; lower = more passive.
                 thinkIntervalK:   13,     // think cadence: decide every K frames (~0.22s at 60Hz)
             };
 
@@ -11876,10 +11880,17 @@
 
                 const K = params.thinkIntervalK;
                 const isThinkFrame = (frame % K === 0);
+                const cycle = Math.floor(frame / K);   // stable index for per-think-cycle difficulty rolls
 
                 // --- Movement (every frame: smooth, not gated) ---
                 const threat  = _aiFindUrgentThreat(view);
-                const targetZ = threat ? threat.z : _aiFindOpenTarget(view);
+                let   targetZ = threat ? threat.z : _aiFindOpenTarget(view);
+                // POSITIONING error (difficulty): park slightly off the true intercept. Seeded by the
+                // think-cycle so the offset is stable for ~0.22s (no per-frame jitter), then re-rolls.
+                if (params.aimError > 0) {
+                    const posErr = (makeAIRng((cycle ^ 0x50F1) >>> 0)() * 2 - 1) * params.aimError;
+                    targetZ += posErr;
+                }
                 const diff    = targetZ - view.self.paddleZ;
                 const moveDir = Math.abs(diff) > 0.25 ? Math.sign(diff) : 0;
 
@@ -11891,9 +11902,13 @@
                 const safe = _aiSafeToStartCast(view);
                 const s    = view.self;
                 const cd   = s.cooldowns;
+                // Cast aggression (difficulty): deterministically take only a fraction of offensive
+                // cast opportunities. Seeded per think-cycle. Thunderstorm is exempt (it's a defensive
+                // panic-clear of 2+ incoming, so the AI shouldn't randomly skip it).
+                const aggressive = (makeAIRng((cycle ^ 0xCA57) >>> 0)() < params.castAggression);
 
-                const canFireball     = safe && cd.fireball    <= 0 && s.mana >= 1 && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
-                const canFrostbolt    = safe && cd.frostbolt   <= 0 && s.mana >= 2 && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
+                const canFireball     = aggressive && safe && cd.fireball    <= 0 && s.mana >= 1 && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
+                const canFrostbolt    = aggressive && safe && cd.frostbolt   <= 0 && s.mana >= 2 && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
                 const canThunderstorm = cd.thunderstorm <= 0 && s.mana >= 2 && _aiIncomingProjectiles(view).length >= 2;
 
                 // Frostbolt preferred when available; otherwise fireball.
@@ -11901,10 +11916,14 @@
                 const castFireball_     = canFireball && !castFrostbolt_;
                 const castThunderstorm_ = canThunderstorm;
 
-                // --- Parry (deterministic: press when an incoming threat is in Z range) ---
+                // --- Parry (deterministic; whiffs a fraction of chances per parryTimingError) ---
                 const parryRange  = 2.5;
-                const parryTarget = threat && Math.abs(threat.z - s.paddleZ) < parryRange;
-                const parry       = !!parryTarget;
+                let   parry       = !!(threat && Math.abs(threat.z - s.paddleZ) < parryRange);
+                if (parry && params.parryTimingError > 0) {
+                    // Per-projectile miss roll → a given incoming is consistently parried or whiffed.
+                    const miss = makeAIRng((((threat.id | 0) * 2654435761) ^ 0x9A27) >>> 0)() < params.parryTimingError;
+                    if (miss) parry = false;
+                }
 
                 // --- Juice ---
                 const juice = s.juice >= JUICE.MAX && !s.juiceActive;
@@ -15353,7 +15372,8 @@
         // ---- AI determinism oracle (Phase 2.1) ----
         // Folds decideAI outputs over a scripted synthetic view sequence into a 32-bit hex hash.
         // No mesh reads, no game loop — pure function exercise only.
-        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "c542c4ab"  (computed via Node harness)
+        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "2666491c"  (re-pinned 2026-06-29 after the
+        // difficulty-tuning pass wired aimError/parryTimingError/castAggression into decideAI)
         (function attachAIDeterminism() {
             function _syntheticView(seed) {
                 return {
