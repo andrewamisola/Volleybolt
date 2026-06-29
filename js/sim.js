@@ -29,6 +29,104 @@
 (function () {
     'use strict';
 
+    // Pure helper — no mesh, no RNG, no wall-clock.
+    // juiceConsts = ctx.consts.juice = { MAX, DURATION, CHARGE }
+    function simAddJuice(combatant, amount, juiceConsts) {
+        if (!combatant || combatant.juiceActive) return;
+        combatant.juice = Math.min(juiceConsts.MAX, (combatant.juice || 0) + amount);
+    }
+
+    // Deterministic projectile-vs-projectile resolution. Pure number math on
+    // proj.x / proj.z (NEVER proj.mesh). Mutates `toDestroy` (owned by the caller,
+    // updateNetworkProjectiles) and combatant juice/mana. FX go through ctx.deps.*
+    // gated by !isResimulating.
+    function resolveNetworkProjVsProj(ctx, toDestroy) {
+        const { projectiles, combatants, isResimulating, deps: D, consts } = ctx;
+        const juiceConsts = consts.juice;
+
+        // --- Pass 1: Frostbolt cancel ---
+        for (const proj of projectiles) {
+            if (proj.type !== 'frostbolt') continue;
+            if (toDestroy.includes(proj)) continue;
+            for (const other of projectiles) {
+                if (other === proj) continue;
+                if (other.type === 'frostbolt') continue;        // frostbolts pass through each other
+                if (toDestroy.includes(other)) continue;
+                // Head-on: opposite X velocities
+                if ((proj.velX > 0 && other.velX > 0) || (proj.velX < 0 && other.velX < 0)) continue;
+                // Moving toward each other (not already past)
+                const dx = other.x - proj.x;
+                if (proj.velX > 0 && dx < 0) continue;
+                if (proj.velX < 0 && dx > 0) continue;
+                // Distance check
+                const dz = other.z - proj.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                const collDist = (proj.hitboxRadius || 0.3) + (other.hitboxRadius || 0.3);
+                if (dist < collDist) {
+                    toDestroy.push(proj);
+                    toDestroy.push(other);
+                    if (!isResimulating) D.onFrostboltCancel((proj.x + other.x) * 0.5, (proj.z + other.z) * 0.5);
+                    break;
+                }
+            }
+        }
+
+        // --- Pass 2: Fireball overpower / mutual cancel ---
+        for (const proj of projectiles) {
+            if (proj.type === 'frostbolt') continue;
+            if (toDestroy.includes(proj)) continue;
+            const grace = proj.collisionGraceTime || 0;
+            if (grace > 0) continue;
+            for (const other of projectiles) {
+                if (other === proj) continue;
+                if (other.type === 'frostbolt') continue;
+                if (toDestroy.includes(other)) continue;
+                if ((other.collisionGraceTime || 0) > 0) continue;
+                // Head-on: opposite X velocities
+                if ((proj.velX > 0 && other.velX > 0) || (proj.velX < 0 && other.velX < 0)) continue;
+                // Moving toward each other
+                const dx = other.x - proj.x;
+                if (proj.velX > 0 && dx < 0) continue;
+                if (proj.velX < 0 && dx > 0) continue;
+                // Distance check
+                const dz = other.z - proj.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                const collDist = (proj.hitboxRadius || 0.3) + (other.hitboxRadius || 0.3);
+                if (dist < collDist) {
+                    const midX = (proj.x + other.x) * 0.5;
+                    const midZ = (proj.z + other.z) * 0.5;
+                    const projDmg  = proj.damage  !== undefined ? proj.damage  : Math.min(2 + (proj.volleyCount  || 0), 6);
+                    const otherDmg = other.damage !== undefined ? other.damage : Math.min(2 + (other.volleyCount || 0), 6);
+
+                    if (projDmg > otherDmg) {
+                        toDestroy.push(other);
+                        proj.volleyCount = Math.min((proj.volleyCount || 0) + 1, 4);
+                        const ownerC = proj.owner === 'player' ? combatants.left : combatants.right;
+                        simAddJuice(ownerC, juiceConsts.CHARGE.minor, juiceConsts);
+                        if (!isResimulating) D.onOverpower(midX, midZ, proj.velX, proj.velZ);
+                    } else if (otherDmg > projDmg) {
+                        toDestroy.push(proj);
+                        other.volleyCount = Math.min((other.volleyCount || 0) + 1, 4);
+                        const ownerC = other.owner === 'player' ? combatants.left : combatants.right;
+                        simAddJuice(ownerC, juiceConsts.CHARGE.minor, juiceConsts);
+                        if (!isResimulating) D.onOverpower(midX, midZ, other.velX, other.velZ);
+                    } else {
+                        // Mutual cancel
+                        toDestroy.push(proj);
+                        toDestroy.push(other);
+                        // Mana award: +0.5 to each combatant
+                        if (combatants.left)  combatants.left.mana  = Math.min(D.getMaxMana('left'),  (combatants.left.mana  || 0) + 0.5);
+                        if (combatants.right) combatants.right.mana = Math.min(D.getMaxMana('right'), (combatants.right.mana || 0) + 0.5);
+                        simAddJuice(combatants.left,  juiceConsts.CHARGE.minor, juiceConsts);
+                        simAddJuice(combatants.right, juiceConsts.CHARGE.minor, juiceConsts);
+                        if (!isResimulating) D.onProjCancel(midX, midZ);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
     function updateNetworkProjectiles(dt, ctx) {
         const { projectiles, combatants, abilities, isResimulating, deps: D } = ctx;
         const toDestroy = [];
@@ -170,6 +268,10 @@
             // so the physics above is pure number math with no direct Babylon touch).
             D.mirrorProjectileToMesh(proj);
         }
+
+        // Projectile-vs-projectile resolution (frostbolt cancel, fireball overpower/cancel).
+        // Runs once over all projectiles after movement; mutates `toDestroy` (in scope).
+        resolveNetworkProjVsProj(ctx, toDestroy);
 
         // Destroy projectiles
         for (const proj of toDestroy) {

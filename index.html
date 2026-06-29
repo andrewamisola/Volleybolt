@@ -596,7 +596,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js"></script>
+    <script type="module" src="js/sim.js?v=22b1"></script>
 
     <script>
         // Global error handler to debug doubles crash
@@ -15184,6 +15184,7 @@
                 mix(q(c.paddleZ)); mix(q(c.moveAccum)); mix(q(c.mana)); mix(q(c.manaRegen));
                 mix(q(c.freezeTime)); mix(q(c.towerHealth)); mix(q(c.castProgress)); mix(q(c.castTime));
                 mix(q(cd.fireball)); mix(q(cd.frostbolt)); mix(q(cd.thunderstorm));
+                mix(q(c.juice)); mix(c.juiceActive ? 1 : 0); mix(q(c.juiceTimer));
             }
             for (const p of (s.projectiles || [])) {
                 mix(p.id | 0); mix(q(p.x)); mix(q(p.y)); mix(q(p.z));
@@ -16211,6 +16212,31 @@
             // --- presentation effects (gated by !isResimulating at call sites) ---
             playSound: (name, x, vol, pitch) => playSound(name, x, vol, pitch),
             showFrozenText: (isLocal) => showFrozenText(isLocal),
+            // proj-vs-proj FX (gated by !isResimulating at the sim call sites).
+            // createImpactFlash/showCombatTextAt need a Babylon Vector3 (copyFrom/clone);
+            // createImpactDecal accepts a plain {x, z}.
+            onFrostboltCancel: (midX, midZ) => {
+                const pos = new BABYLON.Vector3(midX, 0.6, midZ);
+                if (window.createImpactFlash) createImpactFlash(pos, new BABYLON.Color3(0.5, 0.8, 1), 1.5);
+                if (window.showCombatTextAt) showCombatTextAt(pos, 'Cancel', 'cancel');
+                if (window.logNeutral) window.logNeutral('Cancel!');
+                playSound('cancel', midX, 0.7);
+            },
+            onOverpower: (midX, midZ, winnerVelX, winnerVelZ) => {
+                const pos = new BABYLON.Vector3(midX, 0.6, midZ);
+                if (window.createImpactFlash) createImpactFlash(pos, new BABYLON.Color3(1, 0.5, 0.2), 1.5);
+                if (window.createImpactDecal) createImpactDecal({ x: midX, z: midZ }, 'overpower', { x: winnerVelX, z: winnerVelZ });
+                if (window.showCombatTextAt) showCombatTextAt(pos, 'Overpowered!', 'cancel');
+                playSound('overpowered', midX, 0.8);
+            },
+            onProjCancel: (midX, midZ) => {
+                const pos = new BABYLON.Vector3(midX, 0.6, midZ);
+                if (window.createImpactFlash) createImpactFlash(pos, new BABYLON.Color3(1, 0.7, 0.2), 3.0);
+                if (window.createImpactDecal) createImpactDecal({ x: midX, z: midZ }, 'fire');
+                if (window.showCombatTextAt) showCombatTextAt(pos, 'Cancel', 'cancel');
+                if (window.logNeutral) window.logNeutral('Cancel!');
+                playSound('cancel', midX, 0.8);
+            },
             // parry bubble FX: encapsulate window.activeParryBubble + paddle mesh so the sim stays clean
             onParryActivated: (combatant, side) => {
                 const paddle = side === 'left' ? playerPaddle : aiPaddle;

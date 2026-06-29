@@ -24,6 +24,7 @@
 ## Working log
 _Append-only. Newest at top. Each entry: date · decision/change · open issues._
 
+- 2026-06-29 · Step 2.2 Task B code edits (B.1–B.7): added pure `simAddJuice` + `resolveNetworkProjVsProj(ctx, toDestroy)` to js/sim.js (frostbolt cancel + fireball overpower/mutual-cancel, proj.x/z only, FX via deps gated by !isResimulating); called it once after the per-projectile loop in updateNetworkProjectiles; added 3 FX deps (onFrostboltCancel/onOverpower/onProjCancel) to SIM_DEPS; added juice/juiceActive/juiceTimer to hashGameState (deliberate golden change → lead re-baselines G2). node-check (sim.js + extracted inline) pass; purity grep clean (only comment hits). · Open: gate-collision is INSIDE the per-proj loop, so resolve runs after gate hits this frame, not before (plan/handoff assumed gate was a separate later pass) — flagged to lead, no observed correctness impact (collisions are mid-court, gate at x=14). FX wrappers wrap into BABYLON.Vector3 because createImpactFlash(copyFrom)/showCombatTextAt(clone) require it; plan's plain {x,y,z} would have thrown. Browser validation / golden pin / commit owned by lead (B.8–B.16).
 - _(start here)_
 
 ---
