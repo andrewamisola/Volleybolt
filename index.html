@@ -16400,7 +16400,11 @@
                         c.casting = null; c.castProgress = 0; c.castTime = 0;
                         c.cooldowns = { fireball: 0, frostbolt: 0, gravity: 0, chain_lightning: 0 };
                         c.towerHealth = 9999; // avoid endRound side effects during the run
+                        c.moveAccum = 0; c.paddleZ = 0; // clean, mode-independent paddle start
                     }
+                    // Pin paddle meshes too so the run never inherits single-player paddle drift.
+                    if (playerPaddle) playerPaddle.position.z = 0;
+                    if (aiPaddle) aiPaddle.position.z = 0;
                     for (const p of projectiles.slice()) window.destroyProjectile(p);
                     for (let f = 0; f < frames; f++) {
                         simulateNetworkFrame(inp(f, 'left'), inp(f, 'right'), 1 / 60);
