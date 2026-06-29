@@ -17126,6 +17126,7 @@
         }
 
         function updatePvPParryTimers(dt) {
+            const D = SIM_DEPS;
             for (const side of ['left', 'right']) {
                 const state = getPvPParryState(side);
                 if (state.active) {
@@ -17138,8 +17139,8 @@
                         state.canParry = false;
 
                         const combatant = combatants[side];
-                        if (combatant && combatant.isLocalPlayer && window.activeParryBubble && window.dissolveParryBubble) {
-                            dissolveParryBubble(window.activeParryBubble);
+                        if (combatant && combatant.isLocalPlayer && window.activeParryBubble) {
+                            D.dissolveParryBubble(window.activeParryBubble);
                             window.activeParryBubble = null;
                         }
                     }
@@ -17157,6 +17158,7 @@
         }
 
         function tryActivatePvPParry(side) {
+            const D = SIM_DEPS;
             const state = getPvPParryState(side);
             const combatant = combatants[side];
             if (!combatant || combatant.freezeTime > 0) return;
@@ -17170,19 +17172,20 @@
 
             if (!isResimulating && combatant.isLocalPlayer) {
                 const paddle = side === 'left' ? playerPaddle : aiPaddle;
-                if (window.playSound && paddle) playSound('spellReady', paddle.position.x, 0.15);
-                if (window.createParryBubble && paddle) {
-                    window.activeParryBubble = createParryBubble(paddle, side === 'right');
-                }
+                if (paddle) D.playSound('spellReady', combatant.paddleX, 0.15);
+                if (paddle) window.activeParryBubble = D.createParryBubble(paddle, side === 'right');
             }
         }
 
         function checkPvPParryHitsForSide(side, inputState) {
+            const D = SIM_DEPS;
             const state = getPvPParryState(side);
             if (!state.active) return;
 
-            const paddle = side === 'left' ? playerPaddle : aiPaddle;
-            if (!paddle) return;
+            const combatant = combatants[side];
+            if (!combatant || combatant.paddleX === undefined) return;
+            const px = combatant.paddleX;   // pure paddle position (mirrored to the mesh)
+            const pz = combatant.paddleZ;
 
             const incomingVelCheck = side === 'left' ? (proj) => proj.velX < 0 : (proj) => proj.velX > 0;
             const ownerKey = side === 'left' ? 'player' : 'ai';
@@ -17195,11 +17198,10 @@
                 if (!incomingVelCheck(proj)) continue;
                 if (proj.owner === ownerKey && !proj.isParried) continue;
 
-                const distFromPaddle = proj.mesh.position.x - paddle.position.x;
+                const distFromPaddle = proj.x - px;
                 if (distFromPaddle > parryHitboxExtend || distFromPaddle < -0.5) continue;
 
-                if (proj.mesh.position.z < paddle.position.z - paddleHalfDepth ||
-                    proj.mesh.position.z > paddle.position.z + paddleHalfDepth) continue;
+                if (proj.z < pz - paddleHalfDepth || proj.z > pz + paddleHalfDepth) continue;
 
                 if (distFromPaddle < bestDist) {
                     bestDist = distFromPaddle;
@@ -17210,7 +17212,7 @@
             if (bestProj) {
                 const parryer = side === 'left' ? 'player' : 'ai';
                 const aimDir = inputState ? inputState.moveDir : 0;
-                if (window.parryProjectile) window.parryProjectile(bestProj, parryer, aimDir);
+                D.parryProjectile(bestProj, parryer, aimDir);
 
                 state.active = false;
                 state.timer = 0;
@@ -17218,9 +17220,8 @@
                 state.cooldownMax = parrySuccessCooldown;
                 state.canParry = false;
 
-                const combatant = combatants[side];
-                if (combatant && combatant.isLocalPlayer && window.activeParryBubble && window.dissolveParryBubble) {
-                    dissolveParryBubble(window.activeParryBubble);
+                if (combatant.isLocalPlayer && window.activeParryBubble) {
+                    D.dissolveParryBubble(window.activeParryBubble);
                     window.activeParryBubble = null;
                 }
             }
@@ -17252,6 +17253,7 @@
 
         // Simulate one frame of gameplay deterministically
         function simulateNetworkFrame(leftInput, rightInput, dt) {
+            const D = SIM_DEPS;
             // Update freeze timers
             if (combatants.left && combatants.left.freezeTime > 0) {
                 combatants.left.freezeTime -= dt;
@@ -17276,7 +17278,7 @@
             // Check parry hits for both sides
             checkPvPParryHitsForSide('left', leftInput);
             checkPvPParryHitsForSide('right', rightInput);
-            syncLocalParryUI();
+            D.syncLocalParryUI();
 
             // Update cooldowns
             for (const c of [combatants.left, combatants.right]) {
@@ -17296,7 +17298,7 @@
             for (const c of [combatants.left, combatants.right]) {
                 if (!c) continue;
                 if (c.freezeTime > 0) continue;
-                const cMaxMana = getMaxMana(c.side);
+                const cMaxMana = D.getMaxMana(c.side);
                 if (c.mana < cMaxMana) {
                     c.manaRegen += dt;
                     if (c.manaRegen >= manaRegenTime) {
@@ -17313,7 +17315,7 @@
                 if (c.castProgress >= c.castTime) {
                     // Complete the cast
                     const side = c.side === 'left' ? 'player' : 'ai';
-                    completeCasting(side);
+                    D.completeCasting(side);
                 }
             }
 
@@ -17342,9 +17344,9 @@
 
             // Check win conditions
             if (combatants.left && combatants.left.towerHealth <= 0) {
-                endRound('right');
+                D.endRound('right');
             } else if (combatants.right && combatants.right.towerHealth <= 0) {
-                endRound('left');
+                D.endRound('left');
             }
         }
 
@@ -17379,6 +17381,7 @@
 
         // Try to start a cast in network mode
         function tryNetworkCast(combatant, abilityId) {
+            const D = SIM_DEPS;
             if (!combatant || combatant.freezeTime > 0) return;
             if (combatant.casting) return;  // Already casting
 
@@ -17393,15 +17396,15 @@
                 combatant.mana -= ability.manaCost;
                 combatant.cooldowns.frostbolt = ability.cooldown;
                 const side = combatant.side === 'left' ? 'player' : 'ai';
-                const paddle = combatant.side === 'left' ? playerPaddle : aiPaddle;
+                // Pure paddle position (mirrored to the mesh) for the spawn point.
                 const velX = combatant.side === 'left' ? ability.baseSpeed : -ability.baseSpeed;
-                const startX = combatant.side === 'left' ? paddle.position.x + 1 : paddle.position.x - 1;
+                const startX = combatant.side === 'left' ? combatant.paddleX + 1 : combatant.paddleX - 1;
 
                 if (!isResimulating) {
-                    playSound('frostboltCast', startX, 0.7);
+                    D.playSound('frostboltCast', startX, 0.7);
                 }
 
-                const proj = window.spawnFrostbolt(side, startX, paddle.position.z, velX, 0);
+                const proj = D.spawnFrostbolt(side, startX, combatant.paddleZ, velX, 0);
                 if (proj) {
                     proj.id = nextProjectileId++;
                 }
@@ -17413,31 +17416,45 @@
                 combatant.pendingManaCost = ability.manaCost;
 
                 if (!isResimulating) {
-                    const side = combatant.side === 'left' ? 'player' : 'ai';
-                    if (window.ToneSFX) ToneSFX.castingStart();
+                    D.castingStart();
                 }
             }
         }
 
         // Update projectiles in network mode (simplified physics)
-        // External dependencies of the PvP projectile sim, bundled so the physics can be
+        // External dependencies of the PvP sim, bundled so the deterministic logic can be
         // lifted into a Babylon-free module that receives these injected. Each default wires
         // to the inline implementation, so behaviour is identical today. State/config inputs
-        // (combatants, abilities, isResimulating, projectiles) are passed/closed separately.
-        const PROJECTILE_SIM_DEPS = {
+        // (combatants, abilities, isResimulating, projectiles, pvpParryState) are passed/closed
+        // separately. Presentation effects are gated by !isResimulating at the call sites, so
+        // they never run during rollback and never affect deterministic state.
+        const SIM_DEPS = {
+            // --- config / state-affecting ---
             getEffectiveTableDepth: () => (window.getEffectiveTableDepth ? window.getEffectiveTableDepth() : 14),
             getMaxMana: (side) => getMaxMana(side),
             dealDamageToTower: (isPlayerTower, dmg, z) => dealDamageToTower(isPlayerTower, dmg, z),
             destroyProjectile: (p) => window.destroyProjectile(p),
             useShieldCharge: (c) => useShieldCharge(c),
-            parryProjectile: (p, who) => { if (window.parryProjectile) window.parryProjectile(p, who); },
+            parryProjectile: (p, who, aimDir) => { if (window.parryProjectile) window.parryProjectile(p, who, aimDir); },
             updateFireballScale: (p) => { if (window.updateFireballScale) window.updateFireballScale(p); },
+            spawnFrostbolt: (side, x, z, vx, vz) => window.spawnFrostbolt(side, x, z, vx, vz),
+            // projectile liveness guards (the last Babylon touch in the projectile physics)
+            isProjectileMeshDead: (p) => (!p.mesh || p.mesh.isDisposed()),
+            isProjectileEmitterDead: (p) => !!(p.particles && p.particles.emitter && p.particles.emitter.isDisposed && p.particles.emitter.isDisposed()),
+            // --- frame-level callbacks (render/flow; sim calls them but doesn't own them) ---
+            completeCasting: (side) => completeCasting(side),
+            syncLocalParryUI: () => syncLocalParryUI(),
+            endRound: (winner) => endRound(winner),
+            // --- presentation effects (gated by !isResimulating at call sites) ---
             playSound: (name, x, vol, pitch) => playSound(name, x, vol, pitch),
             showFrozenText: (isLocal) => showFrozenText(isLocal),
+            createParryBubble: (paddle, isRight) => (window.createParryBubble ? createParryBubble(paddle, isRight) : null),
+            dissolveParryBubble: (bubble) => { if (window.dissolveParryBubble) dissolveParryBubble(bubble); },
+            castingStart: () => { if (window.ToneSFX) ToneSFX.castingStart(); },
         };
 
         function updateNetworkProjectiles(dt) {
-            const D = PROJECTILE_SIM_DEPS;   // injected externals (see PROJECTILE_SIM_DEPS)
+            const D = SIM_DEPS;   // injected externals (see SIM_DEPS)
             const toDestroy = [];
             const tableY = 0.6;
             const gravity = -30;
@@ -17448,7 +17465,7 @@
 
             for (const proj of projectiles) {
                 // Clean up zombie projectiles (no mesh or disposed mesh)
-                if (!proj.mesh || proj.mesh.isDisposed()) {
+                if (D.isProjectileMeshDead(proj)) {
                     toDestroy.push(proj);
                     continue;
                 }
@@ -17467,7 +17484,7 @@
                 }
 
                 // Clean up projectiles with orphaned/disposed emitter
-                if (proj.particles && proj.particles.emitter && proj.particles.emitter.isDisposed && proj.particles.emitter.isDisposed()) {
+                if (D.isProjectileEmitterDead(proj)) {
                     toDestroy.push(proj);
                     continue;
                 }
