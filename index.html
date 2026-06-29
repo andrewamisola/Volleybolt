@@ -11912,6 +11912,13 @@
                 return { moveDir, parry, fireball: castFireball_, frostbolt: castFrostbolt_, thunderstorm: castThunderstorm_, juice };
             }
 
+            // Expose the pure AI pieces so the outer-scope dbg.aiDeterminism oracle can reach them.
+            // (decideAI & friends live in this game-setup closure; window.dbg is defined in the outer scope.)
+            window.decideAI = decideAI;
+            window.makeAIRng = makeAIRng;
+            window.DEFAULT_AI_PARAMS = DEFAULT_AI_PARAMS;
+            window.AI_RNG_SEED = AI_RNG_SEED;
+
             // Mesh-reading boundary — the ONLY place in the AI path that touches .mesh.
             // Everything downstream (decideAI) is pure.
             function buildAISingleView() {
@@ -15370,7 +15377,7 @@
                 let hash = 0;
                 for (let i = 0; i < steps; i++) {
                     const view   = _syntheticView(seed + i);
-                    const result = decideAI(view, i, makeAIRng((seed + i) ^ AI_RNG_SEED), DEFAULT_AI_PARAMS);
+                    const result = window.decideAI(view, i, window.makeAIRng((seed + i) ^ window.AI_RNG_SEED), window.DEFAULT_AI_PARAMS);
                     hash = ((hash << 5) - hash + result.moveDir + 1)                 | 0;
                     hash = ((hash << 5) - hash + (result.parry        ? 7  : 0))     | 0;
                     hash = ((hash << 5) - hash + (result.fireball     ? 13 : 0))     | 0;
