@@ -16420,7 +16420,7 @@
                     if (aiPaddle) aiPaddle.position.z = 0;
                     for (const p of projectiles.slice()) window.destroyProjectile(p);
                     for (let f = 0; f < frames; f++) {
-                        simulateNetworkFrame(inp(f, 'left'), inp(f, 'right'), 1 / 60);
+                        window.VolleyboltSim.simulateNetworkFrame(inp(f, 'left'), inp(f, 'right'), 1 / 60, buildSimCtx());
                         const h = hashGameState() >>> 0;
                         hashes.push(h);
                         for (let b = 0; b < 4; b++) { fold = (fold ^ ((h >>> (b * 8)) & 0xff)) >>> 0; fold = Math.imul(fold, 16777619) >>> 0; }
@@ -16910,8 +16910,8 @@
                     (remoteInputHistory[f] || predictInput(f)) :
                     (localInputHistory[f] || defaultInput());
 
-                // Simulate one frame
-                simulateNetworkFrame(leftInput, rightInput, 1 / TICK_RATE);
+                // Simulate one frame (lifted to js/sim.js)
+                window.VolleyboltSim.simulateNetworkFrame(leftInput, rightInput, 1 / TICK_RATE, buildSimCtx());
 
                 // Overwrite this re-simulated frame's hash with the settled value
                 mpStoreHash(f);
@@ -17053,8 +17053,8 @@
             }
             gameStateHistory.push(captureGameState());
 
-            // 6. Simulate the frame
-            simulateNetworkFrame(leftInput, rightInput, dt);
+            // 6. Simulate the frame (lifted to js/sim.js)
+            window.VolleyboltSim.simulateNetworkFrame(leftInput, rightInput, dt, buildSimCtx());
 
             // 6b. Record this frame's settled hash for desync detection (keyed by the frame just simulated)
             mpStoreHash(currentFrame);
@@ -17163,111 +17163,14 @@
         }
 
         // Simulate one frame of gameplay deterministically
-        function simulateNetworkFrame(leftInput, rightInput, dt) {
-            const D = SIM_DEPS;
-            const VS = window.VolleyboltSim;
-            // Unified context handed to every lifted sim function (js/sim.js). isResimulating
-            // is a per-frame snapshot (it doesn't change mid-frame). consts come from the
-            // single inline definitions, so there is no duplicated tuning.
-            const simCtx = {
+        // simulateNetworkFrame lifted to js/sim.js (window.VolleyboltSim). Callers build the
+        // unified ctx via buildSimCtx() below and pass it in. See [[sim-extraction-progress]].
+        function buildSimCtx() {
+            return {
                 projectiles, combatants, abilities, pvpParryState, isResimulating,
-                consts: { parryWindow, parryFailCooldown, parrySuccessCooldown, parryHitboxExtend },
-                deps: D,
+                consts: { parryWindow, parryFailCooldown, parrySuccessCooldown, parryHitboxExtend, manaRegenTime },
+                deps: SIM_DEPS,
             };
-            // Update freeze timers
-            if (combatants.left && combatants.left.freezeTime > 0) {
-                combatants.left.freezeTime -= dt;
-                if (combatants.left.freezeTime < 0) combatants.left.freezeTime = 0;
-            }
-            if (combatants.right && combatants.right.freezeTime > 0) {
-                combatants.right.freezeTime -= dt;
-                if (combatants.right.freezeTime < 0) combatants.right.freezeTime = 0;
-            }
-
-            // Update parry system (PvP) — lifted to js/sim.js
-            VS.updatePvPParryTimers(dt, simCtx);
-
-            // Process parry inputs
-            if (leftInput.parry) {
-                VS.tryActivatePvPParry('left', simCtx);
-            }
-            if (rightInput.parry) {
-                VS.tryActivatePvPParry('right', simCtx);
-            }
-
-            // Check parry hits for both sides
-            VS.checkPvPParryHitsForSide('left', leftInput, simCtx);
-            VS.checkPvPParryHitsForSide('right', rightInput, simCtx);
-            D.syncLocalParryUI();
-
-            // Update cooldowns
-            for (const c of [combatants.left, combatants.right]) {
-                if (!c) continue;
-                if (c.cooldowns.fireball > 0) c.cooldowns.fireball -= dt;
-                if (c.cooldowns.frostbolt > 0) c.cooldowns.frostbolt -= dt;
-                if (c.cooldowns.gravity > 0) c.cooldowns.gravity -= dt;
-                if (c.cooldowns.chain_lightning > 0) c.cooldowns.chain_lightning -= dt;
-
-                // Update Chain Lightning channeling
-                if (c.casting === 'chain_lightning') {
-                    updateChainLightningChannel(c, dt);
-                }
-            }
-
-            // Mana regeneration (stops while frozen) - discrete 0.5 every 2 seconds
-            for (const c of [combatants.left, combatants.right]) {
-                if (!c) continue;
-                if (c.freezeTime > 0) continue;
-                const cMaxMana = D.getMaxMana(c.side);
-                if (c.mana < cMaxMana) {
-                    c.manaRegen += dt;
-                    if (c.manaRegen >= manaRegenTime) {
-                        c.manaRegen = 0;
-                        c.mana = Math.min(cMaxMana, c.mana + 0.5);
-                    }
-                }
-            }
-
-            // Process casting
-            for (const c of [combatants.left, combatants.right]) {
-                if (!c || !c.casting) continue;
-                c.castProgress += dt;
-                if (c.castProgress >= c.castTime) {
-                    // Complete the cast
-                    const side = c.side === 'left' ? 'player' : 'ai';
-                    D.completeCasting(side);
-                }
-            }
-
-            // Apply movement inputs
-            if (combatants.left) combatants.left.lastMoveDir = leftInput.moveDir;
-            if (combatants.right) combatants.right.lastMoveDir = rightInput.moveDir;
-            VS.applyNetworkMovement(combatants.left, leftInput.moveDir, dt, simCtx);
-            VS.applyNetworkMovement(combatants.right, rightInput.moveDir, dt, simCtx);
-
-            // Process ability inputs
-            if (leftInput.fireball && combatants.left) {
-                VS.tryNetworkCast(combatants.left, 'fireball', simCtx);
-            }
-            if (leftInput.frostbolt && combatants.left) {
-                VS.tryNetworkCast(combatants.left, 'frostbolt', simCtx);
-            }
-            if (rightInput.fireball && combatants.right) {
-                VS.tryNetworkCast(combatants.right, 'fireball', simCtx);
-            }
-            if (rightInput.frostbolt && combatants.right) {
-                VS.tryNetworkCast(combatants.right, 'frostbolt', simCtx);
-            }
-
-            // Update projectiles (lifted to js/sim.js — window.VolleyboltSim)
-            VS.updateNetworkProjectiles(dt, simCtx);
-
-            // Check win conditions
-            if (combatants.left && combatants.left.towerHealth <= 0) {
-                D.endRound('right');
-            } else if (combatants.right && combatants.right.towerHealth <= 0) {
-                D.endRound('left');
-            }
         }
 
         // Apply movement for network play
@@ -17302,6 +17205,7 @@
             allocProjectileId: () => nextProjectileId++,
             // --- frame-level callbacks (render/flow; sim calls them but doesn't own them) ---
             completeCasting: (side) => completeCasting(side),
+            updateChainLightningChannel: (c, dt) => updateChainLightningChannel(c, dt),
             syncLocalParryUI: () => syncLocalParryUI(),
             endRound: (winner) => endRound(winner),
             // --- presentation effects (gated by !isResimulating at call sites) ---

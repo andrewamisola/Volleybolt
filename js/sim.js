@@ -409,8 +409,103 @@
         }
     }
 
+    // --- Orchestrator: one deterministic frame ---
+    // ctx = { projectiles, combatants, abilities, pvpParryState, isResimulating,
+    //         consts {parryWindow, parryFailCooldown, parrySuccessCooldown,
+    //                 parryHitboxExtend, manaRegenTime}, deps }.
+    // Calls the lifted helpers directly (same module scope) and ctx.deps.* for the
+    // render/flow callbacks it does not own (syncLocalParryUI, completeCasting,
+    // updateChainLightningChannel, getMaxMana, endRound).
+    function simulateNetworkFrame(leftInput, rightInput, dt, ctx) {
+        const { combatants, consts, deps: D } = ctx;
+
+        // Update freeze timers
+        if (combatants.left && combatants.left.freezeTime > 0) {
+            combatants.left.freezeTime -= dt;
+            if (combatants.left.freezeTime < 0) combatants.left.freezeTime = 0;
+        }
+        if (combatants.right && combatants.right.freezeTime > 0) {
+            combatants.right.freezeTime -= dt;
+            if (combatants.right.freezeTime < 0) combatants.right.freezeTime = 0;
+        }
+
+        // Update parry system (PvP)
+        updatePvPParryTimers(dt, ctx);
+
+        // Process parry inputs
+        if (leftInput.parry) tryActivatePvPParry('left', ctx);
+        if (rightInput.parry) tryActivatePvPParry('right', ctx);
+
+        // Check parry hits for both sides
+        checkPvPParryHitsForSide('left', leftInput, ctx);
+        checkPvPParryHitsForSide('right', rightInput, ctx);
+        D.syncLocalParryUI();
+
+        // Update cooldowns
+        for (const c of [combatants.left, combatants.right]) {
+            if (!c) continue;
+            if (c.cooldowns.fireball > 0) c.cooldowns.fireball -= dt;
+            if (c.cooldowns.frostbolt > 0) c.cooldowns.frostbolt -= dt;
+            if (c.cooldowns.gravity > 0) c.cooldowns.gravity -= dt;
+            if (c.cooldowns.chain_lightning > 0) c.cooldowns.chain_lightning -= dt;
+
+            // Update Chain Lightning channeling
+            if (c.casting === 'chain_lightning') {
+                D.updateChainLightningChannel(c, dt);
+            }
+        }
+
+        // Mana regeneration (stops while frozen) - discrete 0.5 every 2 seconds
+        for (const c of [combatants.left, combatants.right]) {
+            if (!c) continue;
+            if (c.freezeTime > 0) continue;
+            const cMaxMana = D.getMaxMana(c.side);
+            if (c.mana < cMaxMana) {
+                c.manaRegen += dt;
+                if (c.manaRegen >= consts.manaRegenTime) {
+                    c.manaRegen = 0;
+                    c.mana = Math.min(cMaxMana, c.mana + 0.5);
+                }
+            }
+        }
+
+        // Process casting
+        for (const c of [combatants.left, combatants.right]) {
+            if (!c || !c.casting) continue;
+            c.castProgress += dt;
+            if (c.castProgress >= c.castTime) {
+                // Complete the cast
+                const side = c.side === 'left' ? 'player' : 'ai';
+                D.completeCasting(side);
+            }
+        }
+
+        // Apply movement inputs
+        if (combatants.left) combatants.left.lastMoveDir = leftInput.moveDir;
+        if (combatants.right) combatants.right.lastMoveDir = rightInput.moveDir;
+        applyNetworkMovement(combatants.left, leftInput.moveDir, dt, ctx);
+        applyNetworkMovement(combatants.right, rightInput.moveDir, dt, ctx);
+
+        // Process ability inputs
+        if (leftInput.fireball && combatants.left) tryNetworkCast(combatants.left, 'fireball', ctx);
+        if (leftInput.frostbolt && combatants.left) tryNetworkCast(combatants.left, 'frostbolt', ctx);
+        if (rightInput.fireball && combatants.right) tryNetworkCast(combatants.right, 'fireball', ctx);
+        if (rightInput.frostbolt && combatants.right) tryNetworkCast(combatants.right, 'frostbolt', ctx);
+
+        // Update projectiles
+        updateNetworkProjectiles(dt, ctx);
+
+        // Check win conditions
+        if (combatants.left && combatants.left.towerHealth <= 0) {
+            D.endRound('right');
+        } else if (combatants.right && combatants.right.towerHealth <= 0) {
+            D.endRound('left');
+        }
+    }
+
     // Bridge to the classic inline script (which calls window.VolleyboltSim.*).
     window.VolleyboltSim = window.VolleyboltSim || {};
+    window.VolleyboltSim.simulateNetworkFrame = simulateNetworkFrame;
     window.VolleyboltSim.updateNetworkProjectiles = updateNetworkProjectiles;
     window.VolleyboltSim.applyNetworkMovement = applyNetworkMovement;
     window.VolleyboltSim.tryNetworkCast = tryNetworkCast;
