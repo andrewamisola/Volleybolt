@@ -943,7 +943,7 @@
                 // === SPELL CASTING ===
                 fireball_casts: { category: 'spells', label: 'Fireballs Cast', default: 0 },
                 frostbolt_casts: { category: 'spells', label: 'Frostbolts Cast', default: 0 },
-                thunderstorm_casts: { category: 'spells', label: 'Chain Lightning Uses', default: 0 },
+                thunderstorm_casts: { category: 'spells', label: 'Thunderstorm Uses', default: 0 },
 
                 // === COMBAT ===
                 projectiles_hit: { category: 'combat', label: 'Projectiles Hit', default: 0 },
@@ -1650,7 +1650,7 @@
                 castTime: 0,
                 castingLoopSource: null,
 
-                // Chain Lightning
+                // Thunderstorm
                 channelTime: 0,              // How long currently channeling
                 zappedCount: 0,              // Projectiles zapped this channel
                 zapTimer: 0,                 // Timer for zap interval checks
@@ -2535,7 +2535,7 @@
                     'Each zapped projectile = 1 shield charge',
                     'Shield charges auto-block incoming attacks'
                 ],
-                // Chain Lightning specific properties
+                // Thunderstorm specific properties
                 castType: 'channel_drain',
                 manaDrainPerSecond: 1,
                 maxChannelTime: 10,
@@ -2548,7 +2548,7 @@
                 baseAbility: 'thunderstorm',
                 tier: 2,
                 icon: '⚡',
-                description: 'Increases Chain Lightning zap range.',
+                description: 'Increases Thunderstorm zap range.',
                 effects: [
                     'Zap range increased from 6 to 9'
                 ],
@@ -2622,7 +2622,7 @@
             },
             thunderstorm: {
                 abilityId: 'thunderstorm',
-                abilityName: 'Chain Lightning',
+                abilityName: 'Thunderstorm',
                 icon: '⚡',
                 tiers: {
                     1: { choices: ['thunderstorm_base'] },
@@ -3533,7 +3533,7 @@
             }).connect(aiCastPanner);
             synths.aiCastingLoop.volume.value = -8;
 
-            // Electric charge casting loops for Chain Lightning
+            // Electric charge casting loops for Thunderstorm
             synths.playerElectricLoop = new Tone.Player({
                 url: 'sfx/electric_charge.wav',
                 loop: true
@@ -3945,7 +3945,7 @@
                 playSample('overpowered');
             },
 
-            // Lightning sounds (for Chain Lightning ability) - LOUD
+            // Lightning sounds (for Thunderstorm ability) - LOUD
             lightning: async () => {
                 if (!toneStarted) await initToneJS();
                 if (synths.samples.lightning) synths.samples.lightning.volume.value = 3;
@@ -3981,7 +3981,7 @@
                 }
             },
 
-            // Electric charge loop start - for Chain Lightning casting
+            // Electric charge loop start - for Thunderstorm casting
             electricStart: async (side = 'player') => {
                 if (!toneStarted) await initToneJS();
                 const loop = side === 'player' ? synths.playerElectricLoop : synths.aiElectricLoop;
@@ -4271,7 +4271,7 @@
                 }
             }
 
-            // Chain Lightning - end channel on key release
+            // Thunderstorm - end channel on key release
             if (e.code === 'Digit3' && combatants.left && combatants.left.casting === 'thunderstorm') {
                 endThunderstormChannel(combatants.left);
             }
@@ -12718,7 +12718,7 @@
                         if (isLocal) updateCooldownUI();
                     }
 
-                    // Chain Lightning cooldown
+                    // Thunderstorm cooldown
                     if (c.cooldowns.thunderstorm > 0) {
                         c.cooldowns.thunderstorm -= dt;
                         if (c.cooldowns.thunderstorm <= 0) {
@@ -12726,7 +12726,7 @@
                         }
                     }
 
-                    // Update Chain Lightning channeling
+                    // Update Thunderstorm channeling
                     if (c.casting === 'thunderstorm') {
                         updateThunderstormChannel(c, dt);
                     }
@@ -13051,7 +13051,7 @@
                         }
                     }
 
-                    // AI Chain Lightning - use when pressured (2+ incoming projectiles)
+                    // AI Thunderstorm - use when pressured (2+ incoming projectiles)
                     const aiChainCooldown = combatants.right ? combatants.right.cooldowns.thunderstorm : 0;
                     if (!aiRightIsCasting && aiChainCooldown <= 0) {
                         // Count incoming projectiles heading toward AI (velX > 0)
@@ -17547,7 +17547,7 @@
                 }
             }
 
-            // Chain Lightning cooldown (no mana cost - it gives mana)
+            // Thunderstorm cooldown (no mana cost - it gives mana)
             const chainSlot = document.getElementById('thunderstormSlot');
             const chainCdText = document.getElementById('thunderstormCDText');
             const chainSweep = document.getElementById('thunderstormSweep');
@@ -17925,7 +17925,7 @@
                 && Math.sign(p.velX) === incomingVelDir);
         }
 
-        // Cast Chain Lightning (instant cast, costs 2 mana)
+        // Cast Thunderstorm (instant cast, costs 2 mana)
         function castThunderstorm(caster) {
             const c = getCombatantLegacy(caster);
             if (!c) return false;  // Safety check for doubles mode
@@ -17964,7 +17964,7 @@
             return true;
         }
 
-        // Execute Chain Lightning effect (called when cast completes)
+        // Execute Thunderstorm effect (called when cast completes)
         function executeThunderstorm(caster) {
             const c = getCombatantLegacy(caster);
             const isPlayer = caster === 'player';
