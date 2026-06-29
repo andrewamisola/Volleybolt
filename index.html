@@ -2152,7 +2152,7 @@
                 ui: {
                     name: 'Thunderstorm', key: '3', iconClass: 'chainlightning-icon', manaCostLabel: '2',
                     castLabel: 'Instant', cooldownLabel: '30s CD',
-                    description: 'Call down lightning to <span class="tt-mechanic">Zap</span> up to <span class="tt-value">3</span> incoming Enemy projectiles, destroying them. Gain <span class="tt-value">1</span> Mana for each projectile destroyed.'
+                    description: 'Call down lightning to <span class="tt-mechanic">Zap</span> up to <span class="tt-value">3</span> incoming Enemy projectiles, destroying them.'
                 }
             }
         };
@@ -2163,6 +2163,12 @@
         const abilities = {};
         for (const _id in ABILITY_REGISTRY) abilities[_id] = { ...ABILITY_REGISTRY[_id].gameplay };
         window.abilities = abilities;  // Expose for loadout system
+
+        // Canonical ability accessor — single lookup point for stats + behavior.
+        // Named getAbilityDef to avoid colliding with the pre-existing getAbility()
+        // (~line 2502) that returns the legacy/dead AbilityRegistry. (Task 7 removes that.)
+        function getAbilityDef(id) { return ABILITY_REGISTRY[id]; }
+        window.getAbilityDef = getAbilityDef;
 
         // ============================================================
         // MODULAR ABILITY REGISTRY SYSTEM
