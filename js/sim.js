@@ -238,7 +238,83 @@
         }
     }
 
+    // Apply movement for network play. Pure-number paddle motion (combatant.paddleZ);
+    // the mesh is mirrored via ctx.deps.mirrorPaddleToMesh.
+    function applyNetworkMovement(combatant, moveDir, dt, ctx) {
+        const D = ctx.deps;
+        if (!combatant || combatant.freezeTime > 0) return;
+        // Defensive: ensure the authoritative paddle position exists (never NaN).
+        // Always set at match init / restore / round-reset, so this never triggers.
+        if (combatant.paddleZ === undefined) combatant.paddleZ = 0;
+        if (combatant.paddleX === undefined) combatant.paddleX = 0;
+        if (moveDir === 0) return;
+
+        const STEP_SIZE = 0.3;
+        const speed = 20;  // paddleSpeed
+
+        if (!combatant.moveAccum) combatant.moveAccum = 0;
+        combatant.moveAccum += moveDir * speed * dt;
+
+        if (Math.abs(combatant.moveAccum) >= STEP_SIZE) {
+            const steps = Math.trunc(combatant.moveAccum / STEP_SIZE);
+            // Pure-number movement; the mesh is mirrored from it below.
+            combatant.paddleZ += steps * STEP_SIZE;
+            combatant.moveAccum -= steps * STEP_SIZE;
+
+            // Clamp to boundaries
+            const boundary = 2.7;
+            combatant.paddleZ = Math.max(-boundary, Math.min(boundary, combatant.paddleZ));
+
+            // Render mirror (via dep, so the movement math is Babylon-free)
+            D.mirrorPaddleToMesh(combatant);
+        }
+    }
+
+    // Try to start a cast in network mode. ctx = { abilities, isResimulating, deps }.
+    function tryNetworkCast(combatant, abilityId, ctx) {
+        const { abilities, isResimulating, deps: D } = ctx;
+        if (!combatant || combatant.freezeTime > 0) return;
+        if (combatant.casting) return;  // Already casting
+
+        const ability = abilities[abilityId];
+        if (!ability) return;
+
+        if (combatant.mana < ability.manaCost) return;
+        if (combatant.cooldowns[abilityId] > 0) return;
+
+        if (abilityId === 'frostbolt') {
+            // Instant cast
+            combatant.mana -= ability.manaCost;
+            combatant.cooldowns.frostbolt = ability.cooldown;
+            const side = combatant.side === 'left' ? 'player' : 'ai';
+            // Pure paddle position (mirrored to the mesh) for the spawn point.
+            const velX = combatant.side === 'left' ? ability.baseSpeed : -ability.baseSpeed;
+            const startX = combatant.side === 'left' ? combatant.paddleX + 1 : combatant.paddleX - 1;
+
+            if (!isResimulating) {
+                D.playSound('frostboltCast', startX, 0.7);
+            }
+
+            const proj = D.spawnFrostbolt(side, startX, combatant.paddleZ, velX, 0);
+            if (proj) {
+                proj.id = D.allocProjectileId();
+            }
+        } else if (abilityId === 'fireball') {
+            // Start casting
+            combatant.casting = 'fireball';
+            combatant.castProgress = 0;
+            combatant.castTime = ability.castTime;
+            combatant.pendingManaCost = ability.manaCost;
+
+            if (!isResimulating) {
+                D.castingStart();
+            }
+        }
+    }
+
     // Bridge to the classic inline script (which calls window.VolleyboltSim.*).
     window.VolleyboltSim = window.VolleyboltSim || {};
     window.VolleyboltSim.updateNetworkProjectiles = updateNetworkProjectiles;
+    window.VolleyboltSim.applyNetworkMovement = applyNetworkMovement;
+    window.VolleyboltSim.tryNetworkCast = tryNetworkCast;
 })();
