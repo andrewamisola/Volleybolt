@@ -415,7 +415,7 @@
     //                 parryHitboxExtend, manaRegenTime}, deps }.
     // Calls the lifted helpers directly (same module scope) and ctx.deps.* for the
     // render/flow callbacks it does not own (syncLocalParryUI, completeCasting,
-    // updateChainLightningChannel, getMaxMana, endRound).
+    // updateThunderstormChannel, getMaxMana, endRound).
     function simulateNetworkFrame(leftInput, rightInput, dt, ctx) {
         const { combatants, consts, deps: D } = ctx;
 
@@ -447,11 +447,11 @@
             if (c.cooldowns.fireball > 0) c.cooldowns.fireball -= dt;
             if (c.cooldowns.frostbolt > 0) c.cooldowns.frostbolt -= dt;
             if (c.cooldowns.gravity > 0) c.cooldowns.gravity -= dt;
-            if (c.cooldowns.chain_lightning > 0) c.cooldowns.chain_lightning -= dt;
+            if (c.cooldowns.thunderstorm > 0) c.cooldowns.thunderstorm -= dt;
 
             // Update Chain Lightning channeling
-            if (c.casting === 'chain_lightning') {
-                D.updateChainLightningChannel(c, dt);
+            if (c.casting === 'thunderstorm') {
+                D.updateThunderstormChannel(c, dt);
             }
         }
 

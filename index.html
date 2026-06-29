@@ -495,22 +495,22 @@
                 </div>
             </div>
         </div>
-        <div id="chainLightningSlot" class="ability-slot ready" data-ability="chain_lightning">
+        <div id="thunderstormSlot" class="ability-slot ready" data-ability="thunderstorm">
             <div class="mana-cost">2</div>
             <div class="ability-hex">
                 <div class="shine-effect"></div>
                 <span class="ability-icon chainlightning-icon"></span>
-                <div class="cooldown-sweep" id="chainLightningSweep"></div>
+                <div class="cooldown-sweep" id="thunderstormSweep"></div>
             </div>
             <div class="upgrade-indicator">
                 <span class="upgrade-indicator-icon">+</span>
             </div>
             <div class="cooldown-overlay">
-                <span class="cooldown-text" id="chainLightningCDText">0</span>
+                <span class="cooldown-text" id="thunderstormCDText">0</span>
             </div>
             <div class="ability-key">3</div>
             <!-- Tooltip -->
-            <div class="ability-tooltip" id="chainLightningTooltip">
+            <div class="ability-tooltip" id="thunderstormTooltip">
                 <div class="tooltip-title">Thunderstorm</div>
                 <div class="tooltip-stats-row">
                     <div class="tooltip-stats-left">
@@ -943,7 +943,7 @@
                 // === SPELL CASTING ===
                 fireball_casts: { category: 'spells', label: 'Fireballs Cast', default: 0 },
                 frostbolt_casts: { category: 'spells', label: 'Frostbolts Cast', default: 0 },
-                chain_lightning_casts: { category: 'spells', label: 'Chain Lightning Uses', default: 0 },
+                thunderstorm_casts: { category: 'spells', label: 'Chain Lightning Uses', default: 0 },
 
                 // === COMBAT ===
                 projectiles_hit: { category: 'combat', label: 'Projectiles Hit', default: 0 },
@@ -1226,8 +1226,8 @@
                 },
 
                 // ========== LIGHTNING SPELLS ==========
-                chain_lightning: {
-                    id: 'chain_lightning',
+                thunderstorm: {
+                    id: 'thunderstorm',
                     name: 'Thunderstorm',
                     element: 'lightning',
                     type: SPELL_TYPES.DEFENSIVE,
@@ -1237,7 +1237,7 @@
                     manaCost: 0,
                     cooldown: 20,
                     castTime: 0.4,
-                    castFn: 'castChainLightning',
+                    castFn: 'castThunderstorm',
                     unlocked: true,
                     stats: {
                         damage: '0',
@@ -1304,7 +1304,7 @@
             const SLOT_COUNT = 3;
 
             // Default loadout - the 3 currently implemented spells
-            const DEFAULT_LOADOUT = ['fireball', 'frostbolt', 'chain_lightning'];
+            const DEFAULT_LOADOUT = ['fireball', 'frostbolt', 'thunderstorm'];
 
             // Current loadout state
             let slots = [...DEFAULT_LOADOUT];
@@ -1470,11 +1470,11 @@
                     canCast: () => true,
                     cast: () => window.castFrostbolt ? window.castFrostbolt(caster) : false
                 },
-                chain_lightning: {
-                    cooldownKey: 'chain_lightning',
+                thunderstorm: {
+                    cooldownKey: 'thunderstorm',
                     getManaCost: () => 0,  // Chain lightning doesn't cost mana
                     canCast: () => !c.casting,
-                    cast: () => window.castChainLightning ? window.castChainLightning(caster) : false
+                    cast: () => window.castThunderstorm ? window.castThunderstorm(caster) : false
                 }
             };
 
@@ -1512,7 +1512,7 @@
             const map = {
                 fireball: 'fireballSlot',
                 frostbolt: 'frostboltSlot',
-                chain_lightning: 'chainLightningSlot'
+                thunderstorm: 'thunderstormSlot'
             };
             const el = document.getElementById(map[abilityId]);
             if (!el) return;
@@ -1530,21 +1530,21 @@
             const slotElements = [
                 document.getElementById('fireballSlot'),
                 document.getElementById('frostboltSlot'),
-                document.getElementById('chainLightningSlot')
+                document.getElementById('thunderstormSlot')
             ];
 
             // Icon class mapping for each spell
             const iconClasses = {
                 fireball: 'fireball-icon',
                 frostbolt: 'frostbolt-icon',
-                chain_lightning: 'chainlightning-icon'
+                thunderstorm: 'chainlightning-icon'  // CSS class name kept as-is: matches .ability-icon.chainlightning-icon rule in styles.css + textures/chainlightning.png
             };
 
             // Mana cost display
             const manaCostDisplay = {
                 fireball: '1',
                 frostbolt: '2',
-                chain_lightning: '2'
+                thunderstorm: '2'
             };
 
             const loadout = PlayerLoadout.getLoadout();
@@ -1642,7 +1642,7 @@
                 juiceTimer: 0,
 
                 // Cooldowns (keyed by ability ID)
-                cooldowns: { fireball: 0, frostbolt: 0, chain_lightning: 0 },
+                cooldowns: { fireball: 0, frostbolt: 0, thunderstorm: 0 },
 
                 // Casting
                 casting: null,                   // ability ID or null
@@ -2149,10 +2149,10 @@
                 },
                 behavior: {}
             },
-            chain_lightning: {
-                gameplay: { cooldown: 30, castTime: 0, manaCost: 2, maxZaps: 3 },  // instant: cast via castChainLightning(), not startCasting() — no windup
+            thunderstorm: {
+                gameplay: { cooldown: 30, castTime: 0, manaCost: 2, maxZaps: 3 },  // instant: cast via castThunderstorm(), not startCasting() — no windup
                 ui: {
-                    name: 'Thunderstorm', key: '3', iconClass: 'chainlightning-icon', manaCostLabel: '2',
+                    name: 'Thunderstorm', key: '3', iconClass: 'chainlightning-icon', /* CSS class unchanged — styles.css + textures/chainlightning.png */ manaCostLabel: '2',
                     castLabel: 'Instant', cooldownLabel: '30s CD',
                     description: 'Call down lightning to <span class="tt-mechanic">Zap</span> up to <span class="tt-value">3</span> incoming Enemy projectiles, destroying them.'
                 },
@@ -2448,8 +2448,8 @@
             },
 
             // ========== CHAIN LIGHTNING ==========
-            chain_lightning: {
-                id: 'chain_lightning',
+            thunderstorm: {
+                id: 'thunderstorm',
                 name: 'Thunderstorm',
                 description: 'Channel electric energy to zap enemy projectiles out of the air, gaining mana for each destroyed.',
                 icon: '⚡',
@@ -2467,8 +2467,8 @@
                 },
 
                 sounds: {
-                    cast: 'chainLightningCast',
-                    zap: 'chainLightningZap'
+                    cast: 'thunderstormCast',
+                    zap: 'thunderstormZap'
                 },
 
                 effects: [
@@ -2851,10 +2851,10 @@
             },
 
             // === CHAIN LIGHTNING UPGRADES ===
-            chain_lightning_base: {
-                id: 'chain_lightning_base',
+            thunderstorm_base: {
+                id: 'thunderstorm_base',
                 name: 'Thunderstorm',
-                baseAbility: 'chain_lightning',
+                baseAbility: 'thunderstorm',
                 tier: 1,
                 icon: '⚡',
                 element: 'lightning',
@@ -2875,7 +2875,7 @@
             extended_reach: {
                 id: 'extended_reach',
                 name: 'Extended Reach',
-                baseAbility: 'chain_lightning',
+                baseAbility: 'thunderstorm',
                 tier: 2,
                 icon: '⚡',
                 description: 'Increases Chain Lightning zap range.',
@@ -2887,7 +2887,7 @@
             mana_efficiency: {
                 id: 'mana_efficiency',
                 name: 'Mana Efficiency',
-                baseAbility: 'chain_lightning',
+                baseAbility: 'thunderstorm',
                 tier: 2,
                 icon: '⚡',
                 description: 'Reduces mana drain while channeling.',
@@ -2899,7 +2899,7 @@
             overcharge: {
                 id: 'overcharge',
                 name: 'Overcharge',
-                baseAbility: 'chain_lightning',
+                baseAbility: 'thunderstorm',
                 tier: 3,
                 icon: '⚡',
                 description: 'Shield charges also reflect projectiles with bonus speed.',
@@ -2913,7 +2913,7 @@
             static_field: {
                 id: 'static_field',
                 name: 'Static Field',
-                baseAbility: 'chain_lightning',
+                baseAbility: 'thunderstorm',
                 tier: 3,
                 icon: '⚡',
                 description: 'While shield is active, nearby enemy projectiles are slowed.',
@@ -2950,12 +2950,12 @@
                     3: { choices: ['absolute_zero', 'ice_age'] }
                 }
             },
-            chain_lightning: {
-                abilityId: 'chain_lightning',
+            thunderstorm: {
+                abilityId: 'thunderstorm',
                 abilityName: 'Chain Lightning',
                 icon: '⚡',
                 tiers: {
-                    1: { choices: ['chain_lightning_base'] },
+                    1: { choices: ['thunderstorm_base'] },
                     2: { choices: ['extended_reach', 'mana_efficiency'] },
                     3: { choices: ['overcharge', 'static_field'] }
                 }
@@ -2975,7 +2975,7 @@
             abilities: {
                 fireball: { currentTier: 0, selectedTalents: [] },
                 frostbolt: { currentTier: 0, selectedTalents: [] },
-                chain_lightning: { currentTier: 0, selectedTalents: [] }
+                thunderstorm: { currentTier: 0, selectedTalents: [] }
             },
             isSelectingTalent: false,
             activeAbility: null
@@ -4487,7 +4487,7 @@
             'Space': document.getElementById('parryButton'),
             'Digit1': document.getElementById('fireballSlot'),
             'Digit2': document.getElementById('frostboltSlot'),
-            'Digit3': document.getElementById('chainLightningSlot')
+            'Digit3': document.getElementById('thunderstormSlot')
         };
 
         function showKeyPressedFeedback(keyCode) {
@@ -4599,8 +4599,8 @@
             }
 
             // Chain Lightning - end channel on key release
-            if (e.code === 'Digit3' && combatants.left && combatants.left.casting === 'chain_lightning') {
-                endChainLightningChannel(combatants.left);
+            if (e.code === 'Digit3' && combatants.left && combatants.left.casting === 'thunderstorm') {
+                endThunderstormChannel(combatants.left);
             }
         });
 
@@ -6287,7 +6287,7 @@
                 const cmdSlots = [
                     { id: 'fireball',        name: 'Fireball',     key: '1',     mana: 1 },
                     { id: 'frostbolt',       name: 'Frostbolt',    key: '2',     mana: 2 },
-                    { id: 'chain_lightning', name: 'Thunderstorm', key: '3',     mana: 2 },
+                    { id: 'thunderstorm', name: 'Thunderstorm', key: '3',     mana: 2 },
                     { id: 'parry',           name: 'Parry',        key: '␣',     mana: 0 },
                 ];
                 const ROW_H = 36, PAD = 8, TITLE_H = 26;
@@ -6964,7 +6964,7 @@
                 window.spellDisplayName = (id) => {
                     const r = window.ABILITY_REGISTRY && window.ABILITY_REGISTRY[id];
                     return (r && r.ui && r.ui.name) ||
-                        ({ fireball: 'Fireball', frostbolt: 'Frostbolt', chain_lightning: 'Thunderstorm', parry: 'Parry' })[id] || id;
+                        ({ fireball: 'Fireball', frostbolt: 'Frostbolt', thunderstorm: 'Thunderstorm', parry: 'Parry' })[id] || id;
                 };
 
                 function showLog() {
@@ -12844,10 +12844,10 @@
                                 const castingSpell = combatant.casting;
                                 if (castingSpell === 'fireball') {
                                     spawnFireballFromCombatant(combatant);
-                                } else if (castingSpell === 'chain_lightning') {
-                                    // Determine caster string for executeChainLightning
+                                } else if (castingSpell === 'thunderstorm') {
+                                    // Determine caster string for executeThunderstorm
                                     const casterStr = combatant.side === 'left' ? 'player' : 'ai';
-                                    executeChainLightning(casterStr);
+                                    executeThunderstorm(casterStr);
                                 }
 
                                 combatant.casting = null;
@@ -13046,16 +13046,16 @@
                     }
 
                     // Chain Lightning cooldown
-                    if (c.cooldowns.chain_lightning > 0) {
-                        c.cooldowns.chain_lightning -= dt;
-                        if (c.cooldowns.chain_lightning <= 0) {
-                            c.cooldowns.chain_lightning = 0;
+                    if (c.cooldowns.thunderstorm > 0) {
+                        c.cooldowns.thunderstorm -= dt;
+                        if (c.cooldowns.thunderstorm <= 0) {
+                            c.cooldowns.thunderstorm = 0;
                         }
                     }
 
                     // Update Chain Lightning channeling
-                    if (c.casting === 'chain_lightning') {
-                        updateChainLightningChannel(c, dt);
+                    if (c.casting === 'thunderstorm') {
+                        updateThunderstormChannel(c, dt);
                     }
                 }
                 // Sync legacy variables for backwards compatibility
@@ -13379,12 +13379,12 @@
                     }
 
                     // AI Chain Lightning - use when pressured (2+ incoming projectiles)
-                    const aiChainCooldown = combatants.right ? combatants.right.cooldowns.chain_lightning : 0;
+                    const aiChainCooldown = combatants.right ? combatants.right.cooldowns.thunderstorm : 0;
                     if (!aiRightIsCasting && aiChainCooldown <= 0) {
                         // Count incoming projectiles heading toward AI (velX > 0)
                         const incomingToAI = projectiles.filter(p => p.owner === 'player' && p.mesh && !p.mesh.isDisposed() && p.velX > 0).length;
                         if (incomingToAI >= 2) {
-                            castChainLightning('ai');
+                            castThunderstorm('ai');
                         }
                     }
 
@@ -14747,8 +14747,8 @@
                     castFromLoadoutSlot(1, 'player');
                 }
             });
-            // Slot 2 (key 3) - currently chainLightningSlot in HTML
-            document.getElementById('chainLightningSlot').addEventListener('click', () => {
+            // Slot 2 (key 3) - currently thunderstormSlot in HTML
+            document.getElementById('thunderstormSlot').addEventListener('click', () => {
                 if (!gameOver && roundActive && !roundTransitioning) {
                     castFromLoadoutSlot(2, 'player');
                 }
@@ -16264,7 +16264,7 @@
                 const c = s[side] || {}, cd = c.cooldowns || {};
                 mix(q(c.paddleZ)); mix(q(c.moveAccum)); mix(q(c.mana)); mix(q(c.manaRegen));
                 mix(q(c.freezeTime)); mix(q(c.towerHealth)); mix(q(c.castProgress)); mix(q(c.castTime));
-                mix(q(cd.fireball)); mix(q(cd.frostbolt)); mix(q(cd.chain_lightning));
+                mix(q(cd.fireball)); mix(q(cd.frostbolt)); mix(q(cd.thunderstorm));
             }
             for (const p of (s.projectiles || [])) {
                 mix(p.id | 0); mix(q(p.x)); mix(q(p.y)); mix(q(p.z));
@@ -16424,7 +16424,7 @@
                     for (const c of [combatants.left, combatants.right]) {
                         c.mana = getMaxMana(c.side); c.manaRegen = 0; c.freezeTime = 0;
                         c.casting = null; c.castProgress = 0; c.castTime = 0;
-                        c.cooldowns = { fireball: 0, frostbolt: 0, gravity: 0, chain_lightning: 0 };
+                        c.cooldowns = { fireball: 0, frostbolt: 0, gravity: 0, thunderstorm: 0 };
                         c.towerHealth = 9999; // avoid endRound side effects during the run
                         c.moveAccum = 0; c.paddleZ = 0; // clean, mode-independent paddle start
                     }
@@ -17222,7 +17222,7 @@
             allocProjectileId: () => nextProjectileId++,
             // --- frame-level callbacks (render/flow; sim calls them but doesn't own them) ---
             completeCasting: (side) => completeCasting(side),
-            updateChainLightningChannel: (c, dt) => updateChainLightningChannel(c, dt),
+            updateThunderstormChannel: (c, dt) => updateThunderstormChannel(c, dt),
             syncLocalParryUI: () => syncLocalParryUI(),
             endRound: (winner) => endRound(winner),
             // --- presentation effects (gated by !isResimulating at call sites) ---
@@ -17285,17 +17285,17 @@
                 for (const c of combatantsToReset) {
                     if (!c) continue;
                     if (c.inputSource === 'local') {
-                        c.cooldowns = { fireball: 0, frostbolt: 0, chain_lightning: 0 };
+                        c.cooldowns = { fireball: 0, frostbolt: 0, thunderstorm: 0 };
                     } else {
-                        c.cooldowns = { fireball: 2, frostbolt: 3, chain_lightning: 0 };  // AI waits before first casts
+                        c.cooldowns = { fireball: 2, frostbolt: 3, thunderstorm: 0 };  // AI waits before first casts
                     }
                 }
             } else {
                 if (combatants.left) {
-                    combatants.left.cooldowns = { fireball: 0, frostbolt: 0, chain_lightning: 0 };
+                    combatants.left.cooldowns = { fireball: 0, frostbolt: 0, thunderstorm: 0 };
                 }
                 if (combatants.right) {
-                    combatants.right.cooldowns = { fireball: 2, frostbolt: 3, chain_lightning: 0 };  // AI waits before first casts
+                    combatants.right.cooldowns = { fireball: 2, frostbolt: 3, thunderstorm: 0 };  // AI waits before first casts
                 }
             }
 
@@ -17561,7 +17561,7 @@
             for (const c of [combatants.left, combatants.right]) {
                 if (!c) continue;
                 combatantReset(c, false);
-                c.cooldowns = { fireball: 0, frostbolt: 0, chain_lightning: 0 };
+                c.cooldowns = { fireball: 0, frostbolt: 0, thunderstorm: 0 };
             }
 
             // MOBA-style: Restore gate health with regeneration
@@ -17825,18 +17825,18 @@
             }
 
             // Chain Lightning cooldown (no mana cost - it gives mana)
-            const chainSlot = document.getElementById('chainLightningSlot');
-            const chainCdText = document.getElementById('chainLightningCDText');
-            const chainSweep = document.getElementById('chainLightningSweep');
+            const chainSlot = document.getElementById('thunderstormSlot');
+            const chainCdText = document.getElementById('thunderstormCDText');
+            const chainSweep = document.getElementById('thunderstormSweep');
 
             if (chainSlot && chainCdText && chainSweep) {
-                const chainCooldown = localCooldowns.chain_lightning || 0;
+                const chainCooldown = localCooldowns.thunderstorm || 0;
                 if (chainCooldown > 0) {
                     // On cooldown
                     chainSlot.classList.remove('ready');
                     chainSlot.classList.add('on-cooldown');
                     chainCdText.textContent = Math.ceil(chainCooldown);
-                    const sweepAngle = (chainCooldown / CHAIN_LIGHTNING_COOLDOWN) * 360;
+                    const sweepAngle = (chainCooldown / THUNDERSTORM_COOLDOWN) * 360;
                     chainSweep.style.setProperty('--sweep-angle', sweepAngle + 'deg');
                 } else {
                     // Ready to cast
@@ -18190,10 +18190,10 @@
         // Thunderstorm - Zap up to 3 enemy projectiles. 2 mana, 30s cooldown.
         // Lightning strikes from the sky!
 
-        const CHAIN_LIGHTNING_COOLDOWN = 30;  // 30 second cooldown
-        const CHAIN_LIGHTNING_MAX_ZAPS = 3;  // Max 3 projectiles per cast
+        const THUNDERSTORM_COOLDOWN = 30;  // 30 second cooldown
+        const THUNDERSTORM_MAX_ZAPS = 3;  // Max 3 projectiles per cast
         // True if there is at least one enemy projectile incoming for this caster to zap.
-        function chainLightningHasTarget(caster) {
+        function thunderstormHasTarget(caster) {
             const c = getCombatantLegacy(caster);
             if (!c) return false;
             const casterOwner = (caster === 'player') ? 'player' : 'ai';
@@ -18203,46 +18203,46 @@
         }
 
         // Cast Chain Lightning (instant cast, costs 2 mana)
-        function castChainLightning(caster) {
+        function castThunderstorm(caster) {
             const c = getCombatantLegacy(caster);
             if (!c) return false;  // Safety check for doubles mode
             const isPlayer = caster === 'player';
 
             // Check cooldown
-            if (c.cooldowns.chain_lightning > 0) return false;
+            if (c.cooldowns.thunderstorm > 0) return false;
             // Can't cast while casting something else
             if (c.casting) return false;
             // Check mana
-            if (c.mana < abilities.chain_lightning.manaCost) return false;
+            if (c.mana < abilities.thunderstorm.manaCost) return false;
 
             // No target = no cast: don't spend mana or cooldown, just signal the whiff.
-            if (!chainLightningHasTarget(caster)) {
+            if (!thunderstormHasTarget(caster)) {
                 showCombatText(isPlayer, 'NO TARGET', 'lightning');
                 return false;
             }
 
             // Spend mana
-            c.mana -= abilities.chain_lightning.manaCost;
+            c.mana -= abilities.thunderstorm.manaCost;
             if (isPlayer) playerMana = c.mana;
             else aiMana = c.mana;
 
             // Per-match spell-cast counter (Party Stats) — attribute to the casting combatant.
             if (c.matchStats) c.matchStats.spellsCast++; if (window.addJuice) window.addJuice(c, window.JUICE.CHARGE.cast);
-            if (window.logCombat) { const blue = (c === combatants.left); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('chain_lightning'))); }
+            if (window.logCombat) { const blue = (c === combatants.left); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('thunderstorm'))); }
 
             // Visual feedback for the local player only
             if ((isPlayer || c.isLocalPlayer) && window.flashAbilitySlot) {
-                window.flashAbilitySlot('chain_lightning');
+                window.flashAbilitySlot('thunderstorm');
             }
 
             // Execute immediately (instant cast)
-            executeChainLightning(caster);
+            executeThunderstorm(caster);
 
             return true;
         }
 
         // Execute Chain Lightning effect (called when cast completes)
-        function executeChainLightning(caster) {
+        function executeThunderstorm(caster) {
             const c = getCombatantLegacy(caster);
             const isPlayer = caster === 'player';
 
@@ -18264,12 +18264,12 @@
             if (enemyProjs.length === 0) {
                 // No targets - show miss text but still use cooldown
                 showCombatText(isPlayer, 'NO TARGET', 'lightning');
-                c.cooldowns.chain_lightning = CHAIN_LIGHTNING_COOLDOWN;
+                c.cooldowns.thunderstorm = THUNDERSTORM_COOLDOWN;
                 return;
             }
 
             // Calculate how many we can zap (up to max)
-            const zapsToPerform = Math.min(CHAIN_LIGHTNING_MAX_ZAPS, enemyProjs.length);
+            const zapsToPerform = Math.min(THUNDERSTORM_MAX_ZAPS, enemyProjs.length);
 
             // Zap projectiles. State mutation (destroy) happens immediately so
             // a rollback can't leave queued destruction in flight; the visual
@@ -18296,7 +18296,7 @@
 
             // Track stats (only for local player)
             if (isPlayer || c.isLocalPlayer) {
-                StatTracker.increment('chain_lightning_casts');
+                StatTracker.increment('thunderstorm_casts');
                 StatTracker.increment('projectiles_zapped', zapsToPerform);
             }
 
@@ -18317,7 +18317,7 @@
             if (window.logZap) window.logZap(isPlayer ? 'blue' : 'red', zapsToPerform);
 
             // Start cooldown
-            c.cooldowns.chain_lightning = CHAIN_LIGHTNING_COOLDOWN;
+            c.cooldowns.thunderstorm = THUNDERSTORM_COOLDOWN;
 
             // Update UI
             updateManaUI();
@@ -18444,20 +18444,20 @@
         }
 
         // Legacy function stubs for compatibility
-        function startChainLightningChannel(caster) {
-            return castChainLightning(caster);
+        function startThunderstormChannel(caster) {
+            return castThunderstorm(caster);
         }
-        function endChainLightningChannel(combatant) {
+        function endThunderstormChannel(combatant) {
             // No-op - instant cast now
         }
-        function updateChainLightningChannel(combatant, dt) {
+        function updateThunderstormChannel(combatant, dt) {
             // No-op - instant cast now
         }
 
         // Expose casting functions to window for loadout system
         window.startCasting = startCasting;
         window.castFrostbolt = castFrostbolt;
-        window.castChainLightning = castChainLightning;
+        window.castThunderstorm = castThunderstorm;
 
         // ============================================================
         // LIGHTNING SHIELD SYSTEM
@@ -18672,8 +18672,8 @@
                 const upgrade = c.upgrades.find(u => u.baseAbility === 'fireball');
                 const spellName = upgrade ? UpgradeRegistry[upgrade.id].name : 'Fireball';
                 showSpellCastText(isPlayer, spellName, 'fire');
-            } else if (abilityId === 'chain_lightning') {
-                executeChainLightning(caster);
+            } else if (abilityId === 'thunderstorm') {
+                executeThunderstorm(caster);
                 showSpellCastText(isPlayer, 'Thunderstorm', 'lightning');
             }
             // Add other cast-time abilities here
