@@ -701,6 +701,15 @@
         let parryTimer = 0;               // Time remaining in parry window
         let parryCooldown = 0;            // Time remaining until parry is available again
 
+        // AI (virtual-player) parry window — mirrors the player's window above, but every
+        // timer is advanced by the fixed-step dt (NEVER setTimeout) so the AI stays deterministic.
+        // Opened by applyCombatantInput on input.parry; scanned by aiCheckParryHits; ticked by
+        // updateAIParryTimer. (Phase 2.1)
+        let aiCanParry = true;
+        let aiParryActive = false;
+        let aiParryTimer = 0;
+        let aiParryCooldown = 0;
+
         // Projectile system (replaces single ball)
         let projectiles = [];         // Array of active projectiles
         let scene = null;             // Store scene reference globally
@@ -11800,6 +11809,7 @@
             };
             const paddleBoundary = tableDepth/2 - 1.5;  // Initial value, use getPaddleBoundary() for dynamic
             const goalX = tableWidth/2 + 1;
+            let spFrameCounter = 0;   // deterministic fixed-step counter for the singles-AI think cadence (Phase 2.1)
             const paddleHalfDepth = 1.25;
             const paddleHalfWidth = 0.2;
             // Perspective correction: expand hitbox based on character height and camera angle
