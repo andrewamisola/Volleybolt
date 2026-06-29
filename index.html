@@ -17420,12 +17420,29 @@
         }
 
         // Update projectiles in network mode (simplified physics)
+        // External dependencies of the PvP projectile sim, bundled so the physics can be
+        // lifted into a Babylon-free module that receives these injected. Each default wires
+        // to the inline implementation, so behaviour is identical today. State/config inputs
+        // (combatants, abilities, isResimulating, projectiles) are passed/closed separately.
+        const PROJECTILE_SIM_DEPS = {
+            getEffectiveTableDepth: () => (window.getEffectiveTableDepth ? window.getEffectiveTableDepth() : 14),
+            getMaxMana: (side) => getMaxMana(side),
+            dealDamageToTower: (isPlayerTower, dmg, z) => dealDamageToTower(isPlayerTower, dmg, z),
+            destroyProjectile: (p) => window.destroyProjectile(p),
+            useShieldCharge: (c) => useShieldCharge(c),
+            parryProjectile: (p, who) => { if (window.parryProjectile) window.parryProjectile(p, who); },
+            updateFireballScale: (p) => { if (window.updateFireballScale) window.updateFireballScale(p); },
+            playSound: (name, x, vol, pitch) => playSound(name, x, vol, pitch),
+            showFrozenText: (isLocal) => showFrozenText(isLocal),
+        };
+
         function updateNetworkProjectiles(dt) {
+            const D = PROJECTILE_SIM_DEPS;   // injected externals (see PROJECTILE_SIM_DEPS)
             const toDestroy = [];
             const tableY = 0.6;
             const gravity = -30;
             // Use effective depth based on game mode (half of full depth)
-            const effectiveFullDepth = window.getEffectiveTableDepth ? window.getEffectiveTableDepth() : 14;
+            const effectiveFullDepth = D.getEffectiveTableDepth();
             const tableDepth = effectiveFullDepth / 2;
             const goalX = 14;  // tableWidth/2 + 1 = 13 + 1
 
@@ -17481,12 +17498,12 @@
                 if (proj.z < -halfDepth) {
                     proj.z = -halfDepth;
                     proj.velZ = -proj.velZ;
-                    if (!isResimulating) playSound('woosh', proj.x, 0.5);
+                    if (!isResimulating) D.playSound('woosh', proj.x, 0.5);
                 }
                 if (proj.z > halfDepth) {
                     proj.z = halfDepth;
                     proj.velZ = -proj.velZ;
-                    if (!isResimulating) playSound('woosh', proj.x, 0.5);
+                    if (!isResimulating) D.playSound('woosh', proj.x, 0.5);
                 }
 
                 // Paddle collisions
@@ -17506,9 +17523,9 @@
 
                         // Lightning Shield auto-block check (left/player)
                         if (combatants.left && combatants.left.lightningShield && combatants.left.lightningShield.charges > 0) {
-                            useShieldCharge(combatants.left);
-                            if (window.parryProjectile) window.parryProjectile(proj, 'player');
-                            if (!isResimulating) playSound('parry', px, 0.5);
+                            D.useShieldCharge(combatants.left);
+                            D.parryProjectile(proj, 'player');
+                            if (!isResimulating) D.playSound('parry', px, 0.5);
                             continue;
                         }
 
@@ -17516,8 +17533,8 @@
                             // Freeze left player
                             combatants.left.freezeTime = abilities.frostbolt.freezeDuration;
                             if (!isResimulating) {
-                                playSound('frozen', px, 0.7);
-                                showFrozenText(!!(combatants.left && combatants.left.isLocalPlayer));
+                                D.playSound('frozen', px, 0.7);
+                                D.showFrozenText(!!(combatants.left && combatants.left.isLocalPlayer));
                             }
                             toDestroy.push(proj);
                         } else {
@@ -17539,10 +17556,10 @@
 
                             proj.owner = 'player';
                             proj.volleyCount++;
-                            if (window.updateFireballScale) window.updateFireballScale(proj);  // Scale up with damage
+                            D.updateFireballScale(proj);  // Scale up with damage
                             // Only give block mana if not parried (parry already gives mana)
-                            if (combatants.left && !proj.isParried) combatants.left.mana = Math.min(getMaxMana('left'), combatants.left.mana + 0.5);
-                            if (!isResimulating) playSound('block', px, 0.6);
+                            if (combatants.left && !proj.isParried) combatants.left.mana = Math.min(D.getMaxMana('left'), combatants.left.mana + 0.5);
+                            if (!isResimulating) D.playSound('block', px, 0.6);
                         }
                     }
                 }
@@ -17558,9 +17575,9 @@
 
                         // Lightning Shield auto-block check (right/AI)
                         if (combatants.right && combatants.right.lightningShield && combatants.right.lightningShield.charges > 0) {
-                            useShieldCharge(combatants.right);
-                            if (window.parryProjectile) window.parryProjectile(proj, 'ai');
-                            if (!isResimulating) playSound('parry', px, 0.5);
+                            D.useShieldCharge(combatants.right);
+                            D.parryProjectile(proj, 'ai');
+                            if (!isResimulating) D.playSound('parry', px, 0.5);
                             continue;
                         }
 
@@ -17568,8 +17585,8 @@
                             // Freeze right player
                             combatants.right.freezeTime = abilities.frostbolt.freezeDuration;
                             if (!isResimulating) {
-                                playSound('frozen', px, 0.7);
-                                showFrozenText(!!(combatants.right && combatants.right.isLocalPlayer));
+                                D.playSound('frozen', px, 0.7);
+                                D.showFrozenText(!!(combatants.right && combatants.right.isLocalPlayer));
                             }
                             toDestroy.push(proj);
                         } else {
@@ -17591,10 +17608,10 @@
 
                             proj.owner = 'ai';
                             proj.volleyCount++;
-                            if (window.updateFireballScale) window.updateFireballScale(proj);  // Scale up with damage
+                            D.updateFireballScale(proj);  // Scale up with damage
                             // Only give block mana if not parried (parry already gives mana)
-                            if (combatants.right && !proj.isParried) combatants.right.mana = Math.min(getMaxMana('right'), combatants.right.mana + 0.5);
-                            if (!isResimulating) playSound('block', px, 0.6);
+                            if (combatants.right && !proj.isParried) combatants.right.mana = Math.min(D.getMaxMana('right'), combatants.right.mana + 0.5);
+                            if (!isResimulating) D.playSound('block', px, 0.6);
                         }
                     }
                 }
@@ -17605,7 +17622,7 @@
                     // Hit left gate (player's tower)
                     if (proj.type !== 'frostbolt') {
                         const damage = Math.min(2 + proj.volleyCount, 6);  // Fireball damage
-                        dealDamageToTower(isPlayerTower, damage, proj.z);
+                        D.dealDamageToTower(isPlayerTower, damage, proj.z);
                     }
                     toDestroy.push(proj);
                 } else if (proj.x > goalX) {
@@ -17613,7 +17630,7 @@
                     // Hit right gate (AI/guest tower)
                     if (proj.type !== 'frostbolt') {
                         const damage = Math.min(2 + proj.volleyCount, 6);  // Fireball damage
-                        dealDamageToTower(isPlayerTower, damage, proj.z);
+                        D.dealDamageToTower(isPlayerTower, damage, proj.z);
                     }
                     toDestroy.push(proj);
                 }
@@ -17626,7 +17643,7 @@
 
             // Destroy projectiles
             for (const proj of toDestroy) {
-                window.destroyProjectile(proj);
+                D.destroyProjectile(proj);
             }
         }
 
