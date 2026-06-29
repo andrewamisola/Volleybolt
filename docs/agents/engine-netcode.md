@@ -30,3 +30,5 @@ _Append-only. Newest at top. Each entry: date · decision/change · open issues.
 
 ---
 _[Engine pillar](../pillars/engine.md) · [Shared Core](../SHARED_CORE.md) · [Master](../../PROJECT.md)_
+
+- 2026-06-29 · Phase 2.2 COMPLETE (Tasks A–D). Juice/ultimate + projectile-vs-projectile now in the deterministic sim; MP gained both. Golden re-baselined twice (b1df6797 → ad7c0e42 → 3770e2c7), each gated on correctness scenarios (overpower/cancel/frostbolt-cancel/pass-through/grace; juice activate/drain/auto-parry/6-tier). AI oracle 2666491c unchanged. Found+fixed a latent cache bug: js/sim.js had no ?v= cache-bust (now versioned). SP duplicate untouched — removal is Step 2.3. · Open: MP juice aura wobble cosmetic-only (SP-driven; needs onJuiceTick dep someday); auto-parry aimDir forced 0 (deterministic; minor aim divergence vs SP when a key is held — revisit in 2.3 when inputs thread through).
