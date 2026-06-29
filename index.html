@@ -16354,7 +16354,64 @@
             freeze(side, s) { const c = combatants[side || (typeof getRemoteSide === 'function' ? getRemoteSide() : 'right')]; if (!c) return 'no combatant'; c.freezeTime = s || 1; if (c.side === 'left' && window.freezePlayerAnim) freezePlayerAnim(); if (c.side === 'right' && window.freezeAIAnim) freezeAIAnim(); return 'froze ' + c.side + ' for ' + (s || 1) + 's'; },
             win() { if (typeof debugForceEnd === 'function') debugForceEnd(true); },
             lose() { if (typeof debugForceEnd === 'function') debugForceEnd(false); },
-            forceDesync() { netRngSeed = (netRngSeed + 1) >>> 0; console.warn('[dbg] nudged local RNG — overlay should flip to ❌ DESYNC within ~' + MP_SYNC_INTERVAL + ' frames'); return 'nudged'; }
+            forceDesync() { netRngSeed = (netRngSeed + 1) >>> 0; console.warn('[dbg] nudged local RNG — overlay should flip to ❌ DESYNC within ~' + MP_SYNC_INTERVAL + ' frames'); return 'nudged'; },
+            // Deterministic golden-hash oracle for the PvP sim. Runs `frames` ticks of
+            // simulateNetworkFrame from a fixed start with a scripted, reproducible input
+            // sequence, folding each frame's hashGameState() into one number. Same code +
+            // same (frames, seed) => same fold, so it's a regression oracle for refactors
+            // of the rollback sim (e.g. decoupling projectile physics from meshes). Snapshots
+            // and restores the live match via the rollback machinery, so it's safe to run mid-game.
+            determinism(frames, seed) {
+                frames = frames || 180;
+                seed = (seed == null) ? 12345 : (seed >>> 0);
+                if (!combatants.left || !combatants.right) return 'start a match first (combatants missing)';
+                // Scripted, pure-of-frame inputs: both sides move, cast, parry on fixed cadences
+                // so projectiles spawn and exercise gravity/wall/paddle/gate physics branches.
+                const inp = (f, side) => {
+                    const o = { moveDir: 0, parry: false, fireball: false, frostbolt: false };
+                    const ph = side === 'left' ? 0 : 17;
+                    o.moveDir = (((f + ph) >> 3) % 3) - 1; // triangle-ish: -1,0,1
+                    if (side === 'left') {
+                        if (f % 37 === 5)  o.fireball = true;
+                        if (f % 71 === 40) o.frostbolt = true;
+                        if (f % 53 === 50) o.parry = true;
+                    } else {
+                        if (f % 37 === 22) o.fireball = true;
+                        if (f % 71 === 12) o.frostbolt = true;
+                        if (f % 53 === 26) o.parry = true;
+                    }
+                    return o;
+                };
+                const snap = captureGameState();
+                const savedResim = isResimulating;
+                const savedSeed = netRngSeed;
+                const hashes = [];
+                let fold = 2166136261 >>> 0;
+                try {
+                    isResimulating = true;      // suppress sounds / floating text
+                    netRngSeed = seed;
+                    for (const c of [combatants.left, combatants.right]) {
+                        c.mana = getMaxMana(c.side); c.manaRegen = 0; c.freezeTime = 0;
+                        c.casting = null; c.castProgress = 0; c.castTime = 0;
+                        c.cooldowns = { fireball: 0, frostbolt: 0, gravity: 0, chain_lightning: 0 };
+                        c.towerHealth = 9999; // avoid endRound side effects during the run
+                    }
+                    for (const p of projectiles.slice()) window.destroyProjectile(p);
+                    for (let f = 0; f < frames; f++) {
+                        simulateNetworkFrame(inp(f, 'left'), inp(f, 'right'), 1 / 60);
+                        const h = hashGameState() >>> 0;
+                        hashes.push(h);
+                        for (let b = 0; b < 4; b++) { fold = (fold ^ ((h >>> (b * 8)) & 0xff)) >>> 0; fold = Math.imul(fold, 16777619) >>> 0; }
+                    }
+                } finally {
+                    netRngSeed = savedSeed;
+                    restoreGameState(snap);
+                    isResimulating = savedResim;
+                }
+                const foldHex = (fold >>> 0).toString(16);
+                console.log('%c[dbg.determinism] frames=' + frames + ' seed=' + seed + ' fold=' + foldHex, 'color:#2f8f6f');
+                return { frames, seed, fold: foldHex, last: hashes.slice(-3).map(x => (x >>> 0).toString(16)) };
+            }
         };
         console.log('%c[Volleybolt] MP debug ready — dbg.help() for commands · F2 toggles the netcode overlay', 'color:#2f8f6f');
 
