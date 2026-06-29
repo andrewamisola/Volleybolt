@@ -849,7 +849,7 @@
         }
 
         // Pending input for current frame (PvP mode)
-        let pendingNetInput = { moveDir: 0, parry: false, fireball: false, frostbolt: false, thunderstorm: false };
+        let pendingNetInput = { moveDir: 0, parry: false, fireball: false, frostbolt: false, thunderstorm: false, juice: false };
         const pvpParryState = {
             left: { canParry: true, active: false, timer: 0, cooldown: 0, cooldownMax: 0 },
             right: { canParry: true, active: false, timer: 0, cooldown: 0, cooldownMax: 0 }
@@ -3499,7 +3499,8 @@
             // Q = activate Juice (ultimate). Usable any time during a match once the bar is full
             // (not gated on roundActive, so it never feels unresponsive). activateJuice guards readiness.
             if (e.code === 'KeyQ' && !gameOver && !roundTransitioning) {
-                if (window.activateJuice) window.activateJuice('player');
+                if (window.activateJuice) window.activateJuice('player');  // SP direct path (kept until 2.3)
+                pendingNetInput.juice = true;                              // MP/sim path: signal through the input channel
             }
         });
         document.addEventListener('keyup', (e) => {
@@ -15317,7 +15318,7 @@
                 // Scripted, pure-of-frame inputs: both sides move, cast, parry on fixed cadences
                 // so projectiles spawn and exercise gravity/wall/paddle/gate physics branches.
                 const inp = (f, side) => {
-                    const o = { moveDir: 0, parry: false, fireball: false, frostbolt: false, thunderstorm: false };
+                    const o = { moveDir: 0, parry: false, fireball: false, frostbolt: false, thunderstorm: false, juice: false };
                     const ph = side === 'left' ? 0 : 17;
                     o.moveDir = (((f + ph) >> 3) % 3) - 1; // triangle-ish: -1,0,1
                     if (side === 'left') {
@@ -15597,7 +15598,10 @@
                     casting: combatants.left ? combatants.left.casting : null,
                     castProgress: combatants.left ? combatants.left.castProgress : 0,
                     castTime: combatants.left ? combatants.left.castTime : 0,
-                    cooldowns: combatants.left ? { ...combatants.left.cooldowns } : { fireball: 0, frostbolt: 0 }
+                    cooldowns: combatants.left ? { ...combatants.left.cooldowns } : { fireball: 0, frostbolt: 0 },
+                    juice: combatants.left ? (combatants.left.juice || 0) : 0,
+                    juiceActive: combatants.left ? (combatants.left.juiceActive || false) : false,
+                    juiceTimer: combatants.left ? (combatants.left.juiceTimer || 0) : 0
                 },
                 right: {
                     paddleZ: aiPaddle ? aiPaddle.position.z : 0,
@@ -15609,7 +15613,10 @@
                     casting: combatants.right ? combatants.right.casting : null,
                     castProgress: combatants.right ? combatants.right.castProgress : 0,
                     castTime: combatants.right ? combatants.right.castTime : 0,
-                    cooldowns: combatants.right ? { ...combatants.right.cooldowns } : { fireball: 0, frostbolt: 0 }
+                    cooldowns: combatants.right ? { ...combatants.right.cooldowns } : { fireball: 0, frostbolt: 0 },
+                    juice: combatants.right ? (combatants.right.juice || 0) : 0,
+                    juiceActive: combatants.right ? (combatants.right.juiceActive || false) : false,
+                    juiceTimer: combatants.right ? (combatants.right.juiceTimer || 0) : 0
                 },
 
                 // Parry state
@@ -15688,6 +15695,9 @@
                 combatants.left.castProgress = state.left.castProgress;
                 combatants.left.castTime = state.left.castTime;
                 combatants.left.cooldowns = { ...state.left.cooldowns };
+                combatants.left.juice = state.left.juice || 0;
+                combatants.left.juiceActive = state.left.juiceActive || false;
+                combatants.left.juiceTimer = state.left.juiceTimer || 0;
             }
 
             // Restore right combatant
@@ -15701,6 +15711,9 @@
                 combatants.right.castProgress = state.right.castProgress;
                 combatants.right.castTime = state.right.castTime;
                 combatants.right.cooldowns = { ...state.right.cooldowns };
+                combatants.right.juice = state.right.juice || 0;
+                combatants.right.juiceActive = state.right.juiceActive || false;
+                combatants.right.juiceTimer = state.right.juiceTimer || 0;
             }
 
             // Restore parry state
@@ -15824,7 +15837,7 @@
 
         // Get default input (no buttons pressed)
         function defaultInput() {
-            return { moveDir: 0, parry: false, fireball: false, frostbolt: false, thunderstorm: false };
+            return { moveDir: 0, parry: false, fireball: false, frostbolt: false, thunderstorm: false, juice: false };
         }
 
         // Predict opponent's input based on last known input
@@ -16089,6 +16102,7 @@
             pendingNetInput.fireball = false;
             pendingNetInput.frostbolt = false;
             pendingNetInput.thunderstorm = false;
+            pendingNetInput.juice = false;
 
             return input;
         }
@@ -16154,7 +16168,7 @@
         function buildSimCtx() {
             return {
                 projectiles, combatants, abilities, pvpParryState, isResimulating,
-                consts: { parryWindow, parryFailCooldown, parrySuccessCooldown, parryHitboxExtend, manaRegenTime },
+                consts: { parryWindow, parryFailCooldown, parrySuccessCooldown, parryHitboxExtend, manaRegenTime, juice: window.JUICE },
                 deps: SIM_DEPS,
             };
         }
