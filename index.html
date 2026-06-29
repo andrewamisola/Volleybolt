@@ -751,8 +751,7 @@
                 const obj = proj[k];
                 if (obj && obj.renderingGroupId !== undefined) obj.renderingGroupId = PROJECTILE_RENDER_GROUP;
             });
-            // Magma bombs are smaller/lower; scale the blob accordingly.
-            const blobSize = proj.isMagmaBomb ? 0.7 : 1.0;
+            const blobSize = 1.0;
             const blob = BABYLON.MeshBuilder.CreateGround("projBlob", { width: blobSize, height: blobSize }, scene);
             blob.material = getProjectileBlobMaterial();
             blob.isPickable = false;
@@ -4899,7 +4898,7 @@
             dcBtn.onPointerClickObservable.add(() => {
                 window.hideDisconnectOverlay();
                 if (typeof resetGame === 'function') resetGame();
-                if (typeof showTalentScreen === 'function') showTalentScreen();
+                if (typeof showMainMenu === 'function') showMainMenu();
             });
 
             window.guiElements.aiManaSegments = [];
@@ -7825,7 +7824,7 @@
             // Initial progress - scene created
             updateLoadingProgress(15, 'Loading scene...');
 
-            let allModelsLoadedCalled = false;  // Prevent multiple showTalentScreen calls
+            let allModelsLoadedCalled = false;  // Prevent multiple showMainMenu calls
             const checkAllLoaded = () => {
                 if (playerModelLoaded && aiModelLoaded && !allModelsLoadedCalled) {
                     allModelsLoadedCalled = true;  // Only do this once
@@ -7846,7 +7845,7 @@
                                 await initToneJS();
                                 loadingScreen.classList.add('hidden');
                                 setTimeout(() => loadingScreen.style.display = 'none', 500);
-                                showTalentScreen();
+                                showMainMenu();
                             }, { once: true });
                         }
                     }, 200);  // 200ms for animations to be fully ready
@@ -9612,7 +9611,7 @@
             } else {
                 loadCharacterModels(); // Original wizard
             }
-            // Note: Main showTalentScreen is called after models load (see checkAllModelsLoaded)
+            // Note: Main showMainMenu is called after models load (see checkAllModelsLoaded)
             // This is a fallback that may run before models are ready
 
             // Ice block material - transparent frozen effect
@@ -10316,7 +10315,7 @@
             fireballCoreMat.specularColor = BABYLON.Color3.Black();
 
             // Fireball spawner function
-            // options: { isMagmaBomb, startY } for magma lob bombs
+            // options: { startY, velY, bounceCount } — pass-throughs used by the rollback restore path.
             // FUTURE REFACTOR: The 'owner' parameter currently uses 'player'/'ai' strings.
             // This could be changed to use combatant.side ('left'/'right') for consistency
             // with the combatant system. Would require updating projectile collision logic
@@ -10334,7 +10333,6 @@
                     time: 0,  // For animation
                     type: 'fireball',
                     isSplitProjectile: isSplitProjectile,
-                    isMagmaBomb: options.isMagmaBomb || false,
                     bounceCount: options.bounceCount || 0,
                     collisionGraceTime: isSplitProjectile ? 0.5 : 0  // Prevent split projectiles from self-collision
                 };
@@ -10358,22 +10356,9 @@
                 // soft blob shadow instead (see setupProjectileSceneFx). Reduces the fireball's
                 // per-frame interaction load and is part of the full baked-shadow pass.
 
-                // Magma bombs get darker, cooler look and are smaller
-                if (proj.isMagmaBomb) {
-                    const magmaMat = new BABYLON.StandardMaterial("magmaMat_" + Date.now(), scene);
-                    magmaMat.emissiveColor = new BABYLON.Color3(0.8, 0.3, 0.1);  // Brighter for glow
-                    magmaMat.diffuseColor = new BABYLON.Color3(0.3, 0.1, 0.05);
-                    magmaMat.specularColor = BABYLON.Color3.Black();
-                    proj.mesh.material = magmaMat;
-                    proj.mesh.scaling = new BABYLON.Vector3(0.67, 0.67, 0.67);
-                    proj.hitboxRadius = 0.4;
-                    proj.damage = 1;
-                    proj.mesh.name = "magma_" + Date.now();  // For glow color selector
-                } else {
-                    proj.mesh.material = fireballCoreMat;
-                    proj.hitboxRadius = 0.25;
-                    proj.mesh.scaling.setAll(0.85);  // Initial scale for damage 2
-                }
+                proj.mesh.material = fireballCoreMat;
+                proj.hitboxRadius = 0.25;
+                proj.mesh.scaling.setAll(0.85);  // Initial scale for damage 2
 
                 // Add to glow layer for D2-style aura
                 if (glow) {
@@ -10383,8 +10368,8 @@
                 // Outer glow (low-poly)
                 proj.glow = BABYLON.MeshBuilder.CreateIcoSphere("fireGlow_" + Date.now(), { radius: 0.4, subdivisions: 1, flat: true }, scene);
                 const glowMat = new BABYLON.StandardMaterial("glowMat_" + Date.now(), scene);
-                glowMat.emissiveColor = proj.isMagmaBomb ? new BABYLON.Color3(0.5, 0.15, 0.02) : new BABYLON.Color3(1, 0.4, 0.05);
-                glowMat.alpha = proj.isMagmaBomb ? 0.2 : 0.3;
+                glowMat.emissiveColor = new BABYLON.Color3(1, 0.4, 0.05);
+                glowMat.alpha = 0.3;
                 glowMat.backFaceCulling = false;
                 proj.glow.material = glowMat;
                 proj.glow.parent = proj.mesh;
@@ -10392,8 +10377,8 @@
                 proj.glowMat = glowMat;
 
                 // Fire trail with distance-based sampling (FPS-independent)
-                const trailLength = proj.isMagmaBomb ? 8 : 30;
-                const trailWidth = proj.isMagmaBomb ? 0.15 : 0.25;
+                const trailLength = 30;
+                const trailWidth = 0.25;
                 // Create invisible anchor that trail follows - updates only on distance threshold
                 proj.trailAnchor = BABYLON.MeshBuilder.CreateBox("trailAnchor_" + Date.now(), {size: 0.01}, scene);
                 proj.trailAnchor.isVisible = false;
@@ -10410,8 +10395,8 @@
                 // collapsed the whole ribbon to a dot (tail vanished mid-flight).
                 proj.trail = new BABYLON.TrailMesh("fireTrail_" + Date.now(), proj.trailAnchor, scene, trailWidth, trailLength, false);
                 const trailMat = new BABYLON.StandardMaterial("trailMat_" + Date.now(), scene);
-                trailMat.emissiveColor = proj.isMagmaBomb ? new BABYLON.Color3(0.5, 0.1, 0.02) : new BABYLON.Color3(1, 0.3, 0.05);
-                trailMat.alpha = proj.isMagmaBomb ? 0.4 : 0.6;
+                trailMat.emissiveColor = new BABYLON.Color3(1, 0.3, 0.05);
+                trailMat.alpha = 0.6;
                 trailMat.diffuseColor = new BABYLON.Color3(0, 0, 0);
                 trailMat.backFaceCulling = false;
                 proj.trail.material = trailMat;
@@ -10421,41 +10406,26 @@
                 // render it.
                 proj.trail.alwaysSelectAsActiveMesh = true;
 
-                // Fire light - both fireballs and magma bombs illuminate surfaces
+                // Fire light - illuminates surfaces
                 proj.light = new BABYLON.PointLight("fireLight_" + Date.now(), new BABYLON.Vector3(0, 0.3, 0), scene);
-                if (proj.isMagmaBomb) {
-                    proj.light.diffuse = new BABYLON.Color3(1, 0.4, 0.1);  // Deeper orange for magma
-                    proj.light.intensity = 0.8;       // Dimmer but still visible
-                    proj.light.range = 8;             // Smaller range for bouncing bombs
-                    proj.baseIntensity = 0.8;
-                } else {
-                    proj.light.diffuse = new BABYLON.Color3(1, 0.6, 0.2);
-                    proj.light.intensity = 1.2;       // Enhanced for ground/wall visibility
-                    proj.light.range = 12;            // Wider range to reach surfaces
-                    proj.baseIntensity = 1.2;
-                }
+                proj.light.diffuse = new BABYLON.Color3(1, 0.6, 0.2);
+                proj.light.intensity = 1.2;       // Enhanced for ground/wall visibility
+                proj.light.range = 12;            // Wider range to reach surfaces
+                proj.baseIntensity = 1.2;
                 proj.light.parent = proj.mesh;
 
                 // Particles
-                const particleCount = proj.isMagmaBomb ? 8 : 80;  // Simplified magma bombs
+                const particleCount = 80;
                 proj.particles = new BABYLON.ParticleSystem("fireCore_" + Date.now(), particleCount, scene);
                 proj.particles.particleTexture = flareTexture;
                 proj.particles.emitter = proj.mesh;
                 proj.particles.minEmitBox = new BABYLON.Vector3(-0.05, -0.05, -0.05);
                 proj.particles.maxEmitBox = new BABYLON.Vector3(0.05, 0.05, 0.05);
-                if (proj.isMagmaBomb) {
-                    proj.particles.color1 = new BABYLON.Color4(0.7, 0.3, 0.1, 0.8);
-                    proj.particles.color2 = new BABYLON.Color4(0.5, 0.15, 0.05, 0.6);
-                    proj.particles.colorDead = new BABYLON.Color4(0.3, 0.05, 0, 0);
-                    proj.particles.minSize = 0.1;
-                    proj.particles.maxSize = 0.25;
-                } else {
-                    proj.particles.color1 = new BABYLON.Color4(1, 0.9, 0.5, 1);
-                    proj.particles.color2 = new BABYLON.Color4(1, 0.5, 0.1, 1);
-                    proj.particles.colorDead = new BABYLON.Color4(1, 0.2, 0, 0);
-                    proj.particles.minSize = 0.2;
-                    proj.particles.maxSize = 0.5;
-                }
+                proj.particles.color1 = new BABYLON.Color4(1, 0.9, 0.5, 1);
+                proj.particles.color2 = new BABYLON.Color4(1, 0.5, 0.1, 1);
+                proj.particles.colorDead = new BABYLON.Color4(1, 0.2, 0, 0);
+                proj.particles.minSize = 0.2;
+                proj.particles.maxSize = 0.5;
                 proj.particles.minLifeTime = 0.05;
                 proj.particles.maxLifeTime = 0.15;
                 proj.particles.emitRate = particleCount;
@@ -10467,31 +10437,21 @@
                 proj.particles.maxEmitPower = 2;
                 proj.particles.start();
 
-                // Outer flames / trail (removed for magma bombs) - D2 style square particles with stepped fade
-                const outerCount = proj.isMagmaBomb ? 0 : 50;
+                // Outer flames / trail - D2 style square particles with stepped fade
+                const outerCount = 50;
                 proj.outerFlames = new BABYLON.ParticleSystem("fireOuter_" + Date.now(), outerCount, scene);
                 proj.outerFlames.particleTexture = squareParticleTexture;  // Square pixels for D2 look
                 proj.outerFlames.emitter = proj.mesh;
                 proj.outerFlames.minEmitBox = new BABYLON.Vector3(-0.15, -0.1, -0.15);
                 proj.outerFlames.maxEmitBox = new BABYLON.Vector3(0.15, 0.1, 0.15);
-                if (proj.isMagmaBomb) {
-                    proj.outerFlames.minSize = 0.15;
-                    proj.outerFlames.maxSize = 0.3;
-                    // Stepped color gradient for magma bombs
-                    proj.outerFlames.addColorGradient(0.0, new BABYLON.Color4(0.7, 0.3, 0.1, 0.8));
-                    proj.outerFlames.addColorGradient(0.5, new BABYLON.Color4(0.5, 0.15, 0.05, 0.6));
-                    proj.outerFlames.addColorGradient(0.75, new BABYLON.Color4(0.3, 0.08, 0.02, 0.3));
-                    proj.outerFlames.addColorGradient(1.0, new BABYLON.Color4(0.2, 0.05, 0, 0));
-                } else {
-                    proj.outerFlames.minSize = 0.08;
-                    proj.outerFlames.maxSize = 0.15;
-                    // Stepped color gradient - discrete alpha steps for D2 retro fade
-                    proj.outerFlames.addColorGradient(0.0, new BABYLON.Color4(1, 0.5, 0.1, 0.9));
-                    proj.outerFlames.addColorGradient(0.3, new BABYLON.Color4(1, 0.4, 0.1, 0.7));
-                    proj.outerFlames.addColorGradient(0.6, new BABYLON.Color4(0.9, 0.25, 0.05, 0.4));
-                    proj.outerFlames.addColorGradient(0.85, new BABYLON.Color4(0.6, 0.15, 0.02, 0.15));
-                    proj.outerFlames.addColorGradient(1.0, new BABYLON.Color4(0.3, 0.1, 0, 0));
-                }
+                proj.outerFlames.minSize = 0.08;
+                proj.outerFlames.maxSize = 0.15;
+                // Stepped color gradient - discrete alpha steps for D2 retro fade
+                proj.outerFlames.addColorGradient(0.0, new BABYLON.Color4(1, 0.5, 0.1, 0.9));
+                proj.outerFlames.addColorGradient(0.3, new BABYLON.Color4(1, 0.4, 0.1, 0.7));
+                proj.outerFlames.addColorGradient(0.6, new BABYLON.Color4(0.9, 0.25, 0.05, 0.4));
+                proj.outerFlames.addColorGradient(0.85, new BABYLON.Color4(0.6, 0.15, 0.02, 0.15));
+                proj.outerFlames.addColorGradient(1.0, new BABYLON.Color4(0.3, 0.1, 0, 0));
                 proj.outerFlames.minLifeTime = 0.15;
                 proj.outerFlames.maxLifeTime = 0.35;
                 proj.outerFlames.emitRate = outerCount;
@@ -10519,7 +10479,7 @@
 
                 // Juice burst: the caster's fireball comes out at the full 6-damage tier — the size
                 // and speed of a maxed-out volley — even though it still has a cast time.
-                if (!isSplitProjectile && !proj.isMagmaBomb) {
+                if (!isSplitProjectile) {
                     const ownerC = (owner === 'player') ? combatants.left : combatants.right;
                     if (ownerC && ownerC.juiceActive) {
                         proj.volleyCount = 4;                                              // damage tier = 6
@@ -10538,7 +10498,7 @@
 
             // Update fireball scale based on damage (2-5 range maps to 0.85-1.25 scale)
             const updateFireballScale = (proj) => {
-                if (!proj || !proj.mesh || proj.type !== 'fireball' || proj.isMagmaBomb) return;
+                if (!proj || !proj.mesh || proj.type !== 'fireball') return;
                 const damage = Math.min(2 + proj.volleyCount, 6);  // 2-6 (6 only via overpower)
                 // Map damage 2-6 to scale 0.85-1.35
                 const scale = 0.85 + (damage - 2) * 0.125;  // ~0.125 per damage point
@@ -11139,11 +11099,9 @@
                     }
                 }
 
-                // Reset Y for normal projectiles (not magma bombs)
-                if (!proj.isMagmaBomb) {
-                    proj.velY = 0;
-                    proj.mesh.position.y = tableY;
-                }
+                // Reset Y on parry
+                proj.velY = 0;
+                proj.mesh.position.y = tableY;
 
                 // Flash effect on projectile (skip if no flash mesh)
                 if (proj.flashMat) {
@@ -12399,16 +12357,13 @@
                             proj.approachSoundPlayed = false;
                         }
 
-                        // Y-axis physics (skip for lobs and magma bombs - they have their own physics)
-                        if (!proj.isMagmaBomb && !proj.isLob) {
-                            // Regular gravity/bounce physics
-                            proj.velY += gravity * dt;
-                            proj.mesh.position.y += proj.velY * dt;
-                            if (proj.mesh.position.y < tableY) {
-                                proj.mesh.position.y = tableY;
-                                proj.velY = -proj.velY * bounceRetention;
-                                if (Math.abs(proj.velY) < 0.5) proj.velY = 0;
-                            }
+                        // Y-axis gravity/bounce physics
+                        proj.velY += gravity * dt;
+                        proj.mesh.position.y += proj.velY * dt;
+                        if (proj.mesh.position.y < tableY) {
+                            proj.mesh.position.y = tableY;
+                            proj.velY = -proj.velY * bounceRetention;
+                            if (Math.abs(proj.velY) < 0.5) proj.velY = 0;
                         }
 
                         // Visual stretch disabled - was causing particle issues
@@ -13799,7 +13754,7 @@
         let selectedUpgrade = null;
 
         // Switch to menu state
-        function showTalentScreen(instantCamera = false) {
+        function showMainMenu(instantCamera = false) {
             gameState = "menu";
             GameSM.state = 'menu';
             GameSM.show3D(false);   // 2D menu: hide the 3D arena (no menu camera)
@@ -13957,7 +13912,7 @@
                 const c = document.getElementById('canvas');
                 if (c) c.style.visibility = visible ? 'visible' : 'hidden';
             },
-            enterMenu()      { showTalentScreen(true); },              // legacy menu setup
+            enterMenu()      { showMainMenu(true); },              // legacy menu setup
             startMatch(opts) { startGame(); },                         // legacy match start (Task 4)
             endMatch()       { returnToMenuTransition(); },            // legacy end->menu (Task 5)
             enterPause() {
@@ -14244,7 +14199,7 @@
                 // Fallback: just do it without transition
                 hideVictoryScreen();
                 resetGame();
-                showTalentScreen();
+                showMainMenu();
                 _returningToMenu = false;
                 return;
             }
@@ -14272,13 +14227,13 @@
             animateAlpha(overlay, 0, 1, 400, () => {
                 // Step 2: While black, do a full canonical reset to the main menu.
                 // resetGame() clears all match state (score, stage, gates, talents, round);
-                // showTalentScreen(true) applies the EXACT same menu setup as a fresh menu
+                // showMainMenu(true) applies the EXACT same menu setup as a fresh menu
                 // entry (state reset, menu UI shown, gameplay UI hidden, both combatants
                 // reset, wizard dancing, music) but with an instant camera snap since the
                 // screen is black. This replaces ~80 lines of drift-prone duplicate logic.
                 hideVictoryScreen();
                 resetGame();
-                showTalentScreen(true);
+                showMainMenu(true);
                 startGameInProgress = false;  // Reset so the Start button works again
 
                 // Belt-and-suspenders: force-hide cast UI that menu setup doesn't touch
@@ -14959,7 +14914,7 @@
             if (window.applyClientPerspective) window.applyClientPerspective(false);
 
             // If in game, show overlay and let player acknowledge.
-            // The overlay's button handles resetGame + showTalentScreen.
+            // The overlay's button handles resetGame + showMainMenu.
             if (gameMode === 'pvp') {
                 gameMode = 'single';
                 gameOver = true;
@@ -14970,7 +14925,7 @@
                     showMessage(reason || 'Disconnected');
                     setTimeout(() => {
                         resetGame();
-                        showTalentScreen();
+                        showMainMenu();
                     }, 2000);
                 }
             } else {
@@ -15534,7 +15489,6 @@
                     isParried: p.isParried || false,
                     parriedBy: p.parriedBy || null,
                     bounceCount: p.bounceCount || 0,
-                    isMagmaBomb: p.isMagmaBomb || false,
                     isSplitProjectile: p.isSplitProjectile || false
                 })),
 
@@ -15698,7 +15652,6 @@
                         newProj = window.spawnFrostbolt(sp.owner, sp.x, sp.z, sp.velX, sp.velZ);
                     } else {
                         newProj = window.spawnFireball(sp.owner, sp.x, sp.z, sp.velX, sp.velZ, sp.isSplitProjectile, {
-                            isMagmaBomb: sp.isMagmaBomb,
                             velY: sp.velY,
                             bounceCount: sp.bounceCount
                         });
