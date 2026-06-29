@@ -19,7 +19,8 @@
 //
 // Determinism law (see docs/SHARED_CORE.md): same (state, inputs) -> same state.
 // No Math.random / Date.now / performance.now here. Verify any change against the
-// dbg.determinism golden-hash oracle in index.html (seed 12345 -> 14e88256).
+// dbg.determinism golden-hash oracle in index.html (seed 12345 -> b1df6797;
+// was 14e88256 before the Phase-0 fireball-id + court-depth fixes re-baselined it).
 //
 // This module is loaded with <script type="module"> and attaches itself to
 // window.VolleyboltSim so the classic inline script can call into it. The inline
@@ -33,9 +34,9 @@
         const toDestroy = [];
         const tableY = 0.6;
         const gravity = -30;
-        // Use effective depth based on game mode (half of full depth)
+        // Court depth (Z). Matches single-player: walls at depth/2 - 0.5.
+        // (Was previously double-halved here, making the MP court ~half size — a bug.)
         const effectiveFullDepth = D.getEffectiveTableDepth();
-        const tableDepth = effectiveFullDepth / 2;
         const goalX = 14;  // tableWidth/2 + 1 = 13 + 1
 
         for (const proj of projectiles) {
@@ -85,8 +86,8 @@
                 }
             }
 
-            // Wall collisions
-            const halfDepth = tableDepth / 2 - 0.5;
+            // Wall collisions (matches single-player: depth/2 - 0.5)
+            const halfDepth = effectiveFullDepth / 2 - 0.5;
             if (proj.z < -halfDepth) {
                 proj.z = -halfDepth;
                 proj.velZ = -proj.velZ;
@@ -261,8 +262,9 @@
             combatant.paddleZ += steps * STEP_SIZE;
             combatant.moveAccum -= steps * STEP_SIZE;
 
-            // Clamp to boundaries
-            const boundary = 2.7;
+            // Clamp to boundaries — matches single-player getPaddleBoundary() = depth/2 - 1.5
+            // (was hardcoded 2.7, the squished-court counterpart of the wall double-halving bug).
+            const boundary = D.getEffectiveTableDepth() / 2 - 1.5;
             combatant.paddleZ = Math.max(-boundary, Math.min(boundary, combatant.paddleZ));
 
             // Render mirror (via dep, so the movement math is Babylon-free)
@@ -295,10 +297,8 @@
                 D.playSound('frostboltCast', startX, 0.7);
             }
 
-            const proj = D.spawnFrostbolt(side, startX, combatant.paddleZ, velX, 0);
-            if (proj) {
-                proj.id = D.allocProjectileId();
-            }
+            // spawnFrostbolt assigns proj.id itself now (single allocation point in the factory).
+            D.spawnFrostbolt(side, startX, combatant.paddleZ, velX, 0);
         } else if (abilityId === 'fireball') {
             // Start casting
             combatant.casting = 'fireball';

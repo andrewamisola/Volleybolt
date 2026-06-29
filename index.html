@@ -11429,6 +11429,9 @@
                 // Authoritative sim position (decoupled from the mesh). The PvP sim advances
                 // proj.x/y/z as pure numbers; the mesh is mirrored from them after the tick.
                 proj.x = startX; proj.y = startY; proj.z = startZ;
+                // Every projectile gets a unique id at birth (rollback sync keys on it). This is
+                // the single allocation point; previously only frostbolts got ids (a rollback bug).
+                proj.id = nextProjectileId++;
                 proj.mesh.rotationQuaternion = BABYLON.Quaternion.Identity();
                 // Projectiles no longer cast into the dynamic sun shadow map -- they use a
                 // soft blob shadow instead (see setupProjectileSceneFx). Reduces the fireball's
@@ -11659,6 +11662,7 @@
                 proj.mesh.position.set(startX, 0.7, startZ);
                 // Authoritative sim position (decoupled from the mesh); see spawnFireball.
                 proj.x = startX; proj.y = 0.7; proj.z = startZ;
+                proj.id = nextProjectileId++;   // unique id at birth (see spawnFireball)
                 proj.mesh.material = frostCoreMat;
                 proj.mesh.rotationQuaternion = BABYLON.Quaternion.Identity();
                 // Projectiles no longer cast into the dynamic sun shadow map -- they use a
@@ -16419,6 +16423,8 @@
                     if (playerPaddle) playerPaddle.position.z = 0;
                     if (aiPaddle) aiPaddle.position.z = 0;
                     for (const p of projectiles.slice()) window.destroyProjectile(p);
+                    nextProjectileId = 0; // pin the id counter so the run is reproducible regardless
+                                          // of how many projectiles spawned before the harness ran
                     for (let f = 0; f < frames; f++) {
                         window.VolleyboltSim.simulateNetworkFrame(inp(f, 'left'), inp(f, 'right'), 1 / 60, buildSimCtx());
                         const h = hashGameState() >>> 0;
@@ -16758,10 +16764,12 @@
 
             // Restore RNG
             netRngSeed = state.rngSeed;
-            nextProjectileId = state.nextProjId;
 
-            // Sync projectiles - this is complex, need to match existing projectiles
+            // Sync projectiles - this is complex, need to match existing projectiles.
+            // (Re-spawned projectiles go through the factory, which bumps nextProjectileId; so we
+            // restore the id counter AFTER syncing to undo any spurious increments.)
             syncProjectilesToState(state.projectiles);
+            nextProjectileId = state.nextProjId;
         }
 
         // Sync visual projectiles to match state
