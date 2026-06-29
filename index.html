@@ -2217,9 +2217,12 @@
                         if (combatant.mana < a.manaCost) return;
                         const owner = combatant.side === 'left' ? 'player' : 'ai';
                         // Deterministic zap of up to maxZaps incoming enemy projectiles, in stable id order.
-                        ctx.deps.thunderstormZap(owner, a.maxZaps, ctx);
-                        combatant.mana -= a.manaCost;
-                        combatant.cooldowns.thunderstorm = a.cooldown;
+                        // No target = no cast (matches single-player): only spend mana/cooldown if it zapped something.
+                        const zapped = ctx.deps.thunderstormZap(owner, a.maxZaps, ctx);
+                        if (zapped > 0) {
+                            combatant.mana -= a.manaCost;
+                            combatant.cooldowns.thunderstorm = a.cooldown;
+                        }
                     },
                 },
             }
@@ -16964,6 +16967,7 @@
                         }
                     }
                 }
+                return zapsToPerform;
             },
         };
 
