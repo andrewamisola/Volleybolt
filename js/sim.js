@@ -36,6 +36,25 @@
         combatant.juice = Math.min(juiceConsts.MAX, (combatant.juice || 0) + amount);
     }
 
+    // Pure: same guard + effect as SP activateJuice (index.html ~1720), minus the FX
+    // (those go through ctx.deps.onJuiceActivate, gated by !isResimulating).
+    // Spend a full bar -> enter the burst. The bar stays full and DRAINS over the burst
+    // (it becomes the duration meter). Resets ALL cooldowns once on activation. Returns
+    // true if it fired.
+    function simActivateJuice(combatant, ctx) {
+        const J = ctx.consts.juice;
+        if (!combatant) return false;
+        if (combatant.juiceActive) return false;
+        if ((combatant.juice || 0) < J.MAX) return false;
+        combatant.juice      = J.MAX;       // stays full; drains as duration ticks
+        combatant.juiceActive = true;
+        combatant.juiceTimer  = J.DURATION;
+        // Reset all cooldowns ONCE on activation (matches SP).
+        if (combatant.cooldowns) { for (const k in combatant.cooldowns) combatant.cooldowns[k] = 0; }
+        if (!ctx.isResimulating) ctx.deps.onJuiceActivate(combatant);
+        return true;
+    }
+
     // Deterministic projectile-vs-projectile resolution. Pure number math on
     // proj.x / proj.z (NEVER proj.mesh). Mutates `toDestroy` (owned by the caller,
     // updateNetworkProjectiles) and combatant juice/mana. FX go through ctx.deps.*
@@ -220,6 +239,17 @@
                         continue;
                     }
 
+                    // Juice burst: the juiced combatant auto–perfect-parries every incoming
+                    // projectile, ignoring the parry cooldown/timing window (matches SP
+                    // updateGameLogic ~12632). parryProjectile REFLECTS (does not destroy) and
+                    // plays its own parry sound, so there is no toDestroy/extra-sound here.
+                    // aimDir is passed 0 (neutral) for determinism — SP reads keys[]/AI targeting
+                    // here, which is not sim-safe.
+                    if (combatants.left && combatants.left.juiceActive) {
+                        D.parryProjectile(proj, 'player', 0);
+                        continue;
+                    }
+
                     const hitAbility = ctx.deps.getAbilityDef(proj.type);
                     if (hitAbility && hitAbility.behavior.onPaddleHit) {
                         if (hitAbility.behavior.onPaddleHit(proj, 'left', ctx)) { toDestroy.push(proj); }
@@ -241,6 +271,13 @@
                         D.useShieldCharge(combatants.right);
                         D.parryProjectile(proj, 'ai');
                         if (!isResimulating) D.playSound('parry', px, 0.5);
+                        continue;
+                    }
+
+                    // Juice burst: symmetric auto–perfect-parry while juiceActive (matches SP
+                    // updateGameLogic ~12712). Reflect, don't destroy; neutral aimDir for determinism.
+                    if (combatants.right && combatants.right.juiceActive) {
+                        D.parryProjectile(proj, 'ai', 0);
                         continue;
                     }
 
@@ -438,6 +475,21 @@
     function simulateNetworkFrame(leftInput, rightInput, dt, ctx) {
         const { combatants, consts, deps: D } = ctx;
 
+        // Juice drain — runs UNCONDITIONALLY every frame, even while frozen (matches SP
+        // updateJuice ~1733). The full bar becomes the duration meter: MAX -> 0 over
+        // JUICE.DURATION seconds; at expiry the burst clears. FX (aura fade) go through
+        // onJuiceEnd, gated by !isResimulating.
+        for (const c of [combatants.left, combatants.right]) {
+            if (!c || !c.juiceActive) continue;
+            c.juiceTimer -= dt;
+            const frac = Math.max(0, c.juiceTimer / consts.juice.DURATION);
+            c.juice = consts.juice.MAX * frac;   // bar drains = time remaining
+            if (c.juiceTimer <= 0) {
+                c.juiceActive = false; c.juiceTimer = 0; c.juice = 0;
+                if (!ctx.isResimulating) D.onJuiceEnd(c);
+            }
+        }
+
         // Update freeze timers
         if (combatants.left && combatants.left.freezeTime > 0) {
             combatants.left.freezeTime -= dt;
@@ -459,6 +511,10 @@
         checkPvPParryHitsForSide('left', leftInput, ctx);
         checkPvPParryHitsForSide('right', rightInput, ctx);
         D.syncLocalParryUI();
+
+        // Process juice activation inputs (full bar -> burst). Input-gated, deterministic.
+        if (leftInput.juice  && combatants.left)  simActivateJuice(combatants.left,  ctx);
+        if (rightInput.juice && combatants.right) simActivateJuice(combatants.right, ctx);
 
         // Update cooldowns
         for (const c of [combatants.left, combatants.right]) {

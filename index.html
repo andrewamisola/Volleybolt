@@ -596,7 +596,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=22b1"></script>
+    <script type="module" src="js/sim.js?v=22c"></script>
 
     <script>
         // Global error handler to debug doubles crash
@@ -2162,6 +2162,10 @@
                         const startX = combatant.side === 'left' ? combatant.paddleX + 1 : combatant.paddleX - 1;
                         if (!ctx.isResimulating) ctx.deps.playSound('frostboltCast', startX, 0.7);
                         ctx.deps.spawnFrostbolt(owner, startX, combatant.paddleZ, velX, 0); // factory assigns id
+                        // Juice charge on cast (matches SP castFrostbolt ~13778). Instant cast: this
+                        // onCast IS the cast, so charge here. Pure state (addJuice caps + skips when
+                        // bursting); deliberately NOT gated by isResimulating.
+                        if (window.addJuice) window.addJuice(combatant, window.JUICE.CHARGE.cast);
                     },
                     onPaddleHit(proj, side, ctx) {
                         // side is the paddle being hit: 'left' or 'right'
@@ -2197,6 +2201,9 @@
                         if (zapped > 0) {
                             combatant.mana -= a.manaCost;
                             combatant.cooldowns.thunderstorm = a.cooldown;
+                            // Juice charge only on a real cast (had a target), matching SP
+                            // castThunderstorm ~17274. Pure state; not gated by isResimulating.
+                            if (window.addJuice) window.addJuice(combatant, window.JUICE.CHARGE.cast);
                         }
                     },
                 },
@@ -16251,6 +16258,21 @@
                 }
             },
             castingStart: () => { if (window.ToneSFX) ToneSFX.castingStart(); },
+            // Juice burst FX (gated by !isResimulating at the sim call sites). These route
+            // to the SP FX entry points so MP looks identical: onJuiceStart builds the aura,
+            // plays 'juiceUp', starts the drone and sets the white-hot tint; onJuiceEnd fades
+            // the aura, stops the drone and restores the tint.
+            onJuiceActivate: (combatant) => {
+                if (window.onJuiceStart) window.onJuiceStart(combatant);
+                if (window.logJuice) window.logJuice(combatant.side === 'left' ? 'blue' : 'red');
+            },
+            onJuiceEnd: (combatant) => {
+                if (window.onJuiceEnd) window.onJuiceEnd(combatant);
+                if (window.logCombat && window.combatLine) {
+                    const blue = combatant.side === 'left';
+                    window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' Juice faded'));
+                }
+            },
             getAbilityDef: (id) => getAbilityDef(id),
             // Deterministic thunderstorm zap: selects incoming ENEMY projectiles by pure state
             // (proj.x, proj.velX, proj.owner — NO mesh reads), destroys up to maxZaps in stable
