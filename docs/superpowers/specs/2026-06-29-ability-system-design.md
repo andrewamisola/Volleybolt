@@ -62,6 +62,14 @@ The live (`ABILITY_REGISTRY`-derived) values are the proposed canon, because the
 
 Ratifying these is the only place Phase 1 might *intentionally* change behavior (and thus the golden hash). Everything else in 1A is a pure data move with the golden unchanged.
 
+**Ratified by Director (2026-06-29): keep the live values** — frostbolt 7s, chain/thunderstorm 2 mana, and **drop** the unimplemented "+1 mana per zap" from the description text. None of these change the live numbers, so the golden stays `b1df6797`.
+
+### Naming: `chain_lightning` → `thunderstorm` (Director call, 2026-06-29)
+
+The ability whose internal id is `chain_lightning` is displayed in-game as **"Thunderstorm."** To kill that confusion, the canonical id **is `thunderstorm`**, and Phase 1 renames every code reference to match: the registry id/key, the `cooldowns.chain_lightning` field, the cast/zap functions (`castChainLightning`/`executeChainLightning`/`updateChainLightningChannel` → `castThunderstorm`/…), `spellCastMap`, keybindings, and the `SIM_DEPS.updateChainLightningChannel` hook. After Phase 1 there is **one** name — Thunderstorm — in code and UI alike.
+
+This rename is **hash-neutral**: `hashGameState` mixes the *value* of the cooldown field, not its key name, so renaming `cooldowns.chain_lightning` → `cooldowns.thunderstorm` consistently (init + decrement + capture/restore + hash) leaves the golden `b1df6797` unchanged. It is done as its own dedicated, oracle-verified step so the rename is isolated from behavior changes.
+
 ## 4. The behavior interface (1B)
 
 Generalize the `UpgradeRegistry` callback pattern into a per-ability interface, **ported to be deterministic** (pure functions over sim state + injected deps — the same contract the sim already follows). All callbacks operate on `proj.x/y/z` (never `proj.mesh`), pull effects from `ctx.deps.*`, and gate presentation with `ctx.isResimulating`.
@@ -88,7 +96,8 @@ Each step is its own commit; the `dbg.determinism` oracle runs after every step.
 **1A — data consolidation (oracle-neutral):**
 1. Promote `ABILITY_REGISTRY` → canonical `ABILITIES`; add empty `behavior: {}` per ability. Verify golden unchanged.
 2. Repoint `spells`/loadout/`DEFAULT_LOADOUT` and any consumers to derive from `ABILITIES`. Delete the dead `AbilityRegistry` fields. Verify golden unchanged + loadout UI still works (visual).
-3. Apply the ratified value reconciliation (§3). If any value changes, re-baseline golden and note it.
+3. Apply the ratified value reconciliation (§3). Live values were ratified unchanged, so the golden stays `b1df6797`; only the "+1 mana per zap" description text is dropped (no gameplay effect).
+3b. **Rename `chain_lightning` → `thunderstorm`** across all code references (registry id/key, `cooldowns` field, cast/zap functions, `spellCastMap`, keybindings, `SIM_DEPS` hook). Its own commit. Hash-neutral — verify golden still `b1df6797`.
 
 **1B — behavior interface, PvP, one ability at a time:**
 4. Define the interface + a `getAbility(id)` accessor. Migrate **frostbolt** (simplest): `onCast`, `onPaddleHit` (freeze+destroy), `onGateHit` (fizzle). Route the sim's frostbolt branches through it. Verify golden unchanged; spy to confirm the callback runs.
