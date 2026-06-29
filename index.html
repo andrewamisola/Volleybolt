@@ -701,6 +701,15 @@
         let parryTimer = 0;               // Time remaining in parry window
         let parryCooldown = 0;            // Time remaining until parry is available again
 
+        // AI (virtual-player) parry window — mirrors the player's window above, but every
+        // timer is advanced by the fixed-step dt (NEVER setTimeout) so the AI stays deterministic.
+        // Opened by applyCombatantInput on input.parry; scanned by aiCheckParryHits; ticked by
+        // updateAIParryTimer. (Phase 2.1)
+        let aiCanParry = true;
+        let aiParryActive = false;
+        let aiParryTimer = 0;
+        let aiParryCooldown = 0;
+
         // Projectile system (replaces single ball)
         let projectiles = [];         // Array of active projectiles
         let scene = null;             // Store scene reference globally
@@ -11328,72 +11337,14 @@
                 }
             };
 
-            // AI parry check for a projectile - Smart AI parries often!
-            const tryAIParry = (proj) => {
-                // High damage projectiles = always try to parry for the overpower bonus
-                const damage = (proj.volleyCount || 0) + 2;
-                const parrySeed = (proj.id || 0) + (proj.mesh ? proj.mesh.position.z : 0);
-                if (damage >= 4) return deterministicValue(parrySeed + 1) < 0.85;  // 85% parry on big hits
-
-                // Check if player is in good position - if yes, parry to aim at opening
-                const playerZ = playerPaddle.position.z;
-                const projZ = proj.mesh.position.z;
-                const playerOffset = Math.abs(projZ - playerZ);
-
-                // If ball going away from player, parry to exploit opening
-                if (playerOffset > 2.5) return deterministicValue(parrySeed + 2) < 0.75;
-                if (playerOffset > 1.5) return deterministicValue(parrySeed + 3) < 0.5;
-
-                // Even if player is in position, still parry sometimes
-                return deterministicValue(parrySeed + 4) < 0.35;
-            };
-
             // Reset projectile parry state (for when it bounces off paddle normally)
             const resetProjParryState = (proj) => {
                 proj.isParried = false;
                 proj.parriedBy = null;
             };
 
-            // ================== SMART AI SYSTEM (OPTIMIZED) ==================
-
-            // AI state - updated periodically, not every frame
-            let aiTargetZ = 0;                // Where AI is trying to go
-            let aiLastThinkTime = 0;          // When AI last "thought"
-            const AI_THINK_INTERVAL = 0.22;   // Think every 220ms (human reaction time)
-            const AI_PREDICTION_ERROR = 0.5;  // Slight prediction error
-
-            // Simple prediction - where will projectile be when it reaches AI?
-            const predictZ = (proj) => {
-                const aiX = tableWidth/2 - 1.5;
-                const distX = aiX - proj.mesh.position.x;
-                if (distX <= 0 || proj.velX <= 0) return proj.mesh.position.z;
-
-                const time = distX / proj.velX;
-                let z = proj.mesh.position.z + proj.velZ * time;
-
-                // Simple bounce (just one) - use effective depth for current mode
-                const effectiveDepth = window.getEffectiveTableDepth ? window.getEffectiveTableDepth() : tableDepth;
-                const wall = effectiveDepth/2 - 0.5;
-                if (z > wall) z = 2 * wall - z;
-                if (z < -wall) z = -2 * wall - z;
-
-                return Math.max(-wall, Math.min(wall, z));
-            };
-
-            // Find most urgent incoming projectile (simple: closest one heading toward AI)
-            const findUrgentThreat = () => {
-                let closest = null;
-                let closestX = Infinity;
-                for (const proj of projectiles) {
-                    if (proj.velX > 0 && proj.mesh.position.x < closestX) {
-                        closestX = proj.mesh.position.x;
-                        closest = proj;
-                    }
-                }
-                return closest;
-            };
-
-            // Find the best target Z to aim at (away from player)
+            // Find the best target Z to aim at (away from player).
+            // Used by parryProjectile('ai') for AI parry aim direction — keep this function.
             const findOpenTarget = () => {
                 const playerZ = playerPaddle.position.z;
                 const effectiveDepth = window.getEffectiveTableDepth ? window.getEffectiveTableDepth() : tableDepth;
@@ -11402,13 +11353,6 @@
                 if (playerZ < -1) return boundary - 1;
                 return playerZ > 0 ? -boundary + 0.5 : boundary - 0.5;
             };
-
-            // Check if player is blocking the direct shot path
-            const isPlayerBlocking = (aiZ) => {
-                return Math.abs(aiZ - playerPaddle.position.z) < 1.5;
-            };
-
-            // ================== END SMART AI SYSTEM ==================
 
             // ================== DOUBLES AI SYSTEM (Teammate Coordination) ==================
 
@@ -11800,6 +11744,7 @@
             };
             const paddleBoundary = tableDepth/2 - 1.5;  // Initial value, use getPaddleBoundary() for dynamic
             const goalX = tableWidth/2 + 1;
+            let spFrameCounter = 0;   // deterministic fixed-step counter for the singles-AI think cadence (Phase 2.1)
             const paddleHalfDepth = 1.25;
             const paddleHalfWidth = 0.2;
             // Perspective correction: expand hitbox based on character height and camera angle
@@ -11839,7 +11784,6 @@
                         time: performance.now().toFixed(0),
                         frameMs: frameMs.toFixed(1),
                         projectiles: projectiles.length,
-                        aiThinking: (performance.now() / 1000 - aiLastThinkTime < 0.01) ? 'YES' : 'no'
                     };
                     perfStats.slowFrames.push(entry);
                     window.perfLog.push(entry);
@@ -11868,11 +11812,273 @@
             };
             // ============ END PERFORMANCE MONITOR ============
 
+            // ================================================================
+            // PHASE 2.1 — DETERMINISTIC SINGLES AI
+            // decideAI is PURE: no performance.now / Date.now / Math.random / .mesh
+            // buildAISingleView is the sole permitted mesh-reading boundary.
+            // ================================================================
+
+            // ---- Deterministic AI RNG (integer-seeded LCG) ----
+            function makeAIRng(seed) {
+                let s = seed | 0;
+                return function aiRng() {
+                    s = (Math.imul(1664525, s) + 1013904223) | 0;
+                    return (s >>> 0) / 0xFFFFFFFF;
+                };
+            }
+
+            const AI_RNG_SEED = 0xA1DE;  // fixed constant; stable seed offset for per-frame RNG
+
+            const DEFAULT_AI_PARAMS = {
+                reactionFrames:   0,      // extra lag frames before decision takes effect (difficulty knob)
+                aimError:         0,      // max Z-offset error on cast targeting, world units (difficulty knob)
+                parryTimingError: 0,      // extra frames before parry fires (difficulty knob)
+                castAggression:   1.0,    // multiplier on cast-readiness threshold
+                thinkIntervalK:   13,     // think cadence: decide every K frames (~0.22s at 60Hz)
+            };
+
+            // Pure AI helpers — no mesh reads, no Math.random, no wall-clock.
+
+            function _aiIncomingProjectiles(view) {
+                // AI is on the RIGHT side. Incoming projectiles (heading toward AI) have velX > 0.
+                return view.projectiles.filter(p => p.velX > 0 && p.owner !== 'ai');
+            }
+
+            function _aiFindUrgentThreat(view) {
+                const incoming = _aiIncomingProjectiles(view);
+                if (!incoming.length) return null;
+                // Closest to AI paddle by remaining X distance.
+                return incoming.reduce((a, b) =>
+                    Math.abs(a.x - view.self.paddleX) < Math.abs(b.x - view.self.paddleX) ? a : b
+                );
+            }
+
+            function _aiFindOpenTarget(view) {
+                // Aim at the lane away from the opponent paddle.
+                const oppZ     = view.opp.paddleZ;
+                const halfDepth = view.geom.halfDepth;
+                return oppZ > 0 ? -halfDepth * 0.6 : halfDepth * 0.6;
+            }
+
+            function _aiIsOppBlocking(view) {
+                return Math.abs(view.self.paddleZ - view.opp.paddleZ) < 1.5;
+            }
+
+            function _aiSafeToStartCast(view) {
+                return _aiIncomingProjectiles(view).length === 0;
+            }
+
+            function decideAI(view, frame, rng, params) {
+                // PURE: no performance.now / Date.now / Math.random / .mesh.
+                if (!view.roundActive) {
+                    return { moveDir: 0, parry: false, fireball: false, frostbolt: false, thunderstorm: false, juice: false };
+                }
+
+                const K = params.thinkIntervalK;
+                const isThinkFrame = (frame % K === 0);
+
+                // --- Movement (every frame: smooth, not gated) ---
+                const threat  = _aiFindUrgentThreat(view);
+                const targetZ = threat ? threat.z : _aiFindOpenTarget(view);
+                const diff    = targetZ - view.self.paddleZ;
+                const moveDir = Math.abs(diff) > 0.25 ? Math.sign(diff) : 0;
+
+                if (!isThinkFrame) {
+                    return { moveDir, parry: false, fireball: false, frostbolt: false, thunderstorm: false, juice: false };
+                }
+
+                // --- Cast decisions (think frames only) ---
+                const safe = _aiSafeToStartCast(view);
+                const s    = view.self;
+                const cd   = s.cooldowns;
+
+                const canFireball     = safe && cd.fireball    <= 0 && s.mana >= 1 && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
+                const canFrostbolt    = safe && cd.frostbolt   <= 0 && s.mana >= 2 && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
+                const canThunderstorm = cd.thunderstorm <= 0 && s.mana >= 2 && _aiIncomingProjectiles(view).length >= 2;
+
+                // Frostbolt preferred when available; otherwise fireball.
+                const castFrostbolt_    = canFrostbolt;
+                const castFireball_     = canFireball && !castFrostbolt_;
+                const castThunderstorm_ = canThunderstorm;
+
+                // --- Parry (deterministic: press when an incoming threat is in Z range) ---
+                const parryRange  = 2.5;
+                const parryTarget = threat && Math.abs(threat.z - s.paddleZ) < parryRange;
+                const parry       = !!parryTarget;
+
+                // --- Juice ---
+                const juice = s.juice >= JUICE.MAX && !s.juiceActive;
+
+                return { moveDir, parry, fireball: castFireball_, frostbolt: castFrostbolt_, thunderstorm: castThunderstorm_, juice };
+            }
+
+            // Expose the pure AI pieces so the outer-scope dbg.aiDeterminism oracle can reach them.
+            // (decideAI & friends live in this game-setup closure; window.dbg is defined in the outer scope.)
+            window.decideAI = decideAI;
+            window.makeAIRng = makeAIRng;
+            window.DEFAULT_AI_PARAMS = DEFAULT_AI_PARAMS;
+            window.AI_RNG_SEED = AI_RNG_SEED;
+
+            // Mesh-reading boundary — the ONLY place in the AI path that touches .mesh.
+            // Everything downstream (decideAI) is pure.
+            function buildAISingleView() {
+                const cr = combatants.right;
+                const projSnaps = projectiles.map(p => ({
+                    id:          p.id,
+                    x:           p.mesh.position.x,
+                    z:           p.mesh.position.z,
+                    velX:        p.velX,
+                    velZ:        p.velZ,
+                    owner:       p.owner,
+                    volleyCount: p.volleyCount,
+                    type:        p.type,
+                }));
+                return {
+                    projectiles: projSnaps,
+                    self: {
+                        paddleX:      aiPaddle.position.x,
+                        paddleZ:      aiPaddle.position.z,
+                        mana:         cr.mana,
+                        cooldowns: {
+                            fireball:    cr.cooldowns.fireball    || 0,
+                            frostbolt:   cr.cooldowns.frostbolt   || 0,
+                            thunderstorm: cr.cooldowns.thunderstorm || 0,
+                        },
+                        freezeTime:   cr.freezeTime  || 0,
+                        casting:      cr.casting     || null,
+                        juice:        cr.juice       || 0,
+                        juiceActive:  cr.juiceActive || false,
+                        shieldCharges: (cr.lightningShield && cr.lightningShield.charges) || 0,
+                    },
+                    opp: {
+                        paddleZ: playerPaddle.position.z,
+                    },
+                    geom: {
+                        tableWidth:     tableWidth,
+                        halfDepth:      window.getEffectiveTableDepth() / 2,
+                        paddleBoundary: getPaddleBoundary(),
+                    },
+                    roundActive: !!roundActive,
+                };
+            }
+
+            // Applies a canonical input struct to the AI combatant under player rules.
+            // The AI routes through this in 2.1; the human player joins it in 2.3.
+            function applyCombatantInput(c, input, dt) {
+                // Movement — full player speed, no urgency multiplier (spec §5, Deviation 1).
+                if ((!c.freezeTime || c.freezeTime <= 0) && !combatantIsRooted(c)) {
+                    if (input.moveDir !== 0) {
+                        aiPaddle.position.z += input.moveDir * aiSpeed * dt;
+                        const bound = getPaddleBoundary();
+                        aiPaddle.position.z = Math.max(-bound, Math.min(bound, aiPaddle.position.z));
+                    }
+                    // Animation state (mirrors the old inline block).
+                    c.lastMoveDir = input.moveDir;
+                    c.moveDir     = input.moveDir;
+                    if (input.moveDir > 0) {
+                        c.targetRotY = c.baseRotY - 0.6;
+                    } else if (input.moveDir < 0) {
+                        c.targetRotY = c.baseRotY + 0.6;
+                    } else {
+                        c.targetRotY = c.baseRotY;
+                    }
+                    aiTargetRotY = c.targetRotY;  // sync legacy var
+                } else {
+                    c.moveDir = 0;
+                }
+
+                // Parry — deterministic window open (spec §5, Deviation 2).
+                // aiCheckParryHits() scans for hits; updateAIParryTimer() expires the window.
+                if (input.parry && aiCanParry && !aiParryActive && aiParryCooldown <= 0) {
+                    aiParryActive = true;
+                    aiParryTimer  = parryWindow;
+                    aiCanParry    = false;
+                }
+
+                // Casts — the helpers enforce their own mana/cooldown guards.
+                if (input.fireball    && !c.casting) startCasting('ai', 'fireball');
+                if (input.frostbolt)                 castFrostbolt('ai');
+                if (input.thunderstorm)              executeThunderstorm('ai');
+                if (input.juice)                     activateJuice('ai');
+            }
+
+            // Mirror of window.checkParryHits for the AI (right side). Scans projectiles
+            // heading toward the AI and parries the closest one.
+            // TODO 2.3: replace mesh reads with sim-state reads.
+            function aiCheckParryHits() {
+                if (!aiParryActive) return;
+
+                const paddleHalfZ = 2.0;  // Extended Z range during parry window
+                let bestProj = null;
+                let bestDist = Infinity;
+
+                for (const proj of projectiles) {
+                    // Only parry projectiles coming toward AI (velX > 0 = heading right).
+                    if (proj.velX <= 0) continue;
+                    if (proj.owner === 'ai') continue;
+                    if (!proj.mesh || proj.mesh.isDisposed()) continue;
+
+                    // X-axis: ball must be approaching from the left of the AI paddle.
+                    const distFromPaddle = aiPaddle.position.x - proj.mesh.position.x;
+                    if (distFromPaddle > parryHitboxExtend || distFromPaddle < -0.5) continue;
+
+                    // Z-axis: must be within paddle depth.
+                    if (proj.mesh.position.z < aiPaddle.position.z - paddleHalfZ ||
+                        proj.mesh.position.z > aiPaddle.position.z + paddleHalfZ) continue;
+
+                    if (distFromPaddle < bestDist) {
+                        bestDist = distFromPaddle;
+                        bestProj = proj;
+                    }
+                }
+
+                if (bestProj) {
+                    parryProjectile(bestProj, 'ai');
+                    aiParryActive  = false;
+                    aiParryTimer   = 0;
+                    aiParryCooldown = parrySuccessCooldown;
+                    // Visual: quick AI parry bubble flash.
+                    playAIAnim('parry', false, 400, 1.5);
+                    setTimeout(() => playAIAnim('idle', true), 400);
+                    if (window.createParryBubble) {
+                        const aiBubble = createParryBubble(aiPaddle, true);
+                        setTimeout(() => {
+                            if (window.dissolveParryBubble) dissolveParryBubble(aiBubble);
+                        }, 300);
+                    }
+                }
+            }
+
+            // dt-ticked AI parry timer — mirrors updateParryTimer (player) but NEVER uses setTimeout.
+            function updateAIParryTimer(dt) {
+                if (aiParryActive) {
+                    aiParryTimer -= dt;
+                    if (aiParryTimer <= 0) {
+                        // Window expired without hitting — long cooldown.
+                        aiParryActive = false;
+                        aiParryTimer  = 0;
+                        aiParryCooldown = parryFailCooldown;
+                    }
+                }
+                if (aiParryCooldown > 0) {
+                    aiParryCooldown -= dt;
+                    if (aiParryCooldown <= 0) {
+                        aiParryCooldown = 0;
+                        aiCanParry = true;
+                    }
+                }
+            }
+
+            // ================================================================
+            // END PHASE 2.1 DETERMINISTIC SINGLES AI
+            // ================================================================
+
             // ============================================================
             // FIXED TIMESTEP GAME LOGIC (60Hz simulation)
             // All gameplay-affecting code runs here at fixed rate
             // ============================================================
             function updateGameLogic(dt) {
+                spFrameCounter++;   // deterministic fixed-step counter (Phase 2.1)
                 // Juice (ultimate): free mana + halved cooldowns + burst countdown, for both combatants.
                 if (window.updateJuice) window.updateJuice(dt);
                 // Update parry system
@@ -12121,133 +12327,22 @@
                 // NOTE: Model rotation lerp moved to render callback for smooth visuals
 
                 if (roundActive) {
-                    // SMART AI MOVEMENT - Thinks every 220ms like a human
+                    // Doubles AI — wall-clock gated, out of scope for determinism (Phase 2.3).
                     const currentTime = performance.now() / 1000;
-
-                    // In doubles mode, update all AI teammates
                     if (isDoublesMode() && window.updateAllDoublesAI) {
                         window.updateAllDoublesAI(dt, currentTime);
                     }
 
-                    // AI "thinks" periodically - not every frame (skip in doubles mode - handled by updateAllDoublesAI)
-                    if (!isDoublesMode() && currentTime - aiLastThinkTime > AI_THINK_INTERVAL) {
-                        aiLastThinkTime = currentTime;
-
-                        // Find the closest incoming threat
-                        const threat = findUrgentThreat();
-                        if (threat) {
-                            // Predict where it will be + velocity-scaled error
-                            // Faster balls = AI struggles more (more prediction error)
-                            const perfect = predictZ(threat);
-                            const speed = Math.abs(threat.velX);
-                            // Slow (6): ~0.4 error, Medium (10): ~0.8, Fast (15+): ~1.5+
-                            const scaledError = 0.2 + (speed / 10) * 0.8;
-                            const error = 0;
-                            aiTargetZ = perfect + error;
-                        }
-                    }
-
-                    // Only move if AI is not frozen or rooted (casting) - skip in doubles mode
-                    if (!isDoublesMode() && aiFreezeTime <= 0 && !isAIRooted()) {
-                        let aiMoveDir = 0;
-                        const aiDiff = aiTargetZ - aiPaddle.position.z;
-                        if (Math.abs(aiDiff) > 0.25) {
-                            aiMoveDir = Math.sign(aiDiff);
-                        }
-                        if (combatants.right) {
-                            combatants.right.lastMoveDir = aiMoveDir;
-                        }
-
-                        // VARIABLE AI SPEED - Not always at max speed
-                        // Base: 60% speed, scales up based on urgency
-                        let speedMultiplier = 0.6;
-                        const threat = findUrgentThreat();
-                        if (threat) {
-                            const distToAI = (tableWidth/2 - 1.5) - threat.mesh.position.x;
-                            // Urgency: 0 (far) to 1 (close)
-                            const urgency = 1 - Math.min(distToAI / 15, 1);
-                            // Close ball = faster movement (up to 100%)
-                            speedMultiplier = 0.6 + urgency * 0.4;
-                            // Add slight random variation (±10%)
-                        }
-
-                        // Retro movement: accumulate and move in discrete steps
-                        const AI_STEP_SIZE = 0.3;
-                        if (!window.aiMoveAccum) window.aiMoveAccum = 0;
-                        window.aiMoveAccum += aiMoveDir * aiSpeed * speedMultiplier * dt;
-
-                        if (Math.abs(window.aiMoveAccum) >= AI_STEP_SIZE) {
-                            const steps = Math.trunc(window.aiMoveAccum / AI_STEP_SIZE);
-                            aiPaddle.position.z += steps * AI_STEP_SIZE;
-                            window.aiMoveAccum -= steps * AI_STEP_SIZE;
-                        }
-                        const aiBoundary = getPaddleBoundary();
-                        aiPaddle.position.z = Math.max(-aiBoundary, Math.min(aiBoundary, aiPaddle.position.z));
-
-                        // Check if AI at boundary (can't actually move in that direction)
-                        const aiAtTopBoundary = aiPaddle.position.z >= aiBoundary;
-                        const aiAtBottomBoundary = aiPaddle.position.z <= -aiBoundary;
-                        const aiCanActuallyMove = !(aiMoveDir > 0 && aiAtTopBoundary) && !(aiMoveDir < 0 && aiAtBottomBoundary);
-
-                        // Set moveDir for animation state machine (0 if at boundary and can't move)
-                        combatants.right.moveDir = aiCanActuallyMove ? aiMoveDir : 0;
-
-                        // Set target orientation for AI based on movement direction
-                        if (aiMoveDir > 0) {
-                            combatants.right.targetRotY = combatants.right.baseRotY - 0.6;  // Turn to face up (reversed for facing)
-                        } else if (aiMoveDir < 0) {
-                            combatants.right.targetRotY = combatants.right.baseRotY + 0.6;  // Turn to face down
-                        } else {
-                            combatants.right.targetRotY = combatants.right.baseRotY;        // Face forward
-                        }
-                        aiTargetRotY = combatants.right.targetRotY;  // Sync legacy
+                    // --- Deterministic singles AI (Phase 2.1) ---
+                    if (!isDoublesMode()) {
+                        const _aiView  = buildAISingleView();
+                        const _aiInput = decideAI(_aiView, spFrameCounter, makeAIRng(spFrameCounter ^ AI_RNG_SEED), DEFAULT_AI_PARAMS);
+                        applyCombatantInput(combatants.right, _aiInput, dt);
+                        updateAIParryTimer(dt);
+                        aiCheckParryHits();
                     }
 
                     // NOTE: Model rotation lerp moved to render callback for smooth visuals
-
-                    // AI Juice (ultimate): pop it when full to open a burst window. (Competence
-                    // baseline — fires as soon as ready; smarter timing is future tuning.)
-                    if (combatants.right && combatants.right.juice >= ((window.JUICE && window.JUICE.MAX) || 500) && !combatants.right.juiceActive) {
-                        if (window.activateJuice) window.activateJuice('ai');
-                    }
-
-                    // SIMPLE AI CASTING
-                    const aiRightIsCasting = combatants.right && combatants.right.casting;
-
-                    // Check if there's a close threat - don't cast if ball is near
-                    let safeToStartCast = true;
-                    // Check if any projectile is heading toward AI (don't cast damage spells if so)
-                    for (const p of projectiles) {
-                        if (p.velX > 0 && p.mesh && !p.mesh.isDisposed()) {
-                            // Any projectile heading toward AI = don't start new cast
-                            safeToStartCast = false;
-                            break;
-                        }
-                    }
-
-                    // AI Fireball - cast when safe (no incoming projectiles) and not blocking player
-                    if (!aiRightIsCasting && aiFireballCooldown <= 0 && aiMana >= abilities.fireball.manaCost && projectiles.length < 10) {
-                        if (safeToStartCast && !isPlayerBlocking(aiPaddle.position.z)) {
-                            startCasting('ai', 'fireball');
-                        }
-                    }
-
-                    // AI Frostbolt - also check safeToStartCast (no incoming projectiles)
-                    if (!aiRightIsCasting && aiFrostboltCooldown <= 0 && aiMana >= abilities.frostbolt.manaCost && projectiles.length < 10) {
-                        if (safeToStartCast) {
-                            castFrostbolt('ai');
-                        }
-                    }
-
-                    // AI Thunderstorm - use when pressured (2+ incoming projectiles)
-                    const aiChainCooldown = combatants.right ? combatants.right.cooldowns.thunderstorm : 0;
-                    if (!aiRightIsCasting && aiChainCooldown <= 0) {
-                        // Count incoming projectiles heading toward AI (velX > 0)
-                        const incomingToAI = projectiles.filter(p => p.owner === 'player' && p.mesh && !p.mesh.isDisposed() && p.velX > 0).length;
-                        if (incomingToAI >= 2) {
-                            castThunderstorm('ai');
-                        }
-                    }
 
                     // Process all projectiles
                     const toDestroy = [];
@@ -12625,39 +12720,26 @@
                                 proj.owner = 'ai';
                                 proj.volleyCount++;
                                 if (window.updateFireballScale) window.updateFireballScale(proj);  // Scale up with damage
-                                if (tryAIParry(proj)) {
-                                    parryProjectile(proj, 'ai');
-                                    playAIAnim('parry', false, 400, 1.5);
-                                    setTimeout(() => playAIAnim('idle', true), 400);
-                                    // Show AI parry bubble (quick flash)
-                                    if (window.createParryBubble) {
-                                        const aiBubble = createParryBubble(aiPaddle, true);
-                                        setTimeout(() => {
-                                            if (window.dissolveParryBubble) dissolveParryBubble(aiBubble);
-                                        }, 300);
-                                    }
-                                } else {
-                                    // Hit offset: -1 (bottom edge) to +1 (top edge)
-                                    const hitOffset = (proj.mesh.position.z - aiPaddle.position.z) / paddleHalfDepth;
+                                // Hit offset: -1 (bottom edge) to +1 (top edge)
+                                const hitOffset = (proj.mesh.position.z - aiPaddle.position.z) / paddleHalfDepth;
 
-                                    // Pong-style angling: edge hits = sharp angles, center hits = straight
-                                    const currentSpeed = Math.sqrt(proj.velX * proj.velX + proj.velZ * proj.velZ);
-                                    const maxAngle = 0.7;  // ~45 degrees max deflection at edges
-                                    const angleStrength = hitOffset * maxAngle;
+                                // Pong-style angling: edge hits = sharp angles, center hits = straight
+                                const currentSpeed = Math.sqrt(proj.velX * proj.velX + proj.velZ * proj.velZ);
+                                const maxAngle = 0.7;  // ~45 degrees max deflection at edges
+                                const angleStrength = hitOffset * maxAngle;
 
-                                    // Redirect velocity: more angle = less forward speed, more sideways
-                                    proj.velX = currentSpeed * Math.cos(angleStrength) * (proj.velX > 0 ? -1 : 1);
-                                    proj.velZ = currentSpeed * Math.sin(angleStrength) * Math.sign(hitOffset || 1);
+                                // Redirect velocity: more angle = less forward speed, more sideways
+                                proj.velX = currentSpeed * Math.cos(angleStrength) * (proj.velX > 0 ? -1 : 1);
+                                proj.velZ = currentSpeed * Math.sin(angleStrength) * Math.sign(hitOffset || 1);
 
-                                    // Apply paddle momentum to ball trajectory
-                                    if (window.aiPaddleVelZ) proj.velZ += window.aiPaddleVelZ * momentumFactor;
-                                    playSound('block', aiPaddle.position.x, 0.7);
-                                    // Flash force field shield
-                                    if (window.flashShield) flashShield(false, false);
-                                    // Gain 0.5 mana on block
-                                    gainMana('ai', 0.5);
-                                    if (combatants.right && combatants.right.casting) applyCastPushback('ai');
-                                }
+                                // Apply paddle momentum to ball trajectory
+                                if (window.aiPaddleVelZ) proj.velZ += window.aiPaddleVelZ * momentumFactor;
+                                playSound('block', aiPaddle.position.x, 0.7);
+                                // Flash force field shield
+                                if (window.flashShield) flashShield(false, false);
+                                // Gain 0.5 mana on block
+                                gainMana('ai', 0.5);
+                                if (combatants.right && combatants.right.casting) applyCastPushback('ai');
                                 updateProjectileTier(proj);
                             }
                         }
@@ -15267,6 +15349,54 @@
                 return { frames, seed, fold: foldHex, last: hashes.slice(-3).map(x => (x >>> 0).toString(16)) };
             }
         };
+
+        // ---- AI determinism oracle (Phase 2.1) ----
+        // Folds decideAI outputs over a scripted synthetic view sequence into a 32-bit hex hash.
+        // No mesh reads, no game loop — pure function exercise only.
+        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "c542c4ab"  (computed via Node harness)
+        (function attachAIDeterminism() {
+            function _syntheticView(seed) {
+                return {
+                    projectiles: [
+                        { id: 1, x: 3.0, z: (seed % 5) * 0.4 - 1.0, velX: 8, velZ: 0.5,  owner: 'player', volleyCount: 1, type: 'fireball' },
+                        { id: 2, x: 5.0, z: (seed % 3) * 0.3,        velX: 6, velZ: -0.3, owner: 'player', volleyCount: 0, type: 'frostbolt' },
+                    ],
+                    self: {
+                        paddleX: 7, paddleZ: (seed % 7) * 0.2 - 0.6,
+                        mana: 3,
+                        cooldowns: { fireball: 0, frostbolt: 0, thunderstorm: 0 },
+                        freezeTime: 0, casting: null, juice: 0, juiceActive: false, shieldCharges: 0,
+                    },
+                    opp:  { paddleZ: (seed % 11) * 0.15 - 0.8 },
+                    geom: { tableWidth: 16, halfDepth: 4, paddleBoundary: 3.8 },
+                    roundActive: true,
+                };
+            }
+
+            function _foldAI(steps, seed) {
+                let hash = 0;
+                for (let i = 0; i < steps; i++) {
+                    const view   = _syntheticView(seed + i);
+                    const result = window.decideAI(view, i, window.makeAIRng((seed + i) ^ window.AI_RNG_SEED), window.DEFAULT_AI_PARAMS);
+                    hash = ((hash << 5) - hash + result.moveDir + 1)                 | 0;
+                    hash = ((hash << 5) - hash + (result.parry        ? 7  : 0))     | 0;
+                    hash = ((hash << 5) - hash + (result.fireball     ? 13 : 0))     | 0;
+                    hash = ((hash << 5) - hash + (result.frostbolt    ? 17 : 0))     | 0;
+                    hash = ((hash << 5) - hash + (result.thunderstorm ? 19 : 0))     | 0;
+                    hash = ((hash << 5) - hash + (result.juice        ? 23 : 0))     | 0;
+                }
+                return ((hash >>> 0).toString(16)).padStart(8, '0');
+            }
+
+            window.dbg.aiDeterminism = function aiDeterminism(steps, seed) {
+                steps = steps || 50;
+                seed  = (seed == null) ? 42 : (seed >>> 0);
+                const fold  = _foldAI(steps, seed);
+                const fold2 = _foldAI(steps, seed);  // second run — must match
+                console.log('%c[dbg.aiDeterminism] steps=' + steps + ' seed=' + seed + ' fold=' + fold + ' reproducible=' + (fold === fold2), 'color:#6f9f2f');
+                return { steps, seed, fold, reproducible: fold === fold2 };
+            };
+        })();
         console.log('%c[Volleybolt] MP debug ready — dbg.help() for commands · F2 toggles the netcode overlay', 'color:#2f8f6f');
 
         // Start the multiplayer match

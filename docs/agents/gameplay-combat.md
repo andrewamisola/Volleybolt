@@ -16,6 +16,8 @@
 ## Working log
 _Append-only. Newest at top. Each entry: date · decision/change · open issues._
 
+- 2026-06-29 · Phase 2.1 implemented — decideAI (pure, no .mesh/.random/wall-clock), buildAISingleView (sole mesh boundary), applyCombatantInput (shared virtual-player applier), aiCheckParryHits + updateAIParryTimer (dt-ticked, no setTimeout). Deleted tryAIParry, AI_PREDICTION_ERROR, AI_THINK_INTERVAL, aiLastThinkTime, predictZ, findUrgentThreat, isPlayerBlocking. Adapter in updateGameLogic replaces ~130-line inline AI block with 4 lines. AI oracle pinned: dbg.aiDeterminism(50,42) = c542c4ab (reproducible, seed-sensitive). Sim oracle b1df6797 unchanged (js/sim.js not touched). Commit: d3c4790. · Open: doubles AI Math.random (predictZAtX, deferred to 2.3); aiCheckParryHits reads mesh (deferred to 2.3 when SP routes through sim state); thunderstorm in applyCombatantInput calls executeThunderstorm (mana not auto-spent via helper — decideAI guards on mana before emitting thunderstorm:true).
+
 - 2026-06-29 · Phase 2.1 spec + plan authored — deterministic singles AI design (decideAI pure function, buildAISingleView mesh boundary, applyCombatantInput shared input applier, 6-task oracle-gated implementation plan). Removed performance.now think-gate, float-seeded tryAIParry, and AI_PREDICTION_ERROR from scope. Two deliberate behavior deviations documented (movement speed, parry probability). dbg.aiDeterminism oracle specified. Sim oracle b1df6797 preserved. · Open: doubles AI Math.random (predictZAtX) deferred to 2.3; applyCombatantInput parry arm will still read mesh in 2.1 (deferred to 2.3); difficulty params designed but not wired.
 
 ---
