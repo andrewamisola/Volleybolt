@@ -870,7 +870,7 @@
         }
 
         // Pending input for current frame (PvP mode)
-        let pendingNetInput = { moveDir: 0, parry: false, fireball: false, frostbolt: false };
+        let pendingNetInput = { moveDir: 0, parry: false, fireball: false, frostbolt: false, thunderstorm: false };
         const pvpParryState = {
             left: { canParry: true, active: false, timer: 0, cooldown: 0, cooldownMax: 0 },
             right: { canParry: true, active: false, timer: 0, cooldown: 0, cooldownMax: 0 }
@@ -2209,7 +2209,19 @@
                     castLabel: 'Instant', cooldownLabel: '30s CD',
                     description: 'Call down lightning to <span class="tt-mechanic">Zap</span> up to <span class="tt-value">3</span> incoming Enemy projectiles, destroying them.'
                 },
-                behavior: {}
+                behavior: {
+                    castType: 'targeted',
+                    onCast(ctx, combatant) {
+                        const a = ctx.abilities.thunderstorm;
+                        if (combatant.cooldowns.thunderstorm > 0) return;
+                        if (combatant.mana < a.manaCost) return;
+                        const owner = combatant.side === 'left' ? 'player' : 'ai';
+                        // Deterministic zap of up to maxZaps incoming enemy projectiles, in stable id order.
+                        ctx.deps.thunderstormZap(owner, a.maxZaps, ctx);
+                        combatant.mana -= a.manaCost;
+                        combatant.cooldowns.thunderstorm = a.cooldown;
+                    },
+                },
             }
         };
         window.ABILITY_REGISTRY = ABILITY_REGISTRY;
@@ -4582,6 +4594,9 @@
                 }
                 if (e.code === 'Digit2') {
                     pendingNetInput.frostbolt = true;
+                }
+                if (e.code === 'Digit3') {
+                    pendingNetInput.thunderstorm = true;
                 }
                 return;  // Skip single-player logic in PvP mode
             }
@@ -16452,7 +16467,7 @@
                 // Scripted, pure-of-frame inputs: both sides move, cast, parry on fixed cadences
                 // so projectiles spawn and exercise gravity/wall/paddle/gate physics branches.
                 const inp = (f, side) => {
-                    const o = { moveDir: 0, parry: false, fireball: false, frostbolt: false };
+                    const o = { moveDir: 0, parry: false, fireball: false, frostbolt: false, thunderstorm: false };
                     const ph = side === 'left' ? 0 : 17;
                     o.moveDir = (((f + ph) >> 3) % 3) - 1; // triangle-ish: -1,0,1
                     if (side === 'left') {
@@ -16632,6 +16647,7 @@
                     parry: data.parry,
                     fireball: data.fireball,
                     frostbolt: data.frostbolt,
+                    thunderstorm: data.thunderstorm || false,
                     confirmed: true
                 };
             } else {
@@ -16640,6 +16656,7 @@
                 remoteInputHistory[frame].parry = data.parry;
                 remoteInputHistory[frame].fireball = data.fireball;
                 remoteInputHistory[frame].frostbolt = data.frostbolt;
+                remoteInputHistory[frame].thunderstorm = data.thunderstorm || false;
                 remoteInputHistory[frame].confirmed = true;
             }
 
@@ -16658,7 +16675,8 @@
                     moveDir: input.moveDir,
                     parry: input.parry,
                     fireball: input.fireball,
-                    frostbolt: input.frostbolt
+                    frostbolt: input.frostbolt,
+                    thunderstorm: input.thunderstorm || false
                 });
             }
         }
@@ -16912,7 +16930,7 @@
 
         // Get default input (no buttons pressed)
         function defaultInput() {
-            return { moveDir: 0, parry: false, fireball: false, frostbolt: false };
+            return { moveDir: 0, parry: false, fireball: false, frostbolt: false, thunderstorm: false };
         }
 
         // Predict opponent's input based on last known input
@@ -16925,7 +16943,8 @@
                         moveDir: remoteInputHistory[f].moveDir,
                         parry: false,
                         fireball: false,
-                        frostbolt: false
+                        frostbolt: false,
+                        thunderstorm: false
                     };
                 }
             }
@@ -16942,7 +16961,8 @@
                     if (remote.predictedMoveDir !== remote.moveDir ||
                         remote.predictedParry !== remote.parry ||
                         remote.predictedFireball !== remote.fireball ||
-                        remote.predictedFrostbolt !== remote.frostbolt) {
+                        remote.predictedFrostbolt !== remote.frostbolt ||
+                        remote.predictedThunderstorm !== remote.thunderstorm) {
                         return f;  // Need to rollback to this frame
                     }
                 }
@@ -17158,7 +17178,8 @@
                     predictedMoveDir: predicted.moveDir,
                     predictedParry: predicted.parry,
                     predictedFireball: predicted.fireball,
-                    predictedFrostbolt: predicted.frostbolt
+                    predictedFrostbolt: predicted.frostbolt,
+                    predictedThunderstorm: predicted.thunderstorm
                 };
             }
 
@@ -17173,6 +17194,7 @@
             pendingNetInput.parry = false;
             pendingNetInput.fireball = false;
             pendingNetInput.frostbolt = false;
+            pendingNetInput.thunderstorm = false;
 
             return input;
         }
@@ -17296,6 +17318,48 @@
             },
             castingStart: () => { if (window.ToneSFX) ToneSFX.castingStart(); },
             getAbilityDef: (id) => getAbilityDef(id),
+            // Deterministic thunderstorm zap: selects incoming ENEMY projectiles by pure state
+            // (proj.x, proj.velX, proj.owner — NO mesh reads), destroys up to maxZaps in stable
+            // ascending proj.id order. FX are gated by !ctx.isResimulating.
+            thunderstormZap: (owner, maxZaps, ctx) => {
+                const incomingVelDir = owner === 'player' ? -1 : 1;
+                const targets = ctx.projectiles
+                    .filter(p => p.owner !== owner && Math.sign(p.velX) === incomingVelDir)
+                    .sort((a, b) => a.id - b.id)  // stable ascending id order for determinism
+                    .slice(0, maxZaps);
+                const zapsToPerform = targets.length;
+                for (let i = 0; i < zapsToPerform; i++) {
+                    const proj = targets[i];
+                    if (!ctx.isResimulating) {
+                        // Snapshot position for FX (use sim state, not mesh)
+                        const fx = { x: proj.x, y: proj.y !== undefined ? proj.y : 1.0, z: proj.z };
+                        const delay = i * 100;
+                        setTimeout(() => {
+                            if (window.createSkyLightningStrike) {
+                                const v = new BABYLON.Vector3(fx.x, fx.y, fx.z);
+                                createSkyLightningStrike(v);
+                                if (window.createZapFlash) createZapFlash(v);
+                                if (window.showCombatTextAt) showCombatTextAt(v, 'Zap!', 'lightning');
+                            }
+                        }, delay);
+                    }
+                    window.destroyProjectile(proj);
+                }
+                if (!ctx.isResimulating) {
+                    if (zapsToPerform === 0) {
+                        const isPlayer = owner === 'player';
+                        if (window.showCombatText) showCombatText(isPlayer, 'NO TARGET', 'lightning');
+                    } else {
+                        const isPlayer = owner === 'player';
+                        if (window.showCombatText) showCombatText(isPlayer, 'Thunderstorm x' + zapsToPerform, 'lightning');
+                        if (window.ToneSFX && window.ToneSFX.lightning) window.ToneSFX.lightning();
+                        if (window.StatTracker) {
+                            StatTracker.increment('thunderstorm_casts');
+                            StatTracker.increment('projectiles_zapped', zapsToPerform);
+                        }
+                    }
+                }
+            },
         };
 
         // updateNetworkProjectiles lifted to js/sim.js (window.VolleyboltSim).

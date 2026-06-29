@@ -406,8 +406,10 @@
         // Process ability inputs
         if (leftInput.fireball && combatants.left) tryNetworkCast(combatants.left, 'fireball', ctx);
         if (leftInput.frostbolt && combatants.left) tryNetworkCast(combatants.left, 'frostbolt', ctx);
+        if (leftInput.thunderstorm && combatants.left) tryNetworkCast(combatants.left, 'thunderstorm', ctx);
         if (rightInput.fireball && combatants.right) tryNetworkCast(combatants.right, 'fireball', ctx);
         if (rightInput.frostbolt && combatants.right) tryNetworkCast(combatants.right, 'frostbolt', ctx);
+        if (rightInput.thunderstorm && combatants.right) tryNetworkCast(combatants.right, 'thunderstorm', ctx);
 
         // Update projectiles
         updateNetworkProjectiles(dt, ctx);
