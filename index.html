@@ -167,6 +167,17 @@
                 <div class="settings-section-label">Graphics</div>
                 <label class="settings-row"><span>Fullscreen</span>
                     <input type="checkbox" class="settings-toggle" id="setFullscreen"></label>
+                <label class="settings-row"><span>Render Res</span>
+                    <input type="range" class="settings-slider" id="setRenderScale" min="50" max="100" step="5">
+                    <span id="setRenderScaleVal" style="min-width:3em;text-align:right">100%</span></label>
+                <label class="settings-row"><span>FPS Cap</span>
+                    <select class="settings-select" id="setFpsCap">
+                        <option value="0">Uncapped</option>
+                        <option value="120">120</option>
+                        <option value="90">90</option>
+                        <option value="60">60</option>
+                        <option value="30">30</option>
+                    </select></label>
                 <button class="game-btn menu-btn menu-btn-ghost" id="settingsBack">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
                     <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
@@ -2349,7 +2360,7 @@
         // ---- Persistent player settings (audio + fullscreen) -> localStorage ----
         const Settings = (() => {
             const KEY = 'volleybolt_settings';
-            const DEFAULTS = { master: 50, music: 50, sfx: 50, fullscreen: false, playerName: '' };
+            const DEFAULTS = { master: 50, music: 50, sfx: 50, fullscreen: false, playerName: '', renderScale: 100, fpsCap: 0 };
             const values = { ...DEFAULTS };
 
             function load() {
@@ -2382,6 +2393,8 @@
                 if (key === 'master') { if (window.setMasterVolume) window.setMasterVolume(value / 100); }
                 else if (key === 'music') { if (window.setMusicVolume) window.setMusicVolume(value / 100); }
                 else if (key === 'sfx')   { if (window.setSfxVolume)   window.setSfxVolume(value / 100); }
+                else if (key === 'renderScale') { if (window.applyRetroResolution) window.applyRetroResolution(); }
+                else if (key === 'fpsCap')      { if (window.setRenderFpsCap) window.setRenderFpsCap(value); }
                 save();
             }
             return { values, load, save, applyAudio, set };
@@ -3636,10 +3649,12 @@
             // stylized textures, NOT a forced low internal resolution.
             // ============================================================
             function applyRetroResolution() {
-                // Render at full device pixels for a crisp, scalable image.
+                // Render at full device pixels at 100%, or a fraction thereof for perf savings.
                 const dpr = window.devicePixelRatio || 1;
-                engine.setHardwareScalingLevel(1 / dpr);
+                const pct = (window.Settings && window.Settings.values.renderScale) || 100;
+                engine.setHardwareScalingLevel(1 / (dpr * (pct / 100)));
             }
+            window.applyRetroResolution = applyRetroResolution;
             applyRetroResolution();
 
             // Retro visual style - skip rendering some frames for choppy look
@@ -8010,6 +8025,7 @@
                         const root = new BABYLON.TransformNode("p1Root", scene);
                         meshes.forEach(m => {
                             if (!m.parent || m.parent === scene) m.parent = root;
+                            m.renderingGroupId = 1;  // Characters above bushes (group 0)
                             if (m.material) m.material.backFaceCulling = true;
                             shadowGenerator.addShadowCaster(m);
                         });
@@ -8058,6 +8074,7 @@
                         const root = new BABYLON.TransformNode("p2Root", scene);
                         meshes.forEach(m => {
                             if (!m.parent || m.parent === scene) m.parent = root;
+                            m.renderingGroupId = 1;  // Characters above bushes (group 0)
                             if (m.material) m.material.backFaceCulling = true;
                             shadowGenerator.addShadowCaster(m);
                         });
@@ -8115,6 +8132,7 @@
                             meshes.forEach(m => {
                                 if (!m.parent || m.parent === scene) m.parent = p3Wizard;
                                 m.name = `p3_${m.name}`;  // Rename for isolation
+                                m.renderingGroupId = 1;  // Characters above bushes (group 0)
                                 shadowGenerator.addShadowCaster(m);
 
                                 // Apply BLUE TINT for teammate
@@ -8175,6 +8193,7 @@
                             meshes.forEach(m => {
                                 if (!m.parent || m.parent === scene) m.parent = p4Wizard;
                                 m.name = `p4_${m.name}`;  // Rename for isolation
+                                m.renderingGroupId = 1;  // Characters above bushes (group 0)
                                 shadowGenerator.addShadowCaster(m);
 
                                 // Apply RED TINT for enemy
@@ -9021,6 +9040,7 @@
                 Object.values(playerWizardParts).forEach(part => {
                     if (part && part.getClassName && part.getClassName() === "Mesh") {
                         shadowGenerator.addShadowCaster(part);
+                        part.renderingGroupId = 1;  // Characters above bushes (group 0)
                         if (part.material) playerMeshes.push(part);
                     }
                 });
@@ -9058,6 +9078,7 @@
                 Object.values(aiWizardParts).forEach(part => {
                     if (part && part.getClassName && part.getClassName() === "Mesh") {
                         shadowGenerator.addShadowCaster(part);
+                        part.renderingGroupId = 1;  // Characters above bushes (group 0)
                         if (part.material) aiMeshes.push(part);
                     }
                 });
@@ -9292,6 +9313,7 @@
                                 if (!m.parent || m.parent === scene) {
                                     m.parent = modelRoot;
                                 }
+                                m.renderingGroupId = 1;  // Characters above bushes (group 0)
                                 shadowGenerator.addShadowCaster(m);
 
                                 // Flat shading
@@ -9495,6 +9517,7 @@
                             const modelRoot = new BABYLON.TransformNode(`${prefix}PickleRoot`, scene);
                             meshes.forEach(m => {
                                 if (!m.parent || m.parent === scene) m.parent = modelRoot;
+                                m.renderingGroupId = 1;  // Characters above bushes (group 0); fog/cast bars also group 1 (depth-tested)
                                 shadowGenerator.addShadowCaster(m);
                                 if (!m.material) return;
                                 // Tint the AI pickle red so the two sides read apart
@@ -13179,32 +13202,10 @@
                     combatants.right.modelRoot.rotation.y += (combatants.right.targetRotY - combatants.right.modelRoot.rotation.y) * lerpSpeed;
                 }
 
-                // PvP mode already has its own fixed timestep
-                if (gameMode === 'pvp' && roundActive) {
-                    runPvPGameLoop(renderDt);
-                    return;
-                }
-
-                // FIXED TIMESTEP: Accumulate time and run simulation in fixed 60Hz steps
-                gameAccumulator += renderDt;
-
-                let steps = 0;
-                while (gameAccumulator >= FIXED_DT && steps < MAX_STEPS_PER_FRAME) {
-                    // Singles runs through the deterministic sim (runSinglePlayerFrame); doubles
-                    // stays on the legacy updateGameLogic path until its own unification step.
-                    if (isDoublesMode()) {
-                        updateGameLogic(FIXED_DT);  // Always exactly 1/60 second
-                    } else {
-                        runSinglePlayerFrame(FIXED_DT);
-                    }
-                    gameAccumulator -= FIXED_DT;
-                    steps++;
-                }
-
-                // If we hit the cap, drain excess to prevent permanent lag
-                if (steps >= MAX_STEPS_PER_FRAME) {
-                    gameAccumulator = 0;  // Drop accumulated time, accept time loss
-                }
+                // NOTE: the fixed-timestep simulation (singles/doubles/PvP) now runs in
+                // stepFixedSim(), driven from gameRenderLoop on a wall-clock clock — decoupled
+                // from render rate so FPS never affects gameplay. The block above is render-rate
+                // VISUAL-ONLY work (trails, barrier pulse, model-rotation smoothing).
             });
 
             // ============================================================
@@ -13784,6 +13785,12 @@
             const PS1_FRAME_TIME = 1000 / PS1_TARGET_FPS;
             let ps1ThrottleEnabled = false;  // Disabled by default - enable for authentic PS1 feel
 
+            // General render FPS cap (independent of PS1 throttle; 0 = uncapped).
+            // Only throttles scene.render() — the fixed-timestep sim accumulator is untouched.
+            let renderFpsCap = (window.Settings && window.Settings.values.fpsCap) || 0;
+            let lastRenderCapTime = 0;
+            window.setRenderFpsCap = (cap) => { renderFpsCap = cap; };
+
             // STEPPED UI - All UI elements update at D2 framerate (25fps)
             const UI_STEP_MS = 40;  // 25fps (1000/25)
             let lastUIStepTime = 0;
@@ -13810,12 +13817,45 @@
                 console.log("PS1 framerate: " + (enabled ? fps + "fps" : "smooth"));
             };
 
+            // ============================================================
+            // FIXED-TIMESTEP SIM DRIVER — DECOUPLED FROM RENDER RATE.
+            // Runs every animation frame on a WALL-CLOCK delta (performance.now), NOT
+            // engine.getDeltaTime(), and NOT inside scene.render(). This guarantees the 60Hz
+            // simulation advances at real time no matter the render FPS — so capping/lowering FPS
+            // (or a slower machine) changes only visual smoothness, never gameplay speed or
+            // fairness. Rendering is throttled separately in gameRenderLoop below.
+            // ============================================================
+            let lastSimWallTime = 0;
+            function stepFixedSim() {
+                const now = performance.now();
+                if (gameState !== "playing" || gameOver || paused) { lastSimWallTime = now; return; }
+                if (!lastSimWallTime) lastSimWallTime = now;
+                let dt = (now - lastSimWallTime) / 1000;
+                lastSimWallTime = now;
+                dt = Math.min(dt, MAX_FRAME_TIME);   // spiral-of-death guard
+                // PvP runs its own internal fixed-timestep / rollback path.
+                if (gameMode === 'pvp' && roundActive) { runPvPGameLoop(dt); return; }
+                gameAccumulator += dt;
+                let steps = 0;
+                while (gameAccumulator >= FIXED_DT && steps < MAX_STEPS_PER_FRAME) {
+                    if (isDoublesMode()) updateGameLogic(FIXED_DT);   // Always exactly 1/60s
+                    else                 runSinglePlayerFrame(FIXED_DT);
+                    gameAccumulator -= FIXED_DT;
+                    steps++;
+                }
+                if (steps >= MAX_STEPS_PER_FRAME) gameAccumulator = 0;  // drain excess, accept time loss
+            }
+
             // Store render loop function globally so we can restart it after pausing
             window.gameRenderLoop = () => {
                 // 2D menu/lobby/boot: the DOM owns the screen — skip 3D rendering entirely
                 // (this is what keeps any menu camera from ever showing).
                 if (GameSM.state === 'menu' || GameSM.state === 'lobby' || GameSM.state === 'boot') return;
                 const now = performance.now();
+
+                // Advance the simulation FIRST, on a wall-clock clock, every frame — independent of
+                // whether we render this frame (the FPS cap below only throttles drawing, never the game).
+                stepFixedSim();
 
                 // STEPPED ANIMATIONS - Pause/resume at fixed intervals for retro sprite feel
                 if (paused) {
@@ -13840,6 +13880,13 @@
                 if (ps1ThrottleEnabled) {
                     if (now - lastFrameTime >= (window.PS1_FRAME_TIME || PS1_FRAME_TIME)) {
                         lastFrameTime = now;
+                        scene.render();
+                    }
+                } else if (renderFpsCap > 0) {
+                    // General FPS cap: only render when enough time has elapsed.
+                    // The fixed-timestep sim accumulator runs independently (above) and is unaffected.
+                    if (now - lastRenderCapTime >= 1000 / renderFpsCap) {
+                        lastRenderCapTime = now;
                         scene.render();
                     }
                 } else {
@@ -14999,6 +15046,18 @@
                 Settings.set('fullscreen', !!document.fullscreenElement);
             });
             back.addEventListener('click', () => closeMenuScreen());
+            // Render resolution slider
+            const renderScaleEl = $('setRenderScale'), renderScaleValEl = $('setRenderScaleVal');
+            if (renderScaleEl) {
+                renderScaleEl.addEventListener('input', e => {
+                    const val = parseInt(e.target.value, 10);
+                    if (renderScaleValEl) renderScaleValEl.textContent = val + '%';
+                    Settings.set('renderScale', val);
+                });
+            }
+            // FPS cap dropdown
+            const fpsCapEl = $('setFpsCap');
+            if (fpsCapEl) fpsCapEl.addEventListener('change', e => Settings.set('fpsCap', parseInt(e.target.value, 10)));
         }
         function openSettings(from = 'menu') {
             wireSettingsScreen();
@@ -15014,6 +15073,14 @@
                 nameEl.title = inMatch ? 'Name can only be changed outside of a match' : '';
             }
             document.getElementById('setFullscreen').checked = !!document.fullscreenElement;
+            // Restore render scale slider + label
+            const rsEl = document.getElementById('setRenderScale');
+            const rsValEl = document.getElementById('setRenderScaleVal');
+            if (rsEl) rsEl.value = Settings.values.renderScale;
+            if (rsValEl) rsValEl.textContent = Settings.values.renderScale + '%';
+            // Restore FPS cap select
+            const fpsEl = document.getElementById('setFpsCap');
+            if (fpsEl) fpsEl.value = Settings.values.fpsCap;
             showMenuScreen('settingsScreen', from);
         }
         window.openSettings = openSettings;
