@@ -2135,7 +2135,9 @@
                         // left clears 'ai'-parried, right clears 'player'-parried.
                         const opp = side === 'left' ? 'ai' : 'player';
                         if (proj.isParried && proj.parriedBy === opp) ctx.deps.resetProjParryState(proj);
-                        const hitOffset = (proj.z - pz) / paddleHalfDepth;
+                        // Clamp to ±1: an edge-of-paddle hit (the catch zone is wider than paddleHalfDepth)
+                        // would otherwise make angleStrength steep, gutting velX so the ball crawls across.
+                        const hitOffset = Math.max(-1, Math.min(1, (proj.z - pz) / paddleHalfDepth));
                         const inboundDir = proj.velX > 0 ? -1 : 1;   // capture before we overwrite velX
                         proj.volleyCount++;                          // a return raises the volley tier
                         // CONSISTENT per-tier speed: a given volley always returns at the same speed —
