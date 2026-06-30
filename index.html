@@ -11919,12 +11919,22 @@
                     const diff = targetZ - view.self.paddleZ;
                     if (Math.abs(diff) > 0.34) moveDir = Math.sign(diff);
                 }
-                // Defense takes priority over offense. While casting, HOLD (let the cast land) ONLY
-                // when there is no urgent threat — a real opening to apply pressure. If a threat
-                // appears mid-cast, keep the computed moveDir: moving to dodge/intercept cancels the
-                // cast in the sim, so the AI bails the cast to defend. (When it's already in position
-                // to block, moveDir is 0 anyway, so the cast continues and it just parries.)
-                if (view.self.casting && !threat) moveDir = 0;
+                // Defense over offense — but factor in TIMING so the AI doesn't bail the instant a
+                // threat appears. While casting, hold (let the cast land) unless the threat would
+                // reach us before the cast finishes. If the cast lands first (with a little slack to
+                // block/parry afterward), keep casting; otherwise keep the computed moveDir so moving
+                // to defend cancels the cast. (When already in position to block, moveDir is 0 anyway,
+                // so the cast continues and it just parries.)
+                if (view.self.casting) {
+                    let holdCast = true;
+                    if (threat && threat.velX > 0) {
+                        const remainingCast = Math.max(0, (view.self.castTime || 0) - (view.self.castProgress || 0));
+                        const timeToImpact  = (view.self.paddleX - threat.x) / threat.velX;  // seconds until it reaches our X
+                        const REACT_MARGIN  = 0.2;  // slack (s) to reposition/parry after the cast lands
+                        if (timeToImpact < remainingCast + REACT_MARGIN) holdCast = false;  // can't make it → bail to defend
+                    }
+                    if (holdCast) moveDir = 0;
+                }
 
                 if (!isThinkFrame) {
                     return { moveDir, parry: false, fireball: false, frostbolt: false, thunderstorm: false, juice: false };
@@ -11999,6 +12009,8 @@
                         },
                         freezeTime:   cr.freezeTime  || 0,
                         casting:      cr.casting     || null,
+                        castProgress: cr.castProgress || 0,
+                        castTime:     cr.castTime    || 0,
                         juice:        cr.juice       || 0,
                         juiceActive:  cr.juiceActive || false,
                         shieldCharges: (cr.lightningShield && cr.lightningShield.charges) || 0,
@@ -12038,6 +12050,12 @@
             // projectile state to meshes internally via SIM_DEPS (mirrorPaddleToMesh /
             // mirrorProjectileToMesh), exactly like runNetworkFrame, so no extra mesh sync is needed.
             function runSinglePlayerFrame(dt) {
+                // Never simulate while on the menu / title / load screen — otherwise stray input or
+                // leftover state could trigger casts (and their sounds) before a match begins.
+                // gameState === 'menu' is the precise "not in a match" signal (set by showMainMenu /
+                // returnToMenuTransition; cleared to 'playing' once a match starts). In-match phases
+                // (Ready/Go, playing, round transitions) are unaffected.
+                if (gameState === 'menu') return;
                 spFrameCounter++;
                 const leftInput  = buildPlayerInput();
                 // Reaction delay: the AI decides on the world it saw `reactionFrames` ago — a human
@@ -15538,7 +15556,7 @@
                         paddleX: 7, paddleZ: (seed % 7) * 0.2 - 0.6,
                         mana: 3,
                         cooldowns: { fireball: 0, frostbolt: 0, thunderstorm: 0 },
-                        freezeTime: 0, casting: null, juice: 0, juiceActive: false, shieldCharges: 0,
+                        freezeTime: 0, casting: null, castProgress: 0, castTime: 1.0, juice: 0, juiceActive: false, shieldCharges: 0,
                     },
                     opp:  { paddleZ: (seed % 11) * 0.15 - 0.8 },
                     geom: { tableWidth: 16, halfDepth: 4, paddleBoundary: 3.8 },
