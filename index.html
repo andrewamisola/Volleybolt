@@ -3504,24 +3504,27 @@
                     parryCallback();
                 }
             }
-            // Spell slots - use loadout system
+            // Spell slots - route through the sim input channel (pendingNetInput). The loadout
+            // resolves each slot to a spell id (fireball/frostbolt/thunderstorm); the sim enforces
+            // mana/cooldown/cast guards. Pointer still follows the input for visual feedback.
             // Key 1 = slot 0, Key 2 = slot 1, Key 3 = slot 2
             if (!gameOver && roundActive && !roundTransitioning) {
-                if (e.code === 'Digit1') {
-                    castFromLoadoutSlot(0, 'player');
-                }
-                if (e.code === 'Digit2') {
-                    castFromLoadoutSlot(1, 'player');
-                }
-                if (e.code === 'Digit3') {
-                    castFromLoadoutSlot(2, 'player');
+                let slotIndex = -1;
+                if (e.code === 'Digit1') slotIndex = 0;
+                else if (e.code === 'Digit2') slotIndex = 1;
+                else if (e.code === 'Digit3') slotIndex = 2;
+                if (slotIndex >= 0) {
+                    const sp = PlayerLoadout.getSlot(slotIndex);
+                    if (sp && (sp.id in pendingNetInput)) {
+                        if (window.pointCmdSlot) window.pointCmdSlot(sp.id);
+                        pendingNetInput[sp.id] = true;
+                    }
                 }
             }
             // Q = activate Juice (ultimate). Usable any time during a match once the bar is full
             // (not gated on roundActive, so it never feels unresponsive). activateJuice guards readiness.
             if (e.code === 'KeyQ' && !gameOver && !roundTransitioning) {
-                if (window.activateJuice) window.activateJuice('player');  // SP direct path (kept until 2.3)
-                pendingNetInput.juice = true;                              // MP/sim path: signal through the input channel
+                pendingNetInput.juice = true;   // route through the sim input channel (singles + MP)
             }
         });
         document.addEventListener('keyup', (e) => {
@@ -6308,13 +6311,13 @@
             fireballBtn.btnBg.isPointerBlocker = true;
             fireballBtn.btnBg.onPointerClickObservable.add(() => {
                 if (window.pointCmdSlot) window.pointCmdSlot('fireball');
-                if (typeof castFireball === 'function') castFireball();
+                pendingNetInput.fireball = true;   // route through the sim input channel
             });
 
             frostboltBtn.btnBg.isPointerBlocker = true;
             frostboltBtn.btnBg.onPointerClickObservable.add(() => {
                 if (window.pointCmdSlot) window.pointCmdSlot('frostbolt');
-                if (typeof castFrostbolt === 'function') castFrostbolt();
+                pendingNetInput.frostbolt = true;   // route through the sim input channel
             });
 
             parryBtnBg.isPointerBlocker = true;
@@ -11247,32 +11250,11 @@
             // Player parry callback - activates parry window
             let parryJustActivated = false;  // Prevent double-activation from rapid input
             parryCallback = () => {
-                if (!canParry || parryActive || parryJustActivated) return;
-
-                // Set flag immediately to prevent double sound from rapid clicks
-                parryJustActivated = true;
-                setTimeout(() => parryJustActivated = false, 100);
-
-                // Activate parry window
-                parryActive = true;
-                parryTimer = parryWindow;
-                canParry = false;
-
-                // Prime sound (activation) - different from success sound
-                if (window.playSound) playSound('spellReady', playerPaddle.position.x, 0.15);
-
-                // Create 3D parry bubble to show hitbox
-                if (window.createParryBubble) {
-                    window.activeParryBubble = createParryBubble(playerPaddle, false);
-                }
-
-                // Update GUI to active state
-                updateParryButtonGUI('active');
-                updateParryActiveOverlay(1.0);
-
-                // Add visual indicator to HTML parry button (legacy)
-                const parryBtn = document.getElementById('parryButton');
-                if (parryBtn) parryBtn.classList.add('active');
+                // Singles parry now routes through the deterministic sim (pvpParryState). The sim
+                // activates the window, enforces cooldown, and creates the bubble + sound via
+                // SIM_DEPS.onParryActivated. We only signal intent through the input channel here;
+                // the old local parry-state activation is dead for the sim-driven singles path.
+                pendingNetInput.parry = true;
             };
 
             // Check for parry hits during active window (called in game loop)
@@ -11962,14 +11944,14 @@
             window.DEFAULT_AI_PARAMS = DEFAULT_AI_PARAMS;
             window.AI_RNG_SEED = AI_RNG_SEED;
 
-            // Mesh-reading boundary — the ONLY place in the AI path that touches .mesh.
-            // Everything downstream (decideAI) is pure.
+            // Sim-state snapshot for the AI view. Reads authoritative sim state (proj.x/z,
+            // combatant.paddleX/paddleZ) only — no .mesh reads. Everything downstream (decideAI) is pure.
             function buildAISingleView() {
                 const cr = combatants.right;
                 const projSnaps = projectiles.map(p => ({
                     id:          p.id,
-                    x:           p.mesh.position.x,
-                    z:           p.mesh.position.z,
+                    x:           p.x,
+                    z:           p.z,
                     velX:        p.velX,
                     velZ:        p.velZ,
                     owner:       p.owner,
@@ -11979,8 +11961,8 @@
                 return {
                     projectiles: projSnaps,
                     self: {
-                        paddleX:      aiPaddle.position.x,
-                        paddleZ:      aiPaddle.position.z,
+                        paddleX:      cr.paddleX,
+                        paddleZ:      cr.paddleZ,
                         mana:         cr.mana,
                         cooldowns: {
                             fireball:    cr.cooldowns.fireball    || 0,
@@ -11994,7 +11976,7 @@
                         shieldCharges: (cr.lightningShield && cr.lightningShield.charges) || 0,
                     },
                     opp: {
-                        paddleZ: playerPaddle.position.z,
+                        paddleZ: combatants.left.paddleZ,
                     },
                     geom: {
                         tableWidth:     tableWidth,
@@ -12003,6 +11985,228 @@
                     },
                     roundActive: !!roundActive,
                 };
+            }
+
+            // Canonical player-input struct for the singles sim path. Movement is read live from
+            // keys[] (Z-axis: W/Up = +1, S/Down = -1 — the same keys the old SP loop used). One-shot
+            // action flags come from pendingNetInput (set by keydown / parryCallback / GUI buttons)
+            // and are cleared after read, mirroring captureLocalInput for the MP path.
+            function buildPlayerInput() {
+                const inp = defaultInput();
+                inp.moveDir = (keys['KeyW'] || keys['ArrowUp'])   ? 1
+                            : (keys['KeyS'] || keys['ArrowDown']) ? -1 : 0;
+                inp.parry        = pendingNetInput.parry        || false;
+                inp.fireball     = pendingNetInput.fireball     || false;
+                inp.frostbolt    = pendingNetInput.frostbolt    || false;
+                inp.thunderstorm = pendingNetInput.thunderstorm || false;
+                inp.juice        = pendingNetInput.juice        || false;
+                pendingNetInput.parry = pendingNetInput.fireball = pendingNetInput.frostbolt
+                    = pendingNetInput.thunderstorm = pendingNetInput.juice = false;
+                return inp;
+            }
+
+            // Singles per-frame driver: gather player input (keys) + AI input (decideAI), then run
+            // exactly ONE deterministic sim frame — the same engine MP uses. The sim mirrors paddle +
+            // projectile state to meshes internally via SIM_DEPS (mirrorPaddleToMesh /
+            // mirrorProjectileToMesh), exactly like runNetworkFrame, so no extra mesh sync is needed.
+            function runSinglePlayerFrame(dt) {
+                spFrameCounter++;
+                const leftInput  = buildPlayerInput();
+                const rightInput = decideAI(buildAISingleView(), spFrameCounter, makeAIRng(spFrameCounter ^ AI_RNG_SEED), DEFAULT_AI_PARAMS);
+                window.VolleyboltSim.simulateNetworkFrame(leftInput, rightInput, dt, buildSimCtx());
+                updateSinglePlayerPresentation(dt);
+            }
+
+            // Re-drives all SP-only presentation after the deterministic sim has advanced one
+            // fixed-timestep frame. Reads sim-authoritative state; NEVER writes proj.x/z/velX/velZ,
+            // paddleZ, mana, cooldowns, casting, castProgress, or freezeTime.
+            // Sources: cast bars (old ~12256-12294), rotation (~12316-12379),
+            //          footsteps (~12336-12352), ice-block visuals (~12225-12253),
+            //          projectile trail/shadow/glow/sound (~12437-12507).
+            function updateSinglePlayerPresentation(dt) {
+                const leftC  = combatants.left;
+                const rightC = combatants.right;
+
+                // ---- 1. CAST BARS (old ~12256-12294) ----
+                // Read sim-authoritative casting/castProgress/castTime; drive 2-D and 3-D bars.
+                if (leftC && leftC.casting) {
+                    const progress = leftC.castTime > 0 ? leftC.castProgress / leftC.castTime : 0;
+                    const ab = getAbility(leftC.casting);
+                    const spellName = ab ? ab.name : leftC.casting;
+                    const spellElem = ab ? ab.element : 'fire';
+                    updateCombatantCastBarUI(leftC, spellName, spellElem, progress);
+                    if (window.update3DCastBar) window.update3DCastBar(progress, true);
+                    showCastBar(true);
+                } else {
+                    if (window.update3DCastBar) window.update3DCastBar(0, false);
+                    showCastBar(false);
+                }
+
+                if (rightC && rightC.casting) {
+                    const progress = rightC.castTime > 0 ? rightC.castProgress / rightC.castTime : 0;
+                    const ab = getAbility(rightC.casting);
+                    const spellName = ab ? ab.name : rightC.casting;
+                    const spellElem = ab ? ab.element : 'fire';
+                    updateCombatantCastBarUI(rightC, spellName, spellElem, progress);
+                    if (window.updateAI3DCastBar) window.updateAI3DCastBar(progress, true);
+                    showAICastBar(true);
+                } else {
+                    if (window.updateAI3DCastBar) window.updateAI3DCastBar(0, false);
+                    showAICastBar(false);
+                }
+
+                // ---- 2. PADDLE ROTATION TARGET (old ~12316-12379, rotation-only) ----
+                // sim sets combatant.lastMoveDir; the render callback lerps rotation toward targetRotY.
+                // Player (leftC) faces right (baseRotY = π/2): moveDir +1 tilts +0.6, -1 tilts -0.6.
+                // AI (rightC) faces left (baseRotY = -π/2): moveDir +1 tilts -0.6, -1 tilts +0.6.
+                if (leftC) {
+                    const md = leftC.lastMoveDir || 0;
+                    if ((leftC.freezeTime || 0) > 0 || roundTransitioning) {
+                        leftC.moveDir = 0;
+                    } else {
+                        leftC.moveDir = md;
+                        if (md > 0)       leftC.targetRotY = leftC.baseRotY + 0.6;
+                        else if (md < 0)  leftC.targetRotY = leftC.baseRotY - 0.6;
+                        else              leftC.targetRotY = leftC.baseRotY;
+                        playerTargetRotY = leftC.targetRotY;  // legacy sync
+                    }
+                }
+                if (rightC) {
+                    const md = rightC.lastMoveDir || 0;
+                    if ((rightC.freezeTime || 0) > 0) {
+                        rightC.moveDir = 0;
+                    } else {
+                        rightC.moveDir = md;
+                        if (md > 0)       rightC.targetRotY = rightC.baseRotY - 0.6;
+                        else if (md < 0)  rightC.targetRotY = rightC.baseRotY + 0.6;
+                        else              rightC.targetRotY = rightC.baseRotY;
+                        aiTargetRotY = rightC.targetRotY;  // legacy sync
+                    }
+                }
+
+                // ---- 3. PLAYER FOOTSTEPS (old ~12336-12352) ----
+                if (leftC && (leftC.freezeTime || 0) <= 0 && !roundTransitioning) {
+                    const md = leftC.lastMoveDir || 0;
+                    const currentBoundary = window.getPaddleBoundary ? window.getPaddleBoundary() : 2.7;
+                    const atTop = playerPaddle.position.z >= currentBoundary;
+                    const atBot = playerPaddle.position.z <= -currentBoundary;
+                    const canMove = !(md > 0 && atTop) && !(md < 0 && atBot);
+                    const FOOTSTEP_INTERVAL = 0.32;
+                    if (canMove && md !== 0) {
+                        if (window.footstepTimer === undefined) window.footstepTimer = FOOTSTEP_INTERVAL;
+                        window.footstepTimer += dt;
+                        if (window.footstepTimer >= FOOTSTEP_INTERVAL) {
+                            window.footstepTimer = 0;
+                            if (window.ToneSFX && ToneSFX.footstep) {
+                                if (window.setTonePan) window.setTonePan(playerPaddle.position.x);
+                                ToneSFX.footstep();
+                            }
+                        }
+                    } else {
+                        window.footstepTimer = FOOTSTEP_INTERVAL;  // primed for next walk
+                    }
+                }
+
+                // ---- 4. ICE-BLOCK FREEZE VISUALS (old ~12225-12253) ----
+                // The sim ticks freezeTime; we read it here and drive the ice mesh/light.
+                // The else-if guard (iceBlock.isEnabled()) ensures shatter fires exactly once
+                // on the frame the freeze expires — stateless across frames.
+                for (const c of [combatants.left, combatants.right]) {
+                    if (!c) continue;
+                    const isPlayer = c.side === 'left';
+                    const iceBlock    = isPlayer ? window.playerIceBlock    : window.aiIceBlock;
+                    const iceLight    = isPlayer ? window.playerIceLight    : window.aiIceLight;
+                    const unfreezeAnim = isPlayer ? window.unfreezePlayerAnim : window.unfreezeAIAnim;
+
+                    if ((c.freezeTime || 0) > 0) {
+                        if (iceBlock) {
+                            if (!iceBlock.isEnabled()) iceBlock.setEnabled(true);
+                            if (iceLight) iceLight.intensity = 0.8 + Math.sin(c.freezeTime * 10) * 0.2;
+                            iceBlock.rotation.y = Math.sin(c.freezeTime * 3) * 0.08;
+                        }
+                    } else if (iceBlock && iceBlock.isEnabled()) {
+                        if (window.shatterIceBlock) window.shatterIceBlock(isPlayer);
+                        iceBlock.setEnabled(false);
+                        if (iceLight) iceLight.intensity = 0;
+                        if (unfreezeAnim) unfreezeAnim();
+                    }
+                }
+
+                // ---- 5. COOLDOWN + MANA UI (old ~12196-12222) ----
+                if (window.shouldStepUI && window.shouldStepUI()) {
+                    updateCooldownUI();
+                    if (combatants.left)  updateCombatantManaUI(combatants.left);
+                    if (combatants.right) updateCombatantManaUI(combatants.right);
+                }
+
+                // ---- 6. PER-PROJECTILE PRESENTATION (old ~12437-12507) ----
+                for (const proj of projectiles) {
+                    if (!proj.mesh || proj.mesh.isDisposed()) continue;
+
+                    // 6a. Trail anchor — the sim mirrors mesh.position first via mirrorProjectileToMesh.
+                    //     Moving the anchor here (at sim rate) keeps the ribbon continuous (see ~10428).
+                    if (proj.trailAnchor) {
+                        proj.trailAnchor.position.copyFrom(proj.mesh.position);
+                        if (proj.lastTrailSamplePos) proj.lastTrailSamplePos.copyFrom(proj.mesh.position);
+                        if (proj.trail && !proj.trail.isDisposed()) {
+                            proj.trailAnchor.computeWorldMatrix(true);
+                            proj.trail.update();
+                        }
+                    }
+
+                    // 6b. Blob shadow tracks projectile on the ground plane
+                    if (proj.blobShadow && !proj.blobShadow.isDisposed()) {
+                        proj.blobShadow.position.x = proj.mesh.position.x;
+                        proj.blobShadow.position.z = proj.mesh.position.z;
+                    }
+
+                    // 6c. Fireball flicker + glow pulse (old ~12457-12469)
+                    if (proj.time !== undefined && (proj.type === 'fireball' || !proj.type)) {
+                        proj.time += dt;
+                        if (proj.light && proj.baseIntensity) {
+                            proj.light.intensity = proj.baseIntensity + Math.sin(proj.time * 30) * 0.2 + Math.sin(proj.time * 7.3) * 0.15;
+                        }
+                        if (proj.glowMat) {
+                            proj.glowMat.alpha = 0.25 + Math.sin(proj.time * 20) * 0.1;
+                            const scale = 1 + Math.sin(proj.time * 15) * 0.1;
+                            if (proj.glow) proj.glow.scaling.setAll(scale);
+                        }
+                    }
+
+                    // 6d. Frostbolt icy animation (old ~12472-12491)
+                    if (proj.type === 'frostbolt' && proj.time !== undefined) {
+                        proj.time += dt;
+                        if (proj.mesh.rotationQuaternion) {
+                            const rotSpeed = 3;
+                            const rotation = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, proj.time * rotSpeed);
+                            const tilt     = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, Math.sin(proj.time * 2) * 0.3);
+                            proj.mesh.rotationQuaternion = rotation.multiply(tilt);
+                        }
+                        if (proj.light && proj.baseIntensity) {
+                            proj.light.intensity = proj.baseIntensity + Math.sin(proj.time * 15) * 0.15 + Math.sin(proj.time * 4.7) * 0.05;
+                        }
+                        if (proj.glowMat) {
+                            proj.glowMat.alpha = 0.2 + Math.sin(proj.time * 10) * 0.08;
+                            const scale = 1 + Math.sin(proj.time * 8) * 0.08;
+                            if (proj.glow) proj.glow.scaling.setAll(scale);
+                        }
+                    }
+
+                    // 6e. Loop sound pan + pitch (old ~12494-12496)
+                    const speed = Math.sqrt(proj.velX * proj.velX + proj.velZ * proj.velZ);
+                    updateSoundPan(proj.loopSound, proj.mesh.position.x);
+                    updateSoundPitch(proj.loopSound, speed);
+
+                    // 6f. Approach SFX — incoming fireball warning for the player (old ~12499-12507)
+                    const approachThreshold = -4;
+                    if (proj.velX < 0 && proj.mesh.position.x < approachThreshold && !proj.approachSoundPlayed) {
+                        proj.approachSoundPlayed = true;
+                        playSound('fireballApproaching', proj.mesh.position.x, 0.15, 3.0);
+                    }
+                    if (proj.velX > 0) {
+                        proj.approachSoundPlayed = false;
+                    }
+                }
             }
 
             // Applies a canonical input struct to the AI combatant under player rules.
@@ -12121,7 +12325,7 @@
             // All gameplay-affecting code runs here at fixed rate
             // ============================================================
             function updateGameLogic(dt) {
-                spFrameCounter++;   // deterministic fixed-step counter (Phase 2.1)
+                if (isDoublesMode()) spFrameCounter++;   // singles increments in runSinglePlayerFrame; doubles still ticks here (Phase 2.1/2.3)
                 // Juice (ultimate): free mana + halved cooldowns + burst countdown, for both combatants.
                 if (window.updateJuice) window.updateJuice(dt);
                 // Update parry system
@@ -13038,7 +13242,13 @@
 
                 let steps = 0;
                 while (gameAccumulator >= FIXED_DT && steps < MAX_STEPS_PER_FRAME) {
-                    updateGameLogic(FIXED_DT);  // Always exactly 1/60 second
+                    // Singles runs through the deterministic sim (runSinglePlayerFrame); doubles
+                    // stays on the legacy updateGameLogic path until its own unification step.
+                    if (isDoublesMode()) {
+                        updateGameLogic(FIXED_DT);  // Always exactly 1/60 second
+                    } else {
+                        runSinglePlayerFrame(FIXED_DT);
+                    }
                     gameAccumulator -= FIXED_DT;
                     steps++;
                 }
