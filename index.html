@@ -10239,8 +10239,10 @@
                 const keepMat = new BABYLON.StandardMaterial((isPlayer ? "pKeepMat" : "aKeepMat"), scene);
                 keepMat.diffuseTexture = keepTex;
                 keepMat.specularColor = BABYLON.Color3.Black();
-                keepMat.diffuseColor = new BABYLON.Color3(0.62, 0.62, 0.62);  // darken; grunge applied async
-                _pendingKeepMats.push({ mat: keepMat, uS: 2, vS: 5, gname: isPlayer ? "pKeep" : "aKeep" });
+                keepMat.diffuseColor = new BABYLON.Color3(0.62, 0.62, 0.62);  // darken (kept crisp native tex)
+                // NOTE: deliberately NOT grunged — on the tall keep the 512 grunge tiles 2x5 (10x) and,
+                // minified at distance, the soft AO blobs drown the brick detail (reads washed/stretched).
+                // The crisp native tower_stone tex + darkening reads far better here. Gate keeps its grunge.
                 keep.material = keepMat;
                 keep.receiveShadows = true;
                 if (window.shadowGenerator) window.shadowGenerator.addShadowCaster(keep);
@@ -10254,8 +10256,7 @@
                 const parapetMat = new BABYLON.StandardMaterial((isPlayer ? "pParaMat" : "aParaMat"), scene);
                 parapetMat.diffuseTexture = parapetTex;
                 parapetMat.specularColor = BABYLON.Color3.Black();
-                parapetMat.diffuseColor = new BABYLON.Color3(0.62, 0.62, 0.62);  // darken; grunge applied async
-                _pendingKeepMats.push({ mat: parapetMat, uS: 3, vS: 1, gname: isPlayer ? "pPara" : "aPara" });
+                parapetMat.diffuseColor = new BABYLON.Color3(0.62, 0.62, 0.62);  // darken (kept crisp native tex)
                 parapet.material = parapetMat;
                 parapet.receiveShadows = true;
 
