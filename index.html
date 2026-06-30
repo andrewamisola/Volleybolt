@@ -11819,7 +11819,11 @@
                     perfStats.lastFPS = fps;
                     const avgFrameMs = elapsedMs / perfStats.frames;
 
-                    fpsDiv.innerHTML = `FPS: ${fps.toFixed(0)} | Frame: ${avgFrameMs.toFixed(1)}ms | Proj: ${projectiles.length}`;
+                    // Live internal render resolution — confirms the Render Resolution slider works
+                    // (the low-fi look hides it visually, but the pixel count here drops in real time).
+                    const _eng = window.gameEngine || (scene && scene.getEngine());
+                    const _res = _eng ? `${_eng.getRenderWidth()}x${_eng.getRenderHeight()}` : '?';
+                    fpsDiv.innerHTML = `FPS: ${fps.toFixed(0)} | Frame: ${avgFrameMs.toFixed(1)}ms | Res: ${_res} | Proj: ${projectiles.length}`;
                     fpsDiv.style.color = fps < 30 ? '#f00' : fps < 50 ? '#ff0' : '#0f0';
 
                     // Log to console if many slow frames
