@@ -13860,6 +13860,7 @@
 
                 // Update floating combat text positions
                 if (window.updateCombatText) window.updateCombatText(dt);
+                if (window.updateSpellCastText) window.updateSpellCastText(dt);
                 if (window.updateFloatingTexts) window.updateFloatingTexts(dt);
                 if (window.updateDamageText) window.updateDamageText(dt);
             });
@@ -18273,6 +18274,12 @@
         const STEP_INTERVAL = 40;  // 25fps to match D2 (1000/25 = 40ms)
         let lastTextStepTime = 0;
 
+        // Separate queue for floating spell-cast speech bubbles.
+        // Kept apart from combatTextQueue so anchor logic (cast-bar top) and
+        // stack spacing can differ without touching other combat text.
+        const spellCastQueue = { player: [], ai: [] };
+        let lastSpellCastStepTime = 0;
+
         // Color map for combat text types
         const combatTextColors = {
             fire: '#ffa040',
@@ -18486,11 +18493,112 @@
             }
         };
 
-        // Show floating spell cast text above caster - uses unified combat text system
+        // Update spell-cast speech bubbles each render frame.
+        // Anchors above the caster's 3D cast bar top edge; stacks without overlap.
+        // FX-only: reads paddle/castBar3D world positions, never writes sim state.
+        window.updateSpellCastText = (dt) => {
+            if (!scene) return;
+
+            const now = Date.now();
+            const doStep = (now - lastSpellCastStepTime) >= STEP_INTERVAL;
+            if (doStep) lastSpellCastStepTime = now;
+
+            const renderWidth  = scene.getEngine().getRenderWidth();
+            const renderHeight = scene.getEngine().getRenderHeight();
+            const scaleX = 1920 / renderWidth;
+            const scaleY = 1080 / renderHeight;
+
+            // These match create3DCastBars constants (barHeight = 0.18, local Y = 2.0).
+            // Top edge of cast bar in the caster's local space: 2.0 + 0.18/2 = 2.09.
+            const CAST_BAR_LOCAL_Y = 2.0;
+            const CAST_BAR_HALF_H  = 0.09;   // barHeight/2
+
+            // Bubble geometry in HUD-reference pixels (1920x1080).
+            // .cast-bubble: font 18px + pad 5+6px + border 4px ≈ 33px body + 8px tail = ~41px total.
+            // Center-to-top of body = ~17px; we add an 8px clear gap above the bar.
+            const BUBBLE_HALF_H    = 17;    // half the bubble body height in HUD px
+            const ABOVE_GAP        = 8;     // clear gap (HUD px) between bar top and bubble bottom
+            // Spacing between stacked bubbles: must exceed full bubble height (~41px) to prevent overlap.
+            const STACK_SPACING    = 48;    // HUD px per slot
+
+            for (const side of ['player', 'ai']) {
+                const paddle = side === 'player' ? playerPaddle : aiPaddle;
+                if (!paddle) continue;
+
+                // World position of cast bar's TOP edge, matching the parented bar.
+                // (paddle.position is the world anchor; bar is parented at local Y = CAST_BAR_LOCAL_Y)
+                const barTopWorld = new BABYLON.Vector3(
+                    paddle.position.x,
+                    paddle.position.y + CAST_BAR_LOCAL_Y + CAST_BAR_HALF_H,
+                    paddle.position.z
+                );
+
+                const barTopScreen = BABYLON.Vector3.Project(
+                    barTopWorld,
+                    BABYLON.Matrix.Identity(),
+                    scene.getTransformMatrix(),
+                    scene.activeCamera.viewport.toGlobal(renderWidth, renderHeight)
+                );
+
+                // Screen Y increases downward. anchorY is where the CENTRE of the
+                // lowest (newest) bubble should sit — just above the bar top edge.
+                const anchorX = barTopScreen.x * scaleX;
+                const anchorY = barTopScreen.y * scaleY - BUBBLE_HALF_H - ABOVE_GAP;
+
+                // Process from newest (last index) to oldest (index 0).
+                // slot 0 = newest (bottom, closest to cast bar).
+                // slot N = older entries stacked upward.
+                for (let i = spellCastQueue[side].length - 1; i >= 0; i--) {
+                    const item = spellCastQueue[side][i];
+                    item.age += dt;
+
+                    // Expire after 2.5 s
+                    if (item.age > 2.5) {
+                        if (item.el) item.el.remove();
+                        spellCastQueue[side].splice(i, 1);
+                        continue;
+                    }
+
+                    // Stepped fade in the last 0.5 s (matches FF9/D2 stepped opacity rhythm)
+                    if (item.age > 2.0 && doStep) {
+                        const fp = (item.age - 2.0) / 0.5;
+                        const alpha = fp < 0.33 ? 1 : fp < 0.66 ? 0.66 : fp < 1 ? 0.33 : 0;
+                        if (item.el) item.el.style.opacity = alpha;
+                    }
+
+                    // Vertical slot: 0 = newest at bottom, higher = older stacked up.
+                    const slot = spellCastQueue[side].length - 1 - i;
+
+                    // Slow upward drift starts after 1 s hold, stepped at 25fps.
+                    const moveAge      = Math.max(0, item.age - 1.0);
+                    const steppedMove  = Math.floor(moveAge / 0.15) * 0.15;
+                    const slotY = anchorY - slot * STACK_SPACING - steppedMove * 30;
+
+                    if (doStep && item.el) {
+                        item.el.style.left      = Math.floor(anchorX) + 'px';
+                        item.el.style.top       = Math.floor(slotY)   + 'px';
+                        item.el.style.transform = 'translate(-50%, -50%)';
+                    }
+                }
+            }
+        };
+
+        // Show floating spell cast text above caster.
+        // Pushes into the dedicated spellCastQueue (not the general combatTextQueue)
+        // so anchoring and stacking are handled independently by updateSpellCastText.
         function showSpellCastText(isPlayer, spellName, element) {
-            // Use the unified combat text system with element type
-            if (window.showCombatText) {
-                showCombatText(isPlayer, spellName, element || 'fire');
+            if (!scene) return;
+            const side = isPlayer ? 'player' : 'ai';
+            const el = createHTMLCombatText(spellName, element || 'fire');
+            if (!el) return;
+            el.classList.add('cast-bubble', isPlayer ? 'team-blue' : 'team-red');
+
+            spellCastQueue[side].push({ el: el, age: 0 });
+
+            // Cap queue at 4 entries per side; discard oldest if exceeded.
+            if (spellCastQueue[side].length > 4) {
+                const old = spellCastQueue[side].shift();
+                if (old.el) old.el.remove();
             }
         }
 
