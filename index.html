@@ -596,7 +596,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=23c2"></script>
+    <script type="module" src="js/sim.js?v=23c3"></script>
 
     <script>
         // Global error handler to debug doubles crash
@@ -1724,6 +1724,7 @@
             c.juiceActive = true;
             c.juiceTimer = JUICE.DURATION;
             if (c.cooldowns) { for (const k in c.cooldowns) c.cooldowns[k] = 0; }   // reset all cooldowns ONCE
+            c.mana = getMaxMana(c.side);                                            // grant FULL mana on activation
             if (window.onJuiceStart) window.onJuiceStart(c);
             if (window.logJuice) window.logJuice(c.side === 'left' ? 'blue' : 'red');
             return true;
@@ -15619,6 +15620,7 @@
                         c.towerHealth = 9999; // avoid endRound side effects during the run
                         c.moveAccum = 0; c.paddleZ = 0; c.prevPaddleZ = 0; // clean, mode-independent paddle start
                         c.paddleX = (c.side === 'left' ? -11.5 : 11.5); // pin paddleX so onPaddleHit reposition is oracle-stable (immune to live mutation)
+                        c.juice = 0; c.juiceActive = false; c.juiceTimer = 0; // pin juice (hashed) so leftover live juice can't shift the golden
                     }
                     // Pin paddle meshes too so the run never inherits single-player paddle drift.
                     if (playerPaddle) playerPaddle.position.z = 0;

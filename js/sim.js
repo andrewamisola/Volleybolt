@@ -58,6 +58,8 @@
         combatant.juiceTimer  = J.DURATION;
         // Reset all cooldowns ONCE on activation (matches SP).
         if (combatant.cooldowns) { for (const k in combatant.cooldowns) combatant.cooldowns[k] = 0; }
+        // Grant FULL mana on activation (Director call 2026-06-29).
+        combatant.mana = ctx.deps.getMaxMana(combatant.side);
         if (!ctx.isResimulating) ctx.deps.onJuiceActivate(combatant);
         return true;
     }
