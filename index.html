@@ -2182,7 +2182,12 @@
                         combatant.cooldowns.frostbolt = a.cooldown;
                         const velX = combatant.side === 'left' ? a.baseSpeed : -a.baseSpeed;
                         const startX = combatant.side === 'left' ? combatant.paddleX + 1 : combatant.paddleX - 1;
-                        if (!ctx.isResimulating) ctx.deps.playSound('frostboltCast', startX, 0.7);
+                        if (!ctx.isResimulating) {
+                            ctx.deps.playSound('frostboltCast', startX, 0.7);
+                            // Floating "Frostbolt" cast text — frostbolt is an instant cast so it never
+                            // hits completeCasting (where fireball/thunderstorm show theirs), so do it here.
+                            if (ctx.deps.showSpellCastText) ctx.deps.showSpellCastText(owner === 'player', 'Frostbolt', 'frost');
+                        }
                         ctx.deps.spawnFrostbolt(owner, startX, combatant.paddleZ, velX, 0); // factory assigns id
                         // Juice charge on cast (matches SP castFrostbolt ~13778). Instant cast: this
                         // onCast IS the cast, so charge here. Pure state (addJuice caps + skips when
@@ -11013,10 +11018,12 @@
                 bubbleMat.emissiveColor = isAI
                     ? new BABYLON.Color3(1, 0.3, 0.6)  // Magenta for AI
                     : new BABYLON.Color3(0.3, 0.7, 1);  // Blue for player
-                bubbleMat.alpha = 0.12;  // Very transparent
+                bubbleMat.alpha = 0.22;  // bumped: the near-opaque fog plane was washing it out
                 bubbleMat.disableLighting = true;
                 bubbleMat.backFaceCulling = false;  // See from inside too
+                bubbleMat.fogEnabled = false;        // don't let scene/plane fog hide it (same fix as blob shadows)
                 bubble.material = bubbleMat;
+                bubble.renderingGroupId = 2;         // render above the fog plane (group 1) so it's visible
 
                 // Add wireframe overlay for clearer hitbox
                 const wireframe = BABYLON.MeshBuilder.CreateSphere("parryWire", {
@@ -11029,11 +11036,13 @@
                     ? new BABYLON.Color3(0.5, 0.2, 0.35)  // Brighter magenta
                     : new BABYLON.Color3(0.2, 0.4, 0.6);  // Brighter blue
                 wireMat.wireframe = true;
-                wireMat.alpha = 0.25;  // Slightly more visible
+                wireMat.alpha = 0.45;  // Slightly more visible
                 wireMat.disableLighting = true;
+                wireMat.fogEnabled = false;
                 wireframe.material = wireMat;
                 wireframe.parent = bubble;
                 wireframe.position.set(0, 0, 0);
+                wireframe.renderingGroupId = 2;      // above the fog plane, with the bubble
 
                 return { bubble, wireframe, mat: bubbleMat };
             };
@@ -16509,6 +16518,7 @@
             // --- presentation effects (gated by !isResimulating at call sites) ---
             playSound: (name, x, vol, pitch) => playSound(name, x, vol, pitch),
             showFrozenText: (isLocal) => showFrozenText(isLocal),
+            showSpellCastText: (isPlayer, name, element) => showSpellCastText(isPlayer, name, element),
             // proj-vs-proj FX (gated by !isResimulating at the sim call sites).
             // createImpactFlash/showCombatTextAt need a Babylon Vector3 (copyFrom/clone);
             // createImpactDecal accepts a plain {x, z}.
