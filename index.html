@@ -596,7 +596,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=23c4"></script>
+    <script type="module" src="js/sim.js?v=23c5"></script>
 
     <script>
         // Global error handler to debug doubles crash
@@ -2136,18 +2136,21 @@
                         const opp = side === 'left' ? 'ai' : 'player';
                         if (proj.isParried && proj.parriedBy === opp) ctx.deps.resetProjParryState(proj);
                         const hitOffset = (proj.z - pz) / paddleHalfDepth;
-                        // SP quirk: speed floor (min 10) applies to player-side (left) return only, NOT the AI (right).
-                        const rawSpeed = Math.sqrt(proj.velX*proj.velX + proj.velZ*proj.velZ);
-                        const currentSpeed = Math.max(rawSpeed, 12);  // min return speed (both sides) so balls don't crawl; was left-only max(.,10)
+                        const inboundDir = proj.velX > 0 ? -1 : 1;   // capture before we overwrite velX
+                        proj.volleyCount++;                          // a return raises the volley tier
+                        // CONSISTENT per-tier speed: a given volley always returns at the same speed —
+                        // baseSpeed at vc0 (dmg 2) ramping to maxSpeed at vc4 (dmg 6). No dependence on
+                        // incoming speed, so e.g. a "6" always moves at the same set speed.
+                        const fb = ctx.abilities.fireball;
+                        const tierSpeed = Math.min(fb.baseSpeed + proj.volleyCount * (fb.maxSpeed - fb.baseSpeed) / 4, fb.maxSpeed);
                         const angleStrength = hitOffset * 0.7;
-                        proj.velX = currentSpeed * Math.cos(angleStrength) * (proj.velX > 0 ? -1 : 1);
-                        proj.velZ = currentSpeed * Math.sin(angleStrength) * Math.sign(hitOffset || 1);
+                        proj.velX = tierSpeed * Math.cos(angleStrength) * inboundDir;
+                        proj.velZ = tierSpeed * Math.sin(angleStrength) * Math.sign(hitOffset || 1);
                         // Paddle momentum: lateral paddle motion adds to ball Z velocity (SP momentumFactor 0.4).
                         const dt = ctx.dt;
                         const paddleVelZ = (c.paddleZ - c.prevPaddleZ) / dt;
                         proj.velZ += paddleVelZ * 0.4;
                         proj.owner = side === 'left' ? 'player' : 'ai';
-                        proj.volleyCount++;
                         ctx.deps.updateFireballScale(proj);
                         // Block-mana awarded unconditionally on any paddle block (SP gainMana; was guarded by !isParried).
                         if (c) c.mana = Math.min(ctx.deps.getMaxMana(side === 'left' ? 'left' : 'right'), c.mana + 0.5);
@@ -5233,8 +5236,8 @@
             try {
                 const G = BABYLON.GUI, ALN = G.Control;
                 const cmdSlots = [
-                    { id: 'fireball',        name: 'Fireball',     key: '1',     mana: 1 },
-                    { id: 'frostbolt',       name: 'Frostbolt',    key: '2',     mana: 2 },
+                    { id: 'fireball',        name: 'Fireball',     key: '1',     mana: 0.5 },
+                    { id: 'frostbolt',       name: 'Frostbolt',    key: '2',     mana: 1 },
                     { id: 'thunderstorm', name: 'Thunderstorm', key: '3',     mana: 2 },
                     { id: 'parry',           name: 'Parry',        key: '␣',     mana: 0 },
                 ];
@@ -11097,8 +11100,10 @@
                     StatTracker.increment('parries_successful');
                 }
 
-                // Boost speed
-                proj.speed = Math.min(proj.speed * parryBoost, maxParrySpeed);
+                // Parry returns at a CONSISTENT 1.5x the ball's CURRENT speed (e.g. a +2 fireball
+                // comes back at 1.5x its tier speed). Based on actual velocity, not the stale
+                // proj.speed; no flat cap (was proj.speed*1.4 capped at 28).
+                proj.speed = Math.sqrt(proj.velX * proj.velX + proj.velZ * proj.velZ) * 1.5;
 
                 if (parryer === 'player') {
                     // Check directional input

@@ -19,7 +19,7 @@
 //
 // Determinism law (see docs/SHARED_CORE.md): same (state, inputs) -> same state.
 // No Math.random / Date.now / performance.now here. Verify any change against the
-// dbg.determinism golden-hash oracle in index.html (seed 12345 -> e9717f89).
+// dbg.determinism golden-hash oracle in index.html (seed 12345 -> f59f1a4f).
 // (60bf20f3 -> e9717f89: balance — fireball mana 1->0.5 & cooldown 4->3, frostbolt mana 2->1.)
 // Re-baseline history: 14e88256 (pre Phase-0) -> b1df6797 (Phase-0 fireball-id +
 // court-depth) -> ad7c0e42 (Phase 2.2-B proj-vs-proj + juice in hash) ->
