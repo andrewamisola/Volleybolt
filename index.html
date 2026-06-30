@@ -7489,7 +7489,7 @@
             }, scene);
             blueBase.position.set(-tableWidth/2 - baseWidth/2 - 0.5, baseHeight/2 - 0.15, 0);
             const blueBaseMat = new BABYLON.StandardMaterial("blueBaseMat", scene);
-            blueBaseMat.diffuseColor = new BABYLON.Color3(0.3, 0.5, 1.0);  // Blue tint
+            blueBaseMat.diffuseColor = new BABYLON.Color3(0.20, 0.33, 0.65);  // Blue tint, darkened ~0.65×
             blueBaseMat.specularColor = BABYLON.Color3.Black();
             blueBase.material = blueBaseMat;
             // Texture loaded later in loadTeamTextures()
@@ -7505,7 +7505,7 @@
             }, scene);
             redBase.position.set(tableWidth/2 + baseWidth/2 + 0.5, baseHeight/2 - 0.15, 0);
             const redBaseMat = new BABYLON.StandardMaterial("redBaseMat", scene);
-            redBaseMat.diffuseColor = new BABYLON.Color3(1.0, 0.4, 0.35);  // Red tint
+            redBaseMat.diffuseColor = new BABYLON.Color3(0.65, 0.26, 0.23);  // Red tint, darkened ~0.65×
             redBaseMat.specularColor = BABYLON.Color3.Black();
             redBase.material = redBaseMat;
             // Texture loaded later in loadTeamTextures()
@@ -9968,46 +9968,94 @@
             keystoneMat.diffuseColor = MCM.gold;
             keystoneMat.specularColor = BABYLON.Color3.Black();  // FLAT
 
-            // Load castle wall texture
-            // Materials for buttresses (rotated texture) - will be set when texture loads
+            // Load castle wall texture with PS1-style baked grunge variation
+            // Materials for buttresses (tiled texture) - will be set when stone image loads
             let playerButtressMat = null;
             let aiButtressMat = null;
+            // Keep/parapet mats pushed by createGate; grunge applied in stoneImg.onload
+            const _pendingKeepMats = [];
 
             const loadGateTextures = () => {
-                const wallTex = new BABYLON.Texture("textures/tower_stone.png?v=3", scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR,
-                    () => {
-                        // One stone-block pattern per gate brick (2x2 was too dense/busy)
-                        wallTex.uScale = 1;
-                        wallTex.vScale = 1;
-                        playerGateMat.diffuseTexture = wallTex;
-                        playerGateMat.diffuseColor = new BABYLON.Color3(1, 1, 1);
-                        aiGateMat.diffuseTexture = wallTex.clone();
-                        aiGateMat.diffuseColor = new BABYLON.Color3(1, 1, 1);
-                        // Keystones keep gold tint
-                        keystoneMat.diffuseTexture = wallTex.clone();
-                        keystoneMat.diffuseColor = MCM.goldBright;
+                const stoneImg = new Image();
+                stoneImg.onload = () => {
+                    const W = 512, H = 512;
+                    // Seeded PRNG — decorative/visual only, never reads or writes sim state
+                    let _rSeed = 9137;
+                    const rng = () => {
+                        _rSeed = (_rSeed * 1664525 + 1013904223) & 0xffffffff;
+                        return (_rSeed >>> 0) / 4294967295;
+                    };
 
-                        // Buttresses are tall & narrow - tile vertically (no rotation) so the
-                        // stone reads at the same scale as the rest and isn't stretched.
-                        const buttressTex = wallTex.clone();
-                        buttressTex.uScale = 1;
-                        buttressTex.vScale = 3;
+                    // Composite the real stone image + subtle AO/grunge splotches into a
+                    // DynamicTexture. Built once per unique tiling — no per-frame work.
+                    const buildGrungeTex = (name, uS, vS) => {
+                        const dt = new BABYLON.DynamicTexture(name, { width: W, height: H }, scene, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
+                        const ctx = dt.getContext();
+                        // Base layer: the real tower_stone image
+                        ctx.drawImage(stoneImg, 0, 0, W, H);
+                        // Dark AO/grime splotches (30 ellipses, alpha 0.06–0.15)
+                        for (let i = 0; i < 30; i++) {
+                            const x = rng() * W, y = rng() * H;
+                            const rx = 18 + rng() * 52, ry = 12 + rng() * 34;
+                            const alpha = 0.06 + rng() * 0.09;
+                            const g = ctx.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry));
+                            g.addColorStop(0, `rgba(0,0,0,${alpha.toFixed(3)})`);
+                            g.addColorStop(1, 'rgba(0,0,0,0)');
+                            ctx.save(); ctx.fillStyle = g;
+                            ctx.beginPath(); ctx.ellipse(x, y, rx, ry, rng() * Math.PI, 0, Math.PI * 2);
+                            ctx.fill(); ctx.restore();
+                        }
+                        // Lighter variation spots: subtle highlight irregularity (9 ellipses, alpha 0.04–0.09)
+                        for (let i = 0; i < 9; i++) {
+                            const x = rng() * W, y = rng() * H;
+                            const rx = 14 + rng() * 30, ry = 10 + rng() * 20;
+                            const alpha = 0.04 + rng() * 0.05;
+                            const g = ctx.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry));
+                            g.addColorStop(0, `rgba(255,255,255,${alpha.toFixed(3)})`);
+                            g.addColorStop(1, 'rgba(255,255,255,0)');
+                            ctx.save(); ctx.fillStyle = g;
+                            ctx.beginPath(); ctx.ellipse(x, y, rx, ry, rng() * Math.PI, 0, Math.PI * 2);
+                            ctx.fill(); ctx.restore();
+                        }
+                        dt.update();
+                        dt.uScale = uS; dt.vScale = vS;
+                        return dt;
+                    };
 
-                        playerButtressMat = playerGateMat.clone("playerButtressMat");
-                        playerButtressMat.diffuseTexture = buttressTex;
-                        aiButtressMat = aiGateMat.clone("aiButtressMat");
-                        aiButtressMat.diffuseTexture = buttressTex.clone();
+                    // Gate walls + merlons: 1×1 tile, shared read-only across both sides
+                    const wallDT = buildGrungeTex("stoneGrungeWall", 1, 1);
+                    playerGateMat.diffuseTexture = wallDT;
+                    playerGateMat.diffuseColor = new BABYLON.Color3(0.62, 0.62, 0.62);
+                    aiGateMat.diffuseTexture = wallDT;
+                    aiGateMat.diffuseColor = new BABYLON.Color3(0.62, 0.62, 0.62);
+                    // Keystones keep gold identity, slightly toned
+                    keystoneMat.diffuseTexture = wallDT;
+                    keystoneMat.diffuseColor = MCM.goldBright.scale(0.82);
 
-                        // Update existing buttress meshes
-                        scene.meshes.forEach(m => {
-                            if (m.name.includes("playerButtress")) m.material = playerButtressMat;
-                            if (m.name.includes("aiButtress")) m.material = aiButtressMat;
-                        });
+                    // Buttresses: tall — tile 3× vertically; separate grunge pass for variety
+                    const buttressDT = buildGrungeTex("stoneGrungeButtress", 1, 3);
+                    playerButtressMat = playerGateMat.clone("playerButtressMat");
+                    playerButtressMat.diffuseTexture = buttressDT;
+                    aiButtressMat = aiGateMat.clone("aiButtressMat");
+                    aiButtressMat.diffuseTexture = buttressDT;
 
-                        console.log("Castle wall texture loaded (including rotated buttress version)");
-                    },
-                    () => console.log("No castle wall texture, using solid colors")
-                );
+                    // Update existing buttress meshes
+                    scene.meshes.forEach(m => {
+                        if (m.name.includes("playerButtress")) m.material = playerButtressMat;
+                        if (m.name.includes("aiButtress")) m.material = aiButtressMat;
+                    });
+
+                    // Apply grunge to keep + parapet mats registered by createGate
+                    _pendingKeepMats.forEach(entry => {
+                        const dt = buildGrungeTex("stoneGrunge_" + entry.gname, entry.uS, entry.vS);
+                        entry.mat.diffuseTexture = dt;
+                        entry.mat.diffuseColor = new BABYLON.Color3(0.62, 0.62, 0.62);
+                    });
+
+                    console.log("Castle wall texture loaded with PS1-style grunge variation");
+                };
+                stoneImg.onerror = () => console.log("No castle wall texture, using solid colors");
+                stoneImg.src = "textures/tower_stone.png?v=3";
             };
             loadGateTextures();
 
@@ -10188,6 +10236,8 @@
                 const keepMat = new BABYLON.StandardMaterial((isPlayer ? "pKeepMat" : "aKeepMat"), scene);
                 keepMat.diffuseTexture = keepTex;
                 keepMat.specularColor = BABYLON.Color3.Black();
+                keepMat.diffuseColor = new BABYLON.Color3(0.62, 0.62, 0.62);  // darken; grunge applied async
+                _pendingKeepMats.push({ mat: keepMat, uS: 2, vS: 5, gname: isPlayer ? "pKeep" : "aKeep" });
                 keep.material = keepMat;
                 keep.receiveShadows = true;
                 if (window.shadowGenerator) window.shadowGenerator.addShadowCaster(keep);
@@ -10201,6 +10251,8 @@
                 const parapetMat = new BABYLON.StandardMaterial((isPlayer ? "pParaMat" : "aParaMat"), scene);
                 parapetMat.diffuseTexture = parapetTex;
                 parapetMat.specularColor = BABYLON.Color3.Black();
+                parapetMat.diffuseColor = new BABYLON.Color3(0.62, 0.62, 0.62);  // darken; grunge applied async
+                _pendingKeepMats.push({ mat: parapetMat, uS: 3, vS: 1, gname: isPlayer ? "pPara" : "aPara" });
                 parapet.material = parapetMat;
                 parapet.receiveShadows = true;
 
@@ -10222,9 +10274,9 @@
                 roof.rotation.y = Math.PI / 4;          // align the 4-sided pyramid square to the keep
                 roof.position.set(keepX, keepH + 0.6 + 1.7, 0);
                 const roofMat = new BABYLON.StandardMaterial((isPlayer ? "pRoofMat" : "aRoofMat"), scene);
-                roofMat.diffuseColor = teamCol;
+                roofMat.diffuseColor = teamCol.scale(0.60);   // moodier; was teamCol (full)
                 roofMat.specularColor = BABYLON.Color3.Black();
-                roofMat.emissiveColor = teamCol.scale(0.18);
+                roofMat.emissiveColor = teamCol.scale(0.08);   // less glow; was 0.18
                 roof.material = roofMat;
                 if (window.shadowGenerator) window.shadowGenerator.addShadowCaster(roof);
             };
@@ -10287,11 +10339,11 @@
 
             // === TEAM-COLORED BACKDROP WALLS ===
             const playerBackdropMat = new BABYLON.StandardMaterial("playerBackdropMat", scene);
-            playerBackdropMat.diffuseColor = new BABYLON.Color3(0.3, 0.5, 1.0);  // Blue tint
+            playerBackdropMat.diffuseColor = new BABYLON.Color3(0.20, 0.33, 0.65);  // Blue tint, darkened ~0.65×
             playerBackdropMat.specularColor = BABYLON.Color3.Black();
 
             const aiBackdropMat = new BABYLON.StandardMaterial("aiBackdropMat", scene);
-            aiBackdropMat.diffuseColor = new BABYLON.Color3(1.0, 0.4, 0.35);  // Red tint
+            aiBackdropMat.diffuseColor = new BABYLON.Color3(0.65, 0.26, 0.23);  // Red tint, darkened ~0.65×
             aiBackdropMat.specularColor = BABYLON.Color3.Black();
 
             const createBackdrop = (isPlayer) => {
