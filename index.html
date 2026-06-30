@@ -596,7 +596,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=23c3"></script>
+    <script type="module" src="js/sim.js?v=23c4"></script>
 
     <script>
         // Global error handler to debug doubles crash
@@ -2108,10 +2108,10 @@
         // ============================================================
         const ABILITY_REGISTRY = {
             fireball: {
-                gameplay: { cooldown: 4, castTime: 1.0, baseSpeed: 12, maxSpeed: 20, damage: 1, manaCost: 1 },
+                gameplay: { cooldown: 3, castTime: 1.0, baseSpeed: 12, maxSpeed: 20, damage: 1, manaCost: 0.5 },
                 ui: {
-                    name: 'Fireball', key: '1', iconClass: 'fireball-icon', manaCostLabel: '1',
-                    castLabel: '1s Cast', cooldownLabel: '4s CD',
+                    name: 'Fireball', key: '1', iconClass: 'fireball-icon', manaCostLabel: '0.5',
+                    castLabel: '1s Cast', cooldownLabel: '3s CD',
                     description: 'Hurl a <span class="tt-spell">Fireball</span> that deals <span class="tt-value">2</span> <span class="tt-fire">Fire</span> damage. Damage increases with <span class="tt-mechanic">Volleys</span>, up to <span class="tt-value">6</span>.'
                 },
                 behavior: {
@@ -2160,9 +2160,9 @@
                 }
             },
             frostbolt: {
-                gameplay: { cooldown: 7, castTime: 0, baseSpeed: 24, maxSpeed: 24, freezeDuration: 1.0, manaCost: 2 },
+                gameplay: { cooldown: 7, castTime: 0, baseSpeed: 24, maxSpeed: 24, freezeDuration: 1.0, manaCost: 1 },
                 ui: {
-                    name: 'Frostbolt', key: '2', iconClass: 'frostbolt-icon', manaCostLabel: '2',
+                    name: 'Frostbolt', key: '2', iconClass: 'frostbolt-icon', manaCostLabel: '1',
                     castLabel: 'Instant', cooldownLabel: '7s CD',
                     description: 'Launch a <span class="tt-spell">Frostbolt</span> that <span class="tt-mechanic">Freezes</span> the Enemy for <span class="tt-value">1</span> second. Cancels enemy projectiles on contact. Freeze stops Mana regeneration and interrupts Casting.'
                 },
@@ -2252,7 +2252,7 @@
             fireball: {
                 name: 'Fireball',
                 element: 'fire',
-                manaCost: 1,
+                manaCost: 0.5,
                 castTime: 1.0,
                 rootWhileCasting: true,
                 pushbackOnHit: 0.3,
@@ -11838,19 +11838,16 @@
             const AI_RNG_SEED = 0xA1DE;  // fixed constant; stable seed offset for per-frame RNG
 
             const DEFAULT_AI_PARAMS = {
-                reactionFrames:   8,      // WIRED (2.3): the AI acts on the world it saw N frames ago
-                                          //   (~130ms at 60Hz). The realistic "can't block everything" lever —
-                                          //   fast/multiple incoming balls beat its late reaction. Trimmed
-                                          //   12->8 (200ms felt laggy/early; 130ms tracks more naturally).
-                aimError:         1.2,    // POSITIONING error: max |Z| world-unit offset the paddle parks
-                                          //   off the true intercept (stable per think-cycle). Main lever —
-                                          //   higher = mis-reads & MISSES BLOCKS more. Raised 0.6->1.2
-                                          //   (post-2.3 AI blocked everything).
+                reactionFrames:   6,      // WIRED (2.3): the AI acts on the world it saw N frames ago
+                                          //   (~100ms at 60Hz). The "can't block everything" lever —
+                                          //   fast/multiple incoming beat its late reaction. 8->6 (was too easy).
+                aimError:         0.85,   // POSITIONING error: max |Z| world-unit offset the paddle parks
+                                          //   off the true intercept (stable per BALL). Higher = misses blocks
+                                          //   more. Middle ground 1.2->0.85 (1.2 too easy; 0.6 blocked all).
                 parryTimingError: 0.25,   // fraction of parry opportunities the AI whiffs (per-projectile,
                                           //   deterministic). 0 = never whiffs, 1 = never parries.
-                castAggression:   0.5,    // fraction of cast opportunities the AI takes (per think-cycle).
-                                          //   1.0 = casts every chance; lowered 0.75->0.5 (it was spamming
-                                          //   3 fireballs at the player).
+                castAggression:   0.65,   // fraction of cast opportunities the AI takes (per think-cycle).
+                                          //   1.0 = casts every chance; 0.5->0.65 (was a bit passive).
                 thinkIntervalK:   22,     // think cadence: decide every K frames (~0.37s at 60Hz). Higher =
                                           //   reacts slower / re-targets less often (feels less omnipresent).
                                           //   Raised 13->22 (post-2.3 AI felt too fast/always in position).
@@ -11945,8 +11942,8 @@
                 // panic-clear of 2+ incoming, so the AI shouldn't randomly skip it).
                 const aggressive = (makeAIRng((cycle ^ 0xCA57) >>> 0)() < params.castAggression);
 
-                const canFireball     = aggressive && safe && cd.fireball    <= 0 && s.mana >= 1 && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
-                const canFrostbolt    = aggressive && safe && cd.frostbolt   <= 0 && s.mana >= 2 && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
+                const canFireball     = aggressive && safe && cd.fireball    <= 0 && s.mana >= 0.5 && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
+                const canFrostbolt    = aggressive && safe && cd.frostbolt   <= 0 && s.mana >= 1 && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
                 const canThunderstorm = cd.thunderstorm <= 0 && s.mana >= 2 && _aiIncomingProjectiles(view).length >= 2;
 
                 // Frostbolt preferred when available; otherwise fireball.
