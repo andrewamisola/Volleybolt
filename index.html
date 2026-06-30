@@ -14526,16 +14526,16 @@
             if (Date.now() < victoryContinueAt) return;
             if (_returningToMenu) return;   // ignore repeat triggers (button + DOM fallback)
             _returningToMenu = true;
-            // Clear any lingering match VFX so they don't bleed into the menu.
-            if (window.clearAllProjectiles) clearAllProjectiles();
-            if (window.clearAllLightningFX) clearAllLightningFX();
+            // Clear any lingering match VFX so they don't bleed into the menu. Guarded so a stray
+            // dispose error can't abort the whole return-to-menu and strand the player on the screen.
+            try { if (window.clearAllProjectiles) clearAllProjectiles(); } catch (e) { console.warn('continue: clearAllProjectiles failed', e); }
+            try { if (window.clearAllLightningFX) clearAllLightningFX(); } catch (e) { console.warn('continue: clearAllLightningFX failed', e); }
             const overlay = window.guiElements?.transitionOverlay;
 
             if (!overlay) {
                 // Fallback: just do it without transition
-                hideVictoryScreen();
-                resetGame();
-                showMainMenu();
+                try { hideVictoryScreen(); resetGame(); showMainMenu(); }
+                catch (e) { console.error('continue (no-overlay) reset threw; forcing menu', e); try { showMainMenu(); } catch (e2) {} }
                 _returningToMenu = false;
                 return;
             }
@@ -14567,9 +14567,16 @@
                 // entry (state reset, menu UI shown, gameplay UI hidden, both combatants
                 // reset, wizard dancing, music) but with an instant camera snap since the
                 // screen is black. This replaces ~80 lines of drift-prone duplicate logic.
-                hideVictoryScreen();
-                resetGame();
-                showMainMenu(true);
+                try {
+                    hideVictoryScreen();
+                    resetGame();
+                    showMainMenu(true);
+                } catch (e) {
+                    // Never strand the player on a black screen with a dead Continue button: if the
+                    // canonical reset throws (e.g. stale match FX/state), log it and force the menu.
+                    console.error('Continue->menu reset threw; forcing menu anyway', e);
+                    try { showMainMenu(true); } catch (e2) { console.error('forced showMainMenu also threw', e2); }
+                }
                 startGameInProgress = false;  // Reset so the Start button works again
 
                 // Belt-and-suspenders: force-hide cast UI that menu setup doesn't touch
@@ -16735,6 +16742,9 @@
 
         // Show celebratory victory/defeat screen
         function showVictoryScreen(isVictory) {
+            // Clear any stale de-dup guard from a prior match so Continue can never be permanently
+            // dead (a partial/aborted previous return-to-menu must not block this one).
+            _returningToMenu = false;
             if (!window.guiElements) return;
 
             const overlay = window.guiElements.victoryOverlay;
