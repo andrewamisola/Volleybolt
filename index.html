@@ -11837,14 +11837,17 @@
 
             const DEFAULT_AI_PARAMS = {
                 reactionFrames:   0,      // (reserved) extra lag frames before a decision takes effect
-                aimError:         0.6,    // POSITIONING error: max |Z| world-unit offset the paddle parks
-                                          //   off the true intercept (stable per think-cycle). The main
-                                          //   difficulty lever — 0 = perfect positioning.
+                aimError:         1.2,    // POSITIONING error: max |Z| world-unit offset the paddle parks
+                                          //   off the true intercept (stable per think-cycle). Main lever —
+                                          //   higher = mis-reads & MISSES BLOCKS more. Raised 0.6->1.2
+                                          //   (post-2.3 AI blocked everything).
                 parryTimingError: 0.25,   // fraction of parry opportunities the AI whiffs (per-projectile,
                                           //   deterministic). 0 = never whiffs, 1 = never parries.
                 castAggression:   0.75,   // fraction of cast opportunities the AI takes (per think-cycle).
                                           //   1.0 = casts every chance; lower = more passive.
-                thinkIntervalK:   13,     // think cadence: decide every K frames (~0.22s at 60Hz)
+                thinkIntervalK:   22,     // think cadence: decide every K frames (~0.37s at 60Hz). Higher =
+                                          //   reacts slower / re-targets less often (feels less omnipresent).
+                                          //   Raised 13->22 (post-2.3 AI felt too fast/always in position).
             };
 
             // Pure AI helpers — no mesh reads, no Math.random, no wall-clock.
@@ -15607,7 +15610,7 @@
         // ---- AI determinism oracle (Phase 2.1) ----
         // Folds decideAI outputs over a scripted synthetic view sequence into a 32-bit hex hash.
         // No mesh reads, no game loop — pure function exercise only.
-        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "2666491c"  (re-pinned 2026-06-29 after the
+        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "0c0b3cfd"  (re-pinned 2026-06-29 after the
         // difficulty-tuning pass wired aimError/parryTimingError/castAggression into decideAI)
         (function attachAIDeterminism() {
             function _syntheticView(seed) {
