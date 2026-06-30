@@ -701,15 +701,6 @@
         let parryTimer = 0;               // Time remaining in parry window
         let parryCooldown = 0;            // Time remaining until parry is available again
 
-        // AI (virtual-player) parry window — mirrors the player's window above, but every
-        // timer is advanced by the fixed-step dt (NEVER setTimeout) so the AI stays deterministic.
-        // Opened by applyCombatantInput on input.parry; scanned by aiCheckParryHits; ticked by
-        // updateAIParryTimer. (Phase 2.1)
-        let aiCanParry = true;
-        let aiParryActive = false;
-        let aiParryTimer = 0;
-        let aiParryCooldown = 0;
-
         // Projectile system (replaces single ball)
         let projectiles = [];         // Array of active projectiles
         let scene = null;             // Store scene reference globally
@@ -12247,117 +12238,6 @@
                 }
             }
 
-            // Applies a canonical input struct to the AI combatant under player rules.
-            // The AI routes through this in 2.1; the human player joins it in 2.3.
-            function applyCombatantInput(c, input, dt) {
-                // Movement — full player speed, no urgency multiplier (spec §5, Deviation 1).
-                if ((!c.freezeTime || c.freezeTime <= 0) && !combatantIsRooted(c)) {
-                    if (input.moveDir !== 0) {
-                        aiPaddle.position.z += input.moveDir * aiSpeed * dt;
-                        const bound = getPaddleBoundary();
-                        aiPaddle.position.z = Math.max(-bound, Math.min(bound, aiPaddle.position.z));
-                    }
-                    // Animation state (mirrors the old inline block).
-                    c.lastMoveDir = input.moveDir;
-                    c.moveDir     = input.moveDir;
-                    if (input.moveDir > 0) {
-                        c.targetRotY = c.baseRotY - 0.6;
-                    } else if (input.moveDir < 0) {
-                        c.targetRotY = c.baseRotY + 0.6;
-                    } else {
-                        c.targetRotY = c.baseRotY;
-                    }
-                    aiTargetRotY = c.targetRotY;  // sync legacy var
-                } else {
-                    c.moveDir = 0;
-                }
-
-                // Parry — deterministic window open (spec §5, Deviation 2).
-                // aiCheckParryHits() scans for hits; updateAIParryTimer() expires the window.
-                if (input.parry && aiCanParry && !aiParryActive && aiParryCooldown <= 0) {
-                    aiParryActive = true;
-                    aiParryTimer  = parryWindow;
-                    aiCanParry    = false;
-                }
-
-                // Casts — the helpers enforce their own mana/cooldown guards.
-                if (input.fireball    && !c.casting) startCasting('ai', 'fireball');
-                if (input.frostbolt)                 castFrostbolt('ai');
-                if (input.thunderstorm)              executeThunderstorm('ai');
-                if (input.juice)                     activateJuice('ai');
-            }
-
-            // Mirror of window.checkParryHits for the AI (right side). Scans projectiles
-            // heading toward the AI and parries the closest one.
-            // TODO 2.3: replace mesh reads with sim-state reads.
-            function aiCheckParryHits() {
-                if (!aiParryActive) return;
-
-                const paddleHalfZ = 2.0;  // Extended Z range during parry window
-                let bestProj = null;
-                let bestDist = Infinity;
-
-                for (const proj of projectiles) {
-                    // Only parry projectiles coming toward AI (velX > 0 = heading right).
-                    if (proj.velX <= 0) continue;
-                    if (proj.owner === 'ai') continue;
-                    if (!proj.mesh || proj.mesh.isDisposed()) continue;
-
-                    // X-axis: ball must be approaching from the left of the AI paddle.
-                    const distFromPaddle = aiPaddle.position.x - proj.mesh.position.x;
-                    if (distFromPaddle > parryHitboxExtend || distFromPaddle < -0.5) continue;
-
-                    // Z-axis: must be within paddle depth.
-                    if (proj.mesh.position.z < aiPaddle.position.z - paddleHalfZ ||
-                        proj.mesh.position.z > aiPaddle.position.z + paddleHalfZ) continue;
-
-                    if (distFromPaddle < bestDist) {
-                        bestDist = distFromPaddle;
-                        bestProj = proj;
-                    }
-                }
-
-                if (bestProj) {
-                    parryProjectile(bestProj, 'ai');
-                    aiParryActive  = false;
-                    aiParryTimer   = 0;
-                    aiParryCooldown = parrySuccessCooldown;
-                    // Visual: quick AI parry bubble flash.
-                    playAIAnim('parry', false, 400, 1.5);
-                    setTimeout(() => playAIAnim('idle', true), 400);
-                    if (window.createParryBubble) {
-                        const aiBubble = createParryBubble(aiPaddle, true);
-                        setTimeout(() => {
-                            if (window.dissolveParryBubble) dissolveParryBubble(aiBubble);
-                        }, 300);
-                    }
-                }
-            }
-
-            // dt-ticked AI parry timer — mirrors updateParryTimer (player) but NEVER uses setTimeout.
-            function updateAIParryTimer(dt) {
-                if (aiParryActive) {
-                    aiParryTimer -= dt;
-                    if (aiParryTimer <= 0) {
-                        // Window expired without hitting — long cooldown.
-                        aiParryActive = false;
-                        aiParryTimer  = 0;
-                        aiParryCooldown = parryFailCooldown;
-                    }
-                }
-                if (aiParryCooldown > 0) {
-                    aiParryCooldown -= dt;
-                    if (aiParryCooldown <= 0) {
-                        aiParryCooldown = 0;
-                        aiCanParry = true;
-                    }
-                }
-            }
-
-            // ================================================================
-            // END PHASE 2.1 DETERMINISTIC SINGLES AI
-            // ================================================================
-
             // ============================================================
             // FIXED TIMESTEP GAME LOGIC (60Hz simulation)
             // All gameplay-affecting code runs here at fixed rate
@@ -12616,15 +12496,6 @@
                     const currentTime = performance.now() / 1000;
                     if (isDoublesMode() && window.updateAllDoublesAI) {
                         window.updateAllDoublesAI(dt, currentTime);
-                    }
-
-                    // --- Deterministic singles AI (Phase 2.1) ---
-                    if (!isDoublesMode()) {
-                        const _aiView  = buildAISingleView();
-                        const _aiInput = decideAI(_aiView, spFrameCounter, makeAIRng(spFrameCounter ^ AI_RNG_SEED), DEFAULT_AI_PARAMS);
-                        applyCombatantInput(combatants.right, _aiInput, dt);
-                        updateAIParryTimer(dt);
-                        aiCheckParryHits();
                     }
 
                     // NOTE: Model rotation lerp moved to render callback for smooth visuals
