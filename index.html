@@ -7754,136 +7754,39 @@
             // renderingGroupId=2 + fogEnabled=false (same fix as blob shadows + parry bubble).
             // ============================================================
             (function buildBlockBarriers() {
-                const BARRIER_W = 3.8;   // world-Z width ≈ block zone (±2.0 total depth ~4.0)
-                const BARRIER_H = 1.8;   // world-Y height: stands from y≈0 up to y≈1.8
-                const TEX_SZ    = 32;    // pixel-art texture side — NEAREST sampling keeps it crisp
 
-                // Draw a retro shield/rune-grid DynamicTexture tinted with team color (r,g,b in 0-1).
-                function makeBarrierTexture(name, r, g, b) {
-                    const tex = new BABYLON.DynamicTexture(name, { width: TEX_SZ, height: TEX_SZ }, scene, false);
-                    const ctx = tex.getContext();
-                    ctx.imageSmoothingEnabled = false;  // nearest-neighbor drawing within canvas
-
-                    const ri = Math.round(r * 255);
-                    const gi = Math.round(g * 255);
-                    const bi = Math.round(b * 255);
-
-                    // Transparent base
-                    ctx.clearRect(0, 0, TEX_SZ, TEX_SZ);
-
-                    // Dim team-color fill for the interior of each grid cell
-                    ctx.fillStyle = `rgba(${ri},${gi},${bi},0.22)`;
-                    ctx.fillRect(0, 0, TEX_SZ, TEX_SZ);
-
-                    // Crisp grid lines every 8 px → 4×4 cell rune grid (16 cells)
-                    ctx.strokeStyle = `rgba(${ri},${gi},${bi},0.88)`;
-                    ctx.lineWidth = 1;
-                    for (let x = 0; x <= TEX_SZ; x += 8) {
-                        ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, TEX_SZ); ctx.stroke();
-                    }
-                    for (let y = 0; y <= TEX_SZ; y += 8) {
-                        ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(TEX_SZ, y + 0.5); ctx.stroke();
-                    }
-
-                    // Diamond rune accent at each 8×8 cell center — PS1/retro feel
-                    ctx.fillStyle = `rgba(${ri},${gi},${bi},0.72)`;
-                    for (let xi = 0; xi < 4; xi++) {
-                        for (let yi = 0; yi < 4; yi++) {
-                            const cx = xi * 8 + 4, cy = yi * 8 + 4;
-                            ctx.beginPath();
-                            ctx.moveTo(cx,     cy - 2);
-                            ctx.lineTo(cx + 2, cy    );
-                            ctx.lineTo(cx,     cy + 2);
-                            ctx.lineTo(cx - 2, cy    );
-                            ctx.closePath();
-                            ctx.fill();
-                        }
-                    }
-
-                    // Bright edge highlight strips at top + bottom (reinforces barrier edge read)
-                    const eg = ctx.createLinearGradient(0, 0, 0, TEX_SZ);
-                    eg.addColorStop(0,    `rgba(${ri},${gi},${bi},0.55)`);
-                    eg.addColorStop(0.10, `rgba(${ri},${gi},${bi},0.0)`);
-                    eg.addColorStop(0.90, `rgba(${ri},${gi},${bi},0.0)`);
-                    eg.addColorStop(1.0,  `rgba(${ri},${gi},${bi},0.55)`);
-                    ctx.fillStyle = eg;
-                    ctx.fillRect(0, 0, TEX_SZ, TEX_SZ);
-
-                    tex.hasAlpha = true;
-                    tex.update();
-                    tex.updateSamplingMode(BABYLON.Texture.NEAREST_SAMPLINGMODE);  // crisp pixels, no bilinear blur
-                    return tex;
-                }
-
-                // Build the paddle indicator for one side. A vertical wall facing the field is
-                // edge-on to the regular camera (which looks along Z), so the readable element is a
-                // GROUND rune-zone lying flat on the field (CreateGround — renders reliably here,
-                // like the blob shadows), sized to the exact block zone. Plus a subtle upright
-                // facing-glow slab at the wizard (a thin CreateBox whose broad face points at the
-                // camera) for a "magical presence" read.
-                //   xOffset : shift the ground zone toward field center (in front of the paddle)
-                //   isPlayer: team color — blue for player, red for AI
+                // Build the paddle indicator for one side: a literal team-colored Pong paddle — a
+                // solid bar placed in front of the player, sized to the paddle's hitbox (depth 2.5
+                // along Z = the block zone). A solid box reads clearly from the regular camera (a flat
+                // wall would be edge-on). Team color: blue = player, red = AI.
+                //   xOffset : how far in front of the paddle (toward the field) to place the bar
                 function makeBarrier(name, paddle, xOffset, isPlayer) {
                     const r = isPlayer ? 0.43 : 1.0;
                     const g = isPlayer ? 0.72 : 0.42;
                     const b = isPlayer ? 1.0  : 0.33;
-                    const tex = makeBarrierTexture(name + "Tex", r, g, b);
-
-                    // --- Ground rune-zone: flat on the field, spans the block zone along Z ---
-                    const zone = BABYLON.MeshBuilder.CreateGround(name + "Zone", { width: 1.5, height: BARRIER_W }, scene);
-                    zone.position.set(paddle.position.x + xOffset, 0.085, paddle.position.z);  // just above lane decal
-                    zone.isPickable = false; zone.receiveShadows = false;
-                    const zoneMat = new BABYLON.StandardMaterial(name + "ZoneMat", scene);
-                    zoneMat.disableLighting            = true;
-                    zoneMat.emissiveColor              = new BABYLON.Color3(r * 0.6, g * 0.6, b * 0.6);
-                    zoneMat.diffuseTexture             = tex;
-                    zoneMat.useAlphaFromDiffuseTexture = true;
-                    zoneMat.alpha                      = 0.40;   // pulsed in render loop
-                    zoneMat.backFaceCulling            = false;
-                    zoneMat.fogEnabled                 = false;  // don't let scene fog wash it out
-                    zone.material                      = zoneMat;
-                    zone.renderingGroupId              = 2;      // above the fog plane — like blobs/parry
-
-                    // --- Subtle facing glow: thin upright slab at the wizard, broad face toward camera (-Z) ---
-                    const glow = BABYLON.MeshBuilder.CreateBox(name + "Glow", { width: 1.3, height: 1.7, depth: 0.08 }, scene);
-                    glow.position.set(paddle.position.x, 0.95, paddle.position.z + 0.35);  // slightly behind -> reads as an aura
-                    glow.isPickable = false;
-                    const glowMat = new BABYLON.StandardMaterial(name + "GlowMat", scene);
-                    glowMat.disableLighting = true;
-                    glowMat.emissiveColor   = new BABYLON.Color3(r, g, b);
-                    glowMat.alpha           = 0.16;   // very subtle, pulsed
-                    glowMat.backFaceCulling = false;
-                    glowMat.fogEnabled      = false;
-                    glow.material           = glowMat;
-                    glow.renderingGroupId   = 2;
-
-                    return { zone, zoneMat, glow, glowMat, paddle };
+                    const pad = BABYLON.MeshBuilder.CreateBox(name, { width: 0.45, height: 0.7, depth: 2.5 }, scene);
+                    pad.position.set(paddle.position.x + xOffset, 0.45, paddle.position.z);  // sits on the ground, in front
+                    pad.isPickable = false; pad.receiveShadows = false;
+                    const mat = new BABYLON.StandardMaterial(name + "Mat", scene);
+                    mat.diffuseColor  = new BABYLON.Color3(r * 0.45, g * 0.45, b * 0.45);
+                    mat.emissiveColor = new BABYLON.Color3(r * 0.78, g * 0.78, b * 0.78);  // team glow so the bar reads clearly
+                    mat.specularColor = BABYLON.Color3.Black();
+                    mat.fogEnabled    = false;   // don't let the fog plane wash it out
+                    pad.material         = mat;
+                    pad.renderingGroupId = 2;     // render above the fog plane (group 1)
+                    return { pad, mat, paddle };
                 }
 
-                // Player = left (zone shifted +X toward field); AI = right (shifted -X)
-                const playerBarrier = makeBarrier("playerBlockBarrier", playerPaddle,  +0.6, true);
-                const aiBarrier     = makeBarrier("aiBlockBarrier",     aiPaddle,      -0.6, false);
+                const playerBarrier = makeBarrier("playerBlockBarrier", playerPaddle,  +0.7, true);
+                const aiBarrier     = makeBarrier("aiBlockBarrier",     aiPaddle,      -0.7, false);
                 const barriers = [playerBarrier, aiBarrier];
 
-                // Per-frame: track paddle Z + animate magical effects.
-                // performance.now() is visual-only — does NOT enter sim state.
+                // Per-frame: track the paddle's Z (the axis it moves on). Visual-only; never writes sim.
                 scene.onBeforeRenderObservable.add(() => {
                     const inGame = (typeof gameState === 'undefined') || (gameState !== 'menu' && gameState !== 'lobby');
-                    barriers.forEach(B => { B.zone.isVisible = inGame; B.glow.isVisible = inGame; });
-                    if (!inGame) return;
-
-                    const t = performance.now();  // visual-only; never written to sim
-                    const pulse   = 0.30 + 0.10 * Math.sin(t * 0.0022);          // ground-zone "breathing"
-                    const glowP   = 0.12 + 0.06 * Math.sin(t * 0.0022 + 1.0);    // glow pulse, offset phase
-                    const vScroll = (t * 0.000055) % 1.0;                        // rune grid drift
-
                     barriers.forEach(B => {
-                        B.zoneMat.alpha = pulse;
-                        if (B.zoneMat.diffuseTexture) B.zoneMat.diffuseTexture.vOffset = vScroll;
-                        B.glowMat.alpha = glowP;
-                        const pz = B.paddle.position.z;   // moving axis; X stays fixed per side
-                        B.zone.position.z = pz;
-                        B.glow.position.z = pz + 0.35;
+                        B.pad.isVisible = inGame;
+                        if (inGame) B.pad.position.z = B.paddle.position.z;
                     });
                 });
 
