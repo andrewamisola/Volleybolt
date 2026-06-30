@@ -168,8 +168,8 @@
                 <label class="settings-row"><span>Fullscreen</span>
                     <input type="checkbox" class="settings-toggle" id="setFullscreen"></label>
                 <label class="settings-row"><span>Render Res</span>
-                    <input type="range" class="settings-slider" id="setRenderScale" min="50" max="100" step="5">
-                    <span id="setRenderScaleVal" style="min-width:3em;text-align:right">100%</span></label>
+                    <input type="range" class="settings-slider" id="setRenderScale" min="50" max="150" step="25">
+                    <span id="setRenderScaleVal" style="min-width:5.5em;text-align:right">100% · native</span></label>
                 <div class="settings-row"><span>FPS Cap</span>
                     <div class="fps-cycler">
                         <button class="fps-arrow" id="setFpsCapPrev" aria-label="Previous FPS option">&#9664;</button>
@@ -3648,10 +3648,13 @@
             // stylized textures, NOT a forced low internal resolution.
             // ============================================================
             function applyRetroResolution() {
-                // Render at full device pixels at 100%, or a fraction thereof for perf savings.
-                const dpr = window.devicePixelRatio || 1;
+                // 100% = NATIVE resolution (1 rendered pixel per CSS pixel) — crisp on any display and
+                // the efficient default. We deliberately do NOT supersample to Retina/HiDPI at 100%:
+                // for this low-poly/CRT art the extra pixels are invisible but cost up to 4x the GPU
+                // work (heat). Below 100% = softer + cooler; above 100% = supersampled (sharper, hotter).
+                // dpr-independent by design, so it stays crisp on both Retina and regular displays.
                 const pct = (window.Settings && window.Settings.values.renderScale) || 100;
-                engine.setHardwareScalingLevel(1 / (dpr * (pct / 100)));
+                engine.setHardwareScalingLevel(1 / (pct / 100));
             }
             window.applyRetroResolution = applyRetroResolution;
             applyRetroResolution();
@@ -15060,7 +15063,7 @@
             if (renderScaleEl) {
                 renderScaleEl.addEventListener('input', e => {
                     const val = parseInt(e.target.value, 10);
-                    if (renderScaleValEl) renderScaleValEl.textContent = val + '%';
+                    if (renderScaleValEl) renderScaleValEl.textContent = val + '%' + (val === 100 ? ' · native' : '');
                     Settings.set('renderScale', val);
                 });
             }
@@ -15103,7 +15106,7 @@
             const rsEl = document.getElementById('setRenderScale');
             const rsValEl = document.getElementById('setRenderScaleVal');
             if (rsEl) rsEl.value = Settings.values.renderScale;
-            if (rsValEl) rsValEl.textContent = Settings.values.renderScale + '%';
+            if (rsValEl) rsValEl.textContent = Settings.values.renderScale + '%' + (Settings.values.renderScale === 100 ? ' · native' : '');
             // Restore FPS cap cycler
             const fpsCapValElLoad = document.getElementById('setFpsCapVal');
             if (fpsCapValElLoad) fpsCapValElLoad.textContent = Settings.values.fpsCap === 0 ? 'Uncapped' : Settings.values.fpsCap + ' FPS';
