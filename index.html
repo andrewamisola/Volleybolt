@@ -2138,7 +2138,7 @@
                         const hitOffset = (proj.z - pz) / paddleHalfDepth;
                         // SP quirk: speed floor (min 10) applies to player-side (left) return only, NOT the AI (right).
                         const rawSpeed = Math.sqrt(proj.velX*proj.velX + proj.velZ*proj.velZ);
-                        const currentSpeed = side === 'left' ? Math.max(rawSpeed, 10) : rawSpeed;
+                        const currentSpeed = Math.max(rawSpeed, 12);  // min return speed (both sides) so balls don't crawl; was left-only max(.,10)
                         const angleStrength = hitOffset * 0.7;
                         proj.velX = currentSpeed * Math.cos(angleStrength) * (proj.velX > 0 ? -1 : 1);
                         proj.velZ = currentSpeed * Math.sin(angleStrength) * Math.sign(hitOffset || 1);
@@ -5293,7 +5293,8 @@
 
                     const manaRight = (s.key.length > 1 ? "-60px" : "-34px");
                     const mana = new G.TextBlock();
-                    mana.text = s.mana > 0 ? "●".repeat(s.mana) : "";
+                    // Full dots for whole mana + a half-dot for a .5 cost (e.g. fireball = 0.5 -> "◐").
+                    mana.text = s.mana > 0 ? ("●".repeat(Math.floor(s.mana)) + ((s.mana % 1) >= 0.5 ? "◐" : "")) : "";
                     mana.color = "#5ad0ff"; mana.fontSize = 16;
                     mana.shadowColor = "#000"; mana.shadowBlur = 0; mana.shadowOffsetX = 1; mana.shadowOffsetY = 1;
                     mana.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -11943,7 +11944,9 @@
                 const aggressive = (makeAIRng((cycle ^ 0xCA57) >>> 0)() < params.castAggression);
 
                 const canFireball     = aggressive && safe && cd.fireball    <= 0 && s.mana >= 0.5 && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
-                const canFrostbolt    = aggressive && safe && cd.frostbolt   <= 0 && s.mana >= 1 && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
+                // Frostbolt is GOOD when the opponent is right in front (it freezes them) — so unlike
+                // fireball it does NOT avoid a blocking opponent; it wants that shot.
+                const canFrostbolt    = aggressive && safe && cd.frostbolt   <= 0 && s.mana >= 1 && view.projectiles.length < 10 && !s.casting;
                 const canThunderstorm = cd.thunderstorm <= 0 && s.mana >= 2 && _aiIncomingProjectiles(view).length >= 2;
 
                 // Frostbolt preferred when available; otherwise fireball.
