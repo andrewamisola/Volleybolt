@@ -7755,52 +7755,89 @@
             // ============================================================
             (function buildBlockBarriers() {
 
-                // Build the paddle indicator for one side: a curved team-colored CRESCENT (a horizontal
-                // arc tube) in front of the player — like the parry wireframe but a half-circle that
-                // wraps the front of the wizard. A tube is a real 3D shape (catches light → reads 3D,
-                // not a flat 2D bar) and curves to hug the player. Pushed forward so it clears the model.
-                // Team color: blue = player, red = AI. (First pass — sizing/shape to be refined.)
-                const CRES_R   = 1.6;    // crescent radius (~the Z block half-zone)
-                const CRES_FWD = 0.8;    // push toward the field so it doesn't clip the wizard model
-                const CRES_ARC = Math.PI * 0.95;  // ~171° — a near-half-circle crescent
+                // Build the paddle indicator for one side: a FLAT, tapered team-colored CRESCENT — a
+                // crescent-moon ribbon (wide at the belly, POINTED at the tips like the projectiles),
+                // placed in front of the wizard and bowed to wrap around them. Transparent with a wavy
+                // dithering shimmer (a scrolled Bayer opacity stipple) for a magical read. Flat (a thin
+                // ribbon, NOT a round tube). Team color: blue = player, red = AI. (To be refined.)
+                const CRES_R    = 1.55;            // centerline radius
+                const CRES_FWD  = 0.75;            // push forward so it clears the wizard model
+                const CRES_ARC  = Math.PI * 0.6;   // ~108° sweep — shorter, less-rounded crescent
+                const CRES_WMAX = 0.55;            // half-width at the belly (tapers to a point at each tip)
+
+                // Small Bayer dither pattern (stippled alpha) → the "wavy magical dithering" look.
+                const ditherTex = (() => {
+                    const S = 8;
+                    const dt = new BABYLON.DynamicTexture("crescentDither", { width: S, height: S }, scene, false);
+                    const c = dt.getContext();
+                    const bayer = [[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]];
+                    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+                        const a = 0.65 + 0.35 * (bayer[y % 4][x % 4] / 16);   // stipple, but not so sparse it vanishes
+                        c.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
+                        c.fillRect(x, y, 1, 1);
+                    }
+                    dt.hasAlpha = true; dt.update();
+                    dt.updateSamplingMode(BABYLON.Texture.NEAREST_SAMPLINGMODE);   // crisp stipple, no blur
+                    dt.wrapU = dt.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+                    return dt;
+                })();
+
                 function makeBarrier(name, paddle, isPlayer) {
                     const r = isPlayer ? 0.43 : 1.0;
                     const g = isPlayer ? 0.72 : 0.42;
                     const b = isPlayer ? 1.0  : 0.33;
-                    const dir = isPlayer ? 1 : -1;   // bulge toward the field (+X player / -X AI)
-                    // Horizontal arc path in the XZ plane, bowed toward the field, concave hugging the wizard.
-                    const path = [];
-                    const SEG = 28;
+                    const dir = isPlayer ? 1 : -1;   // bow toward the field (+X player / -X AI)
+                    // Flat crescent ribbon: inner + outer edge paths converge to a point at each tip.
+                    const inner = [], outer = [];
+                    const SEG = 30;
                     for (let i = 0; i <= SEG; i++) {
                         const th = -CRES_ARC / 2 + CRES_ARC * (i / SEG);
-                        path.push(new BABYLON.Vector3(dir * CRES_R * Math.cos(th), 0, CRES_R * Math.sin(th)));
+                        const w  = CRES_WMAX * Math.cos((th / (CRES_ARC / 2)) * (Math.PI / 2));  // belly→tip taper
+                        const cx = dir * CRES_R * Math.cos(th), cz = CRES_R * Math.sin(th);
+                        const nx = dir * Math.cos(th),          nz = Math.sin(th);                // radial (in-plane)
+                        inner.push(new BABYLON.Vector3(cx - w * nx, 0, cz - w * nz));
+                        outer.push(new BABYLON.Vector3(cx + w * nx, 0, cz + w * nz));
                     }
-                    const pad = BABYLON.MeshBuilder.CreateTube(name, {
-                        path, radius: 0.13, tessellation: 10, cap: BABYLON.Mesh.CAP_ALL
+                    const pad = BABYLON.MeshBuilder.CreateRibbon(name, {
+                        pathArray: [inner, outer], sideOrientation: BABYLON.Mesh.DOUBLESIDE
                     }, scene);
-                    pad.position.set(paddle.position.x + dir * CRES_FWD, 0.5, paddle.position.z);
+                    pad.position.set(paddle.position.x + dir * CRES_FWD, 0.7, paddle.position.z);
+                    // Tilt the flat crescent up toward the camera (which looks down ~30°) so it isn't
+                    // seen edge-on/foreshortened — keeps it flat but readable, like a magical visor.
+                    pad.rotation.x = -0.6;
                     pad.isPickable = false; pad.receiveShadows = false;
+
                     const mat = new BABYLON.StandardMaterial(name + "Mat", scene);
-                    mat.diffuseColor  = new BABYLON.Color3(r * 0.5, g * 0.5, b * 0.5);
-                    mat.emissiveColor = new BABYLON.Color3(r * 0.5, g * 0.5, b * 0.5);  // glows but still shaded → 3D
-                    mat.specularColor = new BABYLON.Color3(r, g, b);
-                    mat.specularPower = 32;
-                    mat.fogEnabled    = false;   // don't let the fog plane wash it out
+                    mat.disableLighting = true;                          // flat crescent — emissive, not shaded
+                    mat.emissiveColor   = new BABYLON.Color3(r, g, b);
+                    mat.alpha           = 0.5;                           // transparent
+                    mat.backFaceCulling = false;
+                    mat.fogEnabled      = false;
+                    const ot = ditherTex.clone();                        // per-side clone → scroll independently
+                    ot.uScale = 4; ot.vScale = 4;
+                    mat.opacityTexture  = ot;                            // stippled "dithering" transparency
                     pad.material         = mat;
-                    pad.renderingGroupId = 2;     // render above the fog plane (group 1)
-                    return { pad, mat, paddle };
+                    pad.renderingGroupId = 2;                            // above the fog plane (group 1)
+                    return { pad, mat, ot, paddle };
                 }
 
                 const playerBarrier = makeBarrier("playerBlockBarrier", playerPaddle, true);
                 const aiBarrier     = makeBarrier("aiBlockBarrier",     aiPaddle,     false);
                 const barriers = [playerBarrier, aiBarrier];
 
-                // Per-frame: track the paddle's Z (the axis it moves on). Visual-only; never writes sim.
+                // Per-frame: track paddle Z + a wavy dither scroll + gentle alpha shimmer (visual-only).
                 scene.onBeforeRenderObservable.add(() => {
                     const inGame = (typeof gameState === 'undefined') || (gameState !== 'menu' && gameState !== 'lobby');
+                    if (!inGame) { barriers.forEach(B => { B.pad.isVisible = false; }); return; }
+                    const t = performance.now();
+                    const pulse = 0.80 + 0.10 * Math.sin(t * 0.004);     // alpha shimmer
+                    const u = (t * 0.00008) % 1.0;                       // slow drift
+                    const v = 0.05 * Math.sin(t * 0.003);                // "wavy" (sinusoidal) wobble
                     barriers.forEach(B => {
-                        B.pad.isVisible = inGame;
-                        if (inGame) B.pad.position.z = B.paddle.position.z;
+                        B.pad.isVisible = true;
+                        B.pad.position.z = B.paddle.position.z;
+                        B.mat.alpha = pulse;
+                        if (B.ot) { B.ot.uOffset = u; B.ot.vOffset = v; }
                     });
                 });
 
