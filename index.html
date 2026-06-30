@@ -596,7 +596,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=22c1"></script>
+    <script type="module" src="js/sim.js?v=23a"></script>
 
     <script>
         // Global error handler to debug doubles crash
@@ -2127,17 +2127,31 @@
                         const c = ctx.combatants[side];
                         const px = c.paddleX, pz = c.paddleZ;
                         const projRadius = proj.hitboxRadius || 0.25;
-                        const paddleHalfWidth = 0.2, paddleHalfDepth = 0.8;
+                        // hitOffset divisor = SP paddleHalfDepth (1.25; was 0.8). paddleHalfWidth unchanged.
+                        const paddleHalfWidth = 0.2, paddleHalfDepth = 1.25;
                         proj.x = side === 'left' ? px + paddleHalfWidth + projRadius : px - paddleHalfWidth - projRadius;
+                        // Returning a ball the OPPONENT parried clears its parry state (SP resetProjParryState):
+                        // left clears 'ai'-parried, right clears 'player'-parried.
+                        const opp = side === 'left' ? 'ai' : 'player';
+                        if (proj.isParried && proj.parriedBy === opp) ctx.deps.resetProjParryState(proj);
                         const hitOffset = (proj.z - pz) / paddleHalfDepth;
-                        const currentSpeed = Math.max(Math.sqrt(proj.velX*proj.velX + proj.velZ*proj.velZ), 10);
+                        // SP quirk: speed floor (min 10) applies to player-side (left) return only, NOT the AI (right).
+                        const rawSpeed = Math.sqrt(proj.velX*proj.velX + proj.velZ*proj.velZ);
+                        const currentSpeed = side === 'left' ? Math.max(rawSpeed, 10) : rawSpeed;
                         const angleStrength = hitOffset * 0.7;
                         proj.velX = currentSpeed * Math.cos(angleStrength) * (proj.velX > 0 ? -1 : 1);
                         proj.velZ = currentSpeed * Math.sin(angleStrength) * Math.sign(hitOffset || 1);
+                        // Paddle momentum: lateral paddle motion adds to ball Z velocity (SP momentumFactor 0.4).
+                        const dt = ctx.dt;
+                        const paddleVelZ = (c.paddleZ - c.prevPaddleZ) / dt;
+                        proj.velZ += paddleVelZ * 0.4;
                         proj.owner = side === 'left' ? 'player' : 'ai';
                         proj.volleyCount++;
                         ctx.deps.updateFireballScale(proj);
-                        if (c && !proj.isParried) c.mana = Math.min(ctx.deps.getMaxMana(side === 'left' ? 'left' : 'right'), c.mana + 0.5);
+                        // Block-mana awarded unconditionally on any paddle block (SP gainMana; was guarded by !isParried).
+                        if (c) c.mana = Math.min(ctx.deps.getMaxMana(side === 'left' ? 'left' : 'right'), c.mana + 0.5);
+                        // A hit during a cast pushes the cast back (SP applyCastPushback).
+                        if (c.casting !== null) ctx.deps.applyCastPushback(c);
                         if (!ctx.isResimulating) ctx.deps.playSound('block', px, 0.6);
                         return false; // bounced, not consumed
                     },
@@ -7626,8 +7640,10 @@
             // paddleX is fixed per side in singles; paddleZ is the moving axis.
             combatants.left.paddleX = playerPaddle.position.x;
             combatants.left.paddleZ = playerPaddle.position.z;
+            combatants.left.prevPaddleZ = playerPaddle.position.z;   // paddle-momentum baseline (onPaddleHit)
             combatants.right.paddleX = aiPaddle.position.x;
             combatants.right.paddleZ = aiPaddle.position.z;
+            combatants.right.prevPaddleZ = aiPaddle.position.z;
 
             // Dynamic shadows from character models are handled by shadowGenerator
             // Characters are added to shadow casters when loaded (see character loading code)
@@ -15188,7 +15204,7 @@
             mix(s.frame | 0);
             for (const side of ['left', 'right']) {
                 const c = s[side] || {}, cd = c.cooldowns || {};
-                mix(q(c.paddleZ)); mix(q(c.moveAccum)); mix(q(c.mana)); mix(q(c.manaRegen));
+                mix(q(c.paddleZ)); mix(q(c.prevPaddleZ)); mix(q(c.moveAccum)); mix(q(c.mana)); mix(q(c.manaRegen));
                 mix(q(c.freezeTime)); mix(q(c.towerHealth)); mix(q(c.castProgress)); mix(q(c.castTime));
                 mix(q(cd.fireball)); mix(q(cd.frostbolt)); mix(q(cd.thunderstorm));
                 mix(q(c.juice)); mix(c.juiceActive ? 1 : 0); mix(q(c.juiceTimer));
@@ -15598,6 +15614,7 @@
                 // Combatant states
                 left: {
                     paddleZ: playerPaddle ? playerPaddle.position.z : 0,
+                    prevPaddleZ: combatants.left ? (combatants.left.prevPaddleZ || 0) : 0,
                     moveAccum: combatants.left ? (combatants.left.moveAccum || 0) : 0,
                     mana: combatants.left ? combatants.left.mana : 0,
                     manaRegen: combatants.left ? combatants.left.manaRegen : 0,
@@ -15613,6 +15630,7 @@
                 },
                 right: {
                     paddleZ: aiPaddle ? aiPaddle.position.z : 0,
+                    prevPaddleZ: combatants.right ? (combatants.right.prevPaddleZ || 0) : 0,
                     moveAccum: combatants.right ? (combatants.right.moveAccum || 0) : 0,
                     mana: combatants.right ? combatants.right.mana : 0,
                     manaRegen: combatants.right ? combatants.right.manaRegen : 0,
@@ -15691,6 +15709,8 @@
             // Restore authoritative paddle position too (resimulated frames read these)
             if (combatants.left) combatants.left.paddleZ = state.left.paddleZ;
             if (combatants.right) combatants.right.paddleZ = state.right.paddleZ;
+            if (combatants.left) combatants.left.prevPaddleZ = state.left.prevPaddleZ || 0;
+            if (combatants.right) combatants.right.prevPaddleZ = state.right.prevPaddleZ || 0;
 
             // Restore left combatant
             if (combatants.left) {
@@ -16203,6 +16223,16 @@
             useShieldCharge: (c) => useShieldCharge(c),
             parryProjectile: (p, who, aimDir) => { if (window.parryProjectile) window.parryProjectile(p, who, aimDir); },
             updateFireballScale: (p) => { if (window.updateFireballScale) window.updateFireballScale(p); },
+            // Cast pushback on a paddle block during a cast (deterministic sim state: decrements
+            // castProgress). applyCastPushback expects a 'player'/'ai' side string (getCombatantLegacy).
+            applyCastPushback: (combatant) => { applyCastPushback(combatant.side === 'left' ? 'player' : 'ai'); },
+            // Clear a projectile's parry state (deterministic; SP's resetProjParryState is a local
+            // closure, not a global, and only clears these two fields — replicate it directly).
+            resetProjParryState: (proj) => {
+                if (window.resetProjParryState) { window.resetProjParryState(proj); return; }
+                proj.isParried = false;
+                proj.parriedBy = null;
+            },
             spawnFrostbolt: (side, x, z, vx, vz) => window.spawnFrostbolt(side, x, z, vx, vz),
             // projectile liveness guards + render mirror (the Babylon touches in the physics)
             isProjectileMeshDead: (p) => (!p.mesh || p.mesh.isDisposed()),
@@ -16652,8 +16682,8 @@
             // Reset paddle positions to center
             if (playerPaddle) playerPaddle.position.z = 0;
             if (aiPaddle) aiPaddle.position.z = 0;
-            if (combatants.left) combatants.left.paddleZ = 0;
-            if (combatants.right) combatants.right.paddleZ = 0;
+            if (combatants.left) { combatants.left.paddleZ = 0; combatants.left.prevPaddleZ = 0; }
+            if (combatants.right) { combatants.right.paddleZ = 0; combatants.right.prevPaddleZ = 0; }
 
             // LEGACY - sync variables for backwards compatibility
             playerTowerHealth = playerGateHealth;

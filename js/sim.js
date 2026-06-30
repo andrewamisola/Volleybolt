@@ -150,6 +150,9 @@
 
     function updateNetworkProjectiles(dt, ctx) {
         const { projectiles, combatants, abilities, isResimulating, deps: D } = ctx;
+        // Expose the frame dt on ctx so behavior.onPaddleHit can compute the paddle-momentum
+        // term ((paddleZ - prevPaddleZ) / dt). onPaddleHit's signature is (proj, side, ctx).
+        ctx.dt = dt;
         const toDestroy = [];
         const tableY = 0.6;
         const gravity = -30;
@@ -221,7 +224,9 @@
             // Paddle collisions
             const projRadius = proj.hitboxRadius || 0.25;
             const paddleHalfWidth = 0.2;
-            const paddleHalfDepth = 0.8;
+            // SP value (was 0.8): effective collision depth = paddleHalfDepth + 0.75 = 2.0,
+            // matching SP's playerHitDepth/aiHitDepth (paddleHalfDepth 1.25 + perspectiveZOffset 0.75).
+            const paddleHalfDepth = 1.25;
             const maxHitHeight = 1.3;
 
             // Left paddle (player) collision
@@ -327,6 +332,10 @@
         // Always set at match init / restore / round-reset, so this never triggers.
         if (combatant.paddleZ === undefined) combatant.paddleZ = 0;
         if (combatant.paddleX === undefined) combatant.paddleX = 0;
+        // Record the pre-movement paddle Z every (non-frozen) frame so onPaddleHit can derive
+        // the lateral paddle-momentum term. When stationary (moveDir 0 or sub-step) prevPaddleZ
+        // tracks paddleZ → zero momentum, matching SP feel. Deterministic: both clients run this.
+        combatant.prevPaddleZ = combatant.paddleZ;
         if (moveDir === 0) return;
 
         const STEP_SIZE = 0.3;
