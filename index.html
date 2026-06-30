@@ -11837,9 +11837,10 @@
             const AI_RNG_SEED = 0xA1DE;  // fixed constant; stable seed offset for per-frame RNG
 
             const DEFAULT_AI_PARAMS = {
-                reactionFrames:   12,     // WIRED (2.3): the AI acts on the world it saw N frames ago
-                                          //   (~200ms at 60Hz). The realistic "can't block everything" lever —
-                                          //   fast/multiple incoming balls beat its late reaction.
+                reactionFrames:   8,      // WIRED (2.3): the AI acts on the world it saw N frames ago
+                                          //   (~130ms at 60Hz). The realistic "can't block everything" lever —
+                                          //   fast/multiple incoming balls beat its late reaction. Trimmed
+                                          //   12->8 (200ms felt laggy/early; 130ms tracks more naturally).
                 aimError:         1.2,    // POSITIONING error: max |Z| world-unit offset the paddle parks
                                           //   off the true intercept (stable per think-cycle). Main lever —
                                           //   higher = mis-reads & MISSES BLOCKS more. Raised 0.6->1.2
@@ -11921,11 +11922,13 @@
                     const open = _aiFindOpenTarget(view);
                     if (Math.abs(open - view.self.paddleZ) > 1.5) targetZ = open;
                 }
-                // Big deadzone → commit and HOLD; don't micro-correct (kills the back-and-forth).
+                // Deadzone just above one 0.3 step: the AI makes small single-step corrections to
+                // track the ball as it approaches (human-like fidget) WITHOUT oscillating ±a step
+                // around the target (a sub-step deadzone would, given quantized movement).
                 let moveDir = 0;
                 if (targetZ !== null) {
                     const diff = targetZ - view.self.paddleZ;
-                    if (Math.abs(diff) > 0.45) moveDir = Math.sign(diff);
+                    if (Math.abs(diff) > 0.34) moveDir = Math.sign(diff);
                 }
 
                 if (!isThinkFrame) {
