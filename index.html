@@ -6688,20 +6688,9 @@
             // Modern techniques for faking depth dynamically
             // ============================================================
 
-            // --- SSAO2 for Contact Darkening ---
-            // Darkens where objects meet surfaces (ambient occlusion)
-            const ssaoPipeline = new BABYLON.SSAO2RenderingPipeline("ssao", scene, {
-                ssaoRatio: 0.5,      // Half resolution for performance
-                blurRatio: 1.0       // Full res blur for smooth edges
-            }, [camera]);
-            ssaoPipeline.radius = 1.5;           // How far to sample
-            ssaoPipeline.totalStrength = 0.55;   // Gentle contact depth - grounds objects (was 1.2)
-            ssaoPipeline.base = 0.5;             // Floor keeps occlusion soft, not black (was 0.3)
-            ssaoPipeline.samples = 16;           // Quality (8-32 range)
-            ssaoPipeline.maxZ = 50;              // Max depth to consider
-            ssaoPipeline.minZAspect = 0.2;       // Aspect ratio correction
-            ssaoPipeline.expensiveBlur = false;  // Performance mode
-            console.log("SSAO2 contact darkening enabled");
+            // SSAO2 removed: PS1/FF9 era had no ambient-occlusion pass; the cost
+            // (full-resolution screenspace depth sample) is not worth it for this aesthetic.
+            // Blob shadows under characters provide the same grounding cue at near-zero cost.
 
             // --- Custom Posterize Post-Process ---
             // Quantizes light into discrete bands (cel-shading effect)
@@ -6979,38 +6968,19 @@
             sunLight.diffuse = new BABYLON.Color3(1.0, 0.92, 0.76); // Warm golden sunlight
             sunLight.specular = new BABYLON.Color3(0.1, 0.1, 0.1); // Low specular
 
-            // 2. FIX MISSING SHADOWS (BOUNDS):
-            // Define the area the light "sees" to ensure shadows render across the whole table
-            sunLight.orthoLeft = -30;
-            sunLight.orthoRight = 30;
-            sunLight.orthoTop = 30;
-            sunLight.orthoBottom = -30;
-            sunLight.autoCalcShadowZBounds = true;
-
             // Ambient - raised and warmed for an approachable, lit storybook world
             const ambient = new BABYLON.HemisphericLight("ambient", new BABYLON.Vector3(0, 1, 0), scene);
             ambient.intensity = 0.58; // Warm fill - bright enough, depth comes from the sun key (was 0.2)
             ambient.diffuse = new BABYLON.Color3(0.55, 0.5, 0.46); // Warm soft fill (was cold blue)
             ambient.groundColor = new BABYLON.Color3(0.26, 0.22, 0.18); // Warm bounce light (was pitch black)
 
-            // 3. SHADOW GENERATOR CONFIG
-            const shadowGenerator = new BABYLON.ShadowGenerator(2048, sunLight);
-
-            // FIX INVISIBLE SHADOWS:
-            // 0.0 = Pitch Black, 1.0 = Invisible.
-            shadowGenerator.darkness = 0.32;  // Defined but not pitch-black (was 0.1)
-
-            // Sharp, crisp shadows (Diablo style) instead of blurry soft ones
-            shadowGenerator.useExponentialShadowMap = false;
-            shadowGenerator.usePoissonSampling = true; // Dithering for retro feel
-            shadowGenerator.bias = 0.0001; // Fix shadow acne
-            shadowGenerator.transparencyShadow = true;
-
-            // STEPPED SHADOWS - Update every N frames for retro feel (not every frame)
-            shadowGenerator.getShadowMap().refreshRate = 1;  // Every frame - stepped shadows caused a crawling "heat-wave" shimmer
-
-            // Store globally for debugging
-            window.shadowGenerator = shadowGenerator;
+            // PS1/FF9 aesthetic: no real-time shadow map. Blob shadows (blobShadow0–3)
+            // ground the characters instead, matching the working projectile blob approach.
+            // Stub keeps addShadowCaster() calls in all model-loader callbacks as silent
+            // no-ops so none of them throw at runtime. window.shadowGenerator is null so
+            // the if (window.shadowGenerator) guards in the castle code remain correct.
+            const shadowGenerator = { addShadowCaster: () => {} };
+            window.shadowGenerator = null;
             window.sunLight = sunLight;
 
             // Storybook grade - softer contrast, lifted shadows, gentle warmth
@@ -7353,19 +7323,35 @@
                     m.emissiveColor = new BABYLON.Color3(0.05, 0.09, 0.04);  // tiny lift so shadowed bushes aren't black
                 });
 
-                // One bush clump = a few squashed low-poly icospheres
+                // Three hidden source icospheres — one per bush material. All bush blobs are
+                // InstancedMesh from these sources: same geometry, same material, no extra draw
+                // calls per instance. Instances inherit the source material so the shared leafTex
+                // wind-wobble UV animation applies automatically to every bush in the scene.
+                const bushSources = bushMats.map((mat, i) => {
+                    const src = BABYLON.MeshBuilder.CreateIcoSphere("bushSrc" + i,
+                        { radius: 1, subdivisions: 1 }, scene);
+                    src.material = mat;
+                    src.isPickable = false;
+                    src.receiveShadows = false;
+                    src.isVisible = false;   // hidden; instances render in its place
+                    return src;
+                });
+
+                // One bush clump = a few instanced blob spheres — no new geometry per blob
                 const makeBush = (x, z, scale) => {
                     const blobs = 2 + Math.floor(Math.random() * 3);
                     for (let i = 0; i < blobs; i++) {
                         const r = (0.38 + Math.random() * 0.3) * scale;
-                        const blob = BABYLON.MeshBuilder.CreateIcoSphere("bush", { radius: r, subdivisions: 1 }, scene);
-                        blob.position.x = x + (Math.random() - 0.5) * 0.9 * scale;
-                        blob.position.z = z + (Math.random() - 0.5) * 0.7 * scale;
-                        blob.position.y = r * 0.62;
-                        blob.scaling.y = 0.7;
-                        blob.material = bushMats[Math.floor(Math.random() * bushMats.length)];
-                        blob.receiveShadows = false;  // decor only - stepped shadows on dozens of blobs caused flicker
-                        blob.isPickable = false;
+                        const matIdx = Math.floor(Math.random() * 3);
+                        const inst = bushSources[matIdx].createInstance("bushInst");
+                        inst.position.x = x + (Math.random() - 0.5) * 0.9 * scale;
+                        inst.position.z = z + (Math.random() - 0.5) * 0.7 * scale;
+                        inst.position.y = r * 0.62;
+                        // Source radius=1; scale XZ to r and Y to r*0.7 (matches original
+                        // CreateIcoSphere radius:r + blob.scaling.y=0.7 squash)
+                        inst.scaling.set(r, r * 0.7, r);
+                        inst.isPickable = false;
+                        inst.receiveShadows = false;
                     }
                 };
 
@@ -7612,7 +7598,7 @@
                 blobMat.disableLighting = true;
                 blobMat.diffuseTexture = blobTex;      // alpha comes from the texture
                 blobMat.useAlphaFromDiffuseTexture = true;
-                blobMat.alpha = 0.5;   // subtle soft-circle AO under the feet; sun shadow is the primary cast shadow
+                blobMat.alpha = 0.5;   // FF9-style blob: primary (only) ground shadow — real-time shadow map removed
                 blobMat.backFaceCulling = false;
                 blobMat.zOffset = -3;                  // keep it above the ground/lane decal
 
@@ -7666,8 +7652,8 @@
             combatants.right.paddleZ = aiPaddle.position.z;
             combatants.right.prevPaddleZ = aiPaddle.position.z;
 
-            // Dynamic shadows from character models are handled by shadowGenerator
-            // Characters are added to shadow casters when loaded (see character loading code)
+            // No real-time shadow map (PS1/FF9 style). Blob shadows (group 0, y≈0.09) follow
+            // each paddle's world XZ position in the onBeforeRenderObservable loop above.
 
             // === 3D CAST BARS (over characters for positioning awareness) ===
             let player3DCastBar = null;
