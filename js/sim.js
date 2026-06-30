@@ -19,10 +19,11 @@
 //
 // Determinism law (see docs/SHARED_CORE.md): same (state, inputs) -> same state.
 // No Math.random / Date.now / performance.now here. Verify any change against the
-// dbg.determinism golden-hash oracle in index.html (seed 12345 -> 3770e2c7).
+// dbg.determinism golden-hash oracle in index.html (seed 12345 -> 3072141a).
 // Re-baseline history: 14e88256 (pre Phase-0) -> b1df6797 (Phase-0 fireball-id +
 // court-depth) -> ad7c0e42 (Phase 2.2-B proj-vs-proj + juice in hash) ->
-// 3770e2c7 (Phase 2.2-C juice lifecycle: drain/activate/charge).
+// 3770e2c7 (Phase 2.2-C juice lifecycle) -> 3072141a (Phase 2.3-A SP paddle-return
+// ported in: momentum + 1.25 divisor + 2.0 hitbox + prevPaddleZ in hash).
 //
 // This module is loaded with <script type="module"> and attaches itself to
 // window.VolleyboltSim so the classic inline script can call into it. The inline
