@@ -19,8 +19,10 @@
 //
 // Determinism law (see docs/SHARED_CORE.md): same (state, inputs) -> same state.
 // No Math.random / Date.now / performance.now here. Verify any change against the
-// dbg.determinism golden-hash oracle in index.html (seed 12345 -> 18bf5599).
+// dbg.determinism golden-hash oracle in index.html (seed 12345 -> 2dd677de).
 // (60bf20f3 -> e9717f89: balance — fireball mana 1->0.5 & cooldown 4->3, frostbolt mana 2->1.)
+// (18bf5599 -> 2dd677de: cast no longer roots the caster; moving while casting CANCELS the cast
+//  instead (cancelCastOnMove). decideAI holds still while casting so the AI never self-cancels.)
 // Re-baseline history: 14e88256 (pre Phase-0) -> b1df6797 (Phase-0 fireball-id +
 // court-depth) -> ad7c0e42 (Phase 2.2-B proj-vs-proj + juice in hash) ->
 // 3770e2c7 (Phase 2.2-C juice lifecycle) -> 3b37922a (Phase 2.3-A SP paddle-return:
@@ -345,9 +347,8 @@
         // tracks paddleZ → zero momentum, matching SP feel. Deterministic: both clients run this.
         combatant.prevPaddleZ = combatant.paddleZ;
         if (moveDir === 0) return;
-        // Rooted while casting a rooting ability (e.g. fireball's 1s channel) — committing to the
-        // cast pins you in place, matching single-player. Deterministic data query via dep.
-        if (D.isRooted && D.isRooted(combatant)) return;
+        // NOT rooted while casting: moving during a cast cancels it instead (see cancelCastOnMove,
+        // run before this in simulateNetworkFrame), matching single-player feel.
 
         const STEP_SIZE = 0.3;
         const speed = 20;  // paddleSpeed
@@ -369,6 +370,20 @@
             // Render mirror (via dep, so the movement math is Babylon-free)
             D.mirrorPaddleToMesh(combatant);
         }
+    }
+
+    // Moving while casting cancels the cast (single-player feel — you are NOT rooted). The
+    // authoritative state clear runs every frame so rollback re-simulation reproduces it; the
+    // FX/UI cancel is gated to live frames via the dep. Mana is spent at cast COMPLETION, so an
+    // aborted cast costs nothing (pendingManaCost is just discarded). The AI holds still while
+    // casting (decideAI zeroes moveDir), so in practice only the human triggers this.
+    function cancelCastOnMove(combatant, moveDir, ctx) {
+        if (!combatant || !combatant.casting || moveDir === 0 || combatant.freezeTime > 0) return;
+        const D = ctx.deps;
+        if (!ctx.isResimulating && D.onCastCancelled) D.onCastCancelled(combatant);  // FX reads .casting
+        combatant.casting = null;
+        combatant.castProgress = 0;
+        combatant.pendingManaCost = 0;
     }
 
     // Try to start a cast in network mode. ctx = { abilities, isResimulating, deps }.
@@ -576,6 +591,11 @@
                 D.completeCasting(side);
             }
         }
+
+        // Moving while casting cancels the cast (runs AFTER the cast-progress loop above, so a cast
+        // that completes this very frame still fires; otherwise directional input aborts it).
+        cancelCastOnMove(combatants.left, leftInput.moveDir, ctx);
+        cancelCastOnMove(combatants.right, rightInput.moveDir, ctx);
 
         // Apply movement inputs
         if (combatants.left) combatants.left.lastMoveDir = leftInput.moveDir;

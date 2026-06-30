@@ -596,7 +596,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=23c6"></script>
+    <script type="module" src="js/sim.js?v=24a"></script>
 
     <script>
         // Global error handler to debug doubles crash
@@ -11919,6 +11919,9 @@
                     const diff = targetZ - view.self.paddleZ;
                     if (Math.abs(diff) > 0.34) moveDir = Math.sign(diff);
                 }
+                // Commit to an in-progress cast: hold position while casting. Moving cancels the cast
+                // in the sim, so the AI must stand still to let its fireball/frostbolt actually land.
+                if (view.self.casting) moveDir = 0;
 
                 if (!isThinkFrame) {
                     return { moveDir, parry: false, fireball: false, frostbolt: false, thunderstorm: false, juice: false };
@@ -16340,7 +16343,9 @@
             // --- config / state-affecting ---
             getEffectiveTableDepth: () => (window.getEffectiveTableDepth ? window.getEffectiveTableDepth() : 14),
             getMaxMana: (side) => getMaxMana(side),
-            isRooted: (c) => combatantIsRooted(c),   // deterministic: casting a rootWhileCasting ability (fireball)
+            isRooted: (c) => combatantIsRooted(c),   // vestigial: cast-rooting was replaced by cancel-on-move (sim cancelCastOnMove); kept for any legacy reader
+            // FX/UI for a cast aborted by movement; the sim clears the authoritative cast state itself.
+            onCastCancelled: (c) => cancelCasting(c.side === 'left' ? 'player' : 'ai', true),
             dealDamageToTower: (isPlayerTower, dmg, z) => dealDamageToTower(isPlayerTower, dmg, z),
             destroyProjectile: (p) => window.destroyProjectile(p),
             useShieldCharge: (c) => useShieldCharge(c),
