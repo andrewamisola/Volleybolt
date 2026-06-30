@@ -11751,6 +11751,7 @@
             const paddleBoundary = tableDepth/2 - 1.5;  // Initial value, use getPaddleBoundary() for dynamic
             const goalX = tableWidth/2 + 1;
             let spFrameCounter = 0;   // deterministic fixed-step counter for the singles-AI think cadence (Phase 2.1)
+            let aiViewHistory = [];   // ring of recent AI views for the reactionFrames input-lag (Phase 2.3 tune)
             const paddleHalfDepth = 1.25;
             const paddleHalfWidth = 0.2;
             // Perspective correction: expand hitbox based on character height and camera angle
@@ -11836,15 +11837,18 @@
             const AI_RNG_SEED = 0xA1DE;  // fixed constant; stable seed offset for per-frame RNG
 
             const DEFAULT_AI_PARAMS = {
-                reactionFrames:   0,      // (reserved) extra lag frames before a decision takes effect
+                reactionFrames:   12,     // WIRED (2.3): the AI acts on the world it saw N frames ago
+                                          //   (~200ms at 60Hz). The realistic "can't block everything" lever —
+                                          //   fast/multiple incoming balls beat its late reaction.
                 aimError:         1.2,    // POSITIONING error: max |Z| world-unit offset the paddle parks
                                           //   off the true intercept (stable per think-cycle). Main lever —
                                           //   higher = mis-reads & MISSES BLOCKS more. Raised 0.6->1.2
                                           //   (post-2.3 AI blocked everything).
                 parryTimingError: 0.25,   // fraction of parry opportunities the AI whiffs (per-projectile,
                                           //   deterministic). 0 = never whiffs, 1 = never parries.
-                castAggression:   0.75,   // fraction of cast opportunities the AI takes (per think-cycle).
-                                          //   1.0 = casts every chance; lower = more passive.
+                castAggression:   0.5,    // fraction of cast opportunities the AI takes (per think-cycle).
+                                          //   1.0 = casts every chance; lowered 0.75->0.5 (it was spamming
+                                          //   3 fireballs at the player).
                 thinkIntervalK:   22,     // think cadence: decide every K frames (~0.37s at 60Hz). Higher =
                                           //   reacts slower / re-targets less often (feels less omnipresent).
                                           //   Raised 13->22 (post-2.3 AI felt too fast/always in position).
@@ -12015,7 +12019,14 @@
             function runSinglePlayerFrame(dt) {
                 spFrameCounter++;
                 const leftInput  = buildPlayerInput();
-                const rightInput = decideAI(buildAISingleView(), spFrameCounter, makeAIRng(spFrameCounter ^ AI_RNG_SEED), DEFAULT_AI_PARAMS);
+                // Reaction delay: the AI decides on the world it saw `reactionFrames` ago — a human
+                // can't react instantly, so fast/multiple incoming balls beat it. decideAI stays pure;
+                // the lag lives here in the input pipeline (not in the sim, not in the AI oracle).
+                aiViewHistory.push(buildAISingleView());
+                const lag = (DEFAULT_AI_PARAMS.reactionFrames | 0);
+                while (aiViewHistory.length > lag + 1) aiViewHistory.shift();
+                const aiView = aiViewHistory[0];   // oldest retained ≈ `lag` frames old once warmed
+                const rightInput = decideAI(aiView, spFrameCounter, makeAIRng(spFrameCounter ^ AI_RNG_SEED), DEFAULT_AI_PARAMS);
                 window.VolleyboltSim.simulateNetworkFrame(leftInput, rightInput, dt, buildSimCtx());
                 updateSinglePlayerPresentation(dt);
             }
