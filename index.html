@@ -11895,17 +11895,38 @@
                 const isThinkFrame = (frame % K === 0);
                 const cycle = Math.floor(frame / K);   // stable index for per-think-cycle difficulty rolls
 
-                // --- Movement (every frame: smooth, not gated) ---
+                // --- Movement: PURPOSEFUL only (no idle tracking / back-and-forth). The AI holds
+                // position unless it has a reason: intercept an incoming fireball, dodge an incoming
+                // frostbolt (blocking it would freeze us), or reposition to attack when idle+off-lane. ---
                 const threat  = _aiFindUrgentThreat(view);
-                let   targetZ = threat ? threat.z : _aiFindOpenTarget(view);
-                // POSITIONING error (difficulty): park slightly off the true intercept. Seeded by the
-                // think-cycle so the offset is stable for ~0.22s (no per-frame jitter), then re-rolls.
-                if (params.aimError > 0) {
-                    const posErr = (makeAIRng((cycle ^ 0x50F1) >>> 0)() * 2 - 1) * params.aimError;
-                    targetZ += posErr;
+                const halfD   = view.geom.halfDepth;
+                let   targetZ = null;   // null = no reason to move → hold still
+                if (threat) {
+                    if (threat.type === 'frostbolt') {
+                        // Dodge: commit to the opposite half from the frostbolt's lane (fixed target,
+                        // so we don't run to the wall as paddleZ changes).
+                        targetZ = threat.z >= 0 ? -halfD * 0.5 : halfD * 0.5;
+                    } else {
+                        // Intercept/block, parked slightly off — positioning error STABLE PER BALL
+                        // (keyed to the projectile id, not the think-cycle), so the paddle commits to
+                        // one target instead of jittering.
+                        targetZ = threat.z;
+                        if (params.aimError > 0) {
+                            const posErr = (makeAIRng(((Math.imul(threat.id | 0, 2654435761)) ^ 0x50F1) >>> 0)() * 2 - 1) * params.aimError;
+                            targetZ += posErr;
+                        }
+                    }
+                } else {
+                    // Idle: only reposition toward an open lane if meaningfully out of place.
+                    const open = _aiFindOpenTarget(view);
+                    if (Math.abs(open - view.self.paddleZ) > 1.5) targetZ = open;
                 }
-                const diff    = targetZ - view.self.paddleZ;
-                const moveDir = Math.abs(diff) > 0.25 ? Math.sign(diff) : 0;
+                // Big deadzone → commit and HOLD; don't micro-correct (kills the back-and-forth).
+                let moveDir = 0;
+                if (targetZ !== null) {
+                    const diff = targetZ - view.self.paddleZ;
+                    if (Math.abs(diff) > 0.45) moveDir = Math.sign(diff);
+                }
 
                 if (!isThinkFrame) {
                     return { moveDir, parry: false, fireball: false, frostbolt: false, thunderstorm: false, juice: false };
@@ -15622,7 +15643,7 @@
         // ---- AI determinism oracle (Phase 2.1) ----
         // Folds decideAI outputs over a scripted synthetic view sequence into a 32-bit hex hash.
         // No mesh reads, no game loop — pure function exercise only.
-        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "0c0b3cfd"  (re-pinned 2026-06-29 after the
+        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "8ea9157c"  (re-pinned 2026-06-29 after the
         // difficulty-tuning pass wired aimError/parryTimingError/castAggression into decideAI)
         (function attachAIDeterminism() {
             function _syntheticView(seed) {
