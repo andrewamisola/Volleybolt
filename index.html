@@ -596,7 +596,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=23c5"></script>
+    <script type="module" src="js/sim.js?v=23c6"></script>
 
     <script>
         // Global error handler to debug doubles crash
@@ -2108,9 +2108,9 @@
         // ============================================================
         const ABILITY_REGISTRY = {
             fireball: {
-                gameplay: { cooldown: 3, castTime: 1.0, baseSpeed: 12, maxSpeed: 20, damage: 1, manaCost: 0.5 },
+                gameplay: { cooldown: 3, castTime: 1.0, baseSpeed: 12, maxSpeed: 20, damage: 1, manaCost: 1 },
                 ui: {
-                    name: 'Fireball', key: '1', iconClass: 'fireball-icon', manaCostLabel: '0.5',
+                    name: 'Fireball', key: '1', iconClass: 'fireball-icon', manaCostLabel: '1',
                     castLabel: '1s Cast', cooldownLabel: '3s CD',
                     description: 'Hurl a <span class="tt-spell">Fireball</span> that deals <span class="tt-value">2</span> <span class="tt-fire">Fire</span> damage. Damage increases with <span class="tt-mechanic">Volleys</span>, up to <span class="tt-value">6</span>.'
                 },
@@ -2255,7 +2255,7 @@
             fireball: {
                 name: 'Fireball',
                 element: 'fire',
-                manaCost: 0.5,
+                manaCost: 1,
                 castTime: 1.0,
                 rootWhileCasting: true,
                 pushbackOnHit: 0.3,
@@ -5236,11 +5236,14 @@
             try {
                 const G = BABYLON.GUI, ALN = G.Control;
                 const cmdSlots = [
-                    { id: 'fireball',        name: 'Fireball',     key: '1',     mana: 0.5 },
-                    { id: 'frostbolt',       name: 'Frostbolt',    key: '2',     mana: 1 },
-                    { id: 'thunderstorm', name: 'Thunderstorm', key: '3',     mana: 2 },
+                    { id: 'fireball',        name: 'Fireball',     key: '1',     mana: 0 },
+                    { id: 'frostbolt',       name: 'Frostbolt',    key: '2',     mana: 0 },
+                    { id: 'thunderstorm', name: 'Thunderstorm', key: '3',     mana: 0 },
                     { id: 'parry',           name: 'Parry',        key: '␣',     mana: 0 },
                 ];
+                // Centralized: mana comes from the registry (single source) so the command menu can't
+                // drift from the real cost. (parry has no registry entry -> stays 0.)
+                for (const s of cmdSlots) { const d = window.getAbilityDef && getAbilityDef(s.id); if (d && d.gameplay && d.gameplay.manaCost != null) s.mana = d.gameplay.manaCost; }
                 const ROW_H = 36, PAD = 8, TITLE_H = 26;
                 // Trio widths: command narrower, status longer, combat-log centered. Total ≈ old 3×320.
                 const CMD_W = 280, DET_W = 320, STAT_W = 360, BOX_W = CMD_W;
@@ -5297,7 +5300,7 @@
                     const manaRight = (s.key.length > 1 ? "-60px" : "-34px");
                     const mana = new G.TextBlock();
                     // Full dots for whole mana + a half-dot for a .5 cost (e.g. fireball = 0.5 -> "◐").
-                    mana.text = s.mana > 0 ? ("●".repeat(Math.floor(s.mana)) + ((s.mana % 1) >= 0.5 ? "◐" : "")) : "";
+                    mana.text = s.mana > 0 ? "●".repeat(s.mana) : "";
                     mana.color = "#5ad0ff"; mana.fontSize = 16;
                     mana.shadowColor = "#000"; mana.shadowBlur = 0; mana.shadowOffsetX = 1; mana.shadowOffsetY = 1;
                     mana.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -10518,19 +10521,8 @@
                 const pan = startX / 10;  // Convert X position to -1 to 1 pan
                 proj.loopSound = createFireRoarSound(pan);
 
-                // Juice burst: the caster's fireball comes out at the full 6-damage tier — the size
-                // and speed of a maxed-out volley — even though it still has a cast time.
-                if (!isSplitProjectile) {
-                    const ownerC = (owner === 'player') ? combatants.left : combatants.right;
-                    if (ownerC && ownerC.juiceActive) {
-                        proj.volleyCount = 4;                                              // damage tier = 6
-                        const dir = Math.sign(proj.velX) || (owner === 'player' ? 1 : -1);
-                        const maxSp = (abilities.fireball && abilities.fireball.maxSpeed) || 20;
-                        proj.velX = dir * maxSp; proj.speed = maxSp;                       // speed of a 6-dmg volley
-                        if (window.updateFireballScale) window.updateFireballScale(proj);  // full size
-                        if (window.updateProjectileTier) window.updateProjectileTier(proj);
-                    }
-                }
+                // Juice fires REGULAR fireballs (no 6-tier burst); the burst's power is the 0 cooldown
+                // (set where the fireball cooldown is applied), so you can rapid-fire — cast time aside.
 
                 setupProjectileSceneFx(proj);
                 projectiles.push(proj);
@@ -11103,7 +11095,7 @@
                 // Parry returns at a CONSISTENT 1.5x the ball's CURRENT speed (e.g. a +2 fireball
                 // comes back at 1.5x its tier speed). Based on actual velocity, not the stale
                 // proj.speed; no flat cap (was proj.speed*1.4 capped at 28).
-                proj.speed = Math.sqrt(proj.velX * proj.velX + proj.velZ * proj.velZ) * 1.5;
+                proj.speed = Math.sqrt(proj.velX * proj.velX + proj.velZ * proj.velZ) * 1.25;
 
                 if (parryer === 'player') {
                     // Check directional input
@@ -11705,8 +11697,8 @@
                 // Deduct mana
                 combatant.mana -= ability.manaCost;
 
-                // Set cooldown
-                combatant.cooldowns.fireball = ability.cooldown;
+                // Set cooldown — 0 during a juice burst so fireballs can rapid-fire (cast time aside).
+                combatant.cooldowns.fireball = combatant.juiceActive ? 0 : ability.cooldown;
 
                 // Determine direction - left side shoots right, right side shoots left
                 const velX = isLeftSide ? ability.baseSpeed : -ability.baseSpeed;
@@ -11948,7 +11940,7 @@
                 // panic-clear of 2+ incoming, so the AI shouldn't randomly skip it).
                 const aggressive = (makeAIRng((cycle ^ 0xCA57) >>> 0)() < params.castAggression);
 
-                const canFireball     = aggressive && safe && cd.fireball    <= 0 && s.mana >= 0.5 && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
+                const canFireball     = aggressive && safe && cd.fireball    <= 0 && s.mana >= 1 && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
                 // Frostbolt is GOOD when the opponent is right in front (it freezes them) — so unlike
                 // fireball it does NOT avoid a blocking opponent; it wants that shot.
                 const canFrostbolt    = aggressive && safe && cd.frostbolt   <= 0 && s.mana >= 1 && view.projectiles.length < 10 && !s.casting;
@@ -14025,7 +14017,7 @@
             const startZ = paddle.position.z;
 
             // Set cooldown using combatant system
-            c.cooldowns.fireball = abilities.fireball.cooldown;
+            c.cooldowns.fireball = c.juiceActive ? 0 : abilities.fireball.cooldown;  // 0 during juice burst (rapid-fire)
             // Sync legacy cooldowns
             if (caster === 'player') {
                 playerFireballCooldown = abilities.fireball.cooldown;
@@ -18088,7 +18080,8 @@
             const velX = isLeft ? speed : -speed;
             const startZ = paddle.position.z;
 
-            const effectiveCooldown = abilities.fireball.cooldown;
+            // 0 cooldown during a juice burst -> rapid-fire fireballs (cast time aside).
+            const effectiveCooldown = c.juiceActive ? 0 : abilities.fireball.cooldown;
 
             // Set cooldown using combatant system
             c.cooldowns.fireball = effectiveCooldown;
