@@ -748,6 +748,7 @@
             m.alpha = 0.5;
             m.backFaceCulling = false;
             m.zOffset = -3;
+            m.fogEnabled = false;   // scene exp2 fog would wash out the shadow
             _projBlobMat = m;
             return m;
         }
@@ -766,7 +767,7 @@
             blob.material = getProjectileBlobMaterial();
             blob.isPickable = false;
             blob.receiveShadows = false;
-            blob.renderingGroupId = 0;  // on the ground, under the fog is fine (it's a dark shadow)
+            blob.renderingGroupId = 2;  // above the fogPlane (group 1) — at group 0 the near-opaque, depth-writing fog buried it
             if (proj.mesh) { blob.position.set(proj.mesh.position.x, 0.1, proj.mesh.position.z); }
             proj.blobShadow = blob;
         }
@@ -7598,9 +7599,14 @@
                 blobMat.disableLighting = true;
                 blobMat.diffuseTexture = blobTex;      // alpha comes from the texture
                 blobMat.useAlphaFromDiffuseTexture = true;
-                blobMat.alpha = 0.5;   // FF9-style blob: primary (only) ground shadow — real-time shadow map removed
+                blobMat.alpha = 0.65;  // FF9-style blob: primary (only) ground shadow — real-time shadow map removed
                 blobMat.backFaceCulling = false;
                 blobMat.zOffset = -3;                  // keep it above the ground/lane decal
+                // The reactive fogPlane is a near-opaque sheet at y=0.25 (renderingGroupId 1) that WRITES
+                // depth, and scene exp2 fog is on — both buried the blobs when they rendered at group 0.
+                // Render the blobs in group 2 (after the fog) and disable scene fog on them so they show
+                // crisply on the ground. (Verified in-engine: group 0 = invisible, group 2 = visible.)
+                blobMat.fogEnabled = false;
 
                 const makeBlob = (name) => {
                     const d = BABYLON.MeshBuilder.CreateGround(name, { width: 1.7, height: 1.15 }, scene);
@@ -7608,6 +7614,7 @@
                     d.isPickable = false;
                     d.receiveShadows = false;
                     d.position.y = 0.09;               // just above the lane decal (y=0.06)
+                    d.renderingGroupId = 2;            // above the fog plane (group 1) so it isn't occluded
                     return d;
                 };
                 // One blob per possible combatant paddle: back-left, back-right, and the two
