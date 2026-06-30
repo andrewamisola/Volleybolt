@@ -11958,16 +11958,19 @@
             const AI_RNG_SEED = 0xA1DE;  // fixed constant; stable seed offset for per-frame RNG
 
             const DEFAULT_AI_PARAMS = {
-                reactionFrames:   6,      // WIRED (2.3): the AI acts on the world it saw N frames ago
-                                          //   (~100ms at 60Hz). The "can't block everything" lever —
-                                          //   fast/multiple incoming beat its late reaction. 8->6 (was too easy).
-                aimError:         0.85,   // POSITIONING error: max |Z| world-unit offset the paddle parks
+                reactionFrames:   9,      // WIRED (2.3): the AI acts on the world it saw N frames ago
+                                          //   (~150ms at 60Hz). The "can't block everything" lever —
+                                          //   fast/multiple incoming beat its late reaction. 6->9 (softened
+                                          //   after the ball-lead prediction buff made it too sharp).
+                aimError:         1.4,    // POSITIONING error: max |Z| world-unit offset the paddle parks
                                           //   off the true intercept (stable per BALL). Higher = misses blocks
-                                          //   more. Middle ground 1.2->0.85 (1.2 too easy; 0.6 blocked all).
-                parryTimingError: 0.25,   // fraction of parry opportunities the AI whiffs (per-projectile,
-                                          //   deterministic). 0 = never whiffs, 1 = never parries.
-                castAggression:   0.65,   // fraction of cast opportunities the AI takes (per think-cycle).
-                                          //   1.0 = casts every chance; 0.5->0.65 (was a bit passive).
+                                          //   more. 0.85->1.4: prediction now LEADS the ball (targets the real
+                                          //   impact point), so it needs more error to be beatable. (Old "1.2
+                                          //   too easy" was pre-prediction, when it aimed at the wrong spot.)
+                parryTimingError: 0.4,    // fraction of parry opportunities the AI whiffs (per-projectile,
+                                          //   deterministic). 0 = never whiffs, 1 = never parries. 0.25->0.4.
+                castAggression:   0.55,   // fraction of cast opportunities the AI takes (per think-cycle).
+                                          //   1.0 = casts every chance; 0.65->0.55 (ease offensive pressure).
                 thinkIntervalK:   22,     // think cadence: decide every K frames (~0.37s at 60Hz). Higher =
                                           //   reacts slower / re-targets less often (feels less omnipresent).
                                           //   Raised 13->22 (post-2.3 AI felt too fast/always in position).
