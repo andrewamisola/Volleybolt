@@ -753,6 +753,41 @@
             return m;
         }
 
+        // Shared soft-blob material for STATIC scenery ground shadows (towers + bushes).
+        // Identical recipe to the projectile blob: dark radial gradient on a DynamicTexture,
+        // disableLighting, useAlphaFromDiffuseTexture, fogEnabled=false so scene exp2 fog
+        // doesn't bury it, and renderingGroupId=2 on every mesh that uses it so it renders
+        // above the depth-writing fogPlane at group 1.  One material, many meshes.
+        let _staticShadowMat = null;
+        function getStaticShadowMaterial() {
+            if (_staticShadowMat) return _staticShadowMat;
+            const SZ = 64;
+            const tex = new BABYLON.DynamicTexture("staticShadowTex", { width: SZ, height: SZ }, scene, false);
+            const c = tex.getContext();
+            const g = c.createRadialGradient(SZ/2, SZ/2, 0, SZ/2, SZ/2, SZ/2);
+            g.addColorStop(0.0, "rgba(0,0,0,0.85)");
+            g.addColorStop(0.5, "rgba(0,0,0,0.38)");
+            g.addColorStop(1.0, "rgba(0,0,0,0)");
+            c.clearRect(0, 0, SZ, SZ);
+            c.fillStyle = g;
+            c.fillRect(0, 0, SZ, SZ);
+            tex.hasAlpha = true;
+            tex.update();
+            const m = new BABYLON.StandardMaterial("staticShadowMat", scene);
+            m.diffuseColor = BABYLON.Color3.Black();
+            m.specularColor = BABYLON.Color3.Black();
+            m.emissiveColor = BABYLON.Color3.Black();
+            m.disableLighting = true;
+            m.diffuseTexture = tex;
+            m.useAlphaFromDiffuseTexture = true;
+            m.alpha = 0.35;   // subtle PS1 painted shadow — lead tunes alpha/size in-browser
+            m.backFaceCulling = false;
+            m.zOffset = -3;
+            m.fogEnabled = false;   // scene exp2 fog must not wash out the shadow
+            _staticShadowMat = m;
+            return m;
+        }
+
         // Finalize a projectile's scene presence: lift its visuals above the reactive fog
         // (group 1) so trails stay crisp, and attach a soft blob shadow on the ground that
         // follows it (replacing the dynamic sun shadow cast).
@@ -7343,6 +7378,17 @@
                     return src;
                 });
 
+                // Hidden source plane for bush ground-shadow instances.  One instance is
+                // created per bush cluster inside makeBush; all share the static shadow
+                // material (getStaticShadowMaterial).  renderingGroupId 2: above fogPlane.
+                const bushShadowSrc = BABYLON.MeshBuilder.CreateGround("bushShadowSrc",
+                    { width: 1, height: 1 }, scene);
+                bushShadowSrc.material = getStaticShadowMaterial();
+                bushShadowSrc.isPickable = false;
+                bushShadowSrc.receiveShadows = false;
+                bushShadowSrc.renderingGroupId = 2;
+                bushShadowSrc.isVisible = false;   // hidden; instances render in its place
+
                 // One bush clump = a few instanced blob spheres — no new geometry per blob
                 const makeBush = (x, z, scale) => {
                     const blobs = 2 + Math.floor(Math.random() * 3);
@@ -7359,6 +7405,14 @@
                         inst.isPickable = false;
                         inst.receiveShadows = false;
                     }
+                    // Painted ground shadow under this bush cluster — one instance per
+                    // cluster, at the cluster centre (x,z).  Scaled to the cluster footprint.
+                    // Static: bushes are placed once and never move.
+                    const bShadow = bushShadowSrc.createInstance("bushShadowInst");
+                    bShadow.position.set(x, 0.08, z);
+                    bShadow.scaling.set(scale * 1.8, 1, scale * 1.5);
+                    bShadow.isPickable = false;
+                    bShadow.receiveShadows = false;
                 };
 
                 const halfW = tableWidth / 2;      // 13
@@ -7458,6 +7512,49 @@
             // D2 style: only characters/projectiles cast shadows
             redBase.receiveShadows = true;
             window.redBase = redBase;  // Store reference for resizing
+
+            // ============================================================
+            // BAKED TOWER GROUND SHADOWS — PS1/FF9-style painted shadows
+            // Sun at (25,22,-20): light from +x/-z.  Art direction: left
+            // tower shadow is elongated rightward (+x, toward the field);
+            // right tower shadow is elongated leftward (-x, toward the
+            // field); both biased slightly +z per the sun geometry.
+            // Shared material: getStaticShadowMaterial() (one material,
+            // no per-frame work).  renderingGroupId 2 — above fogPlane.
+            // ============================================================
+            (() => {
+                const sMat = getStaticShadowMaterial();
+                // y=0.08: just above arena floor (~y=0.06), below fogPlane (y=0.25)
+                const SHADOW_Y = 0.08;
+
+                // Shadow plane wider than the base in the field-ward axis (elongated).
+                // baseWidth=4  baseDepth=tableDepth+2=16  (both const in outer scope)
+                const swX = baseWidth * 2.0;    // 8 units — elongated toward field in x
+                const swZ = baseDepth * 0.88;   // ~14 units — slightly shorter than base depth
+
+                // Shift the shadow centre toward the field so it reads as an inward cast.
+                // +z bias matches the sun being at z=-20 (shadow falls in +z direction).
+                const offX = baseWidth * 0.45;  // ~1.8 units toward field
+                const offZ = 0.4;               // slight +z shift per sun direction
+
+                // Left (blue) tower — shadow stretches rightward (+x) onto the field
+                const blueTowerShadow = BABYLON.MeshBuilder.CreateGround("blueTowerShadow",
+                    { width: swX, height: swZ }, scene);
+                blueTowerShadow.position.set(blueBase.position.x + offX, SHADOW_Y, offZ);
+                blueTowerShadow.material = sMat;
+                blueTowerShadow.isPickable = false;
+                blueTowerShadow.receiveShadows = false;
+                blueTowerShadow.renderingGroupId = 2;
+
+                // Right (red) tower — shadow stretches leftward (-x) onto the field
+                const redTowerShadow = BABYLON.MeshBuilder.CreateGround("redTowerShadow",
+                    { width: swX, height: swZ }, scene);
+                redTowerShadow.position.set(redBase.position.x - offX, SHADOW_Y, offZ);
+                redTowerShadow.material = sMat;
+                redTowerShadow.isPickable = false;
+                redTowerShadow.receiveShadows = false;
+                redTowerShadow.renderingGroupId = 2;
+            })();
 
             // ============================================================
             // STAGE RESIZE FUNCTION
