@@ -596,7 +596,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=23a1"></script>
+    <script type="module" src="js/sim.js?v=23c2"></script>
 
     <script>
         // Global error handler to debug doubles crash
@@ -15593,7 +15593,8 @@
                         c.casting = null; c.castProgress = 0; c.castTime = 0;
                         c.cooldowns = { fireball: 0, frostbolt: 0, gravity: 0, thunderstorm: 0 };
                         c.towerHealth = 9999; // avoid endRound side effects during the run
-                        c.moveAccum = 0; c.paddleZ = 0; // clean, mode-independent paddle start
+                        c.moveAccum = 0; c.paddleZ = 0; c.prevPaddleZ = 0; // clean, mode-independent paddle start
+                        c.paddleX = (c.side === 'left' ? -11.5 : 11.5); // pin paddleX so onPaddleHit reposition is oracle-stable (immune to live mutation)
                     }
                     // Pin paddle meshes too so the run never inherits single-player paddle drift.
                     if (playerPaddle) playerPaddle.position.z = 0;
@@ -16442,6 +16443,7 @@
             // --- config / state-affecting ---
             getEffectiveTableDepth: () => (window.getEffectiveTableDepth ? window.getEffectiveTableDepth() : 14),
             getMaxMana: (side) => getMaxMana(side),
+            isRooted: (c) => combatantIsRooted(c),   // deterministic: casting a rootWhileCasting ability (fireball)
             dealDamageToTower: (isPlayerTower, dmg, z) => dealDamageToTower(isPlayerTower, dmg, z),
             destroyProjectile: (p) => window.destroyProjectile(p),
             useShieldCharge: (c) => useShieldCharge(c),
