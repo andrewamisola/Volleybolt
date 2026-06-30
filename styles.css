@@ -2479,8 +2479,127 @@ body.flipped-view #aiCastBarContainer {
     text-shadow: var(--ff9-shadow); padding: 2px 4px;
 }
 .settings-row > span { min-width: 110px; text-align: left; }
-.settings-slider { flex: 1; accent-color: var(--ff9-gold); height: 6px; cursor: pointer; }
-.settings-toggle { width: 22px; height: 22px; accent-color: var(--ff9-gold); cursor: pointer; }
+/* Range slider — FF9 steel track + gold gem thumb (same class used by all audio + render-res sliders) */
+.settings-slider {
+    flex: 1;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    background: transparent;
+    outline: none;
+}
+.settings-slider::-webkit-slider-runnable-track {
+    height: 6px;
+    background: linear-gradient(180deg, rgba(16,22,44,0.92) 0%, rgba(28,38,62,0.88) 100%);
+    border: 1px solid #4a5470;
+    border-radius: 3px;
+    box-shadow: inset 0 1px 4px rgba(0,0,0,0.75);
+}
+.settings-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    margin-top: -6px;
+    background: linear-gradient(155deg, #fff4c2 0%, var(--ff9-gold) 48%, #b07010 100%);
+    border: 2px solid rgba(0,0,0,0.7);
+    border-radius: 3px;
+    box-shadow: 2px 2px 0 rgba(0,0,0,0.55), inset 0 1px 2px rgba(255,255,255,0.45);
+    cursor: pointer;
+    transition: transform 0.1s ease;
+}
+.settings-slider::-webkit-slider-thumb:hover { transform: scale(1.18); }
+.settings-slider::-moz-range-track {
+    height: 6px;
+    background: linear-gradient(180deg, rgba(16,22,44,0.92) 0%, rgba(28,38,62,0.88) 100%);
+    border: 1px solid #4a5470;
+    border-radius: 3px;
+    box-shadow: inset 0 1px 4px rgba(0,0,0,0.75);
+}
+.settings-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: linear-gradient(155deg, #fff4c2 0%, var(--ff9-gold) 48%, #b07010 100%);
+    border: 2px solid rgba(0,0,0,0.7);
+    border-radius: 3px;
+    box-shadow: 2px 2px 0 rgba(0,0,0,0.55);
+    cursor: pointer;
+}
+
+/* Fullscreen on/off toggle (pill slider, gold when on) */
+.settings-toggle {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 50px;
+    height: 26px;
+    background: rgba(16,22,44,0.9);
+    border: 2px solid #4a5470;
+    border-radius: 13px;
+    cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+    transition: border-color 0.18s ease, background 0.18s ease;
+}
+.settings-toggle::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    background: #6a7898;
+    border-radius: 8px;
+    transition: left 0.18s ease, background 0.18s ease;
+    box-shadow: 1px 1px 0 rgba(0,0,0,0.45);
+}
+.settings-toggle:checked { border-color: var(--ff9-gold); background: rgba(20,34,18,0.9); }
+.settings-toggle:checked::after {
+    left: 27px;
+    background: var(--ff9-gold);
+    box-shadow: 2px 2px 0 rgba(0,0,0,0.45), 0 0 7px rgba(240,192,80,0.55);
+}
+
+/* FPS cap cycler: ◀  value  ▶ */
+.fps-cycler {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    justify-content: flex-end;
+}
+.fps-arrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    min-width: 0;
+    font-size: 13px;
+    font-family: 'FF9UI', sans-serif;
+    color: #e7ecf6;
+    background:
+        repeating-linear-gradient(118deg, rgba(255,255,255,0.032) 0px, rgba(255,255,255,0.032) 1px, rgba(0,0,0,0.05) 1px, rgba(0,0,0,0.05) 2px, transparent 2px, transparent 4px),
+        linear-gradient(180deg, rgba(86,98,120,0.95) 0%, rgba(44,54,72,0.97) 100%);
+    border: 2px solid #c0c8d8;
+    border-radius: 6px;
+    cursor: pointer;
+    box-shadow: inset 0 2px 2px rgba(255,255,255,0.14), inset 0 -2px 3px rgba(0,0,0,0.28), 3px 3px 0 rgba(0,0,0,0.4);
+    text-shadow: var(--ff9-shadow);
+    transition: border-color 0.1s ease, color 0.1s ease, transform 0.1s ease;
+}
+.fps-arrow:hover:not(:disabled) { border-color: var(--ff9-gold); color: #fff4c2; }
+.fps-arrow:active:not(:disabled) { transform: translateY(1px); }
+.fps-val {
+    font-family: 'FF9UI', sans-serif;
+    font-size: 20px;
+    color: var(--ff9-gold);
+    text-shadow: var(--ff9-shadow);
+    min-width: 96px;
+    text-align: center;
+    letter-spacing: 1px;
+}
 .settings-input {
     flex: 1; min-width: 0; max-width: 220px;
     font-family: 'FF9UI', sans-serif; font-size: 20px; color: #fff;

@@ -170,14 +170,13 @@
                 <label class="settings-row"><span>Render Res</span>
                     <input type="range" class="settings-slider" id="setRenderScale" min="50" max="100" step="5">
                     <span id="setRenderScaleVal" style="min-width:3em;text-align:right">100%</span></label>
-                <label class="settings-row"><span>FPS Cap</span>
-                    <select class="settings-select" id="setFpsCap">
-                        <option value="0">Uncapped</option>
-                        <option value="120">120</option>
-                        <option value="90">90</option>
-                        <option value="60">60</option>
-                        <option value="30">30</option>
-                    </select></label>
+                <div class="settings-row"><span>FPS Cap</span>
+                    <div class="fps-cycler">
+                        <button class="fps-arrow" id="setFpsCapPrev" aria-label="Previous FPS option">&#9664;</button>
+                        <span class="fps-val" id="setFpsCapVal">Uncapped</span>
+                        <button class="fps-arrow" id="setFpsCapNext" aria-label="Next FPS option">&#9654;</button>
+                    </div>
+                </div>
                 <button class="game-btn menu-btn menu-btn-ghost" id="settingsBack">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
                     <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
@@ -11815,9 +11814,10 @@
                 // Update display every 500ms
                 const now = performance.now();
                 if (now - perfStats.lastLogTime > 500) {
-                    const fps = perfStats.frames / perfStats.totalTime;
+                    const elapsedMs = now - perfStats.lastLogTime;
+                    const fps = perfStats.frames / (elapsedMs / 1000);
                     perfStats.lastFPS = fps;
-                    const avgFrameMs = (perfStats.totalTime / perfStats.frames) * 1000;
+                    const avgFrameMs = elapsedMs / perfStats.frames;
 
                     fpsDiv.innerHTML = `FPS: ${fps.toFixed(0)} | Frame: ${avgFrameMs.toFixed(1)}ms | Proj: ${projectiles.length}`;
                     fpsDiv.style.color = fps < 30 ? '#f00' : fps < 50 ? '#ff0' : '#0f0';
@@ -13887,7 +13887,10 @@
                     // already decoupled (stepFixedSim, above) so gameplay is unaffected, and Babylon
                     // advances AnimationGroups by real elapsed time inside scene.render(), so anims
                     // stay correct-speed (just fewer drawn frames).
-                    if (now - lastRenderCapTime >= 1000 / renderFpsCap) {
+                    // Small tolerance (~2ms) so a target that lands just under a refresh boundary
+                    // (e.g. 60 cap on a 120Hz screen = 16.6ms vs the 16.67ms target) still renders
+                    // that frame instead of skipping to the next — keeps the cap hitting its mark.
+                    if (now - lastRenderCapTime >= (1000 / renderFpsCap) - 2) {
                         lastRenderCapTime = now;
                         scene.render();
                     }
@@ -15057,9 +15060,26 @@
                     Settings.set('renderScale', val);
                 });
             }
-            // FPS cap dropdown
-            const fpsCapEl = $('setFpsCap');
-            if (fpsCapEl) fpsCapEl.addEventListener('change', e => Settings.set('fpsCap', parseInt(e.target.value, 10)));
+            // FPS cap cycler ◀ value ▶
+            const FPS_OPTIONS = [0, 120, 90, 60, 30];
+            const fpsCapLabel = v => v === 0 ? 'Uncapped' : v + ' FPS';
+            const fpsCapValEl = $('setFpsCapVal');
+            const fpsPrevBtn = $('setFpsCapPrev');
+            const fpsNextBtn = $('setFpsCapNext');
+            if (fpsPrevBtn && fpsNextBtn && fpsCapValEl) {
+                fpsPrevBtn.addEventListener('click', () => {
+                    const cur = FPS_OPTIONS.indexOf(Settings.values.fpsCap);
+                    const nxt = (cur - 1 + FPS_OPTIONS.length) % FPS_OPTIONS.length;
+                    Settings.set('fpsCap', FPS_OPTIONS[nxt]);
+                    fpsCapValEl.textContent = fpsCapLabel(FPS_OPTIONS[nxt]);
+                });
+                fpsNextBtn.addEventListener('click', () => {
+                    const cur = FPS_OPTIONS.indexOf(Settings.values.fpsCap);
+                    const nxt = (cur + 1) % FPS_OPTIONS.length;
+                    Settings.set('fpsCap', FPS_OPTIONS[nxt]);
+                    fpsCapValEl.textContent = fpsCapLabel(FPS_OPTIONS[nxt]);
+                });
+            }
         }
         function openSettings(from = 'menu') {
             wireSettingsScreen();
@@ -15080,9 +15100,9 @@
             const rsValEl = document.getElementById('setRenderScaleVal');
             if (rsEl) rsEl.value = Settings.values.renderScale;
             if (rsValEl) rsValEl.textContent = Settings.values.renderScale + '%';
-            // Restore FPS cap select
-            const fpsEl = document.getElementById('setFpsCap');
-            if (fpsEl) fpsEl.value = Settings.values.fpsCap;
+            // Restore FPS cap cycler
+            const fpsCapValElLoad = document.getElementById('setFpsCapVal');
+            if (fpsCapValElLoad) fpsCapValElLoad.textContent = Settings.values.fpsCap === 0 ? 'Uncapped' : Settings.values.fpsCap + ' FPS';
             showMenuScreen('settingsScreen', from);
         }
         window.openSettings = openSettings;
