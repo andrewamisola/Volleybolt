@@ -9991,7 +9991,10 @@
                     const buildGrungeTex = (name, uS, vS) => {
                         const dt = new BABYLON.DynamicTexture(name, { width: W, height: H }, scene, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
                         const ctx = dt.getContext();
-                        // Base layer: the real tower_stone image
+                        // Base layer: the real tower_stone image. Disable smoothing so upscaling the
+                        // small pixel-art stone into the 512 canvas stays CRISP/blocky (PS1) instead
+                        // of bilinear-blurred -> that interpolation was the "smudged" look.
+                        ctx.imageSmoothingEnabled = false;
                         ctx.drawImage(stoneImg, 0, 0, W, H);
                         // Dark AO/grime splotches (30 ellipses, alpha 0.06–0.15)
                         for (let i = 0; i < 30; i++) {
