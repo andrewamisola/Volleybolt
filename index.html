@@ -13883,8 +13883,10 @@
                         scene.render();
                     }
                 } else if (renderFpsCap > 0) {
-                    // General FPS cap: only render when enough time has elapsed.
-                    // The fixed-timestep sim accumulator runs independently (above) and is unaffected.
+                    // General FPS cap: only DRAW when enough time has elapsed. The simulation is
+                    // already decoupled (stepFixedSim, above) so gameplay is unaffected, and Babylon
+                    // advances AnimationGroups by real elapsed time inside scene.render(), so anims
+                    // stay correct-speed (just fewer drawn frames).
                     if (now - lastRenderCapTime >= 1000 / renderFpsCap) {
                         lastRenderCapTime = now;
                         scene.render();
