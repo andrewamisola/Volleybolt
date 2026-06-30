@@ -11875,6 +11875,16 @@
                 return _aiIncomingProjectiles(view).length === 0;
             }
 
+            // Reflect a Z coordinate into [-wall, wall] as if it bounced off the court walls
+            // (triangle wave). Pure — used to predict a ball's impact Z through any bounces.
+            function _reflectZ(z, wall) {
+                if (wall <= 0) return 0;
+                const span = 2 * wall;                 // court width in Z
+                let t = (z + wall) % (2 * span);       // period = 4*wall
+                if (t < 0) t += 2 * span;
+                return t <= span ? t - wall : (3 * wall - t);
+            }
+
             function decideAI(view, frame, rng, params) {
                 // PURE: no performance.now / Date.now / Math.random / .mesh.
                 if (!view.roundActive) {
@@ -11897,10 +11907,15 @@
                         // so we don't run to the wall as paddleZ changes).
                         targetZ = threat.z >= 0 ? -halfD * 0.5 : halfD * 0.5;
                     } else {
-                        // Intercept/block, parked slightly off — positioning error STABLE PER BALL
-                        // (keyed to the projectile id, not the think-cycle), so the paddle commits to
-                        // one target instead of jittering.
-                        targetZ = threat.z;
+                        // Intercept/block: LEAD the ball — predict where it will be when it reaches our
+                        // paddle X (folding any wall bounces back into the court), not where it is now.
+                        // This is the difference between catching diagonal/bouncing shots and whiffing
+                        // them; it reacts as soon as the ball is incoming and commits to the impact spot.
+                        const ballWall = halfD - 0.5;   // ball bounces at ±(depth/2 - 0.5) — matches the sim
+                        const timeToImpact = (view.self.paddleX - threat.x) / threat.velX;  // velX > 0 = incoming
+                        targetZ = _reflectZ(threat.z + threat.velZ * timeToImpact, ballWall);
+                        // Positioning error STABLE PER BALL (keyed to the projectile id, not the think-
+                        // cycle), so the paddle commits to one spot instead of jittering.
                         if (params.aimError > 0) {
                             const posErr = (makeAIRng(((Math.imul(threat.id | 0, 2654435761)) ^ 0x50F1) >>> 0)() * 2 - 1) * params.aimError;
                             targetZ += posErr;
