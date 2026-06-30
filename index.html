@@ -7763,7 +7763,7 @@
                 const CRES_R    = 1.55;            // centerline radius
                 const CRES_FWD  = 0.75;            // push forward so it clears the wizard model
                 const CRES_ARC  = Math.PI * 0.6;   // ~108° sweep — shorter, less-rounded crescent
-                const CRES_WMAX = 0.55;            // half-width at the belly (tapers to a point at each tip)
+                const CRES_WMAX = 0.34;            // belly tube-radius (tapers to a point at each tip); squashed flat in Y
 
                 // Small Bayer dither pattern (stippled alpha) → the "wavy magical dithering" look.
                 const ditherTex = (() => {
@@ -7787,24 +7787,26 @@
                     const g = isPlayer ? 0.72 : 0.42;
                     const b = isPlayer ? 1.0  : 0.33;
                     const dir = isPlayer ? 1 : -1;   // bow toward the field (+X player / -X AI)
-                    // Flat crescent ribbon: inner + outer edge paths converge to a point at each tip.
-                    const inner = [], outer = [];
+                    // Flat tapered crescent built from a TUBE (renders reliably here — flat surface
+                    // meshes like CreateRibbon/CreatePlane vanish in this scene's render pipeline). The
+                    // tube radius tapers to a POINT at each tip (like the projectiles), then we squash it
+                    // flat in Y into a thin blade so it's flat, not a round tube.
+                    const path = [];
                     const SEG = 30;
                     for (let i = 0; i <= SEG; i++) {
                         const th = -CRES_ARC / 2 + CRES_ARC * (i / SEG);
-                        const w  = CRES_WMAX * Math.cos((th / (CRES_ARC / 2)) * (Math.PI / 2));  // belly→tip taper
-                        const cx = dir * CRES_R * Math.cos(th), cz = CRES_R * Math.sin(th);
-                        const nx = dir * Math.cos(th),          nz = Math.sin(th);                // radial (in-plane)
-                        inner.push(new BABYLON.Vector3(cx - w * nx, 0, cz - w * nz));
-                        outer.push(new BABYLON.Vector3(cx + w * nx, 0, cz + w * nz));
+                        path.push(new BABYLON.Vector3(dir * CRES_R * Math.cos(th), 0, CRES_R * Math.sin(th)));
                     }
-                    const pad = BABYLON.MeshBuilder.CreateRibbon(name, {
-                        pathArray: [inner, outer], sideOrientation: BABYLON.Mesh.DOUBLESIDE
+                    const pad = BABYLON.MeshBuilder.CreateTube(name, {
+                        path,
+                        radius: CRES_WMAX,
+                        radiusFunction: (i) => CRES_WMAX * Math.sin(Math.PI * (i / SEG)),  // taper to a point at both tips
+                        tessellation: 10,
+                        cap: BABYLON.Mesh.NO_CAP
                     }, scene);
-                    pad.position.set(paddle.position.x + dir * CRES_FWD, 0.7, paddle.position.z);
-                    // Tilt the flat crescent up toward the camera (which looks down ~30°) so it isn't
-                    // seen edge-on/foreshortened — keeps it flat but readable, like a magical visor.
-                    pad.rotation.x = -0.6;
+                    pad.scaling.y = 0.35;   // squash flat → a thin blade (not a round tube)
+                    pad.position.set(paddle.position.x + dir * CRES_FWD, 0.6, paddle.position.z);
+                    pad.rotation.x = -0.5;  // slight tilt toward the camera so the flat blade reads
                     pad.isPickable = false; pad.receiveShadows = false;
 
                     const mat = new BABYLON.StandardMaterial(name + "Mat", scene);
