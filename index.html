@@ -11919,9 +11919,12 @@
                     const diff = targetZ - view.self.paddleZ;
                     if (Math.abs(diff) > 0.34) moveDir = Math.sign(diff);
                 }
-                // Commit to an in-progress cast: hold position while casting. Moving cancels the cast
-                // in the sim, so the AI must stand still to let its fireball/frostbolt actually land.
-                if (view.self.casting) moveDir = 0;
+                // Defense takes priority over offense. While casting, HOLD (let the cast land) ONLY
+                // when there is no urgent threat — a real opening to apply pressure. If a threat
+                // appears mid-cast, keep the computed moveDir: moving to dodge/intercept cancels the
+                // cast in the sim, so the AI bails the cast to defend. (When it's already in position
+                // to block, moveDir is 0 anyway, so the cast continues and it just parries.)
+                if (view.self.casting && !threat) moveDir = 0;
 
                 if (!isThinkFrame) {
                     return { moveDir, parry: false, fireball: false, frostbolt: false, thunderstorm: false, juice: false };
