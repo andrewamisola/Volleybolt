@@ -19,7 +19,14 @@
 //
 // Determinism law (see docs/SHARED_CORE.md): same (state, inputs) -> same state.
 // No Math.random / Date.now / performance.now here. Verify any change against the
-// dbg.determinism golden-hash oracle in index.html (seed 12345 -> 2dd677de).
+// dbg.determinism golden-hash oracle in index.html (seed 12345 -> 8f6e6da1, stable).
+// (2dd677de -> 8f6e6da1: projectile↔player collision moved from the axis-aligned paddle BOX to
+//  the curved block ARC — hitsBlockArc, a FILLED convex shield, shape from ctx.consts.arc.
+//  Trig-free per frame; Math.sqrt is IEEE-deterministic. NOTE: the oracle's 180-frame script
+//  does NOT exercise a fireball PADDLE-BOUNCE, so COLL_HALF tuning and the onPaddleHit
+//  bounce-repositioning (index.html: reflect the ball off the VISIBLE shield front face, not the
+//  paddle) do NOT move this golden — they are verified by direct projectile injection instead.
+//  Self-stable on seeds 12345 & 99999.)
 // (60bf20f3 -> e9717f89: balance — fireball mana 1->0.5 & cooldown 4->3, frostbolt mana 2->1.)
 // (18bf5599 -> 2dd677de: cast no longer roots the caster; moving while casting CANCELS the cast
 //  instead (cancelCastOnMove). decideAI holds still while casting so the AI never self-cancels.)
@@ -65,6 +72,33 @@
         combatant.mana = ctx.deps.getMaxMana(combatant.side);
         if (!ctx.isResimulating) ctx.deps.onJuiceActivate(combatant);
         return true;
+    }
+
+    // Pure, deterministic block-ARC hit test (replaces the old axis-aligned paddle box).
+    // The shield is a FILLED convex region, not a thin ring: a projectile of radius projRadius
+    // is blocked when it is within the shield radius (dist < R + COLL_HALF + projRadius) AND
+    // inside the angular sweep (the front face). A thin band let fast/off-centre balls thread
+    // straight through the gaps; the filled region catches everything approaching the convex
+    // face — which is what a shield should do. dir = +1 (left/player, bows toward +X) or -1
+    // (right/AI). arc = ctx.consts.arc (shared BLOCK_ARC). Uses only +-*/, comparisons, and
+    // Math.sqrt (IEEE-deterministic) — no per-frame trig — so rollback stays safe.
+    function hitsBlockArc(projX, projZ, px, pz, dir, projRadius, arc) {
+        // Straight SLAB matched pixel-for-pixel to the VISIBLE ground line (index.html makeBarrier):
+        // a band centred in X at paddleX + dir·(FWD+R), thickness BAND_W (X), length BAND_LEN (Z).
+        // No curve/sector — the ball blocks exactly where the line is drawn. Uses only +-*/ and
+        // comparisons (IEEE-deterministic) → rollback-safe.
+        const cx = px + dir * (arc.FWD + arc.R);          // band centre X (== visual shieldX)
+        // Isometric parallax: the ball flies ~0.7m up but the line is painted on the floor. The gameplay
+        // camera (alpha -90°, beta 60°) sits at -Z looking toward +Z, so a raised ball appears shifted
+        // toward +Z (up-screen). Add arc.ZPERSP to the ball's Z so it blocks exactly where it VISUALLY
+        // crosses the drawn line — this catches the near/bottom (-Z) balls that were passing through.
+        const zEff = projZ + arc.ZPERSP;
+        if (Math.abs(zEff - pz) > arc.BAND_LEN * 0.5 + projRadius) return false;   // outside the line's length (Z) — ball radius counts
+        const dxf = (projX - cx) * dir;                   // +toward field (front) / -behind (player side)
+        // Catch the ball from its edge touching the field-facing face down to COLL_HALF behind the
+        // band (tunnel-safety so a fast ball can't skip through in one step).
+        return dxf <= (arc.BAND_W * 0.5 + projRadius)
+            && dxf >= -(arc.BAND_W * 0.5 + arc.COLL_HALF + projRadius);
     }
 
     // Deterministic projectile-vs-projectile resolution. Pure number math on
@@ -231,22 +265,19 @@
                 if (!isResimulating) D.playSound('woosh', proj.x, 0.5);
             }
 
-            // Paddle collisions
+            // Paddle collisions — now against the curved block ARC (was an axis-aligned box).
+            // The arc shape comes from ctx.consts.arc (the shared BLOCK_ARC). The height gate
+            // (proj.y < maxHitHeight) is kept "exactly how it was" so ground-level projectiles
+            // are still caught even though the VISUAL band floats higher.
             const projRadius = proj.hitboxRadius || 0.25;
-            const paddleHalfWidth = 0.2;
-            // SP value (was 0.8): effective collision depth = paddleHalfDepth + 0.75 = 2.0,
-            // matching SP's playerHitDepth/aiHitDepth (paddleHalfDepth 1.25 + perspectiveZOffset 0.75).
-            const paddleHalfDepth = 1.25;
+            const arc = ctx.consts.arc;
             const maxHitHeight = 1.3;
 
-            // Left paddle (player) collision
+            // Left paddle (player) collision — arc bows toward +X (dir = +1)
             if (proj.velX < 0 && proj.y < maxHitHeight && combatants.left && combatants.left.paddleX !== undefined) {
                 const px = combatants.left.paddleX;   // pure paddle position (mirrored to the mesh)
                 const pz = combatants.left.paddleZ;
-                if (proj.x - projRadius < px + paddleHalfWidth &&
-                    proj.x > px - paddleHalfWidth &&
-                    proj.z > pz - paddleHalfDepth - 0.75 &&
-                    proj.z < pz + paddleHalfDepth + 0.75) {
+                if (hitsBlockArc(proj.x, proj.z, px, pz, 1, projRadius, arc)) {
 
                     // Lightning Shield auto-block check (left/player)
                     if (combatants.left && combatants.left.lightningShield && combatants.left.lightningShield.charges > 0) {
@@ -274,14 +305,11 @@
                 }
             }
 
-            // Right paddle (AI/guest) collision
+            // Right paddle (AI/guest) collision — arc bows toward -X (dir = -1)
             if (proj.velX > 0 && proj.y < maxHitHeight && combatants.right && combatants.right.paddleX !== undefined) {
                 const px = combatants.right.paddleX;   // pure paddle position (mirrored to the mesh)
                 const pz = combatants.right.paddleZ;
-                if (proj.x + projRadius > px - paddleHalfWidth &&
-                    proj.x < px + paddleHalfWidth &&
-                    proj.z > pz - paddleHalfDepth - 0.75 &&
-                    proj.z < pz + paddleHalfDepth + 0.75) {
+                if (hitsBlockArc(proj.x, proj.z, px, pz, -1, projRadius, arc)) {
 
                     // Lightning Shield auto-block check (right/AI)
                     if (combatants.right && combatants.right.lightningShield && combatants.right.lightningShield.charges > 0) {
