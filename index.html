@@ -614,7 +614,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=28-arc"></script>
+    <script type="module" src="js/sim.js?v=29-golden-repin"></script>
 
     <script>
         // Global error handler to debug doubles crash
@@ -14494,11 +14494,23 @@
         // FNV-1a hash of canonical starting state. Both peers should produce the
         // same value after startMultiplayerMatch + startRound. Used to detect
         // silent desync at match start (init order bugs, future code drift).
+        // Broadened 2026-07-02 (netcode audit item 2 / diagnostic hardening) to cover the
+        // same field set hashGameState() checks every frame (cooldowns, juice state, RNG
+        // seed, nextProjectileId) PLUS fields hashGameState() does NOT cover but a start-of-
+        // match asymmetry could still hide in (pvpParryState, stage/gate-health arrays) — so
+        // any future init-order asymmetry fails loudly here with the existing clear warning
+        // instead of silently surfacing ~10 frames later as an opaque per-frame hash mismatch.
         function hashStartState() {
             const cl = combatants && combatants.left;
             const cr = combatants && combatants.right;
             if (!cl || !cr) return 0;
             const round = (n) => Math.round((n || 0) * 1000);
+            const bool = (b) => b ? 1 : 0;
+            const cd = (c) => [round(c.cooldowns && c.cooldowns.fireball), round(c.cooldowns && c.cooldowns.frostbolt), round(c.cooldowns && c.cooldowns.thunderstorm)];
+            const pp = (side) => {
+                const s = pvpParryState && pvpParryState[side];
+                return [bool(s && s.canParry), bool(s && s.active), round(s && s.timer), round(s && s.cooldown), round(s && s.cooldownMax)];
+            };
             const fields = [
                 round(cl.towerHealth), round(cr.towerHealth),
                 round(cl.mana),        round(cr.mana),
@@ -14508,7 +14520,26 @@
                 round(cr.paddle && cr.paddle.position ? cr.paddle.position.x : 0),
                 round(cr.paddle && cr.paddle.position ? cr.paddle.position.z : 0),
                 projectiles ? projectiles.length : 0,
-                currentFrame | 0
+                currentFrame | 0,
+                // --- broadened coverage below ---
+                round(cl.prevPaddleZ), round(cr.prevPaddleZ),
+                round(cl.moveAccum),   round(cr.moveAccum),
+                round(cl.manaRegen),   round(cr.manaRegen),
+                round(cl.freezeTime),  round(cr.freezeTime),
+                round(cl.castProgress), round(cr.castProgress),
+                round(cl.castTime),    round(cr.castTime),
+                ...cd(cl), ...cd(cr),
+                round(cl.juice), round(cr.juice),
+                bool(cl.juiceActive), bool(cr.juiceActive),
+                round(cl.juiceTimer), round(cr.juiceTimer),
+                netRngSeed | 0, nextProjectileId | 0,
+                ...pp('left'), ...pp('right'),
+                currentStage | 0,
+                ...(Array.isArray(playerGateHealthByStage) ? playerGateHealthByStage.map(round) : []),
+                ...(Array.isArray(aiGateHealthByStage) ? aiGateHealthByStage.map(round) : []),
+                ...(Array.isArray(stageResults) ? stageResults.map(r => r === 'player' ? 1 : (r === 'ai' ? 2 : 0)) : []),
+                totalRoundsPlayed | 0,
+                ...(Array.isArray(lastRoundAtStage) ? lastRoundAtStage.map(v => v | 0) : [])
             ];
             let h = 2166136261 >>> 0;
             for (const v of fields) {
@@ -14901,6 +14932,7 @@
                     fireball: data.fireball,
                     frostbolt: data.frostbolt,
                     thunderstorm: data.thunderstorm || false,
+                    juice: data.juice || false,
                     confirmed: true
                 };
             } else {
@@ -14910,6 +14942,7 @@
                 remoteInputHistory[frame].fireball = data.fireball;
                 remoteInputHistory[frame].frostbolt = data.frostbolt;
                 remoteInputHistory[frame].thunderstorm = data.thunderstorm || false;
+                remoteInputHistory[frame].juice = data.juice || false;
                 remoteInputHistory[frame].confirmed = true;
             }
 
@@ -14929,7 +14962,8 @@
                     parry: input.parry,
                     fireball: input.fireball,
                     frostbolt: input.frostbolt,
-                    thunderstorm: input.thunderstorm || false
+                    thunderstorm: input.thunderstorm || false,
+                    juice: input.juice || false
                 });
             }
         }
@@ -15211,7 +15245,8 @@
                         parry: false,
                         fireball: false,
                         frostbolt: false,
-                        thunderstorm: false
+                        thunderstorm: false,
+                        juice: false
                     };
                 }
             }
@@ -15229,7 +15264,8 @@
                         remote.predictedParry !== remote.parry ||
                         remote.predictedFireball !== remote.fireball ||
                         remote.predictedFrostbolt !== remote.frostbolt ||
-                        remote.predictedThunderstorm !== remote.thunderstorm) {
+                        remote.predictedThunderstorm !== remote.thunderstorm ||
+                        remote.predictedJuice !== remote.juice) {
                         return f;  // Need to rollback to this frame
                     }
                 }
@@ -15447,7 +15483,8 @@
                     predictedParry: predicted.parry,
                     predictedFireball: predicted.fireball,
                     predictedFrostbolt: predicted.frostbolt,
-                    predictedThunderstorm: predicted.thunderstorm
+                    predictedThunderstorm: predicted.thunderstorm,
+                    predictedJuice: predicted.juice
                 };
             }
 
@@ -16016,8 +16053,8 @@
             // Reset paddle positions to center
             if (playerPaddle) playerPaddle.position.z = 0;
             if (aiPaddle) aiPaddle.position.z = 0;
-            if (combatants.left) { combatants.left.paddleZ = 0; combatants.left.prevPaddleZ = 0; }
-            if (combatants.right) { combatants.right.paddleZ = 0; combatants.right.prevPaddleZ = 0; }
+            if (combatants.left) { combatants.left.paddleZ = 0; combatants.left.prevPaddleZ = 0; combatants.left.moveAccum = 0; }
+            if (combatants.right) { combatants.right.paddleZ = 0; combatants.right.prevPaddleZ = 0; combatants.right.moveAccum = 0; }
 
             // LEGACY - sync variables for backwards compatibility
             playerTowerHealth = playerGateHealth;
