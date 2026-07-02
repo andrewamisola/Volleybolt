@@ -19,7 +19,17 @@
 //
 // Determinism law (see docs/SHARED_CORE.md): same (state, inputs) -> same state.
 // No Math.random / Date.now / performance.now here. Verify any change against the
-// dbg.determinism golden-hash oracle in index.html (seed 12345 -> 8f6e6da1, stable).
+// dbg.determinism golden-hash oracle in index.html (seed 12345 -> 954ea557, stable;
+// run it from a FRESH SINGLE-PLAYER match — a mid-PvP run reads pvp-mode deps and
+// folds differently, that is oracle-environment sensitivity, not a sim change).
+// (8f6e6da1 -> 954ea557: STALE-PIN CORRECTION, re-measured 2026-07-02. The 8f6e6da1 value
+//  was measured mid-way through the b7e492b squashed playtest commit (correct at that
+//  moment, right after the arc-collision change below) but the SAME commit then landed
+//  sim-affecting balance changes — fireball baseSpeed 12->15 / maxSpeed 20->26, frostbolt
+//  hitboxRadius 0.25->0.4, parry return 1.5x-of-current-speed — all exercised by the
+//  oracle's scripted casts/parries, and the pin was never re-measured. 954ea557 verified
+//  identical on unmodified b7e492b (via git stash) and on the 2026-07-02 netcode-fix tree,
+//  three runs. No sim code changed in this correction; the pin just caught up to b7e492b.)
 // (2dd677de -> 8f6e6da1: projectile↔player collision moved from the axis-aligned paddle BOX to
 //  the curved block ARC — hitsBlockArc, a FILLED convex shield, shape from ctx.consts.arc.
 //  Trig-free per frame; Math.sqrt is IEEE-deterministic. NOTE: the oracle's 180-frame script
@@ -34,7 +44,9 @@
 // court-depth) -> ad7c0e42 (Phase 2.2-B proj-vs-proj + juice in hash) ->
 // 3770e2c7 (Phase 2.2-C juice lifecycle) -> 3b37922a (Phase 2.3-A SP paddle-return:
 // momentum + 1.25 divisor + 2.0 hitbox + prevPaddleZ in hash) -> 60bf20f3 (Phase 2.3
-// cast-rooting restored + oracle setup now pins paddleX/prevPaddleZ).
+// cast-rooting restored + oracle setup now pins paddleX/prevPaddleZ) -> e9717f89
+// (balance) -> 2dd677de (cancel-cast-on-move) -> 8f6e6da1 (arc collision; pinned stale,
+// see correction note above) -> 954ea557 (b7e492b balance changes, pin caught up).
 // NOTE: 3072141a was a contaminated mis-measure of the 2.3-A golden (a test had left
 // combatants.paddleX mutated when it was pinned); the real 2.3-A value was 3b37922a.
 // The oracle now pins paddleX so this can't recur.

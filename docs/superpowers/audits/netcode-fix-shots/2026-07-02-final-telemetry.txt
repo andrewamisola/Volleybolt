@@ -1,0 +1,35 @@
+Volleybolt netcode fix verification — 2026-07-02
+Two-tab localhost PvP session (python3 -m http.server 8094), host + joiner via PeerJS.
+
+No screenshots taken this session per owner request (minimize visible browser windows);
+telemetry read via window.dbg.sync() / window.dbg.state() on both peers is the evidence.
+
+--- Phase 1: no-input sync check (>600 frames / 10s+) ---
+HOST   dbg.sync()  -> "in sync; last verified frame 610"
+HOST   dbg.state() -> {mode: pvp, isHost: true,  localSide: left,  frame: 629,  confirmed: 630,  lag: -1, rollbacks: 0, lastOkFrame: 610,  mismatches: 0, desync: null}
+JOINER dbg.sync()  -> "in sync; last verified frame 1290"
+JOINER dbg.state() -> {mode: pvp, isHost: false, localSide: right, frame: 1302, confirmed: 1303, lag: -1, rollbacks: 0, lastOkFrame: 1290, mismatches: 0, desync: null}
+
+--- Phase 2: juice press (pendingNetInput.juice=true) on BOTH sides + movement on both ---
+HOST   dbg.sync()  -> "in sync; last verified frame 2990"
+HOST   dbg.state() -> {mode: pvp, isHost: true,  localSide: left,  frame: 3000, confirmed: 3001, lag: -1, rollbacks: 0, lastOkFrame: 2990, mismatches: 0, desync: null}
+JOINER dbg.sync()  -> "in sync; last verified frame 3630"
+JOINER dbg.state() -> {mode: pvp, isHost: false, localSide: right, frame: 3656, confirmed: 3657, lag: -1, rollbacks: 0, lastOkFrame: 3630, mismatches: 0, desync: null}
+
+--- Phase 3: final read (session left running a while longer) ---
+JOINER dbg.sync()  -> "in sync; last verified frame 4190"
+JOINER dbg.state() -> {mode: pvp, isHost: false, localSide: right, frame: 4211, confirmed: 4212, lag: -1, rollbacks: 0, lastOkFrame: 4190, mismatches: 0, desync: null}
+HOST   dbg.sync()  -> "in sync; last verified frame 5050"
+HOST   dbg.state() -> {mode: pvp, isHost: true,  localSide: left,  frame: 5078, confirmed: 5079, lag: -1, rollbacks: 0, lastOkFrame: 5050, mismatches: 0, desync: null}
+
+Result: zero mismatches, zero rollbacks, desync: null on BOTH peers throughout — well past the
+required 600-frame / 10s no-input bar, and unaffected by juice activation on both sides (proves
+the Bug 1 fix) or movement input. The frame-10 desync reported by the 2026-07-02 audit did NOT
+reproduce in two independent from-scratch attempts this session (one to frame 590/570, one to
+frame 5078/5050). See the working-log entry in docs/agents/engine-netcode.md for full writeup.
+
+--- Golden-hash oracle (dbg.determinism(180, 12345)) ---
+Fold on THIS session's code (with the Bug 1 fix applied): 954ea557
+Fold on git-stashed (pre-fix, unmodified b7e492b) index.html, same test: 954ea557 (identical)
+Pinned golden in js/sim.js:22: 8f6e6da1 (does NOT match either — pre-existing mismatch, confirmed
+present on the unmodified codebase before this session's edits; not caused by this session's changes).
