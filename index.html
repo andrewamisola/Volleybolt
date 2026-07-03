@@ -13416,7 +13416,12 @@
             function stepFixedSim() {
                 const now = performance.now();
                 if (gameState !== "playing" || gameOver || paused) { lastSimWallTime = now; return; }
-                if (window.setGamepadPrompts && document.getElementById('gamepadPromptBar')?.innerHTML) {
+                // Only clear the prompt bar on a genuinely live, no-menu-open frame. Don't infer that from
+                // `paused`/`gameState` — for PvP matches, GameSM.enterPause() sets state:'pause' but
+                // deliberately leaves `paused` false (can't pause a P2P peer), so this guard would otherwise
+                // reach here and wipe the pause overlay's just-set prompts every frame. isAnyMenuOpen() is
+                // the authoritative "is any menu/overlay open" check (Task 3) and covers PvP pause too.
+                if (window.setGamepadPrompts && !window.isAnyMenuOpen?.() && document.getElementById('gamepadPromptBar')?.innerHTML) {
                     setGamepadPrompts([]);   // clear once, first frame of live gameplay — ability bar owns hints now
                 }
                 pollGamepadInput();   // translate gamepad -> same keyboard input channels (once per frame, for edge detection)
