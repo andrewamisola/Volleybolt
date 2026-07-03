@@ -200,22 +200,43 @@
                 <h1 class="arcane-title" data-text="How to Play">How to Play</h1>
             </div>
             <div class="arcane-buttons settings-panel htp-panel">
-                <div class="htp-section">Keyboard</div>
-                <div class="htp-row"><span class="htp-key">W / S</span><span>Move up / down</span></div>
-                <div class="htp-row"><span class="htp-key">1 / 2 / 3</span><span>Cast Fireball / Frostbolt / Thunderstorm</span></div>
-                <div class="htp-row"><span class="htp-key">Q</span><span>Ultimate (Juice) when the bar is full</span></div>
-                <div class="htp-row"><span class="htp-key">Space</span><span>Parry an incoming spell</span></div>
-                <div class="htp-section" id="htpControllerHeader">Controller</div>
-                <div class="htp-row"><span class="htp-key">Stick / D-pad</span><span>Move up / down</span></div>
-                <div class="htp-row"><span class="htp-key" id="hintAbilities">X / A / B</span><span>Cast Fireball / Frostbolt / Thunderstorm</span></div>
-                <div class="htp-row"><span class="htp-key" id="hintUlt">Y</span><span>Ultimate (Juice)</span></div>
-                <div class="htp-row"><span class="htp-key" id="hintParry">RB</span><span>Parry an incoming spell</span></div>
-                <div class="htp-section">The Battle</div>
-                <div class="htp-note">Topple the enemy tower to win a round.</div>
-                <div class="htp-note">A tug of war &mdash; win to advance, lose to fall back.</div>
-                <div class="htp-note">Break through to the enemy's core to win the match.</div>
-                <div class="htp-note">The losing side draws more mana.</div>
-                <div class="htp-note">Towers regrow health over time.</div>
+                <!-- Paged: one gameplay concept per page, right arrow to advance -->
+                <div class="htp-page active">
+                    <div class="htp-title">Pong &mdash; with spells</div>
+                    <div class="htp-note">Guard your tower. Break theirs.</div>
+                    <div class="htp-note">Move to block what comes at you &mdash; anything that slips past hits your tower.</div>
+                    <div class="htp-note">Topple the enemy tower to win the round.</div>
+                </div>
+                <div class="htp-page">
+                    <div class="htp-title">Advance &mdash; or fall back</div>
+                    <div class="htp-note">The battle is a tug of war across five stages.</div>
+                    <div class="htp-note">Win a round to push into enemy territory. Lose and you get pushed back.</div>
+                    <div class="htp-note">Break through at the enemy core to win the match.</div>
+                </div>
+                <div class="htp-page">
+                    <div class="htp-title">Mana is momentum</div>
+                    <div class="htp-note">Spells cost mana &mdash; and the losing side draws more.</div>
+                    <div class="htp-note">Parry a spell to send it back faster and steal 1 mana.</div>
+                    <div class="htp-note">Towers regrow health over time, so press your advantage.</div>
+                </div>
+                <div class="htp-page">
+                    <div class="htp-title">Controls</div>
+                    <div class="htp-section">Keyboard</div>
+                    <div class="htp-row"><span class="htp-key">W / S</span><span>Move up / down</span></div>
+                    <div class="htp-row"><span class="htp-key">1 / 2 / 3</span><span>Cast spells</span></div>
+                    <div class="htp-row"><span class="htp-key">Q</span><span>Ultimate (Juice) when the bar is full</span></div>
+                    <div class="htp-row"><span class="htp-key">Space</span><span>Parry an incoming spell</span></div>
+                    <div class="htp-section" id="htpControllerHeader">Controller</div>
+                    <div class="htp-row"><span class="htp-key">Stick / D-pad</span><span>Move up / down</span></div>
+                    <div class="htp-row"><span class="htp-key" id="hintAbilities">X / A / B</span><span>Cast spells</span></div>
+                    <div class="htp-row"><span class="htp-key" id="hintUlt">Y</span><span>Ultimate (Juice)</span></div>
+                    <div class="htp-row"><span class="htp-key" id="hintParry">RB</span><span>Parry an incoming spell</span></div>
+                </div>
+                <div class="htp-nav">
+                    <button class="fps-arrow htp-arrow" id="htpPrev" aria-label="Previous page">&#9664;</button>
+                    <span class="htp-dots" id="htpDots"></span>
+                    <button class="fps-arrow htp-arrow" id="htpNext" aria-label="Next page">&#9654;</button>
+                </div>
                 <button class="game-btn menu-btn menu-btn-ghost" id="howToBack">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
                     <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
@@ -3050,6 +3071,33 @@
             }
         }
 
+        // Lazy singleton synth for JRPG-style menu blips (cursor/confirm/cancel).
+        // Square wave + instant envelope = chiptune tick. Connects straight to the SFX bus
+        // (centered, no bitcrusher chain) so it obeys the SFX volume slider.
+        let uiSynth = null;
+        function getUiSynth() {
+            if (uiSynth) return uiSynth;
+            if (!toneStarted || typeof Tone === 'undefined' || !window.sfxBus) return null;
+            uiSynth = new Tone.Synth({
+                oscillator: { type: "square" },
+                envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.03 }
+            }).connect(window.sfxBus);
+            uiSynth.volume.value = -18;   // quiet tick under the music/SFX mix
+            return uiSynth;
+        }
+        // A mono synth throws "start time must be strictly greater than previous" when
+        // retriggered at the same timestamp (hover + click land on the same tick), so
+        // every beep is scheduled monotonically.
+        let uiLastBeepTime = 0;
+        function uiBeep(note, dur, offset = 0) {
+            const s = getUiSynth();
+            if (!s) return;
+            let t = Tone.now() + offset;
+            if (t <= uiLastBeepTime) t = uiLastBeepTime + 0.005;
+            uiLastBeepTime = t;
+            try { s.triggerAttackRelease(note, dur, t); } catch (e) {}
+        }
+
         const ToneSFX = {
             // Fireball cast - crushed sample only
             fireballCast: async () => {
@@ -3293,19 +3341,25 @@
                 // await isoGenerator.setBrainwave('theta');
             },
 
-            // UI hover - disabled (generated tones off)
+            // UI cursor move — classic JRPG menu blip (single short square tick).
+            // Never awaits init: hover fires before any user gesture may have unlocked audio.
             uiHover: async () => {
-                // Generated tones disabled
+                if (!toneStarted) return;
+                uiBeep("B5", 0.03);
             },
 
-            // UI confirm - disabled (generated tones off)
+            // UI confirm — two quick rising notes (FF cursor-accept).
             uiConfirm: async () => {
-                // Generated tones disabled
+                if (!toneStarted) return;
+                uiBeep("C6", 0.04);
+                uiBeep("E6", 0.06, 0.05);
             },
 
-            // UI back - disabled (generated tones off)
+            // UI back/cancel — two quick falling notes.
             uiBack: async () => {
-                // Generated tones disabled
+                if (!toneStarted) return;
+                uiBeep("E6", 0.04);
+                uiBeep("A5", 0.06, 0.05);
             },
 
             // Music controls
@@ -3370,6 +3424,33 @@
 
         // Expose ToneSFX globally for direct calls
         window.ToneSFX = ToneSFX;
+
+        // --- JRPG menu navigation sounds (delegated, covers every menu incl. pause/debug) ---
+        // Cursor blip on hover, rising confirm on activate, falling cancel on Back/ghost
+        // buttons. FPS cycler arrows count as cursor moves, not confirms.
+        (() => {
+            let lastHoverEl = null;
+            document.addEventListener('mouseover', (e) => {
+                const btn = e.target.closest && e.target.closest('.menu-btn, .fps-arrow');
+                if (!btn || btn === lastHoverEl) { if (!btn) lastHoverEl = null; return; }
+                lastHoverEl = btn;
+                if (btn.disabled) return;
+                ToneSFX.uiHover();
+            });
+            document.addEventListener('click', (e) => {
+                const btn = e.target.closest && e.target.closest('.menu-btn, .fps-arrow');
+                if (!btn || btn.disabled) return;
+                if (btn.classList.contains('fps-arrow')) { ToneSFX.uiHover(); return; }
+                if (btn.classList.contains('menu-btn-ghost')) { ToneSFX.uiBack(); return; }
+                ToneSFX.uiConfirm();
+            });
+            // Settings sliders / toggles tick like cursor moves.
+            document.addEventListener('change', (e) => {
+                if (e.target.closest && e.target.closest('.settings-slider, .settings-toggle')) {
+                    ToneSFX.uiHover();
+                }
+            });
+        })();
 
         // Pause/resume audio when tab visibility changes
         document.addEventListener('visibilitychange', async () => {
@@ -4494,13 +4575,18 @@
             guiTexture.addControl(transitionOverlay);
             window.guiElements.transitionOverlay = transitionOverlay;
 
-            // --- TRANSITION TEXT (stage name during transitions) ---
+            // --- TRANSITION TEXT (stage name + Ready/Go during transitions) ---
+            // Ferrum = the Final Fantasy display font (same as the title logo), so the
+            // cinematic cards read as FF title text rather than pixel UI text.
             const transitionText = new BABYLON.GUI.TextBlock();
             transitionText.text = "";
             transitionText.color = "#f0c050";
-            transitionText.fontSize = 42;
-            transitionText.fontFamily = "'FF9UI', sans-serif";
-            transitionText.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
+            transitionText.fontSize = 52;
+            transitionText.fontFamily = "'Ferrum', 'FF9UI', serif";
+            transitionText.fontWeight = "400";
+            // GUI text draws to a canvas: make sure the webfont is decoded before first use
+            // (the DOM title screen loads it at boot; this is a belt-and-braces preload).
+            try { if (document.fonts && document.fonts.load) document.fonts.load("52px Ferrum"); } catch (e) {}
             transitionText.shadowColor = "#000";
             transitionText.shadowBlur = 0;
             transitionText.shadowOffsetX = 3;
@@ -4514,12 +4600,14 @@
             window.guiElements.transitionText = transitionText;
 
             // --- CENTER MESSAGE ---
+            // Ferrum like the transition cards: "Midfield Lost!", "Champion", stage names —
+            // all cinematic announcements speak the FF display font.
             const messageText = new BABYLON.GUI.TextBlock();
             messageText.text = "";
             messageText.color = "#f0c050";
-            messageText.fontSize = 48;
-            messageText.fontFamily = "'FF9UI', sans-serif";
-            messageText.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
+            messageText.fontSize = 52;
+            messageText.fontFamily = "'Ferrum', 'FF9UI', serif";
+            messageText.fontWeight = "400";
             messageText.shadowColor = "#000";
             messageText.shadowBlur = 0;  // Pixel shadow
             messageText.shadowOffsetX = 3;
@@ -4549,8 +4637,8 @@
             victoryTitle.text = "Victory!";
             victoryTitle.color = "#ffd700";  // Gold
             victoryTitle.fontSize = 96;
-            victoryTitle.fontFamily = "'FF9UI', sans-serif";
-            victoryTitle.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
+            victoryTitle.fontFamily = "'Ferrum', 'FF9UI', serif";   // FF display font, like the transition cards
+            victoryTitle.fontWeight = "400";
             victoryTitle.shadowColor = "#000";
             victoryTitle.shadowBlur = 0;
             victoryTitle.shadowOffsetX = 5;
@@ -6193,7 +6281,8 @@
 
                 // Per-frame: visibility + live spell states (parry is driven by updateParryButtonGUI).
                 scene.onBeforeRenderObservable.add(() => {
-                    const inGame = (typeof gameState === 'undefined') || (gameState !== 'menu' && gameState !== 'lobby');
+                    const inGame = ((typeof gameState === 'undefined') || (gameState !== 'menu' && gameState !== 'lobby'))
+                        && !window.hudHidden;   // debug hide-HUD hides the command/stats windows too
                     if (box.isVisible !== inGame) box.isVisible = inGame;
                     if (titleTab.isVisible !== inGame) titleTab.isVisible = inGame;
                     if (!inGame) {
@@ -12856,6 +12945,9 @@
                 if (window.updateSpellCastText) window.updateSpellCastText(dt);
                 if (window.updateFloatingTexts) window.updateFloatingTexts(dt);
                 if (window.updateDamageText) window.updateDamageText(dt);
+
+                // Debug hide-HUD: re-hide GUI HUD controls that event-driven code re-shows
+                if (window.enforceHudHidden) window.enforceHudHidden();
             });
 
             // Normal render loop - game runs at full 60fps
@@ -13385,10 +13477,11 @@
             // (routes back to its origin — main menu or pause) instead of toggling pause/resume.
             if (typeof MENU_SCREENS !== 'undefined' &&
                 MENU_SCREENS.some(id => document.getElementById(id)?.classList.contains('visible'))) {
+                if (window.ToneSFX) ToneSFX.uiBack();
                 closeMenuScreen(); e.preventDefault(); return;
             }
-            if (GameSM.state === 'match') { GameSM.enterPause(); e.preventDefault(); }
-            else if (GameSM.state === 'pause') { GameSM.resumeMatch(); e.preventDefault(); }
+            if (GameSM.state === 'match') { if (window.ToneSFX) ToneSFX.uiConfirm(); GameSM.enterPause(); e.preventDefault(); }
+            else if (GameSM.state === 'pause') { if (window.ToneSFX) ToneSFX.uiBack(); GameSM.resumeMatch(); e.preventDefault(); }
         });
 
         // --- Debug menu (backtick ` toggles) ---
@@ -13400,11 +13493,52 @@
             d.innerHTML =
                 '<div style="color:#9cff9c;font-family:monospace;font-weight:bold;margin-bottom:8px;font-size:13px">DEBUG <span style="color:#776a9a;font-weight:normal">(` toggles)</span></div>' +
                 '<button id="dbgWin"  class="game-btn menu-btn" style="display:block;width:170px;margin:6px 0">Force Win</button>' +
-                '<button id="dbgLose" class="game-btn menu-btn" style="display:block;width:170px;margin:6px 0">Force Lose</button>';
+                '<button id="dbgLose" class="game-btn menu-btn" style="display:block;width:170px;margin:6px 0">Force Lose</button>' +
+                '<button id="dbgHud"  class="game-btn menu-btn" style="display:block;width:170px;margin:6px 0">Hide HUD</button>';
             document.body.appendChild(d);
             d.querySelector('#dbgWin').addEventListener('click', () => debugForceEnd(true));
             d.querySelector('#dbgLose').addEventListener('click', () => debugForceEnd(false));
+            d.querySelector('#dbgHud').addEventListener('click', (e) => {
+                setHudHidden(!window.hudHidden);
+                e.target.textContent = window.hudHidden ? 'Show HUD' : 'Hide HUD';
+            });
         }
+
+        // --- Hide HUD (debug) ---
+        // DOM HUD is hidden via body.hud-hidden CSS; Babylon GUI HUD controls are forced
+        // invisible every frame while hidden (event-driven code re-shows them on round/stage
+        // changes, so a one-shot hide would not stick). The command/stats windows check
+        // window.hudHidden themselves in their per-frame visibility observable.
+        window.hudHidden = false;
+        const HUD_GUI_KEYS = ['scorePanel', 'playerHealthPanel', 'aiHealthPanel',
+            'playerManaContainer', 'aiManaContainer', 'stageGrid', 'stageNameText',
+            'netStatusText', 'abilityBarBg', 'playerCastContainer', 'aiCastContainer'];
+        window.enforceHudHidden = function() {
+            if (!window.hudHidden || !window.guiElements) return;
+            for (const key of HUD_GUI_KEYS) {
+                const el = window.guiElements[key];
+                if (el && el.isVisible) el.isVisible = false;
+            }
+        };
+        function setHudHidden(on) {
+            window.hudHidden = !!on;
+            document.body.classList.toggle('hud-hidden', window.hudHidden);
+            if (window.hudHidden) {
+                window.enforceHudHidden();
+                return;
+            }
+            // Un-hide: restore the always-on match HUD if we're in a match. Cast bars stay
+            // hidden until the next cast (their normal idle state).
+            const inGame = (typeof gameState !== 'undefined' && gameState !== 'menu' && gameState !== 'lobby');
+            if (!inGame || !window.guiElements) return;
+            for (const key of ['scorePanel', 'playerHealthPanel', 'aiHealthPanel',
+                               'playerManaContainer', 'aiManaContainer', 'stageGrid', 'abilityBarBg']) {
+                if (window.guiElements[key]) window.guiElements[key].isVisible = true;
+            }
+            if (window.updateStageIndicator) updateStageIndicator();      // re-shows stageNameText
+            if (window.updateManaBarVisibility) updateManaBarVisibility();
+        }
+        window.setHudHidden = setHudHidden;
         function debugForceEnd(win) {
             if (GameSM.state !== 'match') { console.log('[debug] Force Win/Lose only works during a match'); return; }
             gameOver = true;
@@ -13519,6 +13653,9 @@
             overlay.isVisible = true;
             text.isVisible = true;
 
+            // No stray floating text over the black lead-in
+            if (window.clearAllCombatText) clearAllCombatText();
+
             // Animation helper
             function animateAlpha(element, from, to, duration, onComplete) {
                 const startTime = performance.now();
@@ -13613,6 +13750,7 @@
             // dispose error can't abort the whole return-to-menu and strand the player on the screen.
             try { if (window.clearAllProjectiles) clearAllProjectiles(); } catch (e) { console.warn('continue: clearAllProjectiles failed', e); }
             try { if (window.clearAllLightningFX) clearAllLightningFX(); } catch (e) { console.warn('continue: clearAllLightningFX failed', e); }
+            try { if (window.clearAllCombatText) clearAllCombatText(); } catch (e) { console.warn('continue: clearAllCombatText failed', e); }
             const overlay = window.guiElements?.transitionOverlay;
 
             if (!overlay) {
@@ -14006,9 +14144,38 @@
             const btnSettings = document.getElementById('domBtnSettings');
             if (btnSettings) btnSettings.addEventListener('click', () => openSettings('menu'));
             const btnHowTo = document.getElementById('domBtnHowTo');
-            if (btnHowTo) btnHowTo.addEventListener('click', () => { if (window.updateControllerHints) updateControllerHints(); showMenuScreen('howToPlayScreen', 'menu'); });
+            if (btnHowTo) btnHowTo.addEventListener('click', () => { if (window.updateControllerHints) updateControllerHints(); htpSetPage(0); showMenuScreen('howToPlayScreen', 'menu'); });
             const howToBack = document.getElementById('howToBack');
             if (howToBack) howToBack.addEventListener('click', () => closeMenuScreen());
+
+            // How to Play pager: arrows + dots + left/right keys, one concept per page.
+            const htpPages = document.querySelectorAll('#howToPlayScreen .htp-page');
+            let htpPage = 0;
+            function htpSetPage(p) {
+                htpPage = Math.max(0, Math.min(htpPages.length - 1, p));
+                htpPages.forEach((el, i) => el.classList.toggle('active', i === htpPage));
+                const dots = document.getElementById('htpDots');
+                if (dots) dots.innerHTML = Array.from(htpPages, (_, i) =>
+                    '<span class="htp-dot' + (i === htpPage ? ' active' : '') + '"></span>').join('');
+                const prev = document.getElementById('htpPrev');
+                const next = document.getElementById('htpNext');
+                if (prev) prev.disabled = (htpPage === 0);
+                if (next) next.disabled = (htpPage === htpPages.length - 1);
+            }
+            window.htpSetPage = htpSetPage;
+            const htpPrev = document.getElementById('htpPrev');
+            const htpNext = document.getElementById('htpNext');
+            if (htpPrev) htpPrev.addEventListener('click', () => htpSetPage(htpPage - 1));
+            if (htpNext) htpNext.addEventListener('click', () => htpSetPage(htpPage + 1));
+            document.addEventListener('keydown', (e) => {
+                const screen = document.getElementById('howToPlayScreen');
+                if (!screen || !screen.classList.contains('visible')) return;
+                if (e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
+                htpSetPage(htpPage + (e.code === 'ArrowRight' ? 1 : -1));
+                if (window.ToneSFX) ToneSFX.uiHover();   // cursor blip, matching the arrow buttons
+                e.preventDefault();
+            });
+            htpSetPage(0);   // render the dots
             const btnCredits = document.getElementById('domBtnCredits');
             if (btnCredits) btnCredits.addEventListener('click', () => showMenuScreen('creditsScreen', 'menu'));
             const creditsBack = document.getElementById('creditsBack');
@@ -16104,6 +16271,10 @@
             roundTransitioning = true;
             waitingToServe = true;
 
+            // Sweep away any floating combat text — the DOM text layer renders above the
+            // canvas, so leftovers would hover over the black transition overlay.
+            if (window.clearAllCombatText) clearAllCombatText();
+
             // Hide ability/parry bar during transition
             const abilityBar = document.getElementById('abilityBar');
             if (abilityBar) abilityBar.style.display = 'none';
@@ -16163,6 +16334,11 @@
                 resetRound();
                 // resetRound clears the flag; keep inputs blocked
                 roundTransitioning = true;
+
+                // Hide the floating stage-name center message resetRound shows — the
+                // transition card announces the stage; without this the message text
+                // lingers over the scene after the reveal (doReadyGoTransition does the same).
+                hideMessage();
 
                 // Step 3: Set text and fade it in (400ms)
                 text.text = stageName;
@@ -17300,6 +17476,7 @@
 
         function showDamageNumber(damage, isPlayerTower, worldZ) {
             if (!scene) return;
+            if (roundTransitioning) return;   // no floating text over the transition overlay
 
             // Convert 3D position to screen position
             const tableWidth = 20;
@@ -17417,6 +17594,9 @@
 
         // Create an HTML combat text element (NES style - crisp and readable)
         function createHTMLCombatText(text, type = '') {
+            // No new floating text during Ready/Go or stage transitions — it would
+            // float over the black overlay (DOM layer renders above the canvas).
+            if (roundTransitioning) return null;
             const el = document.createElement('div');
             el.className = 'combat-text' + (type ? ' ' + type : '');
             el.textContent = text;   /* FF9: keep natural casing, no all-caps */
@@ -17726,6 +17906,26 @@
                 if (old.el) old.el.remove();
             }
         }
+
+        // Remove every floating DOM text (combat text, cast bubbles, damage numbers,
+        // ailments, world-anchored texts). The DOM layer sits ABOVE the canvas, so any
+        // leftover text would float over the black stage-transition overlay.
+        window.clearAllCombatText = () => {
+            for (const side of ['player', 'ai']) {
+                for (const item of combatTextQueue[side]) if (item.el) item.el.remove();
+                combatTextQueue[side].length = 0;
+                for (const item of spellCastQueue[side]) if (item.el) item.el.remove();
+                spellCastQueue[side].length = 0;
+                for (const item of damageTextQueue[side]) if (item.el) item.el.remove();
+                damageTextQueue[side].length = 0;
+                if (ailmentText[side]) {
+                    if (ailmentText[side].el) ailmentText[side].el.remove();
+                    ailmentText[side] = null;
+                }
+            }
+            for (const item of floatingTexts) if (item.el) item.el.remove();
+            floatingTexts.length = 0;
+        };
 
         // Sound cooldown to prevent double-plays on rapid hits
         let lastGateSoundTime = { player: 0, ai: 0 };

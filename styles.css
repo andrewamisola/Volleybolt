@@ -164,6 +164,12 @@ html, body {
     display: none !important;
 }
 
+/* Debug "Hide HUD" (backtick menu): hides the whole DOM HUD layer — ability bar,
+   floating combat text, and damage numbers all live inside #hudScaleLayer. */
+body.hud-hidden #hudScaleLayer {
+    display: none !important;
+}
+
 /* ============================================================
    HTML TEXT OVERLAY - Crisp text rendered over Babylon.js GUI
    Text uses native browser rendering for sharp, readable text
@@ -220,12 +226,12 @@ html, body {
     text-shadow: 3px 3px 0px #000, 4px 4px 0px #000;
 }
 
-/* Center message (Victory, Defeat, etc) */
+/* Center message (Victory, Defeat, etc) — Ferrum to match the GUI messageText */
 #htmlMessage {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Ferrum', 'FF9UI', serif;
     font-size: 56px;
     font-weight: 700;
     color: #f0c050;
@@ -2627,6 +2633,26 @@ body.flipped-view #aiCastBarContainer {
     font-family: 'FF9UI', sans-serif; font-size: 22px; color: #e7ecf6;
     text-shadow: var(--ff9-shadow); text-align: left; line-height: 1.4;
 }
+
+/* ---- How to Play pager: one concept per page, arrows to navigate ---- */
+.htp-page { display: none; flex-direction: column; gap: 10px; min-height: 240px; }
+.htp-page.active { display: flex; }
+.htp-title {
+    font-family: 'Ferrum', 'FF9UI', serif; font-size: 34px; color: var(--ff9-gold);
+    text-shadow: var(--ff9-shadow); text-align: left; margin-bottom: 8px;
+}
+.htp-nav {
+    display: flex; align-items: center; justify-content: center; gap: 18px;
+    margin-top: 6px;
+}
+.htp-arrow { font-size: 22px; padding: 4px 14px; }
+.htp-arrow:disabled { opacity: 0.3; cursor: default; }
+.htp-dots { display: flex; gap: 10px; }
+.htp-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #3a3450; border: 1px solid #5a4a78;
+}
+.htp-dot.active { background: var(--ff9-gold); border-color: var(--ff9-gold); }
 
 /* ---- Credits ---- */
 .credits-line {
