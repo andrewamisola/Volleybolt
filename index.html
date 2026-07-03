@@ -3733,13 +3733,17 @@
             if (el) { el.classList.add('gp-focused'); el.focus(); }
         }
 
-        // Screen root id -> its Back/Cancel button id. Extended in a later task with the
-        // multiplayer lobby's four sub-views and the pause overlay.
+        // Screen root id -> its Back/Cancel button id.
         const NAV_BACK_TARGETS = {
             settingsScreen: 'settingsBack',
             howToPlayScreen: 'howToBack',
             creditsScreen: 'creditsBack',
             careerScreen: 'careerBack',
+            lobbyModeView: 'btnBackMenu',
+            lobbyHostView: 'btnCancelHost',
+            lobbyJoinView: 'btnCancelJoin',
+            lobbyConnectedView: 'btnDisconnect',
+            pauseOverlay: 'pauseResumeBtn',
         };
 
         function pollGamepadMenuNav() {
