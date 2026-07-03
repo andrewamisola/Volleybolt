@@ -3652,6 +3652,10 @@
 
             const pressed = (i) => !!(gp.buttons[i] && gp.buttons[i].pressed);
 
+            // Start/Menu button (Standard Gamepad index 9) — same as Escape, works mid-match.
+            if (pressed(9) && !_padPrev[9]) handleMenuOrPauseToggle();
+            _padPrev[9] = pressed(9);
+
             // Movement (held): stick Y (up = negative) or D-pad.
             const ax = gp.axes[GP.stickY] || 0;
             window._padMoveDir = (pressed(GP.dpadUp)   || ax < -0.5) ?  1
@@ -13617,17 +13621,23 @@
                 returnToMenuTransition();   // verified clean teardown -> 2D menu
             });
         }
-        document.addEventListener('keydown', (e) => {
-            if (e.code !== 'Escape') return;
-            // If a menu screen (Settings/How to Play/Career/Credits) is open, Esc closes it
-            // (routes back to its origin — main menu or pause) instead of toggling pause/resume.
+        // Shared by the Escape key AND the gamepad Start/Menu button (index 9) — same "close
+        // whatever's open, or toggle pause" behavior regardless of which input triggered it.
+        function handleMenuOrPauseToggle() {
             if (typeof MENU_SCREENS !== 'undefined' &&
                 MENU_SCREENS.some(id => document.getElementById(id)?.classList.contains('visible'))) {
                 if (window.ToneSFX) ToneSFX.uiBack();
-                closeMenuScreen(); e.preventDefault(); return;
+                closeMenuScreen();
+                return;
             }
-            if (GameSM.state === 'match') { if (window.ToneSFX) ToneSFX.uiConfirm(); GameSM.enterPause(); e.preventDefault(); }
-            else if (GameSM.state === 'pause') { if (window.ToneSFX) ToneSFX.uiBack(); GameSM.resumeMatch(); e.preventDefault(); }
+            if (GameSM.state === 'match') { if (window.ToneSFX) ToneSFX.uiConfirm(); GameSM.enterPause(); }
+            else if (GameSM.state === 'pause') { if (window.ToneSFX) ToneSFX.uiBack(); GameSM.resumeMatch(); }
+        }
+        window.handleMenuOrPauseToggle = handleMenuOrPauseToggle;
+        document.addEventListener('keydown', (e) => {
+            if (e.code !== 'Escape') return;
+            handleMenuOrPauseToggle();
+            e.preventDefault();
         });
 
         // --- Debug menu (backtick ` toggles) ---
