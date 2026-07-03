@@ -3747,10 +3747,14 @@
             if (list.length === 0) { window._navRoot = root; return; }
 
             // Root changed since last poll (a new screen just opened, or a lobby sub-view
-            // switched) — reset focus to the first element.
+            // switched) — reset focus to the first element. window._navFocusedIndex from the
+            // OLD root means nothing when paired with the NEW root's list (it's just a
+            // position, not a stable reference), so setNavFocus's own list[index] lookup for
+            // "prev" can't find the actually-focused element — it's hidden in the old root's
+            // DOM subtree, not this one. Strip .gp-focused wherever it really lives first.
             if (root !== window._navRoot) {
                 window._navRoot = root;
-                window._navFocusedIndex = 0;
+                document.querySelectorAll('.gp-focused').forEach(el => el.classList.remove('gp-focused'));
                 setNavFocus(list, 0);
             }
 
