@@ -3733,6 +3733,15 @@
             if (el) { el.classList.add('gp-focused'); el.focus(); }
         }
 
+        // Screen root id -> its Back/Cancel button id. Extended in a later task with the
+        // multiplayer lobby's four sub-views and the pause overlay.
+        const NAV_BACK_TARGETS = {
+            settingsScreen: 'settingsBack',
+            howToPlayScreen: 'howToBack',
+            creditsScreen: 'creditsBack',
+            careerScreen: 'careerBack',
+        };
+
         function pollGamepadMenuNav() {
             const root = isAnyMenuOpen();
             if (!root) { window._navRoot = null; return; }
@@ -3752,13 +3761,35 @@
             // position, not a stable reference), so setNavFocus's own list[index] lookup for
             // "prev" can't find the actually-focused element — it's hidden in the old root's
             // DOM subtree, not this one. Strip .gp-focused wherever it really lives first.
-            if (root !== window._navRoot) {
+            const rootJustOpened = root !== window._navRoot;
+            if (rootJustOpened) {
                 window._navRoot = root;
                 document.querySelectorAll('.gp-focused').forEach(el => el.classList.remove('gp-focused'));
                 setNavFocus(list, 0);
             }
 
             const pressed = (i) => !!(gp.buttons[i] && gp.buttons[i].pressed);
+
+            // A screen just opened this poll — seed confirm/back/start's prev-state to whatever's
+            // physically held RIGHT NOW instead of comparing against stale/never-set state. Button
+            // 9 (Start) is the concrete case: it's what just paused the match one line earlier in
+            // this same frame via pollGamepadInput's OWN separate _padPrev[9] tracker (gated on
+            // gameState === "playing", so it never runs once a menu is open, and never gets a
+            // chance to sync with _navPadPrev.start). Without this seed, Start is still physically
+            // down on the very frame the pause overlay appears, _navPadPrev.start was never
+            // touched while no menu was open (root was null every prior frame), so it reads as a
+            // brand-new press and immediately calls handleMenuOrPauseToggle() a second time —
+            // instantly resuming the match it just paused, in the same frame. Buttons 0/1 have the
+            // same exposure since they double as the slot1/slot2 ability buttons mid-match
+            // (GP.slot1 = 0, GP.slot2 = 1) — holding an ability button the instant a menu opens
+            // (e.g. pausing mid-cast) must not auto-confirm/back on whatever the pause screen
+            // happens to focus first.
+            if (rootJustOpened) {
+                _navPadPrev.confirm = pressed(0);
+                _navPadPrev.back = pressed(1);
+                _navPadPrev.start = pressed(9);
+            }
+
             const ax = gp.axes[GP.stickY] || 0;
             const upNow   = pressed(GP.dpadUp)   || ax < -0.5;
             const downNow = pressed(GP.dpadDown) || ax >  0.5;
@@ -3779,6 +3810,38 @@
                 setNavFocus(list, next);
                 if (window.ToneSFX) ToneSFX.uiHover();
             }
+
+            // Confirm (bottom face button, index 0) — click the focused element, exactly what a
+            // mouse click would do. No-op on sliders/the FPS cycler (they're adjusted, not
+            // "confirmed" — see Task 6).
+            const confirmNow = pressed(0);
+            if (confirmNow && !_navPadPrev.confirm) {
+                const el = list[window._navFocusedIndex];
+                if (el && el.tagName !== 'INPUT' && !el.classList.contains('fps-cycler')) {
+                    el.click();
+                }
+            }
+            _navPadPrev.confirm = confirmNow;
+
+            // Back (right face button, index 1) — click this screen's designated back/cancel
+            // button. Root id -> back-button id. Main menu has no entry (nothing to back out of).
+            const backNow = pressed(1);
+            if (backNow && !_navPadPrev.back) {
+                const backTargetId = NAV_BACK_TARGETS[root.id];
+                if (backTargetId) {
+                    const backEl = document.getElementById(backTargetId);
+                    if (backEl) backEl.click();
+                }
+            }
+            _navPadPrev.back = backNow;
+
+            // Start/Menu button (index 9) — same handler Task 2 wired into the gameplay-only
+            // poller. That poller never runs while a menu is open (gated on gameState ===
+            // "playing"), so a menu screen reached by MOUSE (no pad input yet) would otherwise be
+            // unreachable by Start. This is the only place Start gets handled while a menu is open.
+            const startNow = pressed(9);
+            if (startNow && !_navPadPrev.start) handleMenuOrPauseToggle();
+            _navPadPrev.start = startNow;
         }
         window.pollGamepadMenuNav = pollGamepadMenuNav;
 
