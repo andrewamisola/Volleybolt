@@ -1754,6 +1754,14 @@ body.flipped-view #aiCastBarContainer {
     cursor: not-allowed;
 }
 
+/* Victory-screen Continue during the read-the-report grace: stays a SOLID slab
+   (transparency breaks the FF9 window language) — locked look comes from
+   desaturating + darkening instead. */
+#victoryContinueBtn:disabled {
+    opacity: 1;
+    filter: saturate(0.35) brightness(0.62);
+}
+
 .game-btn-small {
     min-width: 140px;
     padding: 8px 20px;

@@ -7230,7 +7230,7 @@
             // Full-map forest backdrop (Andrew's painted extension of the arena) rendered
             // BEHIND all meshes, inside the 3D pass — so the PS1 dither/low-res grade hits
             // it too and the arena + HUD sit on top.
-            const backdropLayer = new BABYLON.Layer('forestBackdrop', 'textures/backdrop_forest.jpg?v=3', scene, true);
+            const backdropLayer = new BABYLON.Layer('forestBackdrop', 'textures/backdrop_forest.jpg?v=5', scene, true);
             backdropLayer.isEnabled = true;
             window.backdropLayer = backdropLayer;
 
@@ -10042,14 +10042,14 @@
 
             // Ice block material - transparent frozen effect
             const iceMat = new BABYLON.StandardMaterial("iceMat", scene);
-            iceMat.diffuseColor = new BABYLON.Color3(0.7, 0.85, 1);
-            iceMat.emissiveColor = new BABYLON.Color3(0.2, 0.4, 0.6);
+            // Punchier, more saturated ice (Andrew 2026-07-03): deeper blue + stronger emissive,
+            // and a higher alpha so the crystal reads solid rather than ghostly. The wizard
+            // stays visible because the block is a hollow shell of angled faces.
+            iceMat.diffuseColor = new BABYLON.Color3(0.45, 0.72, 1);
+            iceMat.emissiveColor = new BABYLON.Color3(0.12, 0.42, 0.72);
             iceMat.specularColor = new BABYLON.Color3(1, 1, 1);
             iceMat.specularPower = 128;
-            // Low, PREDICTABLE flat alpha — each crystal face is ~18% opaque, so even where a couple of
-            // crystals overlap the wizard the stack stays clearly see-through. (The Fresnel-opacity approach
-            // didn't reliably thin the faces, so the block kept reading as near-solid at alpha 0.9.)
-            iceMat.alpha = 0.3;
+            iceMat.alpha = 0.52;
             iceMat.backFaceCulling = true;   // cull back faces so you see cleanly through the front into the block (no doubled milky walls)
             iceMat.fogEnabled = false;   // don't let the near-opaque fog plane bury the ice (same fix as the other FX)
 
@@ -10067,7 +10067,9 @@
                 iceRoot.parent = parent;
                 iceRoot.position.y = 1.0;
                 iceRoot.position.z = BLOCK_ARC.LINE_LIFT * 0.5;          // sit between the wizard and the (lifted) shield line
-                iceRoot.scaling = new BABYLON.Vector3(2.0, 1.35, 2.4);   // a BIG block that encases both the wizard AND the shield in front
+                // Tighter block that hugs the wizard — the old 2.0/1.35/2.4 encased the shield
+                // too and read as a bigger hitbox than the paddle actually has.
+                iceRoot.scaling = new BABYLON.Vector3(1.4, 1.15, 1.7);
 
                 // Main crystal (tall hexagonal prism effect using box)
                 const mainCrystal = BABYLON.MeshBuilder.CreateBox(name + "Main", { width: 0.8, height: 2.0, depth: 0.6 }, scene);
@@ -10507,9 +10509,16 @@
                 roof.rotation.y = Math.PI / 4;          // align the 4-sided pyramid square to the keep
                 roof.position.set(keepX, keepH + 0.6 + 1.7, 0);
                 const roofMat = new BABYLON.StandardMaterial((isPlayer ? "pRoofMat" : "aRoofMat"), scene);
-                roofMat.diffuseColor = teamCol.scale(0.60);   // moodier; was teamCol (full)
+                // Heavily desaturated team color: the saturated cones clashed with the red/blue
+                // HP bars directly above them in the HUD. Mix ~55% toward luma grey, keep it dark.
+                const roofLuma = 0.3 * teamCol.r + 0.59 * teamCol.g + 0.11 * teamCol.b;
+                const roofCol = new BABYLON.Color3(
+                    teamCol.r + (roofLuma - teamCol.r) * 0.38,
+                    teamCol.g + (roofLuma - teamCol.g) * 0.38,
+                    teamCol.b + (roofLuma - teamCol.b) * 0.38);
+                roofMat.diffuseColor = roofCol.scale(0.55);
                 roofMat.specularColor = BABYLON.Color3.Black();
-                roofMat.emissiveColor = teamCol.scale(0.08);   // less glow; was 0.18
+                roofMat.emissiveColor = roofCol.scale(0.04);   // barely-there glow
                 roof.material = roofMat;
                 if (window.shadowGenerator) window.shadowGenerator.addShadowCaster(roof);
             };
@@ -10963,6 +10972,18 @@
                 // Map damage 2-6 to scale 0.85-1.35
                 const scale = 0.85 + (damage - 2) * 0.125;  // ~0.125 per damage point
                 proj.mesh.scaling.setAll(scale);
+                // Grow the hitbox with the visual ball (Andrew 2026-07-03): hitboxRadius was
+                // pinned at spawn (0.25, tuned for the scale-0.85 baseline) and never grew with
+                // volleyCount, so a late-volley fireball (up to scale 1.35, mesh radius ~0.30)
+                // looked ~20% bigger than it actually collided as — most noticeable on angled/
+                // edge hits near the shield's tips, reading as "passes right through." Scale
+                // hitboxRadius by the same ratio as the mesh so collision keeps pace with what's
+                // drawn. Pure function of volleyCount (deterministic, rollback-safe) — this is
+                // the SAME choke point ctx.deps.updateFireballScale calls from js/sim.js's
+                // onPaddleHit and the shared parryProjectile path, so both peers derive identical
+                // values every time. Re-measured golden-hash oracle after this change (see
+                // js/sim.js header) since it affects paddle-bounce and parry-return collision math.
+                proj.hitboxRadius = 0.25 * (scale / 0.85);
             };
             window.updateFireballScale = updateFireballScale;
 
@@ -12887,8 +12908,8 @@
                     m._juiceScratch = bp ? new Float32Array(bp.length) : null;
                     return m;
                 };
-                const outer = makeFlame(1.05, 1.0, 0.45, 0.06, 0.20);   // orange body — was near-invisible at 0.06
-                const inner = makeFlame(0.68, 1.0, 0.88, 0.35, 0.40);   // bright gold-white core
+                const outer = makeFlame(1.05, 1.0, 0.40, 0.02, 0.38);   // deep orange body — denser + more saturated
+                const inner = makeFlame(0.68, 1.0, 0.85, 0.28, 0.62);   // bright gold core, clearly reads through fog
                 setJuiceModelTint(c, true);                                 // wizard goes white-hot gold
                 c.juiceAura = { outer, inner, t: 0 };
             };
@@ -16184,7 +16205,10 @@
             btn.id = 'victoryContinueBtn';
             btn.className = 'game-btn menu-btn';
             btn.textContent = 'Continue';
-            btn.style.cssText = 'position:fixed;left:50%;top:68%;transform:translateX(-50%);z-index:650;display:none;min-width:260px';
+            // Anchored a fixed distance below screen center (like the GUI Battle Report panel,
+            // which ends ~+105px below center) so the gap stays consistent at any window size —
+            // %-of-height positioning left an awkward variable gap under the report.
+            btn.style.cssText = 'position:fixed;left:50%;top:calc(50% + 140px);transform:translateX(-50%);z-index:650;display:none;min-width:260px';
             document.body.appendChild(btn);
             btn.addEventListener('click', () => returnToMenuTransition());
             return btn;

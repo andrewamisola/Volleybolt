@@ -19,9 +19,19 @@
 //
 // Determinism law (see docs/SHARED_CORE.md): same (state, inputs) -> same state.
 // No Math.random / Date.now / performance.now here. Verify any change against the
-// dbg.determinism golden-hash oracle in index.html (seed 12345 -> 954ea557, stable;
-// run it from a FRESH SINGLE-PLAYER match — a mid-PvP run reads pvp-mode deps and
-// folds differently, that is oracle-environment sensitivity, not a sim change).
+// dbg.determinism golden-hash oracle in index.html (seed 12345 -> 954ea557, seed
+// 99999 -> 56c1c1ac, both stable; run from a FRESH SINGLE-PLAYER match — a mid-PvP
+// run reads pvp-mode deps and folds differently, that is oracle-environment
+// sensitivity, not a sim change).
+// (954ea557 unchanged, 2026-07-03: index.html's updateFireballScale (called from this
+//  file's onPaddleHit and the shared parryProjectile path) now also grows proj.hitboxRadius
+//  proportionally with the ball's visual scale — hitboxRadius was pinned at spawn (0.25)
+//  and never grew with volleyCount, so a late-volley fireball (up to scale 1.35) looked
+//  ~20% bigger than it actually collided as, most noticeable on angled hits near the
+//  shield's edge ("passes right through" reports). Pure function of volleyCount, same on
+//  both peers. Verified NON-MOVING on both pinned seeds (12345 and 99999) via an A/B
+//  toggle of the one changed line — the oracle's scripted parries/casts never hit a
+//  fireball at a volleyCount where the grown hitbox would flip a frame's outcome.)
 // (8f6e6da1 -> 954ea557: STALE-PIN CORRECTION, re-measured 2026-07-02. The 8f6e6da1 value
 //  was measured mid-way through the b7e492b squashed playtest commit (correct at that
 //  moment, right after the arc-collision change below) but the SAME commit then landed
