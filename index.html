@@ -13416,6 +13416,9 @@
             function stepFixedSim() {
                 const now = performance.now();
                 if (gameState !== "playing" || gameOver || paused) { lastSimWallTime = now; return; }
+                if (window.setGamepadPrompts && document.getElementById('gamepadPromptBar')?.innerHTML) {
+                    setGamepadPrompts([]);   // clear once, first frame of live gameplay — ability bar owns hints now
+                }
                 pollGamepadInput();   // translate gamepad -> same keyboard input channels (once per frame, for edge detection)
                 if (!lastSimWallTime) lastSimWallTime = now;
                 let dt = (now - lastSimWallTime) / 1000;
@@ -13848,6 +13851,7 @@
                 if (quitBtn) quitBtn.textContent = (gameMode === 'pvp') ? 'Leave Match' : 'Quit to Menu';
                 const ov = document.getElementById('pauseOverlay');
                 if (ov) ov.style.display = 'flex';
+                if (window.setGamepadPrompts) setGamepadPrompts([{ action: 'navigate' }, { action: 'confirm' }, { action: 'back' }]);
             },
             resumeMatch() {
                 if (this.state !== 'pause') return;
@@ -14365,6 +14369,7 @@
                 const el = document.getElementById(id);
                 if (el) el.style.display = (id === viewId) ? 'flex' : 'none';
             }
+            if (window.setGamepadPrompts) setGamepadPrompts([{ action: 'navigate' }, { action: 'confirm' }, { action: 'back' }]);
 
             const subtitle = document.getElementById('lobbySubtitle');
             if (subtitle) {
@@ -14652,6 +14657,7 @@
             if (show) {
                 const ms = document.getElementById('domModeSelect');
                 if (ms) ms.classList.remove('visible');
+                if (window.setGamepadPrompts) setGamepadPrompts([{ action: 'navigate' }, { action: 'confirm' }]);
             }
             // Keep the legacy Babylon GUI menu permanently hidden — DOM owns this view now.
             if (window.guiElements) {
@@ -14704,6 +14710,11 @@
             hideAllMenuScreens();
             const el = document.getElementById(id);
             if (el) el.classList.add('visible');
+            if (window.setGamepadPrompts) {
+                if (id === 'settingsScreen') setGamepadPrompts([{ action: 'navigate' }, { action: 'adjust' }, { action: 'confirm' }, { action: 'back' }]);
+                else if (id === 'howToPlayScreen') setGamepadPrompts([{ action: 'page' }, { action: 'back' }]);
+                else setGamepadPrompts([{ action: 'navigate' }, { action: 'back' }]);   // credits, career
+            }
         }
         function closeMenuScreen() {
             hideAllMenuScreens();
