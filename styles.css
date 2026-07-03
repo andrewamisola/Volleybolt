@@ -1766,12 +1766,26 @@ body.flipped-view #aiCastBarContainer {
 }
 .game-btn.gp-focused:not(:disabled)::before,
 .game-btn:focus-visible:not(:disabled)::before {
+    /* .arcane-buttons .menu-btn::before already owns this pseudo-element (the existing
+       mouse-hover triangle: a border-trick shape, opacity 0 at rest, shown on :hover only).
+       Content/color/position below win on specificity, but opacity/border/width/height are
+       NOT set by that rule's counterpart here unless we say so explicitly — CSS cascades
+       per property, not per rule, so the old rule's opacity:0 and 0x0 border-triangle box
+       were silently still winning and hiding this arrow. Reset every property the old rule
+       touches so nothing leaks through, regardless of source order. */
     content: '\25B6';
     color: #f0c050;
     position: absolute;
     left: -22px;
     top: 50%;
     transform: translateY(-50%);
+    opacity: 1;
+    width: auto;
+    height: auto;
+    border: none;
+    filter: none;
+    font-size: 16px;
+    line-height: 1;
 }
 .settings-slider.gp-focused,
 .settings-slider:focus-visible,
@@ -2750,4 +2764,16 @@ body.flipped-view #aiCastBarContainer {
     border: 1px solid #5a4a78;
     font-size: 12px;
     font-weight: 700;
+}
+
+/* ============================================================
+   GAMEPAD ACTIVE — hide the OS mouse cursor while a controller is the
+   last input device used (matches standard game convention: showing a
+   stale mouse pointer next to the on-screen focus highlight is confusing).
+   Reappears the instant the mouse actually moves (see the mousemove
+   listener next to setLastInputMode in index.html).
+   ============================================================ */
+body.gp-cursor-hidden,
+body.gp-cursor-hidden * {
+    cursor: none !important;
 }

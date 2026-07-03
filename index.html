@@ -3629,6 +3629,17 @@
         // in-game HUD ability-key labels AND the menu prompt bar (Task 8) off one shared flag.
         window._lastInputMode = 'keyboard';
 
+        // Single write-point for _lastInputMode so the "hide the OS cursor while a controller is
+        // active" side effect can never be forgotten at a call site — most games do this so the
+        // stale mouse pointer doesn't sit next to the on-screen focus highlight. The cursor
+        // reappears the instant the mouse actually moves (see the mousemove listener below).
+        function setLastInputMode(mode) {
+            if (window._lastInputMode === mode) return;
+            window._lastInputMode = mode;
+            document.body.classList.toggle('gp-cursor-hidden', mode === 'pad');
+        }
+        window.setLastInputMode = setLastInputMode;
+
         // Fire a loadout slot exactly like the keyboard Digit1/2/3 path.
         function gamepadFireSlot(slotIndex) {
             if (gameOver || !roundActive || roundTransitioning) return;
@@ -3670,7 +3681,7 @@
 
             // The moment the pad is actually used, switch the HUD ability labels to controller glyphs.
             const anyPadBtn = pressed(GP.slot0) || pressed(GP.slot1) || pressed(GP.slot2) || pressed(GP.ult) || pressed(GP.parry);
-            if ((anyPadBtn || window._padMoveDir !== 0) && window._lastInputMode !== 'pad') { window._lastInputMode = 'pad'; updateHudInputHints(); }
+            if ((anyPadBtn || window._padMoveDir !== 0) && window._lastInputMode !== 'pad') { setLastInputMode('pad'); updateHudInputHints(); }
 
             // Edge helpers.
             const isPress   = (i) => pressed(i) && !_padPrev[i];
@@ -3727,7 +3738,12 @@
             if (!root) return [];
             return Array.from(root.querySelectorAll(
                 '.menu-btn:not([disabled]), input[type="range"], input[type="checkbox"], .fps-cycler'
-            )).filter(el => el.offsetParent !== null);   // skip anything display:none-hidden
+            )).filter(el => el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0);
+            // Skip anything display:none-hidden. NOT `el.offsetParent !== null` (the more common
+            // idiom for this) — offsetParent is spec'd to be null for position:fixed elements even
+            // when they're genuinely visible (e.g. #victoryContinueBtn), which silently emptied this
+            // list for the Victory/Defeat screen. This dimension/rect check has the same
+            // display:none-detection behavior (zero size, zero rects) without that false negative.
         }
 
         function setNavFocus(list, index) {
@@ -3885,7 +3901,7 @@
             // startNow (Task 5) have all been computed above.
             if ((upEdge || downEdge || leftEdge || rightEdge || confirmNow || backNow || startNow)
                 && window._lastInputMode !== 'pad') {
-                window._lastInputMode = 'pad';
+                setLastInputMode('pad');
                 if (window.updateHudInputHints) updateHudInputHints();
                 if (window.renderGamepadPromptBar) renderGamepadPromptBar();
             }
@@ -3999,20 +4015,27 @@
         // Any gameplay key press flips the HUD back to keyboard glyphs (capture so it always runs).
         document.addEventListener('keydown', () => {
             if (window._hudForceType) return;   // preview override stays put
-            if (window._lastInputMode !== 'keyboard') { window._lastInputMode = 'keyboard'; updateHudInputHints(); if (window.renderGamepadPromptBar) renderGamepadPromptBar(); }
+            if (window._lastInputMode !== 'keyboard') { setLastInputMode('keyboard'); updateHudInputHints(); if (window.renderGamepadPromptBar) renderGamepadPromptBar(); }
         }, true);
         // A mouse click also means "back to keyboard/mouse" — swaps the prompt bar (Task 8) and
         // ability-bar glyphs back to keyboard hints if the player picks the mouse back up.
         document.addEventListener('click', () => {
             if (window._hudForceType) return;
-            if (window._lastInputMode !== 'keyboard') { window._lastInputMode = 'keyboard'; updateHudInputHints(); if (window.renderGamepadPromptBar) renderGamepadPromptBar(); }
+            if (window._lastInputMode !== 'keyboard') { setLastInputMode('keyboard'); updateHudInputHints(); if (window.renderGamepadPromptBar) renderGamepadPromptBar(); }
+        }, true);
+        // Actual mouse MOVEMENT (not just a click) is the real signal a physical mouse is back in
+        // play — this is what brings the OS cursor back the instant the player nudges it, rather
+        // than waiting for them to click something first.
+        document.addEventListener('mousemove', () => {
+            if (window._hudForceType) return;
+            if (window._lastInputMode !== 'keyboard') { setLastInputMode('keyboard'); updateHudInputHints(); if (window.renderGamepadPromptBar) renderGamepadPromptBar(); }
         }, true);
         // Preview override: load ...index.html?hud=xbox|playstation|nintendo|generic to SEE the glyphs
         // in the real game HUD without a controller (harmless in normal play with no param).
         (function () {
             const f = new URLSearchParams(location.search).get('hud');
             if (f && ['xbox', 'playstation', 'nintendo', 'generic'].includes(f)) {
-                window._hudForceType = f; window._lastInputMode = 'pad';
+                window._hudForceType = f; setLastInputMode('pad');
                 setTimeout(() => { try { updateHudInputHints(); } catch (e) {} }, 1000);
             }
         })();
@@ -13341,9 +13364,6 @@
                 // Debug hide-HUD: re-hide GUI HUD controls that event-driven code re-shows
                 if (window.enforceHudHidden) window.enforceHudHidden();
 
-                // Drive gamepad menu navigation whenever a menu/overlay is open (no-ops otherwise)
-                if (window.pollGamepadMenuNav) window.pollGamepadMenuNav();
-
                 // Retired Babylon GUI menu (title/container/left-panel) — DOM owns the menu now,
                 // this legacy layer should only ever show gameState === 'menu'. It's normally
                 // toggled by setDOMMenuVisible()/showMainMenu(), but those are event-driven writes
@@ -13444,6 +13464,15 @@
 
             // Store render loop function globally so we can restart it after pausing
             window.gameRenderLoop = () => {
+                // Drive gamepad menu navigation on EVERY tick, before the 2D-screen early return
+                // below — pollGamepadMenuNav() used to be hooked into scene.onBeforeRenderObservable,
+                // which only fires from scene.render(), which this function skips entirely for
+                // menu/lobby/boot. That meant gamepad menu navigation silently never ran on the
+                // main menu (or any DOM screen) in real play — every prior test called
+                // pollGamepadMenuNav() directly, bypassing the real render loop, so this never
+                // surfaced until a real controller was tested against the actual game loop.
+                if (window.pollGamepadMenuNav) window.pollGamepadMenuNav();
+
                 // 2D menu/lobby/boot: the DOM owns the screen — skip 3D rendering entirely
                 // (this is what keeps any menu camera from ever showing).
                 if (GameSM.state === 'menu' || GameSM.state === 'lobby' || GameSM.state === 'boot') return;
@@ -14678,11 +14707,26 @@
         let _menuScreenReturn = 'menu';   // where Back goes: 'menu' or 'pause'
         // Returns the root element of whichever menu/overlay is currently the "active" screen for
         // gamepad navigation purposes (Tasks 4+), or null if none is open. Checked in priority
-        // order: pause > an open MENU_SCREENS entry > the multiplayer lobby's active sub-view >
-        // the main menu. Live gameplay with nothing open returns null.
+        // order: pause > the Victory/Defeat report's Continue button > an open MENU_SCREENS entry >
+        // the multiplayer lobby's active sub-view > the main menu. Live gameplay with nothing open
+        // returns null.
         function isAnyMenuOpen() {
             const pause = document.getElementById('pauseOverlay');
             if (pause && pause.style.display === 'flex') return pause;
+
+            // Victory/Defeat report: its DOM Continue button is appended straight to <body> (no
+            // wrapping screen container like every other overlay here, and it isn't a MENU_SCREENS
+            // entry) whenever gameOver flips true. Without this check, the generic navigator never
+            // sees it — pollGamepadInput() also stops the moment gameOver is true (its stepFixedSim
+            // gate), so a controller-only player would be stuck on the post-match report with no
+            // way to press Continue. document.body is used as the root purely because that's where
+            // the button actually lives; every other screen is hidden at this point, so
+            // getNavFocusables (see its own dimension/rect-based visibility filter) resolves this
+            // to just the one button.
+            if (gameOver) {
+                const contBtn = document.getElementById('victoryContinueBtn');
+                if (contBtn && contBtn.style.display !== 'none') return document.body;
+            }
 
             for (const id of MENU_SCREENS) {
                 const el = document.getElementById(id);
