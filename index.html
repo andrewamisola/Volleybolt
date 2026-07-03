@@ -3813,11 +3813,12 @@
 
             // Confirm (bottom face button, index 0) — click the focused element, exactly what a
             // mouse click would do. No-op on sliders/the FPS cycler (they're adjusted, not
-            // "confirmed" — see Task 6).
+            // "confirmed" — see Task 6). Checkboxes (Fullscreen/Reduce Motion/Colorblind) DO get
+            // clicked here — only range inputs are excluded, not every <input>.
             const confirmNow = pressed(0);
             if (confirmNow && !_navPadPrev.confirm) {
                 const el = list[window._navFocusedIndex];
-                if (el && el.tagName !== 'INPUT' && !el.classList.contains('fps-cycler')) {
+                if (el && !(el.tagName === 'INPUT' && el.type === 'range') && !el.classList.contains('fps-cycler')) {
                     el.click();
                 }
             }
