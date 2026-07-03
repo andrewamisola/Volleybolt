@@ -1480,6 +1480,13 @@ body.flipped-view #aiCastBarContainer {
     z-index: 10000;
     transition: opacity 0.3s ease;
     padding: 32px;
+    /* The click handler already covers the whole screen, not just the "Click to
+       Start" text — but the text was still natively selectable, so an
+       off-target or slightly-dragged click highlighted it instead of
+       registering cleanly. Kill selection everywhere on this screen so any
+       click anywhere just works. */
+    user-select: none;
+    -webkit-user-select: none;
 }
 #loadingScreen.hidden {
     opacity: 0;

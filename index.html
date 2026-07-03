@@ -8396,9 +8396,21 @@
                             document.getElementById('loadingText').style.cursor = 'pointer';
                             document.getElementById('loadingText').style.fontSize = '12px';
                             document.getElementById('loadingTip').style.display = 'none';
+                            loadingScreen.style.cursor = 'pointer';   // whole screen is clickable, not just the text
 
                             loadingScreen.addEventListener('click', async () => {
-                                await initToneJS();
+                                // Safari's AudioContext gesture policy is stricter than Chrome's —
+                                // Tone.start() can hang indefinitely (never resolve OR reject) if
+                                // Safari doesn't accept this click as a valid unlock gesture. Awaiting
+                                // it unguarded left the "Click to Start" screen stuck forever (the
+                                // listener is {once:true}, so a second click did nothing). Race it
+                                // against a timeout so the menu always appears; audio lazily retries
+                                // on the next real gesture via the `if (!toneStarted)` guards already
+                                // in every ToneSFX.* call.
+                                await Promise.race([
+                                    initToneJS(),
+                                    new Promise(resolve => setTimeout(resolve, 2500))
+                                ]);
                                 loadingScreen.classList.add('hidden');
                                 setTimeout(() => loadingScreen.style.display = 'none', 500);
                                 showMainMenu();
@@ -13064,6 +13076,24 @@
 
                 // Debug hide-HUD: re-hide GUI HUD controls that event-driven code re-shows
                 if (window.enforceHudHidden) window.enforceHudHidden();
+
+                // Retired Babylon GUI menu (title/container/left-panel) — DOM owns the menu now,
+                // this legacy layer should only ever show gameState === 'menu'. It's normally
+                // toggled by setDOMMenuVisible()/showMainMenu(), but those are event-driven writes
+                // that can drift out of sync (seen on Safari: the "Volleybolt" logo stayed visible
+                // over an active match). Authoritative per-frame enforcement instead of trusting
+                // every call site to remember to hide it.
+                if (gameState !== 'menu' && window.guiElements) {
+                    if (window.guiElements.menuTitle && window.guiElements.menuTitle.alpha !== 0) {
+                        window.guiElements.menuTitle.alpha = 0;
+                    }
+                    if (window.guiElements.menuContainer && window.guiElements.menuContainer.isVisible) {
+                        window.guiElements.menuContainer.isVisible = false;
+                    }
+                    if (window.guiElements.menuLeftPanel && window.guiElements.menuLeftPanel.isVisible) {
+                        window.guiElements.menuLeftPanel.isVisible = false;
+                    }
+                }
             });
 
             // Normal render loop - game runs at full 60fps
