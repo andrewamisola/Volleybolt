@@ -3620,7 +3620,9 @@
         const GP = { slot0: 2, slot1: 0, slot2: 1, ult: 3, parry: 5, dpadUp: 12, dpadDown: 13, stickY: 1 };
         const _padPrev = {};
         window._padMoveDir = 0;
-        let _hudInputMode = 'keyboard';   // 'keyboard' | 'pad' — drives the in-game HUD ability-key labels
+        // 'keyboard' | 'pad' — last input device used, ANYWHERE (menus and gameplay). Drives the
+        // in-game HUD ability-key labels AND the menu prompt bar (Task 8) off one shared flag.
+        window._lastInputMode = 'keyboard';
 
         // Fire a loadout slot exactly like the keyboard Digit1/2/3 path.
         function gamepadFireSlot(slotIndex) {
@@ -3663,7 +3665,7 @@
 
             // The moment the pad is actually used, switch the HUD ability labels to controller glyphs.
             const anyPadBtn = pressed(GP.slot0) || pressed(GP.slot1) || pressed(GP.slot2) || pressed(GP.ult) || pressed(GP.parry);
-            if ((anyPadBtn || window._padMoveDir !== 0) && _hudInputMode !== 'pad') { _hudInputMode = 'pad'; updateHudInputHints(); }
+            if ((anyPadBtn || window._padMoveDir !== 0) && window._lastInputMode !== 'pad') { window._lastInputMode = 'pad'; updateHudInputHints(); }
 
             // Edge helpers.
             const isPress   = (i) => pressed(i) && !_padPrev[i];
@@ -3727,7 +3729,7 @@
         }
         function updateHudInputHints() {
             const forced = window._hudForceType || null;   // ?hud=xbox|playstation|nintendo preview override
-            const usePad = forced ? true : (_hudInputMode === 'pad');
+            const usePad = forced ? true : (window._lastInputMode === 'pad');
             let type = forced;
             if (!type && usePad && navigator.getGamepads) {
                 let id = ''; const pads = navigator.getGamepads();
@@ -3745,14 +3747,20 @@
         // Any gameplay key press flips the HUD back to keyboard glyphs (capture so it always runs).
         document.addEventListener('keydown', () => {
             if (window._hudForceType) return;   // preview override stays put
-            if (_hudInputMode !== 'keyboard') { _hudInputMode = 'keyboard'; updateHudInputHints(); }
+            if (window._lastInputMode !== 'keyboard') { window._lastInputMode = 'keyboard'; updateHudInputHints(); }
+        }, true);
+        // A mouse click also means "back to keyboard/mouse" — swaps the prompt bar (Task 8) and
+        // ability-bar glyphs back to keyboard hints if the player picks the mouse back up.
+        document.addEventListener('click', () => {
+            if (window._hudForceType) return;
+            if (window._lastInputMode !== 'keyboard') { window._lastInputMode = 'keyboard'; updateHudInputHints(); }
         }, true);
         // Preview override: load ...index.html?hud=xbox|playstation|nintendo|generic to SEE the glyphs
         // in the real game HUD without a controller (harmless in normal play with no param).
         (function () {
             const f = new URLSearchParams(location.search).get('hud');
             if (f && ['xbox', 'playstation', 'nintendo', 'generic'].includes(f)) {
-                window._hudForceType = f; _hudInputMode = 'pad';
+                window._hudForceType = f; window._lastInputMode = 'pad';
                 setTimeout(() => { try { updateHudInputHints(); } catch (e) {} }, 1000);
             }
         })();
@@ -14402,6 +14410,35 @@
         // ---- Shared menu-screen nav: show ONE arcane screen at a time (no bleed-through). ----
         const MENU_SCREENS = ['settingsScreen', 'howToPlayScreen', 'careerScreen', 'creditsScreen'];
         let _menuScreenReturn = 'menu';   // where Back goes: 'menu' or 'pause'
+        // Returns the root element of whichever menu/overlay is currently the "active" screen for
+        // gamepad navigation purposes (Tasks 4+), or null if none is open. Checked in priority
+        // order: pause > an open MENU_SCREENS entry > the multiplayer lobby's active sub-view >
+        // the main menu. Live gameplay with nothing open returns null.
+        function isAnyMenuOpen() {
+            const pause = document.getElementById('pauseOverlay');
+            if (pause && pause.style.display === 'flex') return pause;
+
+            for (const id of MENU_SCREENS) {
+                const el = document.getElementById(id);
+                if (el && el.classList.contains('visible')) return el;
+            }
+
+            const lobby = document.getElementById('multiplayerLobby');
+            if (lobby && lobby.classList.contains('visible')) {
+                const views = ['lobbyModeView', 'lobbyHostView', 'lobbyJoinView', 'lobbyConnectedView'];
+                for (const vid of views) {
+                    const vel = document.getElementById(vid);
+                    if (vel && vel.style.display !== 'none') return vel;
+                }
+                return lobby;   // fallback: lobby visible but no sub-view matched (shouldn't happen)
+            }
+
+            const menu = document.getElementById('domMenu');
+            if (menu && menu.classList.contains('visible')) return menu;
+
+            return null;
+        }
+        window.isAnyMenuOpen = isAnyMenuOpen;
         function hideAllMenuScreens() {
             MENU_SCREENS.forEach(id => { const el = document.getElementById(id); if (el) el.classList.remove('visible'); });
         }
