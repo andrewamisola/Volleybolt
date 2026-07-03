@@ -3746,12 +3746,19 @@
             // display:none-detection behavior (zero size, zero rects) without that false negative.
         }
 
-        function setNavFocus(list, index) {
+        // Remembers the last focused index per screen root, so returning to a parent menu (e.g.
+        // Settings -> Back to the main menu) restores where you were instead of always resetting
+        // to the first item — going back and forth otherwise meant re-navigating from scratch
+        // every time.
+        const _navLastIndexByRoot = new WeakMap();
+
+        function setNavFocus(list, index, root) {
             const prev = list[window._navFocusedIndex];
             if (prev) prev.classList.remove('gp-focused');
             window._navFocusedIndex = index;
             const el = list[index];
             if (el) { el.classList.add('gp-focused'); el.focus(); }
+            if (root) _navLastIndexByRoot.set(root, index);
         }
 
         // Screen root id -> its Back/Cancel button id.
@@ -3781,16 +3788,20 @@
             if (list.length === 0) { window._navRoot = root; return; }
 
             // Root changed since last poll (a new screen just opened, or a lobby sub-view
-            // switched) — reset focus to the first element. window._navFocusedIndex from the
-            // OLD root means nothing when paired with the NEW root's list (it's just a
-            // position, not a stable reference), so setNavFocus's own list[index] lookup for
-            // "prev" can't find the actually-focused element — it's hidden in the old root's
-            // DOM subtree, not this one. Strip .gp-focused wherever it really lives first.
+            // switched) — restore whatever index was last focused on THIS root (or 0 if it's
+            // never been visited), rather than always resetting to the first element.
+            // window._navFocusedIndex from the OLD root means nothing when paired with the NEW
+            // root's list (it's just a position, not a stable reference), so setNavFocus's own
+            // list[index] lookup for "prev" can't find the actually-focused element — it's
+            // hidden in the old root's DOM subtree, not this one. Strip .gp-focused wherever it
+            // really lives first.
             const rootJustOpened = root !== window._navRoot;
             if (rootJustOpened) {
                 window._navRoot = root;
                 document.querySelectorAll('.gp-focused').forEach(el => el.classList.remove('gp-focused'));
-                setNavFocus(list, 0);
+                const remembered = _navLastIndexByRoot.get(root);
+                const startIndex = (typeof remembered === 'number' && remembered < list.length) ? remembered : 0;
+                setNavFocus(list, startIndex, root);
             }
 
             const pressed = (i) => !!(gp.buttons[i] && gp.buttons[i].pressed);
@@ -3828,11 +3839,11 @@
 
             if (upEdge) {
                 const next = (window._navFocusedIndex - 1 + list.length) % list.length;
-                setNavFocus(list, next);
+                setNavFocus(list, next, root);
                 if (window.ToneSFX) ToneSFX.uiHover();
             } else if (downEdge) {
                 const next = (window._navFocusedIndex + 1) % list.length;
-                setNavFocus(list, next);
+                setNavFocus(list, next, root);
                 if (window.ToneSFX) ToneSFX.uiHover();
             }
 
@@ -3939,8 +3950,10 @@
                 const m = { 0: 'B', 1: 'A', 2: 'Y', 3: 'X' };
                 return `<span class="pgl nt">${m[idx] || '?'}</span>`;
             }
-            const m = { 0: '&#9660;', 1: '&#9654;', 2: '&#9664;', 3: '&#9650;' };  // generic: directional-ish
-            return `<span class="pgl gen">${m[idx] || '&#9679;'}</span>`;
+            // Unrecognized vendor: plain Xbox-style letters, not ambiguous directional arrows —
+            // a letter is legible at a glance even when we can't confidently ID the exact pad.
+            const m = { 0: 'A', 1: 'B', 2: 'X', 3: 'Y' };
+            return `<span class="pgl gen">${m[idx] || '?'}</span>`;
         }
         function updateHudInputHints() {
             const forced = window._hudForceType || null;   // ?hud=xbox|playstation|nintendo preview override
@@ -4025,9 +4038,18 @@
         }, true);
         // Actual mouse MOVEMENT (not just a click) is the real signal a physical mouse is back in
         // play — this is what brings the OS cursor back the instant the player nudges it, rather
-        // than waiting for them to click something first.
-        document.addEventListener('mousemove', () => {
+        // than waiting for them to click something first. Requires a real pixel delta, not just
+        // any mousemove event: some setups fire spurious/near-zero-movement mousemove events
+        // (trackpad sensor noise, a resting hand, or the browser re-dispatching one on unrelated
+        // DOM changes) which would otherwise fight a controller that's actively being used —
+        // every real button press flips to 'pad', then an incidental mousemove immediately flips
+        // it straight back, so the pad glyphs/hidden-cursor state never actually stick.
+        let _lastMouseX = null, _lastMouseY = null;
+        document.addEventListener('mousemove', (e) => {
             if (window._hudForceType) return;
+            const moved = _lastMouseX === null || Math.abs(e.clientX - _lastMouseX) > 3 || Math.abs(e.clientY - _lastMouseY) > 3;
+            _lastMouseX = e.clientX; _lastMouseY = e.clientY;
+            if (!moved) return;
             if (window._lastInputMode !== 'keyboard') { setLastInputMode('keyboard'); updateHudInputHints(); if (window.renderGamepadPromptBar) renderGamepadPromptBar(); }
         }, true);
         // Preview override: load ...index.html?hud=xbox|playstation|nintendo|generic to SEE the glyphs
