@@ -13,3 +13,4 @@ models/p4/
 # junk / scratch
 grep.exe.stackdump
 .pickle/
+.superpowers/
