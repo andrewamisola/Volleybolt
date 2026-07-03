@@ -8702,6 +8702,32 @@
                                 setTimeout(() => loadingScreen.style.display = 'none', 500);
                                 showMainMenu();
                             }, { once: true });
+
+                            // Gamepad support for this screen — it's a one-shot full-screen click
+                            // target, not a list of menu items, so it doesn't go through the
+                            // generic pollGamepadMenuNav() navigator (built for that shape) at all.
+                            // This small self-contained poll: (1) shows the real controller glyph
+                            // in the prompt once a pad is detected, and (2) treats ANY pressed
+                            // button as "start", synthesizing the same click() the mouse path uses
+                            // so the audio-unlock timeout safety net above still applies unchanged.
+                            (function pollLoadingScreenGamepad() {
+                                if (loadingScreen.classList.contains('hidden') || loadingScreen.style.display === 'none') return;
+                                if (navigator.getGamepads) {
+                                    const pads = navigator.getGamepads();
+                                    let gp = null;
+                                    for (let i = 0; i < pads.length; i++) { if (pads[i]) { gp = pads[i]; break; } }
+                                    if (gp) {
+                                        if (!loadingScreen.dataset.gpShown) {
+                                            const type = detectPadType(gp.id);
+                                            document.getElementById('loadingText').innerHTML =
+                                                'Click or Press ' + padGlyphHTML(type, 0) + ' to Start';
+                                            loadingScreen.dataset.gpShown = '1';
+                                        }
+                                        if (gp.buttons.some(b => b && b.pressed)) { loadingScreen.click(); return; }
+                                    }
+                                }
+                                requestAnimationFrame(pollLoadingScreenGamepad);
+                            })();
                         }
                     }, 200);  // 200ms for animations to be fully ready
                 }
