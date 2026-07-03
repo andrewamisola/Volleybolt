@@ -13522,7 +13522,10 @@
                 // deliberately leaves `paused` false (can't pause a P2P peer), so this guard would otherwise
                 // reach here and wipe the pause overlay's just-set prompts every frame. isAnyMenuOpen() is
                 // the authoritative "is any menu/overlay open" check (Task 3) and covers PvP pause too.
-                if (window.setGamepadPrompts && !window.isAnyMenuOpen?.() && document.getElementById('gamepadPromptBar')?.innerHTML) {
+                // The innerHTML check runs FIRST (one cheap DOM lookup, almost always empty/false after
+                // the first live-gameplay frame) so isAnyMenuOpen()'s ~10 DOM lookups only run on the
+                // rare frame there's actually something to clear — this guard runs every gameplay frame.
+                if (window.setGamepadPrompts && document.getElementById('gamepadPromptBar')?.innerHTML && !window.isAnyMenuOpen?.()) {
                     setGamepadPrompts([]);   // clear once, first frame of live gameplay — ability bar owns hints now
                 }
                 pollGamepadInput();   // translate gamepad -> same keyboard input channels (once per frame, for edge detection)
@@ -13972,6 +13975,24 @@
                 if (this.state !== 'pause') return;
                 paused = false;
                 this.state = 'match';
+                // Whatever button triggered this resume (pad A via the menu-confirm click on
+                // "Resume", or pad Start via handleMenuOrPauseToggle) can still be physically held
+                // on this very frame. pollGamepadInput() runs again the instant stepFixedSim resumes
+                // and its edge detection (_padPrev) is stale from before the pause began, so a still
+                // -held button reads as a brand-new press — firing a spell (if it was A/slot1) or
+                // immediately re-toggling pause (if it was Start) the same frame control returns.
+                // Reseed to the CURRENT physical state so held buttons aren't mistaken for fresh
+                // presses — mirrors the _navPadPrev seed already used for the same reason (Task 5).
+                if (navigator.getGamepads) {
+                    const pads = navigator.getGamepads();
+                    let gp = null;
+                    for (let i = 0; i < pads.length; i++) { if (pads[i]) { gp = pads[i]; break; } }
+                    if (gp) {
+                        [GP.slot0, GP.slot1, GP.slot2, GP.ult, GP.parry, 9].forEach(i => {
+                            _padPrev[i] = !!(gp.buttons[i] && gp.buttons[i].pressed);
+                        });
+                    }
+                }
                 const ov = document.getElementById('pauseOverlay');
                 if (ov) ov.style.display = 'none';
             },
