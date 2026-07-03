@@ -7227,6 +7227,55 @@
             // around the arena feels inviting (storybook), not empty.
             scene.clearColor = new BABYLON.Color4(0.27, 0.21, 0.30, 1);
 
+            // Full-map forest backdrop (Andrew's painted extension of the arena) rendered
+            // BEHIND all meshes, inside the 3D pass — so the PS1 dither/low-res grade hits
+            // it too and the arena + HUD sit on top.
+            const backdropLayer = new BABYLON.Layer('forestBackdrop', 'textures/backdrop_forest.jpg', scene, true);
+            backdropLayer.isEnabled = true;
+            window.backdropLayer = backdropLayer;
+
+            // Self-aligning backdrop: the art continues the arena, so its painted rails must
+            // land exactly on the real walls. Each frame we project the walls (z = ±halfDepth)
+            // to screen and solve the layer texture's vScale/vOffset so the painted rail rows
+            // map onto them; uScale/uOffset then preserve the art's aspect, centered. Handles
+            // any window size, render scale, and the PvP 180° camera flip (vScale just goes
+            // negative). Nudge BACKDROP_RAIL_* if the art's registration ever changes.
+            const BACKDROP_FAR_RAIL_T  = 294 / 768;    // painted far-rail center, fraction from image top
+            const BACKDROP_NEAR_RAIL_T = 492 / 768;    // painted near-rail center
+            const BACKDROP_IMG_ASPECT  = 768 / 1376;   // imgH / imgW
+            window.alignBackdrop = () => {
+                const layer = window.backdropLayer;
+                if (!layer || !layer.texture || !scene.activeCamera) return;
+                const eng = scene.getEngine();
+                const rw = eng.getRenderWidth(), rh = eng.getRenderHeight();
+                if (!rw || !rh) return;
+                const halfD = (window.getEffectiveTableDepth ? getEffectiveTableDepth() : 14) / 2;
+                // Fresh view matrix: the shake moves camera.target during onBeforeRender,
+                // and the scene's cached transform still holds last frame's camera. Forcing
+                // the recompute keeps the backdrop shaking in lockstep with the stage.
+                const cam = scene.activeCamera;
+                const transform = cam.getViewMatrix(true).multiply(cam.getProjectionMatrix(true));
+                const proj = (z) => BABYLON.Vector3.Project(
+                    new BABYLON.Vector3(0, 0, z), BABYLON.Matrix.Identity(),
+                    transform,
+                    cam.viewport.toGlobal(rw, rh));
+                const sFar  = proj(-halfD).y / rh;   // wall screen positions, fraction from top
+                const sNear = proj(halfD).y / rh;
+                if (Math.abs(sFar - sNear) < 0.01) return;   // degenerate (menu camera edge-on)
+                // The Layer quad samples with v increasing UP the screen while image rows
+                // count DOWN, so the mapping needs a negative vScale (verified by pixel
+                // correlation against the source art — positive scale renders it flipped).
+                let vScale = (BACKDROP_NEAR_RAIL_T - BACKDROP_FAR_RAIL_T) / (sNear - sFar);
+                let vOffset = BACKDROP_FAR_RAIL_T - sFar * vScale;
+                vScale = -vScale; vOffset = 1 - vOffset;
+                const uScale = Math.abs(vScale) * BACKDROP_IMG_ASPECT * (rw / rh);
+                const t = layer.texture;
+                t.wrapU = BABYLON.Texture.CLAMP_ADDRESSMODE;
+                t.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;
+                t.vScale = vScale; t.vOffset = vOffset;
+                t.uScale = uScale; t.uOffset = (1 - uScale) / 2;
+            };
+
             // ============================================================
             // LIGHTING - Diablo 2 style (dark, warm, high contrast)
             // ============================================================
@@ -10548,6 +10597,35 @@
             const playerBackdrop = createBackdrop(true);
             const aiBackdrop = createBackdrop(false);
 
+            // --- Tower placement: group every end-structure mesh under one root per side
+            // so the whole tower can be nudged as a unit to sit flush against the stage.
+            // Visual only: the sim's gate line is an X constant and never reads these meshes.
+            // Tune live: setTowerOffset(hugX, upZ) — hugX slides both towers toward the
+            // stage, upZ slides them up-screen (negative z = up).
+            {
+                const towerRootP = new BABYLON.TransformNode('playerTowerRoot', scene);
+                const towerRootA = new BABYLON.TransformNode('aiTowerRoot', scene);
+                const isTowerPiece = /(Brick_|Buttress_|Merlon_|Slit_|Archway|ArchTop|Foundation|Keep|Parapet|Roof|Backdrop)/;
+                scene.meshes.forEach(m => {
+                    if (!m.name || m.parent) return;
+                    if (m.name.startsWith('player') && isTowerPiece.test(m.name)) m.parent = towerRootP;
+                    else if (m.name.startsWith('ai') && isTowerPiece.test(m.name)) m.parent = towerRootA;
+                    else if (m.name.startsWith('pKM')) m.parent = towerRootP;
+                    else if (m.name.startsWith('aKM')) m.parent = towerRootA;
+                });
+                const blueBaseMesh = scene.getMeshByName('blueBase');
+                const redBaseMesh = scene.getMeshByName('redBase');
+                if (blueBaseMesh) blueBaseMesh.parent = towerRootP;
+                if (redBaseMesh) redBaseMesh.parent = towerRootA;
+                window.setTowerOffset = (hugX = 0, upZ = 0) => {
+                    towerRootP.position.set(hugX, 0, upZ);
+                    towerRootA.position.set(-hugX, 0, upZ);
+                };
+                // Tuned against the painted backdrop: hug the stage ends and lift so the
+                // base slabs meet the top rail with no backdrop sliver showing through.
+                window.setTowerOffset(0.4, -1.0);
+            }
+
             // Load castle wall texture for team-colored surfaces
             const loadTeamTextures = () => {
                 const teamTex = new BABYLON.Texture("textures/castle_wall.png?v=3", scene, false, true,
@@ -12836,9 +12914,10 @@
             const cameraBasePosition = new BABYLON.Vector3(0, 0, 0);
             window.cameraBasePosition = cameraBasePosition;  // Expose for camera transitions
 
+            const SHAKE_SCALE = 0.55;   // global damping — full-screen shake reads stronger, so ease off
             window.screenShake = (intensity = 0.3, duration = 0.2) => {
                 if (window._reduceMotion) return;   // no camera shake under Reduce Motion
-                shakeIntensity = intensity;
+                shakeIntensity = intensity * SHAKE_SCALE;
                 shakeDuration = duration;
             };
 
@@ -12857,6 +12936,14 @@
                 } else {
                     camera.target = cameraBasePosition;
                 }
+            });
+
+            // Re-register the backdrop AFTER the shake has moved the camera this frame, so
+            // the painted forest shakes in lockstep with the stage (a screen-space layer
+            // doesn't follow the camera on its own — this observable runs after the shake
+            // one because it's registered later).
+            scene.onBeforeRenderObservable.add(() => {
+                if (window.alignBackdrop) alignBackdrop();
             });
 
             // --- IMPACT DECALS ---
