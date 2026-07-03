@@ -1752,6 +1752,37 @@ body.flipped-view #aiCastBarContainer {
     transform: translateY(-2px);
 }
 
+/* Gamepad/keyboard focus — mirrors the mouse-hover look (same border/color/lift) plus the same
+   ▶ arrow used to mark the selected spell in the in-game command menu, so menu selection and
+   battle-command selection read as one visual language. Applies to BOTH .gp-focused (set by the
+   gamepad navigator, Task 4) and native :focus-visible (Tab/keyboard users get the same look for
+   free — native <button>/<input> elements are already keyboard-focusable with no extra JS). */
+.game-btn.gp-focused:not(:disabled),
+.game-btn:focus-visible:not(:disabled) {
+    border-color: #ffffff;
+    color: #fff4c2;
+    transform: translateY(-2px);
+    outline: none;
+}
+.game-btn.gp-focused:not(:disabled)::before,
+.game-btn:focus-visible:not(:disabled)::before {
+    content: '\25B6';
+    color: #f0c050;
+    position: absolute;
+    left: -22px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+.settings-slider.gp-focused,
+.settings-slider:focus-visible,
+.settings-toggle.gp-focused,
+.settings-toggle:focus-visible,
+.fps-cycler.gp-focused,
+.fps-cycler:focus-visible {
+    outline: 2px solid #fff4c2;
+    outline-offset: 2px;
+}
+
 .game-btn:active:not(:disabled) {
     transform: translateY(1px);
 }

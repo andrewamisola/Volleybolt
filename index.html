@@ -3693,6 +3693,91 @@
         }
         window.pollGamepadInput = pollGamepadInput;
 
+        // ============================================================
+        // GAMEPAD MENU NAVIGATION (generic, drives every menu screen)
+        // ============================================================
+        window._navRoot = null;          // the screen root isAnyMenuOpen() last returned
+        window._navFocusedIndex = 0;
+        const _navPadPrev = {};
+
+        // Hold-to-repeat for the four directions (old console menu feel): fires immediately on
+        // first press, then again after NAV_REPEAT_DELAY, then every NAV_REPEAT_RATE while held.
+        // Confirm/back stay one-shot (_navPadPrev above) — a held A/B shouldn't machine-gun.
+        const NAV_REPEAT_DELAY = 400;
+        const NAV_REPEAT_RATE = 120;
+        const _navHoldState = {};   // { up: {since, lastFire}, down: {...}, left: {...}, right: {...} }
+        function navDirEdge(name, isDown) {
+            const now = performance.now();
+            const st = _navHoldState[name] || (_navHoldState[name] = { since: 0, lastFire: 0 });
+            if (!isDown) { st.since = 0; return false; }
+            if (st.since === 0) { st.since = now; st.lastFire = now; return true; }   // fresh press
+            const held = now - st.since;
+            if (held >= NAV_REPEAT_DELAY && (now - st.lastFire) >= NAV_REPEAT_RATE) { st.lastFire = now; return true; }
+            return false;
+        }
+
+        // Elements the navigator will move focus between, in DOM order. Text inputs are
+        // deliberately excluded — no on-screen keyboard in this pass.
+        function getNavFocusables(root) {
+            if (!root) return [];
+            return Array.from(root.querySelectorAll(
+                '.menu-btn:not([disabled]), input[type="range"], input[type="checkbox"], .fps-cycler'
+            )).filter(el => el.offsetParent !== null);   // skip anything display:none-hidden
+        }
+
+        function setNavFocus(list, index) {
+            const prev = list[window._navFocusedIndex];
+            if (prev) prev.classList.remove('gp-focused');
+            window._navFocusedIndex = index;
+            const el = list[index];
+            if (el) { el.classList.add('gp-focused'); el.focus(); }
+        }
+
+        function pollGamepadMenuNav() {
+            const root = isAnyMenuOpen();
+            if (!root) { window._navRoot = null; return; }
+
+            if (!navigator.getGamepads) return;
+            const pads = navigator.getGamepads();
+            let gp = null;
+            for (let i = 0; i < pads.length; i++) { if (pads[i]) { gp = pads[i]; break; } }
+            if (!gp) return;
+
+            const list = getNavFocusables(root);
+            if (list.length === 0) { window._navRoot = root; return; }
+
+            // Root changed since last poll (a new screen just opened, or a lobby sub-view
+            // switched) — reset focus to the first element.
+            if (root !== window._navRoot) {
+                window._navRoot = root;
+                window._navFocusedIndex = 0;
+                setNavFocus(list, 0);
+            }
+
+            const pressed = (i) => !!(gp.buttons[i] && gp.buttons[i].pressed);
+            const ax = gp.axes[GP.stickY] || 0;
+            const upNow   = pressed(GP.dpadUp)   || ax < -0.5;
+            const downNow = pressed(GP.dpadDown) || ax >  0.5;
+            const upEdge   = navDirEdge('up', upNow);
+            const downEdge = navDirEdge('down', downNow);
+            // Note: switching window._lastInputMode to 'pad' on first input is handled once, at
+            // the very end of this function (added in Task 8) — not here. All four directions
+            // plus confirm/back/start need to have been computed first; checking this early would
+            // reference leftEdge/rightEdge (Task 6) before their `const` declarations run later in
+            // this same function body (a ReferenceError — the temporal dead zone).
+
+            if (upEdge) {
+                const next = (window._navFocusedIndex - 1 + list.length) % list.length;
+                setNavFocus(list, next);
+                if (window.ToneSFX) ToneSFX.uiHover();
+            } else if (downEdge) {
+                const next = (window._navFocusedIndex + 1) % list.length;
+                setNavFocus(list, next);
+                if (window.ToneSFX) ToneSFX.uiHover();
+            }
+        }
+        window.pollGamepadMenuNav = pollGamepadMenuNav;
+
         // ---- In-game HUD: ability-key labels follow the last input device used ----
         // Keyboard shows 1/2/3/Space; controller shows that pad's glyphs (by button index, so bindings
         // never change). Positional: slot 0/1/2 = fireball/frostbolt/thunderstorm regardless of loadout.
@@ -13088,6 +13173,9 @@
 
                 // Debug hide-HUD: re-hide GUI HUD controls that event-driven code re-shows
                 if (window.enforceHudHidden) window.enforceHudHidden();
+
+                // Drive gamepad menu navigation whenever a menu/overlay is open (no-ops otherwise)
+                if (window.pollGamepadMenuNav) window.pollGamepadMenuNav();
 
                 // Retired Babylon GUI menu (title/container/left-panel) — DOM owns the menu now,
                 // this legacy layer should only ever show gameState === 'menu'. It's normally
