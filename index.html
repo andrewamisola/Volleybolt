@@ -3629,14 +3629,22 @@
         // in-game HUD ability-key labels AND the menu prompt bar (Task 8) off one shared flag.
         window._lastInputMode = 'keyboard';
 
-        // Single write-point for _lastInputMode so the "hide the OS cursor while a controller is
-        // active" side effect can never be forgotten at a call site — most games do this so the
-        // stale mouse pointer doesn't sit next to the on-screen focus highlight. The cursor
-        // reappears the instant the mouse actually moves (see the mousemove listener below).
+        // Single write-point for _lastInputMode. Every UI that shows a button hint (ability bar,
+        // prompt bar, in-battle COMMAND window) refreshes HERE, not at each of the many call
+        // sites that flip the mode — the COMMAND window went completely unwired for this entire
+        // session specifically because its refresh call lived nowhere near this flag, so nobody
+        // remembered to add it. Centralizing closes that whole class of bug: any future UI that
+        // needs to react to input-device changes hooks in once, here, and can't be silently
+        // missed at a call site again. (Functions are looked up defensively via `window.X` since
+        // they're defined later in the script than this point — harmless, since this function's
+        // BODY only ever runs long after the full script has parsed.)
         function setLastInputMode(mode) {
             if (window._lastInputMode === mode) return;
             window._lastInputMode = mode;
             document.body.classList.toggle('gp-cursor-hidden', mode === 'pad');
+            if (window.updateHudInputHints) updateHudInputHints();
+            if (window.renderGamepadPromptBar) renderGamepadPromptBar();
+            if (window.updateCommandMenuInputHints) updateCommandMenuInputHints();
         }
         window.setLastInputMode = setLastInputMode;
 
@@ -3681,7 +3689,7 @@
 
             // The moment the pad is actually used, switch the HUD ability labels to controller glyphs.
             const anyPadBtn = pressed(GP.slot0) || pressed(GP.slot1) || pressed(GP.slot2) || pressed(GP.ult) || pressed(GP.parry);
-            if ((anyPadBtn || window._padMoveDir !== 0) && window._lastInputMode !== 'pad') { setLastInputMode('pad'); updateHudInputHints(); }
+            if ((anyPadBtn || window._padMoveDir !== 0) && window._lastInputMode !== 'pad') { setLastInputMode('pad'); }
 
             // Edge helpers.
             const isPress   = (i) => pressed(i) && !_padPrev[i];
@@ -3907,14 +3915,12 @@
             _navPadPrev.start = startNow;
 
             // First pad input this poll (any direction or button) switches the shared input-mode
-            // flag and refreshes both the ability-bar glyphs and this prompt bar. Checked last, now
-            // that upEdge/downEdge (Task 4), leftEdge/rightEdge (Task 6), and confirmNow/backNow/
-            // startNow (Task 5) have all been computed above.
+            // flag, which centrally refreshes the ability bar / prompt bar / command menu. Checked
+            // last, now that upEdge/downEdge (Task 4), leftEdge/rightEdge (Task 6), and confirmNow/
+            // backNow/startNow (Task 5) have all been computed above.
             if ((upEdge || downEdge || leftEdge || rightEdge || confirmNow || backNow || startNow)
                 && window._lastInputMode !== 'pad') {
                 setLastInputMode('pad');
-                if (window.updateHudInputHints) updateHudInputHints();
-                if (window.renderGamepadPromptBar) renderGamepadPromptBar();
             }
         }
         window.pollGamepadMenuNav = pollGamepadMenuNav;
@@ -4028,13 +4034,13 @@
         // Any gameplay key press flips the HUD back to keyboard glyphs (capture so it always runs).
         document.addEventListener('keydown', () => {
             if (window._hudForceType) return;   // preview override stays put
-            if (window._lastInputMode !== 'keyboard') { setLastInputMode('keyboard'); updateHudInputHints(); if (window.renderGamepadPromptBar) renderGamepadPromptBar(); }
+            if (window._lastInputMode !== 'keyboard') { setLastInputMode('keyboard'); }
         }, true);
         // A mouse click also means "back to keyboard/mouse" — swaps the prompt bar (Task 8) and
         // ability-bar glyphs back to keyboard hints if the player picks the mouse back up.
         document.addEventListener('click', () => {
             if (window._hudForceType) return;
-            if (window._lastInputMode !== 'keyboard') { setLastInputMode('keyboard'); updateHudInputHints(); if (window.renderGamepadPromptBar) renderGamepadPromptBar(); }
+            if (window._lastInputMode !== 'keyboard') { setLastInputMode('keyboard'); }
         }, true);
         // Actual mouse MOVEMENT (not just a click) is the real signal a physical mouse is back in
         // play — this is what brings the OS cursor back the instant the player nudges it, rather
@@ -4050,7 +4056,7 @@
             const moved = _lastMouseX === null || Math.abs(e.clientX - _lastMouseX) > 3 || Math.abs(e.clientY - _lastMouseY) > 3;
             _lastMouseX = e.clientX; _lastMouseY = e.clientY;
             if (!moved) return;
-            if (window._lastInputMode !== 'keyboard') { setLastInputMode('keyboard'); updateHudInputHints(); if (window.renderGamepadPromptBar) renderGamepadPromptBar(); }
+            if (window._lastInputMode !== 'keyboard') { setLastInputMode('keyboard'); }
         }, true);
         // Preview override: load ...index.html?hud=xbox|playstation|nintendo|generic to SEE the glyphs
         // in the real game HUD without a controller (harmless in normal play with no param).
@@ -6042,6 +6048,33 @@
                 };
                 // Parry is ready at match start (before any parry event fires).
                 applyState(cmdRefs.find(r => r.id === 'parry'), 'castable');
+
+                // This "COMMAND" window is a completely separate Babylon GUI render from the DOM
+                // .ability-key HUD (updateHudInputHints) — it never got wired to the controller-
+                // glyph system, so its key badges stayed hardcoded to 1/2/3/␣ regardless of input
+                // device. Babylon GUI TextBlocks can't render HTML (no colored padGlyphHTML chips
+                // here), so this uses PAD_LABELS' plain-text labels instead — exactly the "just
+                // put plain text, A B Y X" fallback already used elsewhere.
+                const CMD_KEY_IDX = { fireball: GP.slot0, frostbolt: GP.slot1, thunderstorm: GP.slot2, parry: GP.parry };
+                const CMD_KEY_KBD = { fireball: '1', frostbolt: '2', thunderstorm: '3', parry: '␣' };
+                function updateCommandMenuInputHints() {
+                    const forced = window._hudForceType || null;
+                    const usePad = forced ? true : (window._lastInputMode === 'pad');
+                    let type = forced;
+                    if (!type && usePad && navigator.getGamepads) {
+                        let id = ''; const pads = navigator.getGamepads();
+                        for (let i = 0; i < pads.length; i++) { if (pads[i]) { id = pads[i].id; break; } }
+                        type = detectPadType(id);
+                    }
+                    for (const ref of cmdRefs) {
+                        const label = (usePad && type && PAD_LABELS[type][CMD_KEY_IDX[ref.id]])
+                            || CMD_KEY_KBD[ref.id];
+                        ref.keyText.text = label;
+                        ref.keyText.top = (label === '␣') ? "-5px" : "0px";   // '␣' renders low, needs the lift
+                        ref.keyBadge.width = (label.length > 1 ? Math.max(40, label.length * 9 + 14) : 26) + "px";
+                    }
+                }
+                window.updateCommandMenuInputHints = updateCommandMenuInputHints;
 
                 // ----- Spell Info window: the dead-CENTER steel window of the trio. Persistent;
                 // shows the hovered spell's stats + description (defaults to the first spell). -----
