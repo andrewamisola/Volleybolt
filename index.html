@@ -593,6 +593,11 @@
 
     <!-- Upgrade Points HUD + Talent Selection Panel REMOVED (2026-06-29) with the talent system. -->
     </div><!-- /hudScaleLayer -->
+
+        <!-- Gamepad/keyboard prompt bar — bottom-right, always visible while a menu is open
+             (Task 9 wires each screen to call window.setGamepadPrompts). Purely informational:
+             pointer-events none so it never blocks a click underneath it. -->
+        <div id="gamepadPromptBar"></div>
     </div><!-- /gameContainer -->
 
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
@@ -3873,6 +3878,17 @@
             const startNow = pressed(9);
             if (startNow && !_navPadPrev.start) handleMenuOrPauseToggle();
             _navPadPrev.start = startNow;
+
+            // First pad input this poll (any direction or button) switches the shared input-mode
+            // flag and refreshes both the ability-bar glyphs and this prompt bar. Checked last, now
+            // that upEdge/downEdge (Task 4), leftEdge/rightEdge (Task 6), and confirmNow/backNow/
+            // startNow (Task 5) have all been computed above.
+            if ((upEdge || downEdge || leftEdge || rightEdge || confirmNow || backNow || startNow)
+                && window._lastInputMode !== 'pad') {
+                window._lastInputMode = 'pad';
+                if (window.updateHudInputHints) updateHudInputHints();
+                if (window.renderGamepadPromptBar) renderGamepadPromptBar();
+            }
         }
         window.pollGamepadMenuNav = pollGamepadMenuNav;
 
@@ -3927,16 +3943,69 @@
             }
         }
         window.updateHudInputHints = updateHudInputHints;
+
+        // ---- Prompt bar: resolves an action name to a keyboard OR pad-glyph label ----
+        // Reuses padGlyphHTML for confirm/back (real vendor-colored face-button chips — these
+        // are the only two actions where the vendor glyph actually differs meaningfully).
+        // navigate/adjust/page use plain arrow glyphs, which don't vary by vendor.
+        const PROMPT_KEYBOARD = {
+            navigate: { glyph: '↑↓', label: 'Navigate' },
+            confirm:  { glyph: 'Enter', label: 'Select' },
+            back:     { glyph: 'Esc', label: 'Back' },
+            adjust:   { glyph: '←→', label: 'Adjust' },
+            page:     { glyph: '←→', label: 'Page' },
+        };
+        let _gpPromptEntries = [];
+        function renderGamepadPromptBar() {
+            const bar = document.getElementById('gamepadPromptBar');
+            if (!bar) return;
+            const usePad = window._lastInputMode === 'pad';
+            let padType = 'generic';
+            if (usePad && navigator.getGamepads) {
+                let id = ''; const pads = navigator.getGamepads();
+                for (let i = 0; i < pads.length; i++) { if (pads[i]) { id = pads[i].id; break; } }
+                padType = detectPadType(id);
+            }
+            bar.innerHTML = _gpPromptEntries.map(entry => {
+                const kb = PROMPT_KEYBOARD[entry.action] || { glyph: '?', label: entry.action };
+                if (!usePad) {
+                    return '<span class="gp-prompt-item"><span class="gp-prompt-glyph">' + kb.glyph + '</span>' + kb.label + '</span>';
+                }
+                if (entry.action === 'confirm') {
+                    // Literal index 0 (bottom face button) — matches Task 5's `pressed(0)` confirm
+                    // check exactly. Deliberately NOT GP.slot1: that constant means "frostbolt's
+                    // ability slot" for gameplay and only coincidentally equals 0; borrowing it
+                    // here would silently break the prompt bar if gameplay rebalancing ever moves it.
+                    return '<span class="gp-prompt-item">' + padGlyphHTML(padType, 0) + '<span>Select</span></span>';
+                }
+                if (entry.action === 'back') {
+                    // Literal index 1 (right face button) — matches Task 5's `pressed(1)` back
+                    // check exactly. NOT GP.parry (index 5, the shoulder button) — that would show
+                    // the player the wrong button entirely.
+                    return '<span class="gp-prompt-item">' + padGlyphHTML(padType, 1) + '<span>Back</span></span>';
+                }
+                // navigate/adjust/page: pad-agnostic D-pad glyphs (Standard Gamepad D-pad doesn't
+                // vary by vendor the way face buttons do).
+                const dpadGlyph = (entry.action === 'navigate') ? '↑↓' : '←→';
+                return '<span class="gp-prompt-item"><span class="gp-prompt-glyph">' + dpadGlyph + '</span>' + kb.label + '</span>';
+            }).join('');
+        }
+        window.setGamepadPrompts = function (entries) {
+            _gpPromptEntries = entries || [];
+            renderGamepadPromptBar();
+        };
+        window.renderGamepadPromptBar = renderGamepadPromptBar;   // re-render on input-mode flips (Step 4)
+
         // Any gameplay key press flips the HUD back to keyboard glyphs (capture so it always runs).
         document.addEventListener('keydown', () => {
             if (window._hudForceType) return;   // preview override stays put
-            if (window._lastInputMode !== 'keyboard') { window._lastInputMode = 'keyboard'; updateHudInputHints(); }
+            if (window._lastInputMode !== 'keyboard') { window._lastInputMode = 'keyboard'; updateHudInputHints(); if (window.renderGamepadPromptBar) renderGamepadPromptBar(); }
         }, true);
         // A mouse click also means "back to keyboard/mouse" — swaps the prompt bar (Task 8) and
         // ability-bar glyphs back to keyboard hints if the player picks the mouse back up.
         document.addEventListener('click', () => {
             if (window._hudForceType) return;
-            if (window._lastInputMode !== 'keyboard') { window._lastInputMode = 'keyboard'; updateHudInputHints(); }
+            if (window._lastInputMode !== 'keyboard') { window._lastInputMode = 'keyboard'; updateHudInputHints(); if (window.renderGamepadPromptBar) renderGamepadPromptBar(); }
         }, true);
         // Preview override: load ...index.html?hud=xbox|playstation|nintendo|generic to SEE the glyphs
         // in the real game HUD without a controller (harmless in normal play with no param).

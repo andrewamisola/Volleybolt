@@ -2715,3 +2715,39 @@ body.flipped-view #aiCastBarContainer {
     font-family: 'FF9UI', sans-serif; font-size: 20px; color: #e7ecf6; text-shadow: var(--ff9-shadow);
 }
 .career-row > .career-val { color: var(--ff9-gold); }
+
+/* ============================================================
+   GAMEPAD/KEYBOARD PROMPT BAR — bottom-right, matches the steel-panel
+   HUD window look (command/status windows), swaps content live.
+   ============================================================ */
+#gamepadPromptBar {
+    position: absolute;
+    right: 24px;
+    bottom: 24px;
+    display: flex;
+    gap: 16px;
+    pointer-events: none;
+    z-index: 250;   /* above .arcane-overlay (200), below the pause overlay (700) */
+}
+#gamepadPromptBar .gp-prompt-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'FF9UI', sans-serif;
+    font-size: 14px;
+    color: #dfe6f2;
+    text-shadow: var(--ff9-shadow, 2px 2px 0 #000);
+}
+#gamepadPromptBar .gp-prompt-glyph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 4px;
+    border-radius: 4px;
+    background: rgba(20,26,40,0.82);
+    border: 1px solid #5a4a78;
+    font-size: 12px;
+    font-weight: 700;
+}
