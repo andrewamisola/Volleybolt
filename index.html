@@ -166,7 +166,7 @@
                     <input type="range" class="settings-slider" id="setRenderScale" min="50" max="150" step="25">
                     <span id="setRenderScaleVal" style="min-width:5.5em;text-align:right">100% · native</span></label>
                 <div class="settings-row"><span>FPS Cap</span>
-                    <div class="fps-cycler">
+                    <div class="fps-cycler" tabindex="0">
                         <button class="fps-arrow" id="setFpsCapPrev" aria-label="Previous FPS option">&#9664;</button>
                         <span class="fps-val" id="setFpsCapVal">Uncapped</span>
                         <button class="fps-arrow" id="setFpsCapNext" aria-label="Next FPS option">&#9654;</button>
@@ -3809,6 +3809,32 @@
                 const next = (window._navFocusedIndex + 1) % list.length;
                 setNavFocus(list, next);
                 if (window.ToneSFX) ToneSFX.uiHover();
+            }
+
+            // Left/Right: adjust whatever's focused, or page the How-to-Play carousel (which
+            // pages regardless of focus, matching its existing ArrowLeft/Right keyboard handler).
+            // Same hold-to-repeat as up/down (navDirEdge, defined in Task 4).
+            const leftNow  = pressed(14);
+            const rightNow = pressed(15);
+            const leftEdge  = navDirEdge('left', leftNow);
+            const rightEdge = navDirEdge('right', rightNow);
+
+            if (leftEdge || rightEdge) {
+                if (root.id === 'howToPlayScreen' && window.htpSetPage && typeof window.htpPage === 'number') {
+                    htpSetPage(window.htpPage + (rightEdge ? 1 : -1));
+                    if (window.ToneSFX) ToneSFX.uiHover();
+                } else {
+                    const el = list[window._navFocusedIndex];
+                    if (el && el.tagName === 'INPUT' && el.type === 'range') {
+                        if (rightEdge) el.stepUp(); else el.stepDown();
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        if (window.ToneSFX) ToneSFX.uiHover();
+                    } else if (el && el.classList.contains('fps-cycler')) {
+                        const btn = document.getElementById(rightEdge ? 'setFpsCapNext' : 'setFpsCapPrev');
+                        if (btn) btn.click();
+                    }
+                }
             }
 
             // Confirm (bottom face button, index 0) — click the focused element, exactly what a
@@ -14470,28 +14496,28 @@
 
             // How to Play pager: arrows + dots + left/right keys, one concept per page.
             const htpPages = document.querySelectorAll('#howToPlayScreen .htp-page');
-            let htpPage = 0;
+            window.htpPage = 0;
             function htpSetPage(p) {
-                htpPage = Math.max(0, Math.min(htpPages.length - 1, p));
-                htpPages.forEach((el, i) => el.classList.toggle('active', i === htpPage));
+                window.htpPage = Math.max(0, Math.min(htpPages.length - 1, p));
+                htpPages.forEach((el, i) => el.classList.toggle('active', i === window.htpPage));
                 const dots = document.getElementById('htpDots');
                 if (dots) dots.innerHTML = Array.from(htpPages, (_, i) =>
-                    '<span class="htp-dot' + (i === htpPage ? ' active' : '') + '"></span>').join('');
+                    '<span class="htp-dot' + (i === window.htpPage ? ' active' : '') + '"></span>').join('');
                 const prev = document.getElementById('htpPrev');
                 const next = document.getElementById('htpNext');
-                if (prev) prev.disabled = (htpPage === 0);
-                if (next) next.disabled = (htpPage === htpPages.length - 1);
+                if (prev) prev.disabled = (window.htpPage === 0);
+                if (next) next.disabled = (window.htpPage === htpPages.length - 1);
             }
             window.htpSetPage = htpSetPage;
             const htpPrev = document.getElementById('htpPrev');
             const htpNext = document.getElementById('htpNext');
-            if (htpPrev) htpPrev.addEventListener('click', () => htpSetPage(htpPage - 1));
-            if (htpNext) htpNext.addEventListener('click', () => htpSetPage(htpPage + 1));
+            if (htpPrev) htpPrev.addEventListener('click', () => htpSetPage(window.htpPage - 1));
+            if (htpNext) htpNext.addEventListener('click', () => htpSetPage(window.htpPage + 1));
             document.addEventListener('keydown', (e) => {
                 const screen = document.getElementById('howToPlayScreen');
                 if (!screen || !screen.classList.contains('visible')) return;
                 if (e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
-                htpSetPage(htpPage + (e.code === 'ArrowRight' ? 1 : -1));
+                htpSetPage(window.htpPage + (e.code === 'ArrowRight' ? 1 : -1));
                 if (window.ToneSFX) ToneSFX.uiHover();   // cursor blip, matching the arrow buttons
                 e.preventDefault();
             });
