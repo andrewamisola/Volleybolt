@@ -7230,7 +7230,7 @@
             // Full-map forest backdrop (Andrew's painted extension of the arena) rendered
             // BEHIND all meshes, inside the 3D pass — so the PS1 dither/low-res grade hits
             // it too and the arena + HUD sit on top.
-            const backdropLayer = new BABYLON.Layer('forestBackdrop', 'textures/backdrop_forest.jpg', scene, true);
+            const backdropLayer = new BABYLON.Layer('forestBackdrop', 'textures/backdrop_forest.jpg?v=3', scene, true);
             backdropLayer.isEnabled = true;
             window.backdropLayer = backdropLayer;
 
@@ -7241,7 +7241,11 @@
             // any window size, render scale, and the PvP 180° camera flip (vScale just goes
             // negative). Nudge BACKDROP_RAIL_* if the art's registration ever changes.
             const BACKDROP_FAR_RAIL_T  = 294 / 768;    // painted far-rail center, fraction from image top
-            const BACKDROP_NEAR_RAIL_T = 492 / 768;    // painted near-rail center
+            // Near rail: pin the painted rail's TOP edge (row 486) to the wall line, not its
+            // center (492) — the extra dark-rail rows tuck under the real wall's bottom edge
+            // and hide the art's bright green grass fringe that otherwise peeks out beneath
+            // the stage (most visible during screen shake).
+            const BACKDROP_NEAR_RAIL_T = 486 / 768;
             const BACKDROP_IMG_ASPECT  = 768 / 1376;   // imgH / imgW
             window.alignBackdrop = () => {
                 const layer = window.backdropLayer;
@@ -7730,14 +7734,18 @@
             // === ARENA BORDER WALLS ===
             const borderHeight = 0.5;
             const borderDepth = 0.4;
+            // Walls extend BELOW ground (y=-0.3) to curtain off the arena floor box's grass
+            // side face, which otherwise peeks out as a bright green sliver under the rail
+            // (glaring against the painted backdrop, especially during screen shake).
+            const borderSkirt = 0.3;
 
             // Back wall (far from camera)
             const wallBack = BABYLON.MeshBuilder.CreateBox("wallBack", {
                 width: tableWidth,
-                height: borderHeight,
+                height: borderHeight + borderSkirt,
                 depth: borderDepth
             }, scene);
-            wallBack.position.set(0, borderHeight/2, -tableDepth/2 - borderDepth/2);
+            wallBack.position.set(0, (borderHeight - borderSkirt)/2, -tableDepth/2 - borderDepth/2);
             wallBack.material = wallStoneMat;
             // D2 style: only characters/projectiles cast shadows
             wallBack.receiveShadows = true;
@@ -7746,10 +7754,10 @@
             // Front wall (near camera)
             const wallFront = BABYLON.MeshBuilder.CreateBox("wallFront", {
                 width: tableWidth,
-                height: borderHeight,
+                height: borderHeight + borderSkirt,
                 depth: borderDepth
             }, scene);
-            wallFront.position.set(0, borderHeight/2, tableDepth/2 + borderDepth/2);
+            wallFront.position.set(0, (borderHeight - borderSkirt)/2, tableDepth/2 + borderDepth/2);
             wallFront.material = wallStoneMat;
             // D2 style: only characters/projectiles cast shadows
             wallFront.receiveShadows = true;
