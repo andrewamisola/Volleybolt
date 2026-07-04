@@ -12230,6 +12230,7 @@
             const goalX = tableWidth/2 + 1;
             let spFrameCounter = 0;   // deterministic fixed-step counter for the singles-AI think cadence (Phase 2.1)
             let aiViewHistory = [];   // ring of recent AI views for the reactionFrames input-lag (Phase 2.3 tune)
+            const aiThreatSight = {};   // projectile id → frames continuously incoming (driver-owned; keeps decideAI pure)
             const paddleHalfDepth = 1.25;
             const paddleHalfWidth = 0.2;
             // Perspective correction: expand hitbox based on character height and camera angle
@@ -12354,26 +12355,6 @@
                 };
             }
 
-            const DEFAULT_AI_PARAMS = {
-                reactionFrames:   5,      // WIRED (2.3): the AI acts on the world it saw N frames ago
-                                          //   (~85ms at 60Hz). The "can't block everything" lever — fast/multiple
-                                          //   incoming beat its late reaction. 9->5: the 150ms window broke
-                                          //   lead-prediction on bounced/re-angled balls (velZ changed mid-window),
-                                          //   making defense feel unreliable while things moved. Still human.
-                aimError:         1.4,    // POSITIONING error: max |Z| world-unit offset the paddle parks
-                                          //   off the true intercept (stable per BALL). Higher = misses blocks
-                                          //   more. 0.85->1.4: prediction now LEADS the ball (targets the real
-                                          //   impact point), so it needs more error to be beatable. (Old "1.2
-                                          //   too easy" was pre-prediction, when it aimed at the wrong spot.)
-                parryTimingError: 0.4,    // fraction of parry opportunities the AI whiffs (per-projectile,
-                                          //   deterministic). 0 = never whiffs, 1 = never parries. 0.25->0.4.
-                castAggression:   0.55,   // fraction of cast opportunities the AI takes (per think-cycle).
-                                          //   1.0 = casts every chance; 0.65->0.55 (ease offensive pressure).
-                thinkIntervalK:   22,     // think cadence: decide every K frames (~0.37s at 60Hz). Higher =
-                                          //   reacts slower / re-targets less often (feels less omnipresent).
-                                          //   Raised 13->22 (post-2.3 AI felt too fast/always in position).
-            };
-
             // Pure AI helpers — no mesh reads, no Math.random, no wall-clock.
 
             function _aiIncomingProjectiles(view) {
@@ -12405,125 +12386,92 @@
                 return _aiIncomingProjectiles(view).length === 0;
             }
 
-            // Reflect a Z coordinate into [-wall, wall] as if it bounced off the court walls
-            // (triangle wave). Pure — used to predict a ball's impact Z through any bounces.
-            function _reflectZ(z, wall) {
-                if (wall <= 0) return 0;
-                const span = 2 * wall;                 // court width in Z
-                let t = (z + wall) % (2 * span);       // period = 4*wall
-                if (t < 0) t += 2 * span;
-                return t <= span ? t - wall : (3 * wall - t);
-            }
-
-            function decideAI(view, frame, rng, params) {
+            function decideAI(view, frame, rng, profile) {
                 // PURE: no performance.now / Date.now / Math.random / .mesh.
-                if (!view.roundActive) {
-                    return { moveDir: 0, parry: false, fireball: false, frostbolt: false, thunderstorm: false, juice: false };
-                }
+                // Track-&-chase: the AI watches the ball's CURRENT position (from a
+                // reaction-lagged view) and chases it at player speed. It never solves
+                // for a future impact point, so fast / steep / bounced shots outrun it.
+                const idle = { moveDir: 0, parry: false, fireball: false, frostbolt: false, thunderstorm: false, juice: false };
+                if (!view.roundActive) return idle;
 
-                const K = params.thinkIntervalK;
-                const isThinkFrame = (frame % K === 0);
-                const cycle = Math.floor(frame / K);   // stable index for per-think-cycle difficulty rolls
+                const s      = view.self;
+                const halfD  = view.geom.halfDepth;
+                const threat = _aiFindUrgentThreat(view);   // closest incoming (velX>0, owner!=='ai') or null
 
-                // --- Movement: PURPOSEFUL only (no idle tracking / back-and-forth). The AI holds
-                // position unless it has a reason: intercept an incoming fireball, dodge an incoming
-                // frostbolt (blocking it would freeze us), or reposition to attack when idle+off-lane. ---
-                const threat  = _aiFindUrgentThreat(view);
-                const halfD   = view.geom.halfDepth;
-                let   targetZ = null;   // null = no reason to move → hold still
+                // ---- Movement (every frame) ----
+                let targetZ = null;   // null = no reason to move → hold
                 if (threat) {
-                    if (threat.type === 'frostbolt') {
-                        // Dodge: commit to the opposite half from the frostbolt's lane (fixed target,
-                        // so we don't run to the wall as paddleZ changes).
+                    const dodging = threat.type === 'frostbolt'
+                        && (threat.sightFrames || 0) >= profile.dodgeSightFrames;
+                    if (dodging) {
+                        // Recognized the frostbolt in time → commit to the opposite half
+                        // (blocking it would freeze us). Fixed target so we don't chase a wall.
                         targetZ = threat.z >= 0 ? -halfD * 0.5 : halfD * 0.5;
                     } else {
-                        // Intercept/block: LEAD the ball — predict where it will be when it reaches our
-                        // paddle X (folding any wall bounces back into the court), not where it is now.
-                        // This is the difference between catching diagonal/bouncing shots and whiffing
-                        // them; it reacts as soon as the ball is incoming and commits to the impact spot.
-                        const ballWall = halfD - 0.5;   // ball bounces at ±(depth/2 - 0.5) — matches the sim
-                        // Aim at where the shield ACTUALLY blocks, not the paddle centre: the ball is caught
-                        // at the shield plane (paddleX − (FWD+R) for the right-side AI), and the collision
-                        // biases the catch window by +ZPERSP (isometric parallax). Without these the AI parks
-                        // ~1.15 too far off and mistimes. reach/ZPERSP read from BLOCK_ARC (single source).
-                        const reach   = BLOCK_ARC.FWD + BLOCK_ARC.R;
-                        const blockX  = view.self.paddleX - reach;   // AI shield sits toward the field (−X)
-                        const timeToImpact = (blockX - threat.x) / threat.velX;  // velX > 0 = incoming
-                        targetZ = _reflectZ(threat.z + threat.velZ * timeToImpact, ballWall) + BLOCK_ARC.ZPERSP;
-                        // Positioning error STABLE PER BALL (keyed to the projectile id, not the think-
-                        // cycle), so the paddle commits to one spot instead of jittering.
-                        if (params.aimError > 0) {
-                            const posErr = (makeAIRng(((Math.imul(threat.id | 0, 2654435761)) ^ 0x50F1) >>> 0)() * 2 - 1) * params.aimError;
-                            targetZ += posErr;
-                        }
+                        // Chase where the ball IS (frostbolt seen too late is treated like a
+                        // normal ball here → the AI tries to block it and gets frozen).
+                        targetZ = threat.z;
                     }
                 } else {
-                    // Idle: only reposition toward an open lane if meaningfully out of place.
+                    // Idle: only reposition toward the open lane if meaningfully out of place.
                     const open = _aiFindOpenTarget(view);
-                    if (Math.abs(open - view.self.paddleZ) > 1.5) targetZ = open;
+                    if (Math.abs(open - s.paddleZ) > 1.5) targetZ = open;
                 }
-                // Deadzone just above one 0.3 step: the AI makes small single-step corrections to
-                // track the ball as it approaches (human-like fidget) WITHOUT oscillating ±a step
-                // around the target (a sub-step deadzone would, given quantized movement).
                 let moveDir = 0;
                 if (targetZ !== null) {
-                    const diff = targetZ - view.self.paddleZ;
-                    if (Math.abs(diff) > 0.34) moveDir = Math.sign(diff);
+                    const diff = targetZ - s.paddleZ;
+                    if (Math.abs(diff) > profile.trackDeadzone) moveDir = Math.sign(diff);
                 }
-                // Defense over offense — but factor in TIMING so the AI doesn't bail the instant a
-                // threat appears. While casting, hold (let the cast land) unless the threat would
-                // reach us before the cast finishes. If the cast lands first (with a little slack to
-                // block/parry afterward), keep casting; otherwise keep the computed moveDir so moving
-                // to defend cancels the cast. (When already in position to block, moveDir is 0 anyway,
-                // so the cast continues and it just parries.)
-                if (view.self.casting) {
+                // Defense over offense: if mid-cast and a threat will reach us before the
+                // cast finishes (plus a little slack), bail to defend (moving cancels the
+                // cast); otherwise hold to let the cast land.
+                if (s.casting) {
                     let holdCast = true;
                     if (threat && threat.velX > 0) {
-                        const remainingCast = Math.max(0, (view.self.castTime || 0) - (view.self.castProgress || 0));
-                        const timeToImpact  = (view.self.paddleX - threat.x) / threat.velX;  // seconds until it reaches our X
-                        const REACT_MARGIN  = 0.2;  // slack (s) to reposition/parry after the cast lands
-                        if (timeToImpact < remainingCast + REACT_MARGIN) holdCast = false;  // can't make it → bail to defend
+                        const remainingCast = Math.max(0, (s.castTime || 0) - (s.castProgress || 0));
+                        const timeToImpact  = (s.paddleX - threat.x) / threat.velX;
+                        if (timeToImpact < remainingCast + 0.2) holdCast = false;
                     }
                     if (holdCast) moveDir = 0;
                 }
 
-                if (!isThinkFrame) {
-                    return { moveDir, parry: false, fireball: false, frostbolt: false, thunderstorm: false, juice: false };
+                // ---- Parry (every frame): press when an in-range threat has been SEEN
+                // long enough. Late/narrow perception at low skill → natural whiffs. ----
+                const PARRY_RANGE = 2.5;
+                const parry = !!(threat
+                    && Math.abs(threat.z - s.paddleZ) < PARRY_RANGE
+                    && (threat.sightFrames || 0) >= profile.parrySight);
+
+                // ---- Casting: gated to a fixed cast-decision cadence, with offensive
+                // casts further phase-gated by castCadence (low skill = sparse). ----
+                const K = 8;                                  // cast-decision base period (~0.13s @60Hz)
+                const isCastFrame = (frame % K === 0);
+                let fireball = false, frostbolt = false, thunderstorm = false;
+                if (isCastFrame) {
+                    const cycle = Math.floor(frame / K);
+                    const offenseOpen = (cycle % Math.max(1, profile.castCadence)) === 0;
+                    const safe = _aiSafeToStartCast(view);
+                    const cd   = s.cooldowns;
+                    const canFireball  = offenseOpen && safe && cd.fireball  <= 0 && s.mana >= 1
+                        && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
+                    // Frostbolt WANTS the opponent in front (it freezes them), so it does not
+                    // avoid a blocking opponent like fireball does.
+                    const canFrostbolt = offenseOpen && safe && cd.frostbolt <= 0 && s.mana >= 1
+                        && view.projectiles.length < 10 && !s.casting;
+                    // Thunderstorm is a competence read, not a reflex: only a skilled AI
+                    // recognizes the multi-projectile panic-clear.
+                    const canThunderstorm = cd.thunderstorm <= 0 && s.mana >= 2
+                        && _aiIncomingProjectiles(view).length >= 2
+                        && profile.thunderstormSkill >= 0.6;
+                    frostbolt    = canFrostbolt;
+                    fireball     = canFireball && !frostbolt;
+                    thunderstorm = canThunderstorm;
                 }
 
-                // --- Cast decisions (think frames only) ---
-                const safe = _aiSafeToStartCast(view);
-                const s    = view.self;
-                const cd   = s.cooldowns;
-                // Cast aggression (difficulty): deterministically take only a fraction of offensive
-                // cast opportunities. Seeded per think-cycle. Thunderstorm is exempt (it's a defensive
-                // panic-clear of 2+ incoming, so the AI shouldn't randomly skip it).
-                const aggressive = (makeAIRng((cycle ^ 0xCA57) >>> 0)() < params.castAggression);
-
-                const canFireball     = aggressive && safe && cd.fireball    <= 0 && s.mana >= 1 && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
-                // Frostbolt is GOOD when the opponent is right in front (it freezes them) — so unlike
-                // fireball it does NOT avoid a blocking opponent; it wants that shot.
-                const canFrostbolt    = aggressive && safe && cd.frostbolt   <= 0 && s.mana >= 1 && view.projectiles.length < 10 && !s.casting;
-                const canThunderstorm = cd.thunderstorm <= 0 && s.mana >= 2 && _aiIncomingProjectiles(view).length >= 2;
-
-                // Frostbolt preferred when available; otherwise fireball.
-                const castFrostbolt_    = canFrostbolt;
-                const castFireball_     = canFireball && !castFrostbolt_;
-                const castThunderstorm_ = canThunderstorm;
-
-                // --- Parry (deterministic; whiffs a fraction of chances per parryTimingError) ---
-                const parryRange  = 2.5;
-                let   parry       = !!(threat && Math.abs(threat.z - s.paddleZ) < parryRange);
-                if (parry && params.parryTimingError > 0) {
-                    // Per-projectile miss roll → a given incoming is consistently parried or whiffed.
-                    const miss = makeAIRng((((threat.id | 0) * 2654435761) ^ 0x9A27) >>> 0)() < params.parryTimingError;
-                    if (miss) parry = false;
-                }
-
-                // --- Juice ---
+                // ---- Juice ----
                 const juice = s.juice >= JUICE.MAX && !s.juiceActive;
 
-                return { moveDir, parry, fireball: castFireball_, frostbolt: castFrostbolt_, thunderstorm: castThunderstorm_, juice };
+                return { moveDir, parry, fireball, frostbolt, thunderstorm, juice };
             }
 
             // Expose the pure AI pieces so the outer-scope dbg.aiDeterminism oracle can reach them.
@@ -12532,7 +12480,6 @@
             window.getAISkill = getAISkill;
             window.skillToProfile = skillToProfile;
             window.makeAIRng = makeAIRng;
-            window.DEFAULT_AI_PARAMS = DEFAULT_AI_PARAMS;
             window.AI_RNG_SEED = AI_RNG_SEED;
 
             // Sim-state snapshot for the AI view. Reads authoritative sim state (proj.x/z,
@@ -12548,6 +12495,7 @@
                     owner:       p.owner,
                     volleyCount: p.volleyCount,
                     type:        p.type,
+                    sightFrames: aiThreatSight[p.id] || 0,
                 }));
                 return {
                     projectiles: projSnaps,
@@ -12612,15 +12560,25 @@
                 // (Ready/Go, playing, round transitions) are unaffected.
                 if (gameState === 'menu') return;
                 spFrameCounter++;
+                // Update the driver-owned sight counter BEFORE snapshotting the view, so the
+                // snapshot (and thus the AI's lagged perception) carries correct sightFrames.
+                const _incoming = new Set();
+                for (const p of projectiles) {
+                    if (p.velX > 0 && p.owner !== 'ai') {
+                        _incoming.add(p.id);
+                        aiThreatSight[p.id] = (aiThreatSight[p.id] || 0) + 1;
+                    }
+                }
+                for (const k in aiThreatSight) { if (!_incoming.has(+k)) delete aiThreatSight[k]; }
+
                 const leftInput  = buildPlayerInput();
-                // Reaction delay: the AI decides on the world it saw `reactionFrames` ago — a human
-                // can't react instantly, so fast/multiple incoming balls beat it. decideAI stays pure;
-                // the lag lives here in the input pipeline (not in the sim, not in the AI oracle).
+                const aiProfile  = skillToProfile(getAISkill());
+                // Reaction delay: the AI decides on the world it saw `reactionFrames` ago.
                 aiViewHistory.push(buildAISingleView());
-                const lag = (DEFAULT_AI_PARAMS.reactionFrames | 0);
+                const lag = (aiProfile.reactionFrames | 0);
                 while (aiViewHistory.length > lag + 1) aiViewHistory.shift();
                 const aiView = aiViewHistory[0];   // oldest retained ≈ `lag` frames old once warmed
-                const rightInput = decideAI(aiView, spFrameCounter, makeAIRng(spFrameCounter ^ AI_RNG_SEED), DEFAULT_AI_PARAMS);
+                const rightInput = decideAI(aiView, spFrameCounter, makeAIRng(spFrameCounter ^ AI_RNG_SEED), aiProfile);
                 window.VolleyboltSim.simulateNetworkFrame(leftInput, rightInput, dt, buildSimCtx());
                 updateSinglePlayerPresentation(dt);
             }
@@ -15578,14 +15536,14 @@
         // ---- AI determinism oracle (Phase 2.1) ----
         // Folds decideAI outputs over a scripted synthetic view sequence into a 32-bit hex hash.
         // No mesh reads, no game loop — pure function exercise only.
-        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "8ea9157c"  (re-pinned 2026-06-29 after the
-        // difficulty-tuning pass wired aimError/parryTimingError/castAggression into decideAI)
+        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "PENDING_BROWSER_REPIN_2026-07-04"  (re-pinned 2026-07-04:
+        // track-&-chase rewrite; difficulty via skillToProfile(skill), single competence scalar)
         (function attachAIDeterminism() {
             function _syntheticView(seed) {
                 return {
                     projectiles: [
-                        { id: 1, x: 3.0, z: (seed % 5) * 0.4 - 1.0, velX: 8, velZ: 0.5,  owner: 'player', volleyCount: 1, type: 'fireball' },
-                        { id: 2, x: 5.0, z: (seed % 3) * 0.3,        velX: 6, velZ: -0.3, owner: 'player', volleyCount: 0, type: 'frostbolt' },
+                        { id: 1, x: 3.0, z: (seed % 5) * 0.4 - 1.0, velX: 8, velZ: 0.5,  owner: 'player', volleyCount: 1, type: 'fireball',  sightFrames: (seed % 13) },
+                        { id: 2, x: 5.0, z: (seed % 3) * 0.3,        velX: 6, velZ: -0.3, owner: 'player', volleyCount: 0, type: 'frostbolt', sightFrames: (seed % 7)  },
                     ],
                     self: {
                         paddleX: 7, paddleZ: (seed % 7) * 0.2 - 0.6,
@@ -15603,7 +15561,7 @@
                 let hash = 0;
                 for (let i = 0; i < steps; i++) {
                     const view   = _syntheticView(seed + i);
-                    const result = window.decideAI(view, i, window.makeAIRng((seed + i) ^ window.AI_RNG_SEED), window.DEFAULT_AI_PARAMS);
+                    const result = window.decideAI(view, i, window.makeAIRng((seed + i) ^ window.AI_RNG_SEED), window.skillToProfile(0.45));
                     hash = ((hash << 5) - hash + result.moveDir + 1)                 | 0;
                     hash = ((hash << 5) - hash + (result.parry        ? 7  : 0))     | 0;
                     hash = ((hash << 5) - hash + (result.fireball     ? 13 : 0))     | 0;
