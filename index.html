@@ -12352,6 +12352,7 @@
                     parrySight:        Math.round(_aiLerp(14, 2, s)),  // frames a threat must be seen before parrying
                     castCadence:       Math.round(_aiLerp(10, 2, s)),  // offensive cast phase-gate period (in think-cycles)
                     thunderstormSkill: s,                              // gate value: uses thunderstorm well only at high s
+                    multiThreatSkill:  s,                              // gate value: prioritize biggest threat + save-both only at high s
                 };
             }
 
@@ -12362,13 +12363,35 @@
                 return view.projectiles.filter(p => p.velX > 0 && p.owner !== 'ai');
             }
 
-            function _aiFindUrgentThreat(view) {
-                const incoming = _aiIncomingProjectiles(view);
-                if (!incoming.length) return null;
+            function _aiClosestIncoming(incoming, paddleX) {
                 // Closest to AI paddle by remaining X distance.
                 return incoming.reduce((a, b) =>
-                    Math.abs(a.x - view.self.paddleX) < Math.abs(b.x - view.self.paddleX) ? a : b
+                    Math.abs(a.x - paddleX) < Math.abs(b.x - paddleX) ? a : b
                 );
+            }
+
+            // The AI locks onto ONE incoming threat at a time (limited attention → two good
+            // shots overwhelm it). Low skill picks the CLOSEST; a smart AI (high skill) picks
+            // the BIGGEST threat (most-rallied ball, tie-break closest).
+            function _aiPrimaryThreat(view, preferBiggest) {
+                const incoming = _aiIncomingProjectiles(view);
+                if (!incoming.length) return null;
+                if (preferBiggest) {
+                    return incoming.reduce((a, b) => {
+                        const sa = a.volleyCount || 0, sb = b.volleyCount || 0;
+                        if (sa !== sb) return sa > sb ? a : b;
+                        return Math.abs(a.x - view.self.paddleX) < Math.abs(b.x - view.self.paddleX) ? a : b;
+                    });
+                }
+                return _aiClosestIncoming(incoming, view.self.paddleX);
+            }
+
+            // The next-most-urgent incoming after the primary — used by a smart AI to "save both".
+            function _aiSecondThreat(view, primary) {
+                const pid = primary ? primary.id : null;
+                const rest = _aiIncomingProjectiles(view).filter(p => p.id !== pid);
+                if (!rest.length) return null;
+                return _aiClosestIncoming(rest, view.self.paddleX);
             }
 
             function _aiFindOpenTarget(view) {
@@ -12396,7 +12419,21 @@
 
                 const s      = view.self;
                 const halfD  = view.geom.halfDepth;
-                const threat = _aiFindUrgentThreat(view);   // closest incoming (velX>0, owner!=='ai') or null
+
+                // ---- Situation read: pressure + HP → turtle (defend-only) mode ----
+                const incoming      = _aiIncomingProjectiles(view);
+                const incomingCount = incoming.length;
+                const maxHP         = view.maxHealth || 20;
+                const selfHP        = (s.towerHealth != null) ? s.towerHealth : maxHP;
+                const hpFrac        = maxHP > 0 ? selfHP / maxHP : 1;
+                // Turtle = drop offense, play defense + parry. Trigger on being swarmed OR low
+                // HP; the lower the HP, the lower the pressure needed (defends sooner when
+                // losing). Above half HP it takes a real swarm (2+); hurt, a single shot suffices.
+                const turtle = (hpFrac < 0.30) || (incomingCount >= (hpFrac > 0.5 ? 2 : 1));
+
+                // One threat at a time; a smart (high-skill) AI targets the biggest, else closest.
+                const smartThreat = profile.multiThreatSkill >= 0.6;
+                const threat = _aiPrimaryThreat(view, smartThreat);   // or null
 
                 // ---- Movement (every frame) ----
                 let targetZ = null;   // null = no reason to move → hold
@@ -12411,6 +12448,13 @@
                         // Chase where the ball IS (frostbolt seen too late is treated like a
                         // normal ball here → the AI tries to block it and gets frozen).
                         targetZ = threat.z;
+                        // Save-both (smart/high skill only): once already positioned on the
+                        // primary, slide toward a second incoming so both get covered.
+                        if (smartThreat && incomingCount >= 2
+                            && Math.abs(threat.z - s.paddleZ) <= profile.trackDeadzone) {
+                            const second = _aiSecondThreat(view, threat);
+                            if (second) targetZ = second.z;
+                        }
                     }
                 } else {
                     // Idle: only reposition toward the open lane if meaningfully out of place.
@@ -12452,16 +12496,20 @@
                     const offenseOpen = (cycle % Math.max(1, profile.castCadence)) === 0;
                     const safe = _aiSafeToStartCast(view);
                     const cd   = s.cooldowns;
-                    const canFireball  = offenseOpen && safe && cd.fireball  <= 0 && s.mana >= 1
+                    // Offense is suppressed in turtle mode (under pressure / low HP → defend).
+                    const canFireball  = !turtle && offenseOpen && safe && cd.fireball  <= 0 && s.mana >= 1
                         && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
-                    // Frostbolt WANTS the opponent in front (it freezes them), so it does not
-                    // avoid a blocking opponent like fireball does.
-                    const canFrostbolt = offenseOpen && safe && cd.frostbolt <= 0 && s.mana >= 1
-                        && view.projectiles.length < 10 && !s.casting;
-                    // Thunderstorm is a competence read, not a reflex: only a skilled AI
-                    // recognizes the multi-projectile panic-clear.
+                    // Frostbolt is a LANE shot: only worth casting when the opponent is directly
+                    // in front (its payoff is freezing them). No alignment → no cast, so it stops
+                    // firing frostbolt into an empty lane.
+                    const FROST_ALIGN  = 1.2;
+                    const oppInFront   = Math.abs(s.paddleZ - view.opp.paddleZ) < FROST_ALIGN;
+                    const canFrostbolt = !turtle && offenseOpen && safe && cd.frostbolt <= 0 && s.mana >= 1
+                        && oppInFront && view.projectiles.length < 10 && !s.casting;
+                    // Thunderstorm is a DEFENSIVE panic-clear (allowed even in turtle): a skilled
+                    // AI recognizes the multi-projectile crunch.
                     const canThunderstorm = cd.thunderstorm <= 0 && s.mana >= 2
-                        && _aiIncomingProjectiles(view).length >= 2
+                        && incomingCount >= 2
                         && profile.thunderstormSkill >= 0.6;
                     frostbolt    = canFrostbolt;
                     fireball     = canFireball && !frostbolt;
@@ -12515,15 +12563,18 @@
                         juice:        cr.juice       || 0,
                         juiceActive:  cr.juiceActive || false,
                         shieldCharges: (cr.lightningShield && cr.lightningShield.charges) || 0,
+                        towerHealth:  (cr.towerHealth != null) ? cr.towerHealth : maxTowerHealth,
                     },
                     opp: {
-                        paddleZ: combatants.left.paddleZ,
+                        paddleZ:     combatants.left.paddleZ,
+                        towerHealth: (combatants.left.towerHealth != null) ? combatants.left.towerHealth : maxTowerHealth,
                     },
                     geom: {
                         tableWidth:     tableWidth,
                         halfDepth:      window.getEffectiveTableDepth() / 2,
                         paddleBoundary: getPaddleBoundary(),
                     },
+                    maxHealth:   maxTowerHealth,
                     roundActive: !!roundActive,
                 };
             }
@@ -15536,23 +15587,31 @@
         // ---- AI determinism oracle (Phase 2.1) ----
         // Folds decideAI outputs over a scripted synthetic view sequence into a 32-bit hex hash.
         // No mesh reads, no game loop — pure function exercise only.
-        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "1a195844"  (re-pinned 2026-07-04:
-        // track-&-chase rewrite; difficulty via skillToProfile(skill), single competence scalar)
+        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "5afbc1a6"  (re-pinned 2026-07-04:
+        // behavioral conditions — frostbolt lane-gating, HP/turtle mode, skill-scaled threat
+        // pick + save-both; synthetic view now cycles incoming 0/1/2 to cover those branches)
         (function attachAIDeterminism() {
             function _syntheticView(seed) {
+                // Projectile velX sign varies with seed so the incoming COUNT cycles through
+                // 0/1/2 — this exercises the turtle toggle, offense gating, frostbolt alignment,
+                // and threat-pick branches (a fixed 2-incoming view would leave turtle always on).
+                const v1 = (seed % 3 === 0) ? -8 : 8;   // sometimes outgoing (not a threat)
+                const v2 = (seed % 2 === 0) ?  6 : -6;
                 return {
                     projectiles: [
-                        { id: 1, x: 3.0, z: (seed % 5) * 0.4 - 1.0, velX: 8, velZ: 0.5,  owner: 'player', volleyCount: 1, type: 'fireball',  sightFrames: (seed % 13) },
-                        { id: 2, x: 5.0, z: (seed % 3) * 0.3,        velX: 6, velZ: -0.3, owner: 'player', volleyCount: 0, type: 'frostbolt', sightFrames: (seed % 7)  },
+                        { id: 1, x: 3.0, z: (seed % 5) * 0.4 - 1.0, velX: v1, velZ: 0.5,  owner: 'player', volleyCount: 1, type: 'fireball',  sightFrames: (seed % 13) },
+                        { id: 2, x: 5.0, z: (seed % 3) * 0.3,        velX: v2, velZ: -0.3, owner: 'player', volleyCount: 0, type: 'frostbolt', sightFrames: (seed % 7)  },
                     ],
                     self: {
                         paddleX: 7, paddleZ: (seed % 7) * 0.2 - 0.6,
                         mana: 3,
                         cooldowns: { fireball: 0, frostbolt: 0, thunderstorm: 0 },
                         freezeTime: 0, casting: null, castProgress: 0, castTime: 1.0, juice: 0, juiceActive: false, shieldCharges: 0,
+                        towerHealth: (seed % 20) + 1,   // 1..20 → exercises low-HP turtle path
                     },
-                    opp:  { paddleZ: (seed % 11) * 0.15 - 0.8 },
+                    opp:  { paddleZ: (seed % 11) * 0.15 - 0.8, towerHealth: 20 - (seed % 7) },
                     geom: { tableWidth: 16, halfDepth: 4, paddleBoundary: 3.8 },
+                    maxHealth: 20,
                     roundActive: true,
                 };
             }
