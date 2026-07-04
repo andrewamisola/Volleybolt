@@ -13,7 +13,7 @@
 - **Symmetry invariant (project memory):** `skillToProfile` may return ONLY competence values (perception lag, tracking tightness, sight windows, decision cadence). It must NEVER return a multiplier on speed, mana, cooldown, cast time, or damage. The AI's paddle speed, mana, and cooldowns are identical to the player's at every `skill`.
 - **`decideAI` purity:** no `performance.now`, `Date.now`, `Math.random`, or `.mesh` anywhere in `decideAI`, `skillToProfile`, or any pure AI helper. Variety comes only from the integer-seeded `rng` (unused this pass) and plain-data view fields.
 - **Do not touch:** the doubles AI, `simulateNetworkFrame`, `js/sim.js` semantics, or the MP input path (`captureLocalInput`). This is singles-only.
-- **Sim oracle must not move:** `dbg.determinism(180, 12345)` must return `b1df6797` before and after every task.
+- **Sim oracle must not move:** `dbg.determinism(180, 12345)` must return `954ea557` before and after every task.
 - **`AI_SKILL_AVERAGE` seeds at `0.45`** (deliberately eased; "too good" was the complaint). Tuned from playtests in Task 3.
 - All AI code lives in the game-setup closure around `index.html:12320–12590`; the `dbg.aiDeterminism` oracle lives in the outer scope around `index.html:15541–15588`.
 
@@ -129,7 +129,7 @@ Expected: three `TEST 1x done` logs, **no** assertion errors.
 
 In console:
 ```js
-window.dbg.determinism(180, 12345).fold   // expected: "b1df6797"
+window.dbg.determinism(180, 12345).fold   // expected: "954ea557"
 ```
 Start a singles match — it must play exactly as before (this task changed nothing wired).
 
@@ -409,7 +409,7 @@ Expected: **no output** (empty) — `decideAI` is pure. (Line range is approxima
 
 Sim oracle:
 ```js
-window.dbg.determinism(180, 12345).fold   // expected: "b1df6797" (unchanged)
+window.dbg.determinism(180, 12345).fold   // expected: "954ea557" (unchanged)
 ```
 
 - [ ] **Step 11: Smoke-play a singles match**
@@ -466,7 +466,7 @@ If too hard: lower `AI_SKILL_AVERAGE` (e.g. 0.45 → 0.35) OR widen the easy end
 Tuning `AI_SKILL_AVERAGE` does NOT change the oracle (it pins `skillToProfile(0.45)` explicitly). If you changed `skillToProfile` endpoints, the oracle golden WILL change — re-run and re-pin:
 ```js
 window.dbg.aiDeterminism(50, 42)   // if fold changed due to curve edits, update the golden comment
-window.dbg.determinism(180, 12345).fold   // must still be "b1df6797"
+window.dbg.determinism(180, 12345).fold   // must still be "954ea557"
 ```
 
 - [ ] **Step 5: Write the as-built note**

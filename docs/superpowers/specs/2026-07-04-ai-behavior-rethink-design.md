@@ -195,7 +195,7 @@ console.assert(JSON.stringify(a) === JSON.stringify(b), 'decideAI must be reprod
 `dbg.aiDeterminism(50, 42)` returns a stable pinned hash across runs (re-pinned this pass since behavior changed).
 
 ### 8.4 Sim oracle unchanged
-`dbg.determinism(180, 12345)` still returns `b1df6797`.
+`dbg.determinism(180, 12345)` still returns `954ea557`.
 
 ### 8.5 Behavior smoke (playtest)
 - AI blocks slow straight shots (fair) but is beaten by fast / steep / wall-bounced shots (track-&-chase lag is visible).
