@@ -3793,6 +3793,12 @@
         };
 
         function pollGamepadMenuNav() {
+            // Never navigate menus during live match play. The stick/d-pad drives the paddle then;
+            // if any screen ever leaks a 'visible'/open state into a live match, paddle movement
+            // must NOT be reinterpreted as menu navigation (which also played uiHover beeps). Pause
+            // (paused), the victory report (gameOver) and the main menu (gameState!=='playing') all
+            // still navigate normally — this only silences nav during active, unpaused play.
+            if (gameState === 'playing' && !paused && !gameOver) { window._navRoot = null; return; }
             const root = isAnyMenuOpen();
             if (!root) { window._navRoot = null; return; }
 
@@ -13509,7 +13515,17 @@
 
             // Fade out decals over time (stepped for retro style)
             scene.onBeforeRenderObservable.add(() => {
-                const dt = engine.getDeltaTime() / 1000;
+                // Combat-text / decal lifetimes are TIMERS — drive them off authoritative
+                // wall-clock (performance.now delta between draws), NOT engine.getDeltaTime().
+                // Under the frame-skip FPS cap, scene.render() (and this observable) is throttled,
+                // and getDeltaTime's relationship to the real draw cadence is unreliable — which
+                // made floating text (e.g. spell-cast bubbles) linger far too long at a 30fps cap.
+                // Wall-clock makes these lifetimes framerate-independent by construction.
+                const _ctNow = performance.now();
+                const dt = window._combatTextLastNow
+                    ? Math.min((_ctNow - window._combatTextLastNow) / 1000, 0.1)   // cap: tab-away guard
+                    : (engine.getDeltaTime() / 1000);
+                window._combatTextLastNow = _ctNow;
                 for (let i = impactDecals.length - 1; i >= 0; i--) {
                     const d = impactDecals[i];
                     d.life -= dt;
