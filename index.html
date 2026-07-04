@@ -12319,6 +12319,41 @@
 
             const AI_RNG_SEED = 0xA1DE;  // fixed constant; stable seed offset for per-frame RNG
 
+            // ── AI COMPETENCE SEAM ─────────────────────────────────────────────
+            // getAISkill() is the ONLY difficulty input. Returns skill ∈ [0,1].
+            // Today: constant AI_SKILL_AVERAGE. Authored as a seam so difficulty can
+            // later be driven dynamically WITHOUT a rewrite, e.g. a clutch ramp:
+            //   skill = clamp(AI_SKILL_AVERAGE + clutchBonus(scoreDeficit), 0, 1)
+            // INVARIANT: dynamic competence may only raise this SCALAR. It must never
+            // grant speed / mana / cooldown / cast-time / damage — see the symmetry
+            // banner on skillToProfile. (Project symmetry-principle memory.)
+            const AI_SKILL_AVERAGE = 0.45;
+            function getAISkill() { return AI_SKILL_AVERAGE; }
+
+            function _aiLerp(a, b, t) { return a + (b - a) * t; }
+
+            // ┌────────────────────────────────────────────────────────────────┐
+            // │ SYMMETRY BANNER — skillToProfile may return ONLY competence      │
+            // │ values: perception lag, tracking tightness, sight windows,       │
+            // │ decision cadence. NEVER speed / mana / cooldown / cast-time /    │
+            // │ damage. Difficulty = how WELL the AI plays, never how STRONG.   │
+            // └────────────────────────────────────────────────────────────────┘
+            // Pure: skill → concrete behavior values consumed by decideAI. This is
+            // the single tuning curve (endpoints are starting guesses; the shape —
+            // monotonic, easiest at skill=0 — is the contract). skill=0 easiest,
+            // skill=1 hardest.
+            function skillToProfile(skill) {
+                const s = Math.max(0, Math.min(1, skill));
+                return {
+                    reactionFrames:    Math.round(_aiLerp(12, 2, s)),  // acts on an older world at low skill
+                    trackDeadzone:     _aiLerp(1.1, 0.34, s),          // tracks loosely at low skill
+                    dodgeSightFrames:  Math.round(_aiLerp(18, 3, s)),  // frames a frostbolt must be seen before dodging
+                    parrySight:        Math.round(_aiLerp(14, 2, s)),  // frames a threat must be seen before parrying
+                    castCadence:       Math.round(_aiLerp(10, 2, s)),  // offensive cast phase-gate period (in think-cycles)
+                    thunderstormSkill: s,                              // gate value: uses thunderstorm well only at high s
+                };
+            }
+
             const DEFAULT_AI_PARAMS = {
                 reactionFrames:   5,      // WIRED (2.3): the AI acts on the world it saw N frames ago
                                           //   (~85ms at 60Hz). The "can't block everything" lever — fast/multiple
@@ -12494,6 +12529,8 @@
             // Expose the pure AI pieces so the outer-scope dbg.aiDeterminism oracle can reach them.
             // (decideAI & friends live in this game-setup closure; window.dbg is defined in the outer scope.)
             window.decideAI = decideAI;
+            window.getAISkill = getAISkill;
+            window.skillToProfile = skillToProfile;
             window.makeAIRng = makeAIRng;
             window.DEFAULT_AI_PARAMS = DEFAULT_AI_PARAMS;
             window.AI_RNG_SEED = AI_RNG_SEED;
