@@ -2604,6 +2604,11 @@
 
         let toneStarted = false;
         const synths = {};
+        // Desired play-state per side for the casting loop. Guards the async race: castingStart
+        // awaits initToneJS() on first use; if the cast ends during that await, castingStop runs
+        // first (stopping a not-yet-started loop = no-op) and then the awaited start() would loop
+        // forever with no matching stop. Gating start() on this flag prevents the orphaned loop.
+        const _castingDesired = { player: false, ai: false };
         let therapyReverb = null;
         let therapyDelay = null;
         let therapyPanner = null;
@@ -3251,11 +3256,14 @@
 
             // Casting loop start - plays mid-cast.wav looping (panned by side)
             castingStart: async (side = 'player') => {
+                const key = side === 'player' ? 'player' : 'ai';
+                _castingDesired[key] = true;                 // intent: this side wants the loop
                 if (!toneStarted) await initToneJS();
-                const loop = side === 'player' ? synths.playerCastingLoop : synths.aiCastingLoop;
+                if (!_castingDesired[key]) return;           // a stop() landed during init → don't start
+                const loop = key === 'player' ? synths.playerCastingLoop : synths.aiCastingLoop;
                 if (loop && loop.loaded) {
                     try {
-                        loop.start();
+                        if (loop.state !== 'started') loop.start();  // never stack a second play
                     } catch (e) {
                         // Ignore if already playing
                     }
@@ -3266,12 +3274,14 @@
             castingStop: async (side = 'all') => {
                 // Stop player casting loop
                 if (side === 'all' || side === 'player') {
+                    _castingDesired.player = false;
                     if (synths.playerCastingLoop) {
                         try { synths.playerCastingLoop.stop(); } catch (e) {}
                     }
                 }
                 // Stop AI casting loop
                 if (side === 'all' || side === 'ai') {
+                    _castingDesired.ai = false;
                     if (synths.aiCastingLoop) {
                         try { synths.aiCastingLoop.stop(); } catch (e) {}
                     }
@@ -12328,7 +12338,9 @@
             // INVARIANT: this scalar only feeds skillToProfile → COMPETENCE. It must never
             // grant speed / mana / cooldown / cast-time / damage — see the symmetry banner
             // on skillToProfile. A sharper AI plays BETTER, never STRONGER.
-            const AI_SKILL_AVERAGE = 0.45;   // fresh-start / default rating
+            const AI_SKILL_AVERAGE = 0.58;   // fresh-start / default rating (raised 0.45→0.58: too easy
+                                             //   on playtest; stays just under the 0.6 thunderstorm /
+                                             //   save-both thresholds so it's "a bit harder", not a cliff)
             const AI_SKILL_MIN     = 0.15;   // never fully trivial
             const AI_SKILL_MAX     = 0.95;   // never literally perfect
             const AI_SKILL_STEP    = 0.06;   // base per-match adjustment (scaled by margin)
@@ -16784,11 +16796,16 @@
             btn.id = 'victoryContinueBtn';
             btn.className = 'game-btn menu-btn';
             btn.textContent = 'Continue';
-            // Anchored a fixed distance below screen center (like the GUI Battle Report panel,
-            // which ends ~+105px below center) so the gap stays consistent at any window size —
-            // %-of-height positioning left an awkward variable gap under the report.
-            btn.style.cssText = 'position:fixed;left:50%;top:calc(50% + 140px);transform:translateX(-50%);z-index:650;display:none;min-width:260px';
-            document.body.appendChild(btn);
+            // Live INSIDE the 1920x1080 HUD scale layer (zoomed by --ui-scale) so the button
+            // scales in lockstep with the GUI Battle Report above it — at every window size AND
+            // fullscreen. (It used to be position:fixed on <body> with raw-px offsets, so it did
+            // NOT scale with the report and looked wrong at fullscreen.) Reference coords: layer
+            // center is (960, 540); the report ends ~+105px below center, so +140 sits just under
+            // it with a gap that now scales too. pointer-events:auto re-enables clicks (the layer
+            // is pointer-events:none). Still a descendant of <body>, so isAnyMenuOpen()'s
+            // gameOver→document.body root + getNavFocusables still resolve it for controller nav.
+            btn.style.cssText = 'position:absolute;left:960px;top:calc(540px + 140px);transform:translateX(-50%);z-index:650;display:none;min-width:260px;pointer-events:auto';
+            (document.getElementById('hudScaleLayer') || document.body).appendChild(btn);
             btn.addEventListener('click', () => returnToMenuTransition());
             return btn;
         }
