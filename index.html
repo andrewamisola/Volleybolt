@@ -12322,14 +12322,45 @@
 
             // ── AI COMPETENCE SEAM ─────────────────────────────────────────────
             // getAISkill() is the ONLY difficulty input. Returns skill ∈ [0,1].
-            // Today: constant AI_SKILL_AVERAGE. Authored as a seam so difficulty can
-            // later be driven dynamically WITHOUT a rewrite, e.g. a clutch ramp:
-            //   skill = clamp(AI_SKILL_AVERAGE + clutchBonus(scoreDeficit), 0, 1)
-            // INVARIANT: dynamic competence may only raise this SCALAR. It must never
-            // grant speed / mana / cooldown / cast-time / damage — see the symmetry
-            // banner on skillToProfile. (Project symmetry-principle memory.)
-            const AI_SKILL_AVERAGE = 0.45;
-            function getAISkill() { return AI_SKILL_AVERAGE; }
+            // DYNAMIC (ELO-style): a persistent rating that tracks the player's level. It
+            // rises when the player wins a match and eases when they lose, so the fight
+            // stays fair as the player improves. Adjusted between matches by adaptAISkill().
+            // INVARIANT: this scalar only feeds skillToProfile → COMPETENCE. It must never
+            // grant speed / mana / cooldown / cast-time / damage — see the symmetry banner
+            // on skillToProfile. A sharper AI plays BETTER, never STRONGER.
+            const AI_SKILL_AVERAGE = 0.45;   // fresh-start / default rating
+            const AI_SKILL_MIN     = 0.15;   // never fully trivial
+            const AI_SKILL_MAX     = 0.95;   // never literally perfect
+            const AI_SKILL_STEP    = 0.06;   // base per-match adjustment (scaled by margin)
+            const AI_SKILL_KEY     = 'volleybolt_ai_skill';
+
+            function _clampSkill(v) { return Math.max(AI_SKILL_MIN, Math.min(AI_SKILL_MAX, v)); }
+            function _loadAISkill() {
+                try {
+                    const raw = localStorage.getItem(AI_SKILL_KEY);
+                    if (raw != null) { const v = parseFloat(raw); if (isFinite(v)) return _clampSkill(v); }
+                } catch (e) {}
+                return AI_SKILL_AVERAGE;
+            }
+            let aiSkillRating = _loadAISkill();
+            function getAISkill() { return aiSkillRating; }
+
+            // Called once per completed singles match (from endRound). playerWon = the player
+            // took the match; roundMargin = |rounds won − rounds lost| this match (dominance).
+            // Bidirectional + margin-scaled so the rating converges on the player's level.
+            function adaptAISkill(playerWon, roundMargin) {
+                const margin = Math.max(1, roundMargin | 0);
+                const marginFactor = Math.min(1 + (margin - 1) * 0.3, 2.0);   // 1x (close) .. 2x (blowout)
+                const delta = AI_SKILL_STEP * marginFactor * (playerWon ? 1 : -1);
+                aiSkillRating = _clampSkill(aiSkillRating + delta);
+                try { localStorage.setItem(AI_SKILL_KEY, String(aiSkillRating)); } catch (e) {}
+                console.log('%c[AI ELO] match ' + (playerWon ? 'WON by player' : 'LOST by player') +
+                    ' · margin ' + margin + ' → AI skill ' + aiSkillRating.toFixed(3),
+                    'color:#c080ff');
+                return aiSkillRating;
+            }
+            window.adaptAISkill = adaptAISkill;
+            window.getAISkill = getAISkill;   // (re-exported below too; harmless)
 
             function _aiLerp(a, b, t) { return a + (b - a) * t; }
 
@@ -18752,6 +18783,10 @@
                     // Track match win and commit stats
                     StatTracker.increment('matches_won');
                     StatTracker.commitMatch();
+                    // Adapt AI competence (ELO): player took the match → AI sharpens next time.
+                    if (gameMode !== 'pvp' && window.adaptAISkill) {
+                        window.adaptAISkill(true, Math.abs(playerScore - aiScore));
+                    }
                     // Show victory screen instantly
                     showVictoryScreen(localWon);
                 } else {
@@ -18783,6 +18818,10 @@
                     // Track match loss and commit stats
                     StatTracker.increment('matches_lost');
                     StatTracker.commitMatch();
+                    // Adapt AI competence (ELO): player lost the match → AI eases off next time.
+                    if (gameMode !== 'pvp' && window.adaptAISkill) {
+                        window.adaptAISkill(false, Math.abs(playerScore - aiScore));
+                    }
                     // Show defeat screen instantly
                     showVictoryScreen(localWon);
                 } else {
