@@ -888,12 +888,18 @@
         let highestRemoteInputFrame = -1; // Highest remote INPUT frame received (for time-sync). Remote's est. frame ~= this - INPUT_DELAY.
         let remoteCurrentFrame = -1;   // DEFECT 2: the peer's ACTUAL currentFrame, piggybacked on each INPUT msg (data.senderFrame). Gives a true frame gap instead of a latency-lagged estimate.
         let gameStateHistory = [];     // State snapshots for rollback
-        const MAX_ROLLBACK_FRAMES = 8; // ~133ms at 60fps
-        const INPUT_DELAY = 2;         // Frames of input delay (reduces rollbacks)
-        // DEFECT 2: frame-advantage stall threshold. Raised 2->4 so latency alone (which used to inflate
-        // the perceived advantage) no longer trips the stall every tick. Must stay safely below
-        // MAX_ROLLBACK_FRAMES(8). TUNABLE in the live 2-peer test (stutter vs safety margin).
-        const MAX_FRAME_ADVANTAGE = 4;
+        // LATENCY-TUNING VALUES — revisit after live 2-peer tests. Goal: graceful degradation
+        // (playable-but-laggy) at ~250ms RTT, smooth under ~100ms. At 250ms the one-way latency is
+        // ~7-8 frames, so the steady-state frame gap must fit inside the stall tolerance without
+        // tripping every tick. Coherent set: INPUT_DELAY hides more latency (fewer rollbacks),
+        // MAX_ROLLBACK_FRAMES gives the re-sim window headroom, and MAX_FRAME_ADVANTAGE stays safely
+        // below MAX_ROLLBACK_FRAMES so a stall never lets the gap exceed the rollback window.
+        const MAX_ROLLBACK_FRAMES = 12; // ~200ms at 60fps (raised 8->12 for 250ms-RTT headroom)
+        const INPUT_DELAY = 4;          // Frames of input delay (raised 2->4 to hide more latency, fewer rollbacks)
+        // Frame-advantage stall threshold. Raised 4->8 so ~7-8 frames of one-way latency alone no
+        // longer trips the stall every tick; still < MAX_ROLLBACK_FRAMES(12) so a stalled gap stays
+        // inside the rollback window. TUNABLE in the live 2-peer test (stutter vs safety margin).
+        const MAX_FRAME_ADVANTAGE = 8;
         const TICK_RATE = 60;
         const TICK_MS = 1000 / TICK_RATE;
         let netAccumulator = 0;        // For fixed timestep
@@ -15479,6 +15485,12 @@
                     mpCompareHash(data.frame, data.hash);
                     break;
 
+                case 'SYNC_DETAIL':
+                    // Desync field diagnostics: peer's per-group sub-hashes for a desynced frame.
+                    // Compare to ours and warn the exact diverged group(s).
+                    mpReceiveDetail(data.frame, data.groups);
+                    break;
+
                 case 'REMATCH':
                     // Host clicked Play Again — the joiner mirrors the return to the connected lobby.
                     // Guard: only while still on the post-match screen (gameOver) and not already
@@ -15558,7 +15570,7 @@
         // Each peer periodically broadcasts the hash of a settled (past-rollback) frame; the
         // other compares it to its own hash for that exact frame number and flags divergence.
         // ============================================================
-        const mpSync = { local: {}, remote: {}, lastOkFrame: -1, desync: null, mismatches: 0, rollbacks: 0, lastRollback: 0 };
+        const mpSync = { local: {}, remote: {}, localGroups: {}, detailSent: {}, lastOkFrame: -1, desync: null, mismatches: 0, rollbacks: 0, lastRollback: 0 };
         const MP_SYNC_INTERVAL = 20;        // broadcast a hash every N frames (~0.33s)
         const MP_SYNC_LAG = MAX_ROLLBACK_FRAMES + 2;   // hash a frame old enough to never roll back
 
@@ -15587,6 +15599,85 @@
         }
         window.hashGameState = hashGameState;
 
+        // DESYNC FIELD DIAGNOSTICS — per-field-group sub-hashes of a frame's state.
+        // Same quantization + FNV-1a fold as hashGameState, but each group has its OWN independent
+        // accumulator so a mismatch can be attributed to the exact group that diverged. The union of
+        // all groups covers exactly the field set hashGameState() mixes, so together they fully
+        // localize any single-field desync. This does NOT feed the main hash and is OFF the compare
+        // hot path — group hashes are stored per frame (cheap: 7 uint32s) and only EXCHANGED on a
+        // detected desync. Groups: leftPaddle/rightPaddle (paddleZ/prevPaddleZ/moveAccum),
+        // leftCore/rightCore (mana/regen/freeze/tower/cast/cooldowns/juice), projectiles (the list),
+        // rng (rngSeed/nextProjId), misc (frame/playerScore/aiScore).
+        function hashGameStateGroups(snap) {
+            const s = snap || captureGameState();
+            const q = (n) => Math.round((n || 0) * 1000) | 0;
+            const newH = () => 2166136261 >>> 0;
+            const mix = (h, v) => { h = (h ^ ((v | 0) & 0xffffffff)) >>> 0; return Math.imul(h, 16777619) >>> 0; };
+            const sideCore = (c) => {
+                c = c || {}; const cd = c.cooldowns || {};
+                let h = newH();
+                h = mix(h, q(c.mana)); h = mix(h, q(c.manaRegen)); h = mix(h, q(c.freezeTime));
+                h = mix(h, q(c.towerHealth)); h = mix(h, q(c.castProgress)); h = mix(h, q(c.castTime));
+                h = mix(h, q(cd.fireball)); h = mix(h, q(cd.frostbolt)); h = mix(h, q(cd.thunderstorm));
+                h = mix(h, q(c.juice)); h = mix(h, c.juiceActive ? 1 : 0); h = mix(h, q(c.juiceTimer));
+                return h >>> 0;
+            };
+            const sidePaddle = (c) => {
+                c = c || {}; let h = newH();
+                h = mix(h, q(c.paddleZ)); h = mix(h, q(c.prevPaddleZ)); h = mix(h, q(c.moveAccum));
+                return h >>> 0;
+            };
+            let hp = newH();
+            for (const p of (s.projectiles || [])) {
+                hp = mix(hp, p.id | 0); hp = mix(hp, q(p.x)); hp = mix(hp, q(p.y)); hp = mix(hp, q(p.z));
+                hp = mix(hp, q(p.velX)); hp = mix(hp, q(p.velY)); hp = mix(hp, q(p.velZ));
+                hp = mix(hp, p.volleyCount | 0); hp = mix(hp, p.isParried ? 1 : 0); hp = mix(hp, p.bounceCount | 0);
+            }
+            let hr = newH(); hr = mix(hr, s.rngSeed | 0); hr = mix(hr, s.nextProjId | 0);
+            let hm = newH(); hm = mix(hm, s.frame | 0); hm = mix(hm, q(s.playerScore)); hm = mix(hm, q(s.aiScore));
+            return {
+                leftPaddle: sidePaddle(s.left), rightPaddle: sidePaddle(s.right),
+                leftCore: sideCore(s.left), rightCore: sideCore(s.right),
+                projectiles: hp >>> 0, rng: hr >>> 0, misc: hm >>> 0
+            };
+        }
+
+        // Send our per-group sub-hashes for a desynced frame to the peer (once per frame). The peer
+        // compares against its own stored groups and prints the differing groups. Guarded so a
+        // reflected reply (peer echoing its groups back) does not loop.
+        function mpSendDetail(frame) {
+            if (mpSync.detailSent[frame]) return;
+            const groups = mpSync.localGroups[frame];
+            if (!groups) return;   // we no longer have this frame's groups (pruned / behind) — nothing to send
+            mpSync.detailSent[frame] = true;
+            if (conn && conn.open) {
+                try { conn.send({ type: 'SYNC_DETAIL', frame: frame, groups: groups }); } catch (e) {}
+            }
+        }
+
+        // Handle a peer's SYNC_DETAIL: compare their group sub-hashes to ours for the SAME frame and
+        // warn listing ONLY the groups that differ — pinpointing the exact diverged state field-group
+        // at the root desync frame. Then reflect our own groups back (guarded) so BOTH peers report.
+        function mpReceiveDetail(frame, remoteGroups) {
+            const localGroups = mpSync.localGroups[frame];
+            if (!localGroups || !remoteGroups) {
+                console.warn('[MP DESYNC FIELDS] frame ' + frame + ': cannot compare (missing ' +
+                             (!localGroups ? 'local' : 'remote') + ' group hashes)');
+            } else {
+                const diffs = [];
+                for (const g in localGroups) {
+                    if (localGroups[g] !== remoteGroups[g]) {
+                        diffs.push(g + '=local ' + (localGroups[g] >>> 0).toString(16) +
+                                   ' != remote ' + (remoteGroups[g] >>> 0).toString(16));
+                    }
+                }
+                if (diffs.length) console.warn('[MP DESYNC FIELDS] frame ' + frame + ': ' + diffs.join(', '));
+                else console.warn('[MP DESYNC FIELDS] frame ' + frame + ': all group hashes MATCH ' +
+                                  '(divergence is in a field not covered by the group set, or it healed by now)');
+            }
+            mpSendDetail(frame);   // reflect ours back so the other peer also gets the breakdown (guarded)
+        }
+
         function mpCompareHash(frame, remoteHash) {
             const local = mpSync.local[frame];
             if (local === undefined) { mpSync.remote[frame] = remoteHash; return; }  // we're behind; compare later
@@ -15597,6 +15688,10 @@
                 mpSync.desync = { frame, local, remote: remoteHash };   // keep the EARLIEST divergence (root)
                 console.warn('[MP DESYNC] frame ' + frame + ': local ' + (local >>> 0).toString(16) +
                              ' != remote ' + (remoteHash >>> 0).toString(16));
+                // Field-level diagnostics: exchange per-group sub-hashes for THIS exact frame so the
+                // next warn names the diverged state field-group. Off the hot path (only on a first
+                // detected desync at this frame).
+                mpSendDetail(frame);
             }
         }
 
@@ -15604,7 +15699,11 @@
         // so re-simulated frames overwrite their stale prediction-based hash with the settled one.
         function mpStoreHash(frame) {
             if (gameMode !== 'pvp') return;
-            mpSync.local[frame] = hashGameState();
+            // Capture the snapshot ONCE and feed both the main hash and the per-group diagnostic
+            // hashes, so the group ring costs one extra field-pass (not a second captureGameState).
+            const snap = captureGameState();
+            mpSync.local[frame] = hashGameState(snap);
+            mpSync.localGroups[frame] = hashGameStateGroups(snap);
             const r = mpSync.remote[frame];
             if (r !== undefined) { mpCompareHash(frame, r); delete mpSync.remote[frame]; }
         }
@@ -15619,9 +15718,11 @@
                 }
             }
             if (currentFrame % 64 === 0) {
-                const cutoff = currentFrame - 300;
+                const cutoff = currentFrame - 300;   // >> MAX_ROLLBACK_FRAMES + INPUT_DELAY, keeps ample re-sim + compare window
                 for (const k in mpSync.local) if ((k | 0) < cutoff) delete mpSync.local[k];
                 for (const k in mpSync.remote) if ((k | 0) < cutoff) delete mpSync.remote[k];
+                for (const k in mpSync.localGroups) if ((k | 0) < cutoff) delete mpSync.localGroups[k];
+                for (const k in mpSync.detailSent) if ((k | 0) < cutoff) delete mpSync.detailSent[k];
             }
         }
 
@@ -15897,7 +15998,7 @@
             startRound();
 
             // Reset netcode test harness + show the telemetry overlay for this match
-            mpSync.local = {}; mpSync.remote = {}; mpSync.lastOkFrame = -1;
+            mpSync.local = {}; mpSync.remote = {}; mpSync.localGroups = {}; mpSync.detailSent = {}; mpSync.lastOkFrame = -1;
             mpSync.desync = null; mpSync.mismatches = 0; mpSync.rollbacks = 0; mpSync.lastRollback = 0;
             toggleMpOverlay(true);
 

@@ -24,6 +24,33 @@
 ## Working log
 _Append-only. Newest at top. Each entry: date · decision/change · open issues._
 
+- 2026-07-05 · Post-250ms-test: added desync FIELD diagnostics + high-latency stutter mitigation
+  (index.html driver only; hashGameState UNCHANGED, no js/sim.js change, no ?v= bump). **A) FIELD
+  DIAGNOSTICS:** new `hashGameStateGroups(snap)` computes 7 independent-accumulator sub-hashes
+  (leftPaddle/rightPaddle = paddleZ/prevPaddleZ/moveAccum; leftCore/rightCore = mana/regen/freeze/
+  tower/cast/cooldowns/juice; projectiles; rng = rngSeed/nextProjId; misc = frame/scores) whose
+  union == exactly the field set hashGameState mixes, same 1e-3 quant. `mpStoreHash` now captures
+  the snapshot ONCE and stores both the main hash and groups in a new `mpSync.localGroups` ring
+  (pruned same as .local at currentFrame-300; reset in startMultiplayerMatch). On the FIRST desync
+  at frame N, `mpCompareHash` calls `mpSendDetail(N)` (guarded by `mpSync.detailSent`) -> new
+  `SYNC_DETAIL {frame,groups}` msg; peer's `mpReceiveDetail` compares to its own groups, warns
+  `[MP DESYNC FIELDS] frame N: <group>=local <lh> != remote <rh>, ...` (differing groups ONLY),
+  then reflects its groups back (guarded, no loop) so BOTH peers print. Off the hot path (exchange
+  only on detected desync). **B) LATENCY CONSTANTS:** INPUT_DELAY 2->4, MAX_ROLLBACK_FRAMES 8->12,
+  MAX_FRAME_ADVANTAGE 4->8 (all commented latency-tunable). Rationale: 250ms RTT ~= 7-8 frame
+  one-way latency was tripping the old advantage=4 stall every tick (stutter); 8<12 keeps a stalled
+  gap inside the rollback window. Retention audited: gameStateHistory caps at MAX_ROLLBACK_FRAMES
+  (scales to 12), rollback scan bounded by gameStateHistory[0].frame (no hardcode), input history
+  keeps 120 (>>12+4), MP_SYNC_LAG=MAX_ROLLBACK_FRAMES+2=14, prune cutoff 300. **Determinism:**
+  hashGameState byte-unchanged; oracle drives simulateNetworkFrame directly and never reads the
+  changed constants (only runNetworkFrame/runPvPGameLoop/checkForRollback/performRollback/
+  cleanupOldHistory/mpMaybeSendHash do), so 954ea557/5afbc1a6 provably can't move. node --check on
+  extracted inline PASS. Report: .superpowers/sdd/netcode-diag-report.md. Staged, NOT committed. ·
+  Open: (1) new constants need live 2-peer tuning (stutter vs safety at 250ms; smooth <100ms goal).
+  (2) oracle live re-run is human's (browser-only) — reasoned green, not run. (3) if [MP DESYNC
+  FIELDS] ever prints "all group hashes MATCH", the diverged field is outside hashGameState's set
+  (shouldn't happen — groups cover it fully) — investigate hash coverage.
+
 - 2026-07-05 · Fixed 3 launch-gate netcode defects (index.html driver only; no js/sim.js change, no ?v= bump).
   **DEFECT 1 (CRITICAL, silent desync):** `performRollback` re-simulated [toFrame,currentFrame) but never
   RE-CAPTURED the intermediate snapshots — kept stale value-copies embedding the old-timeline frame-toFrame
