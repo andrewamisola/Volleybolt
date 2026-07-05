@@ -16817,14 +16817,33 @@
             // the main-menu / pause buttons exactly and clicks reliably. Keyboard Enter still works.
             if (window.guiElements.continueBtn) window.guiElements.continueBtn.isVisible = false;
             victoryContinueAt = Date.now() + VICTORY_CONTINUE_GRACE_MS;
+            // Both buttons live in one flex-column container BELOW the battle report, so they
+            // stack with a gap instead of overlapping each other or the report. Show the
+            // container; grace-disable both buttons until the report is readable.
             const contBtn = ensureVictoryContinueBtn();
-            contBtn.disabled = true;                 // grace: greyed out until the report is readable
-            contBtn.style.display = 'block';
-            setTimeout(() => { const b = document.getElementById('victoryContinueBtn'); if (b) b.disabled = false; }, VICTORY_CONTINUE_GRACE_MS);
-            const paBtn = ensureVictoryPlayAgainBtn();
-            paBtn.disabled = true;                   // same grace period
-            paBtn.style.display = 'block';
-            setTimeout(() => { const b = document.getElementById('victoryPlayAgainBtn'); if (b) b.disabled = false; }, VICTORY_CONTINUE_GRACE_MS);
+            const paBtn   = ensureVictoryPlayAgainBtn();
+            const btnBox  = ensureVictoryButtonContainer();
+            btnBox.style.display = 'flex';
+            contBtn.disabled = true;
+            paBtn.disabled = true;
+            setTimeout(() => {
+                const c = document.getElementById('victoryContinueBtn');   if (c) c.disabled = false;
+                const p = document.getElementById('victoryPlayAgainBtn');  if (p) p.disabled = false;
+            }, VICTORY_CONTINUE_GRACE_MS);
+        }
+
+        // Flex-column container holding the two victory buttons (Play Again on top, Main Menu
+        // below). Positioned once, BELOW the GUI Battle Report leaderboard (150px tall, centered
+        // at +20 → its bottom is ~+95 below center = ref-y 635). Lives in #hudScaleLayer (1920x1080
+        // reference, zoomed by --ui-scale), so it scales with the report at every size/fullscreen.
+        function ensureVictoryButtonContainer() {
+            let box = document.getElementById('victoryButtons');
+            if (box) return box;
+            box = document.createElement('div');
+            box.id = 'victoryButtons';
+            box.style.cssText = 'position:absolute;left:960px;top:calc(540px + 118px);transform:translateX(-50%);z-index:650;display:none;flex-direction:column;gap:14px;align-items:center;pointer-events:none';
+            (document.getElementById('hudScaleLayer') || document.body).appendChild(box);
+            return box;
         }
         // DOM Continue button for the Victory/Defeat screen — styled like the menu buttons.
         function ensureVictoryContinueBtn() {
@@ -16834,16 +16853,13 @@
             btn.id = 'victoryContinueBtn';
             btn.className = 'game-btn menu-btn';
             btn.textContent = 'Main Menu';
-            // Live INSIDE the 1920x1080 HUD scale layer (zoomed by --ui-scale) so the button
-            // scales in lockstep with the GUI Battle Report above it — at every window size AND
-            // fullscreen. (It used to be position:fixed on <body> with raw-px offsets, so it did
-            // NOT scale with the report and looked wrong at fullscreen.) Reference coords: layer
-            // center is (960, 540); the report ends ~+105px below center, so +140 sits just under
-            // it with a gap that now scales too. pointer-events:auto re-enables clicks (the layer
-            // is pointer-events:none). Still a descendant of <body>, so isAnyMenuOpen()'s
-            // gameOver→document.body root + getNavFocusables still resolve it for controller nav.
-            btn.style.cssText = 'position:absolute;left:960px;top:calc(540px + 140px);transform:translateX(-50%);z-index:650;display:none;min-width:260px;pointer-events:auto';
-            (document.getElementById('hudScaleLayer') || document.body).appendChild(btn);
+            // Flex item in #victoryButtons (order:2 → below Play Again). The container handles
+            // positioning + scaling (in #hudScaleLayer). pointer-events:auto re-enables clicks
+            // (the layer/container are pointer-events:none). Still a <body> descendant, so
+            // isAnyMenuOpen()'s gameOver→document.body root + getNavFocusables resolve it for
+            // controller nav.
+            btn.style.cssText = 'order:2;display:block;min-width:260px;pointer-events:auto';
+            ensureVictoryButtonContainer().appendChild(btn);
             btn.addEventListener('click', () => returnToMenuTransition());
             return btn;
         }
@@ -16859,10 +16875,10 @@
             btn.id = 'victoryPlayAgainBtn';
             btn.className = 'game-btn menu-btn';
             btn.textContent = 'Play Again';
-            // Positioned ~48 px above the Main Menu button (which sits at 540+140=680px).
-            // 680 - 48 = 632 → expressed as calc(540px + 92px) to mirror the existing idiom.
-            btn.style.cssText = 'position:absolute;left:960px;top:calc(540px + 92px);transform:translateX(-50%);z-index:650;display:none;min-width:260px;pointer-events:auto';
-            (document.getElementById('hudScaleLayer') || document.body).appendChild(btn);
+            // Flex item in #victoryButtons (order:1 → on top, above Main Menu). The container
+            // handles positioning/scaling; pointer-events:auto re-enables clicks.
+            btn.style.cssText = 'order:1;display:block;min-width:260px;pointer-events:auto';
+            ensureVictoryButtonContainer().appendChild(btn);
             btn.addEventListener('click', () => {
                 if (Date.now() < victoryContinueAt) return;  // grace guard
                 if (gameMode === 'pvp') {
@@ -16927,11 +16943,9 @@
                     window.guiElements.victoryLeaderboard.isVisible = false;
                 }
             }
-            // Hide the DOM Continue / Play Again buttons.
-            const contBtn = document.getElementById('victoryContinueBtn');
-            if (contBtn) contBtn.style.display = 'none';
-            const paBtn = document.getElementById('victoryPlayAgainBtn');
-            if (paBtn) paBtn.style.display = 'none';
+            // Hide the DOM victory-button container (Play Again + Main Menu).
+            const btnBox = document.getElementById('victoryButtons');
+            if (btnBox) btnBox.style.display = 'none';
         }
 
         function resetGame() {
