@@ -15476,9 +15476,10 @@
                     break;
 
                 case 'REMATCH':
-                    // Opponent clicked Play Again — mirror their return to the connected lobby.
-                    // The existing Ready/Start flow takes over from here.
-                    _returnToConnectedLobby();
+                    // Host clicked Play Again — the joiner mirrors the return to the connected lobby.
+                    // Guard: only while still on the post-match screen (gameOver) and not already
+                    // leaving to the menu, so a late REMATCH can't drag us back after we've left.
+                    if (gameMode === 'pvp' && gameOver && !_returningToMenu) _returnToConnectedLobby();
                     break;
 
                 case 'DEBUG_END':
@@ -16926,8 +16927,15 @@
             // container; grace-disable both buttons until the report is readable.
             const contBtn = ensureVictoryContinueBtn();
             const paBtn   = ensureVictoryPlayAgainBtn();
+            const waitEl  = ensureVictoryWaitLabel();
             const btnBox  = ensureVictoryButtonContainer();
             btnBox.style.display = 'flex';
+            // Host-authoritative rematch: the decider (SP local player, or the PvP HOST) gets Play
+            // Again; the PvP JOINER instead sees "Waiting for host..." and can only leave. This is
+            // why one player can't force the other into a rematch.
+            const joinerWaiting = (gameMode === 'pvp' && !isHost);
+            paBtn.style.display  = joinerWaiting ? 'none' : 'block';
+            waitEl.style.display = joinerWaiting ? 'block' : 'none';
             contBtn.disabled = true;
             paBtn.disabled = true;
             setTimeout(() => {
@@ -16949,6 +16957,18 @@
             (document.getElementById('hudScaleLayer') || document.body).appendChild(box);
             return box;
         }
+        // "Waiting for host..." label shown to the PvP joiner in Play Again's slot (order:1),
+        // since only the host starts a rematch (host-authoritative).
+        function ensureVictoryWaitLabel() {
+            let el = document.getElementById('victoryWaitLabel');
+            if (el) return el;
+            el = document.createElement('div');
+            el.id = 'victoryWaitLabel';
+            el.textContent = 'Waiting for host...';
+            el.style.cssText = "order:1;display:none;min-width:260px;text-align:center;color:#dfe6f2;font-family:'FF9UI',sans-serif;font-size:18px;opacity:0.85;pointer-events:none";
+            ensureVictoryButtonContainer().appendChild(el);
+            return el;
+        }
         // DOM Continue button for the Victory/Defeat screen — styled like the menu buttons.
         function ensureVictoryContinueBtn() {
             let btn = document.getElementById('victoryContinueBtn');
@@ -16964,7 +16984,16 @@
             // controller nav.
             btn.style.cssText = 'order:2;display:block;min-width:260px;pointer-events:auto';
             ensureVictoryButtonContainer().appendChild(btn);
-            btn.addEventListener('click', () => returnToMenuTransition());
+            btn.addEventListener('click', () => {
+                // In PvP, leaving the match also DISCONNECTS the peer, so the opponent gets a clean
+                // "opponent left" (via LEAVE → handleDisconnect) and can't drag us back with a late
+                // rematch request.
+                if (gameMode === 'pvp') {
+                    try { sendLeaveMessage('Opponent returned to the menu'); } catch (e) {}
+                    try { cleanupPeer(); } catch (e) {}
+                }
+                returnToMenuTransition();
+            });
             return btn;
         }
 
@@ -16986,8 +17015,12 @@
             btn.addEventListener('click', () => {
                 if (Date.now() < victoryContinueAt) return;  // grace guard
                 if (gameMode === 'pvp') {
-                    // Multiplayer rematch: notify peer then return to connected lobby.
-                    if (conn && conn.open) conn.send({ type: 'REMATCH' });
+                    // Host-authoritative: only the host starts a rematch. If the peer is already
+                    // gone, do nothing (the disconnect overlay handles that) instead of dropping
+                    // into an empty lobby.
+                    if (!isHost) return;
+                    if (!(conn && conn.open)) return;
+                    conn.send({ type: 'REMATCH' });
                     _returnToConnectedLobby();
                 } else {
                     // Single-player rematch: fresh match vs AI, ELO carries over.
