@@ -12703,40 +12703,36 @@
                 const rightC = combatants.right;
 
                 // ---- 1. CAST BARS (old ~12256-12294) ----
-                // Read sim-authoritative casting/castProgress/castTime; drive 2-D and 3-D bars.
-                //
-                // LOCAL/REMOTE mapping so that the 2-D under-mana bars (visibility + fill) always
-                // agree regardless of which physical side the local player occupies:
-                //   SP:        localC = leftC  (player),  remoteC = rightC (AI)
-                //   PvP host:  localC = leftC,            remoteC = rightC  (same as SP — host is left)
-                //   PvP joiner:localC = rightC,           remoteC = leftC   (joiner plays right side)
-                //
-                // 3-D cast bars are position-based (above each wizard) and must NOT be swapped:
-                //   left wizard's bar  ← leftC,   right wizard's bar ← rightC.
+                // 2D under-mana cast bars are POSITIONAL. Both peers see the SAME canonical view
+                // (no camera flip; the HUD is canonical — applyClientPerspective is only ever called
+                // with false), so the LEFT wizard's cast drives the LEFT/player bar and the RIGHT
+                // wizard's drives the RIGHT/ai bar. This is one-to-one with the 3D bars above each
+                // wizard. (An earlier local/remote mapping put the joiner's cast on the host's side.)
+                // localC/remoteC below are used ONLY for the casting SOUND (local caster louder).
                 const localC  = (gameMode === 'pvp') ? (isHost ? leftC : rightC) : leftC;
                 const remoteC = (gameMode === 'pvp') ? (isHost ? rightC : leftC) : rightC;
 
-                // --- Local player 2D bar (#castBarContainer + Babylon GUI playerCastContainer) ---
-                if (localC && localC.casting) {
-                    const rawProg = localC.castTime > 0 ? localC.castProgress / localC.castTime : 0;
+                // --- LEFT / player 2D bar (#castBarContainer + GUI playerCastContainer) ← leftC ---
+                if (leftC && leftC.casting) {
+                    const rawProg = leftC.castTime > 0 ? leftC.castProgress / leftC.castTime : 0;
                     const prog = (typeof rawProg === 'number' && isFinite(rawProg)) ? Math.max(0, Math.min(1, rawProg)) : 0;
-                    const ab = getAbility(localC.casting);
-                    const spellName = ab ? ab.name : localC.casting;
-                    // DOM local bar
+                    const ab = getAbility(leftC.casting);
+                    const spellName = ab ? ab.name : leftC.casting;
                     const domLabel = document.getElementById('castBarLabel');
                     const domBar   = document.getElementById('castBarProgress');
                     if (domLabel) domLabel.textContent = spellName;
                     if (domBar)   domBar.value = prog * 100;
-                    // Babylon GUI local bar (fill + label; visibility handled by showCastBar below)
                     if (window.guiElements) {
                         if (window.guiElements.playerCastLabel) window.guiElements.playerCastLabel.text = spellName;
                         if (window.guiElements.playerCastFill)  window.guiElements.playerCastFill.width = (prog * 100) + '%';
                         const htmlLabel = document.getElementById('playerCastLabelHtml');
                         if (htmlLabel) { htmlLabel.textContent = spellName; htmlLabel.classList.add('visible'); }
                     }
-                    // Ability icon cast-progress overlay (local player's ability bar)
-                    const overlay = document.getElementById(localC.casting + 'CastProgress');
-                    if (overlay) overlay.style.setProperty('--cast-progress', (360 - prog * 360) + 'deg');
+                    // Ability-icon cast ring: only for the LOCAL player's own ability bar.
+                    if (leftC.isLocalPlayer) {
+                        const overlay = document.getElementById(leftC.casting + 'CastProgress');
+                        if (overlay) overlay.style.setProperty('--cast-progress', (360 - prog * 360) + 'deg');
+                    }
                     showCastBar(true);
                 } else {
                     showCastBar(false);
@@ -12746,23 +12742,26 @@
                     }
                 }
 
-                // --- Remote / opponent 2D bar (#aiCastBarContainer + Babylon GUI aiCastContainer) ---
-                if (remoteC && remoteC.casting) {
-                    const rawProg = remoteC.castTime > 0 ? remoteC.castProgress / remoteC.castTime : 0;
+                // --- RIGHT / ai 2D bar (#aiCastBarContainer + GUI aiCastContainer) ← rightC ---
+                if (rightC && rightC.casting) {
+                    const rawProg = rightC.castTime > 0 ? rightC.castProgress / rightC.castTime : 0;
                     const prog = (typeof rawProg === 'number' && isFinite(rawProg)) ? Math.max(0, Math.min(1, rawProg)) : 0;
-                    const ab = getAbility(remoteC.casting);
-                    const spellName = ab ? ab.name : remoteC.casting;
-                    // DOM AI bar
+                    const ab = getAbility(rightC.casting);
+                    const spellName = ab ? ab.name : rightC.casting;
                     const domLabel = document.getElementById('aiCastBarLabel');
                     const domBar   = document.getElementById('aiCastBarProgress');
                     if (domLabel) domLabel.textContent = spellName;
                     if (domBar)   domBar.value = prog * 100;
-                    // Babylon GUI AI bar (fill + label; visibility handled by showAICastBar below)
                     if (window.guiElements) {
                         if (window.guiElements.aiCastLabel) window.guiElements.aiCastLabel.text = spellName;
                         if (window.guiElements.aiCastFill)  window.guiElements.aiCastFill.width = (prog * 100) + '%';
                         const htmlLabel = document.getElementById('aiCastLabelHtml');
                         if (htmlLabel) { htmlLabel.textContent = spellName; htmlLabel.classList.add('visible'); }
+                    }
+                    // Ability-icon cast ring: only when the RIGHT wizard is the local player (joiner).
+                    if (rightC.isLocalPlayer) {
+                        const overlay = document.getElementById(rightC.casting + 'CastProgress');
+                        if (overlay) overlay.style.setProperty('--cast-progress', (360 - prog * 360) + 'deg');
                     }
                     showAICastBar(true);
                 } else {
