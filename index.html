@@ -3524,8 +3524,9 @@
 
             // PvP mode - update network input buffer
             if (gameMode === 'pvp' && roundActive) {
-                // Movement (continuous) - invert for client since camera is flipped
-                const moveMultiplier = isHost ? 1 : -1;
+                // Movement (continuous). PvP has NO camera flip (the joiner sees the canonical
+                // view and plays the right side), so BOTH sides map up/down the same way.
+                const moveMultiplier = 1;
                 if (e.code === 'KeyW' || e.code === 'ArrowUp') {
                     pendingNetInput.moveDir = 1 * moveMultiplier;
                 }
@@ -3607,8 +3608,8 @@
 
             // PvP mode - update movement when key released
             if (gameMode === 'pvp') {
-                // Use same inversion as keydown for client
-                const moveMultiplier = isHost ? 1 : -1;
+                // Same mapping as keydown (no camera flip → no inversion).
+                const moveMultiplier = 1;
                 if (e.code === 'KeyW' || e.code === 'ArrowUp') {
                     if (pendingNetInput.moveDir === 1 * moveMultiplier) pendingNetInput.moveDir = 0;
                 }
