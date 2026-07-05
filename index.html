@@ -12581,6 +12581,11 @@
             window.skillToProfile = skillToProfile;
             window.makeAIRng = makeAIRng;
             window.AI_RNG_SEED = AI_RNG_SEED;
+            // updateMatchPresentation lives in THIS inner closure (used by runSinglePlayerFrame),
+            // but runPvPGameLoop is in the OUTER scope and can't see it directly — expose it so the
+            // PvP loop can drive the same per-frame FX. (Fixes: "updateMatchPresentation is not
+            // defined" crash in runPvPGameLoop.) Function declaration → hoisted, safe to ref here.
+            window.updateMatchPresentation = updateMatchPresentation;
 
             // Sim-state snapshot for the AI view. Reads authoritative sim state (proj.x/z,
             // combatant.paddleX/paddleZ) only — no .mesh reads. Everything downstream (decideAI) is pure.
@@ -16291,7 +16296,9 @@
             // paddle rotation targets, footsteps, ice/freeze visuals, cooldown/mana UI,
             // and per-projectile trail/shadow/glow/sound. Called once per rendered frame on
             // settled sim state (after the fixed-step while loop); isResimulating is false here.
-            updateMatchPresentation(renderDt);
+            // Via window: updateMatchPresentation is defined in the inner game-setup closure,
+            // which this outer-scope loop cannot reach directly.
+            if (window.updateMatchPresentation) window.updateMatchPresentation(renderDt);
         }
 
         // Update barrier pulse effect
