@@ -24,6 +24,30 @@
 ## Working log
 _Append-only. Newest at top. Each entry: date · decision/change · open issues._
 
+- 2026-07-05 · Fixed the two coupled launch-blocker bugs (unbounded frame drift + dead rollback)
+  causing one-directional input propagation (ahead-peer sees behind-peer's paddle frozen). index.html
+  only, no js/sim.js change, no ?v= bump. **BUG A (time-sync):** added module-level
+  `highestRemoteInputFrame` (index.html:888) tracked in `receiveRemoteInput` (:15822) + reset in
+  `startMultiplayerMatch` (:15734); added `MAX_FRAME_ADVANTAGE=2` (:892); added a frame-advantage
+  STALL in `runPvPGameLoop`'s fixed-step loop (:16254-16269) that holds local pacing (netAccumulator=0
+  + break, guarded on highestRemoteInputFrame>=0) when currentFrame runs > MAX_FRAME_ADVANTAGE ahead of
+  the remote's estimated frame (highestRemoteInputFrame - INPUT_DELAY), keeping the gap inside
+  MAX_ROLLBACK_FRAMES=8. Pure local pacing — never changes which frames/inputs simulateNetworkFrame
+  sees. **BUG B (dead rollback):** `checkForRollback` (:16154) lower bound changed from the wrong var
+  `lastConfirmedRemoteFrame+1` (set only by INPUT_ACK ~= currentFrame+INPUT_DELAY, so the scan range was
+  always empty) to `gameStateHistory[0].frame` (oldest re-simulable snapshot); still returns the earliest
+  mismatch. Added reconciliation in `performRollback`'s re-sim loop (:16205-16221): snap
+  predicted*=actual for CONFIRMED previously-predicted frames after re-sim so a corrected frame triggers
+  exactly ONE rollback then goes silent (still-predicted frames keep wasPredicted/predicted* so their
+  later arrival can still roll back). Determinism-safe: dbg.determinism(180,12345)=954ea557 and
+  dbg.aiDeterminism(50,42)=5afbc1a6 cannot move — every edit is in netcode-driver funcs the oracles
+  bypass (they call simulateNetworkFrame directly); sim + AI paths untouched. node --check on extracted
+  inline: PASS. Report: .superpowers/sdd/netcode-fix-report.md. Changes staged, NOT committed. · Open:
+  (1) MAX_FRAME_ADVANTAGE=2 is untuned — needs live 2-peer tuning (stutter vs safety margin). (2) A
+  prolonged stall on total input loss reads as a freeze until the existing disconnect path fires
+  (disconnect handling out of scope, unchanged). (3) NOT live-verified — 2-peer sync confirmation is the
+  human's; this is code-made + reasoned-correct only, NOT a sync-fixed claim.
+
 - 2026-07-02 (golden re-pin) · Golden-hash stale-pin correction (owner-authorized; closes the
   re-baseline open issue from the two entries below). **Root cause found via `git log -S 8f6e6da1`:**
   the `8f6e6da1` pin was added IN `b7e492b` itself — that big squashed playtest commit measured the

@@ -885,9 +885,11 @@
         let localInputHistory = [];    // Our inputs indexed by frame
         let remoteInputHistory = [];   // Their inputs indexed by frame
         let lastConfirmedRemoteFrame = -1;
+        let highestRemoteInputFrame = -1; // Highest remote INPUT frame received (for time-sync). Remote's est. frame ~= this - INPUT_DELAY.
         let gameStateHistory = [];     // State snapshots for rollback
         const MAX_ROLLBACK_FRAMES = 8; // ~133ms at 60fps
         const INPUT_DELAY = 2;         // Frames of input delay (reduces rollbacks)
+        const MAX_FRAME_ADVANTAGE = 2; // Frame-advantage stall threshold: hold local pacing if we run this far ahead of the remote.
         const TICK_RATE = 60;
         const TICK_MS = 1000 / TICK_RATE;
         let netAccumulator = 0;        // For fixed timestep
@@ -15729,6 +15731,7 @@
             localInputHistory = [];
             remoteInputHistory = [];
             lastConfirmedRemoteFrame = -1;
+            highestRemoteInputFrame = -1;
             gameStateHistory = [];
             nextProjectileId = 0;
             netAccumulator = 0;
@@ -15813,6 +15816,10 @@
         // Receive remote input from opponent
         function receiveRemoteInput(data) {
             const frame = data.frame;
+
+            // Track the furthest remote input frame for frame-advantage time-sync (BUG A).
+            // Local pacing only — never used inside simulateNetworkFrame, so determinism holds.
+            if (frame > highestRemoteInputFrame) highestRemoteInputFrame = frame;
 
             // Store the input
             if (!remoteInputHistory[frame]) {
@@ -16145,8 +16152,15 @@
 
         // Check if we need to rollback
         function checkForRollback() {
-            // Look for frames where we predicted wrong
-            for (let f = lastConfirmedRemoteFrame + 1; f < currentFrame; f++) {
+            // BUG B fix: scan from the oldest frame we still have a snapshot for (the furthest
+            // back we could re-simulate) up to currentFrame, and return the EARLIEST frame whose
+            // confirmed remote input differs from what we predicted. The old lower bound used
+            // lastConfirmedRemoteFrame, which is set by INPUT_ACK (how far the REMOTE ack'd OUR
+            // input, ~currentFrame + INPUT_DELAY) — so the scan range was empty and rollback
+            // never fired. reconcileRollbackFrame() clears the mismatch after a rollback so the
+            // same frame does not re-trigger every tick.
+            const scanFrom = gameStateHistory.length ? gameStateHistory[0].frame : 0;
+            for (let f = scanFrom; f < currentFrame; f++) {
                 const remote = remoteInputHistory[f];
                 if (remote && remote.confirmed && remote.wasPredicted) {
                     // Compare predicted vs actual
@@ -16198,6 +16212,22 @@
 
                 // Overwrite this re-simulated frame's hash with the settled value
                 mpStoreHash(f);
+
+                // Reconcile (BUG B fix): now that this frame's confirmed remote input has been
+                // applied, snap its stored prediction to the actual value so checkForRollback
+                // won't keep returning it every tick. Only reconcile CONFIRMED frames — an
+                // still-predicted frame must keep wasPredicted/predicted* intact so its real
+                // input can trigger a future rollback when it arrives. Pure bookkeeping on the
+                // input-history record; touches nothing simulateNetworkFrame reads.
+                const rem = remoteInputHistory[f];
+                if (rem && rem.confirmed && rem.wasPredicted) {
+                    rem.predictedMoveDir = rem.moveDir;
+                    rem.predictedParry = rem.parry;
+                    rem.predictedFireball = rem.fireball;
+                    rem.predictedFrostbolt = rem.frostbolt;
+                    rem.predictedThunderstorm = rem.thunderstorm;
+                    rem.predictedJuice = rem.juice;
+                }
             }
 
             // Trim old state history
@@ -16220,6 +16250,20 @@
 
             // Process fixed timestep frames
             while (netAccumulator >= TICK_MS) {
+                // Frame-advantage stall (BUG A): if we've run too far ahead of the remote,
+                // hold this tick so it can catch up (keeps the gap under MAX_ROLLBACK_FRAMES).
+                // This is PURE LOCAL PACING — it only gates WHEN runNetworkFrame is called,
+                // never WHICH frames/inputs are simulated. Both peers still simulate the same
+                // frames with the same inputs, so determinism is unaffected. Never stall before
+                // the first remote input arrives, or the match could never start.
+                if (highestRemoteInputFrame >= 0) {
+                    const remoteFrameEst = highestRemoteInputFrame - INPUT_DELAY;
+                    const frameAdvantage = currentFrame - remoteFrameEst;
+                    if (frameAdvantage > MAX_FRAME_ADVANTAGE) {
+                        netAccumulator = 0; // drop backlog so we resume at 1x once the remote catches up (avoids a burst)
+                        break;
+                    }
+                }
                 runNetworkFrame();
                 netAccumulator -= TICK_MS;
             }
