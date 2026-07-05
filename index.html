@@ -12704,30 +12704,87 @@
 
                 // ---- 1. CAST BARS (old ~12256-12294) ----
                 // Read sim-authoritative casting/castProgress/castTime; drive 2-D and 3-D bars.
-                if (leftC && leftC.casting) {
-                    const progress = leftC.castTime > 0 ? leftC.castProgress / leftC.castTime : 0;
-                    const ab = getAbility(leftC.casting);
-                    const spellName = ab ? ab.name : leftC.casting;
-                    const spellElem = ab ? ab.element : 'fire';
-                    updateCombatantCastBarUI(leftC, spellName, spellElem, progress);
-                    if (window.update3DCastBar) window.update3DCastBar(progress, true);
+                //
+                // LOCAL/REMOTE mapping so that the 2-D under-mana bars (visibility + fill) always
+                // agree regardless of which physical side the local player occupies:
+                //   SP:        localC = leftC  (player),  remoteC = rightC (AI)
+                //   PvP host:  localC = leftC,            remoteC = rightC  (same as SP — host is left)
+                //   PvP joiner:localC = rightC,           remoteC = leftC   (joiner plays right side)
+                //
+                // 3-D cast bars are position-based (above each wizard) and must NOT be swapped:
+                //   left wizard's bar  ← leftC,   right wizard's bar ← rightC.
+                const localC  = (gameMode === 'pvp') ? (isHost ? leftC : rightC) : leftC;
+                const remoteC = (gameMode === 'pvp') ? (isHost ? rightC : leftC) : rightC;
+
+                // --- Local player 2D bar (#castBarContainer + Babylon GUI playerCastContainer) ---
+                if (localC && localC.casting) {
+                    const rawProg = localC.castTime > 0 ? localC.castProgress / localC.castTime : 0;
+                    const prog = (typeof rawProg === 'number' && isFinite(rawProg)) ? Math.max(0, Math.min(1, rawProg)) : 0;
+                    const ab = getAbility(localC.casting);
+                    const spellName = ab ? ab.name : localC.casting;
+                    // DOM local bar
+                    const domLabel = document.getElementById('castBarLabel');
+                    const domBar   = document.getElementById('castBarProgress');
+                    if (domLabel) domLabel.textContent = spellName;
+                    if (domBar)   domBar.value = prog * 100;
+                    // Babylon GUI local bar (fill + label; visibility handled by showCastBar below)
+                    if (window.guiElements) {
+                        if (window.guiElements.playerCastLabel) window.guiElements.playerCastLabel.text = spellName;
+                        if (window.guiElements.playerCastFill)  window.guiElements.playerCastFill.width = (prog * 100) + '%';
+                        const htmlLabel = document.getElementById('playerCastLabelHtml');
+                        if (htmlLabel) { htmlLabel.textContent = spellName; htmlLabel.classList.add('visible'); }
+                    }
+                    // Ability icon cast-progress overlay (local player's ability bar)
+                    const overlay = document.getElementById(localC.casting + 'CastProgress');
+                    if (overlay) overlay.style.setProperty('--cast-progress', (360 - prog * 360) + 'deg');
                     showCastBar(true);
                 } else {
-                    if (window.update3DCastBar) window.update3DCastBar(0, false);
                     showCastBar(false);
+                    if (window.guiElements) {
+                        const htmlLabel = document.getElementById('playerCastLabelHtml');
+                        if (htmlLabel) htmlLabel.classList.remove('visible');
+                    }
                 }
 
-                if (rightC && rightC.casting) {
-                    const progress = rightC.castTime > 0 ? rightC.castProgress / rightC.castTime : 0;
-                    const ab = getAbility(rightC.casting);
-                    const spellName = ab ? ab.name : rightC.casting;
-                    const spellElem = ab ? ab.element : 'fire';
-                    updateCombatantCastBarUI(rightC, spellName, spellElem, progress);
-                    if (window.updateAI3DCastBar) window.updateAI3DCastBar(progress, true);
+                // --- Remote / opponent 2D bar (#aiCastBarContainer + Babylon GUI aiCastContainer) ---
+                if (remoteC && remoteC.casting) {
+                    const rawProg = remoteC.castTime > 0 ? remoteC.castProgress / remoteC.castTime : 0;
+                    const prog = (typeof rawProg === 'number' && isFinite(rawProg)) ? Math.max(0, Math.min(1, rawProg)) : 0;
+                    const ab = getAbility(remoteC.casting);
+                    const spellName = ab ? ab.name : remoteC.casting;
+                    // DOM AI bar
+                    const domLabel = document.getElementById('aiCastBarLabel');
+                    const domBar   = document.getElementById('aiCastBarProgress');
+                    if (domLabel) domLabel.textContent = spellName;
+                    if (domBar)   domBar.value = prog * 100;
+                    // Babylon GUI AI bar (fill + label; visibility handled by showAICastBar below)
+                    if (window.guiElements) {
+                        if (window.guiElements.aiCastLabel) window.guiElements.aiCastLabel.text = spellName;
+                        if (window.guiElements.aiCastFill)  window.guiElements.aiCastFill.width = (prog * 100) + '%';
+                        const htmlLabel = document.getElementById('aiCastLabelHtml');
+                        if (htmlLabel) { htmlLabel.textContent = spellName; htmlLabel.classList.add('visible'); }
+                    }
                     showAICastBar(true);
                 } else {
-                    if (window.updateAI3DCastBar) window.updateAI3DCastBar(0, false);
                     showAICastBar(false);
+                    if (window.guiElements) {
+                        const htmlLabel = document.getElementById('aiCastLabelHtml');
+                        if (htmlLabel) htmlLabel.classList.remove('visible');
+                    }
+                }
+
+                // --- 3D cast bars: always positional (left wizard ← leftC, right wizard ← rightC) ---
+                if (leftC && leftC.casting) {
+                    const progress = leftC.castTime > 0 ? leftC.castProgress / leftC.castTime : 0;
+                    if (window.update3DCastBar) window.update3DCastBar(progress, true);
+                } else {
+                    if (window.update3DCastBar) window.update3DCastBar(0, false);
+                }
+                if (rightC && rightC.casting) {
+                    const progress = rightC.castTime > 0 ? rightC.castProgress / rightC.castTime : 0;
+                    if (window.updateAI3DCastBar) window.updateAI3DCastBar(progress, true);
+                } else {
+                    if (window.updateAI3DCastBar) window.updateAI3DCastBar(0, false);
                 }
 
                 // ---- 2. PADDLE ROTATION TARGET (old ~12316-12379, rotation-only) ----
