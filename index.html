@@ -888,18 +888,18 @@
         let highestRemoteInputFrame = -1; // Highest remote INPUT frame received (for time-sync). Remote's est. frame ~= this - INPUT_DELAY.
         let remoteCurrentFrame = -1;   // DEFECT 2: the peer's ACTUAL currentFrame, piggybacked on each INPUT msg (data.senderFrame). Gives a true frame gap instead of a latency-lagged estimate.
         let gameStateHistory = [];     // State snapshots for rollback
-        // LATENCY-TUNING VALUES — revisit after live 2-peer tests. Goal: graceful degradation
-        // (playable-but-laggy) at ~250ms RTT, smooth under ~100ms. At 250ms the one-way latency is
-        // ~7-8 frames, so the steady-state frame gap must fit inside the stall tolerance without
-        // tripping every tick. Coherent set: INPUT_DELAY hides more latency (fewer rollbacks),
-        // MAX_ROLLBACK_FRAMES gives the re-sim window headroom, and MAX_FRAME_ADVANTAGE stays safely
-        // below MAX_ROLLBACK_FRAMES so a stall never lets the gap exceed the rollback window.
-        const MAX_ROLLBACK_FRAMES = 12; // ~200ms at 60fps (raised 8->12 for 250ms-RTT headroom)
-        const INPUT_DELAY = 4;          // Frames of input delay (raised 2->4 to hide more latency, fewer rollbacks)
-        // Frame-advantage stall threshold. Raised 4->8 so ~7-8 frames of one-way latency alone no
-        // longer trips the stall every tick; still < MAX_ROLLBACK_FRAMES(12) so a stalled gap stays
-        // inside the rollback window. TUNABLE in the live 2-peer test (stutter vs safety margin).
-        const MAX_FRAME_ADVANTAGE = 8;
+        // LATENCY-TUNING VALUES — "prioritize YOUR OWN input" config (a precise paddle game must not
+        // feel input-delayed). Philosophy: near-zero local input delay + lean on PREDICTION+ROLLBACK
+        // for the opponent, rather than delaying yourself or stalling your own view. Trade-off: at
+        // high ping the OPPONENT visibly rewinds/jitters more (that's on their side, not your control,
+        // which is the acceptable trade); under ~100ms it's clean. TUNABLE from live 2-peer tests.
+        //   INPUT_DELAY low  -> your paddle responds instantly (predicted locally).
+        //   MAX_ROLLBACK_FRAMES wide -> the re-sim window absorbs the full ~250ms gap WITHOUT stalling.
+        //   MAX_FRAME_ADVANTAGE high (but < window) -> the stall is a rare backstop, not a constant
+        //     view-freeze; it only fires if the gap would otherwise exceed the rollback window.
+        const MAX_ROLLBACK_FRAMES = 20; // ~333ms window: absorb a 250ms-RTT gap without stalling
+        const INPUT_DELAY = 1;          // 1 frame (~16ms) — essentially instant; rely on rollback, not delay
+        const MAX_FRAME_ADVANTAGE = 16; // backstop only (< MAX_ROLLBACK_FRAMES); won't trip until ~267ms drift
         const TICK_RATE = 60;
         const TICK_MS = 1000 / TICK_RATE;
         let netAccumulator = 0;        // For fixed timestep
