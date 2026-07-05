@@ -10318,7 +10318,12 @@
                     // Render the ORIGINAL high-detail mesh (clean texture + face); the 3d_rigging
                     // clips share its Meshy rig, so animations retarget onto it. (The 3d_rigging
                     // GLBs are decimated ~18x and re-baked, which smears the painted texture.)
-                    const basePath = '.pickle/', baseFile = 'pickle_wizard_v1.glb';
+                    // LIVES IN models/pickle/ with the other shipped pickle assets. It used to load
+                    // from '.pickle/' (a GITIGNORED dot-folder with force-added files) — that worked
+                    // locally and on old deploys by accident, then broke on GitHub Pages when the
+                    // upload-pages-artifact bump started excluding hidden folders from the artifact
+                    // (404 -> no character models). Never ship an asset from a dot-folder.
+                    const basePath = 'models/pickle/', baseFile = 'pickle_wizard_v1.glb';
 
                     BABYLON.SceneLoader.ImportMesh("", basePath, baseFile, scene,
                         (meshes, particleSystems, skeletons, animationGroups) => {
