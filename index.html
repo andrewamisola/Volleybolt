@@ -3529,6 +3529,13 @@
 
             keys[e.code] = true;
 
+            // Ignore OS keyboard auto-repeat. Holding a key fires keydown every ~30ms; without this
+            // guard each repeat re-pulses the one-shot actions below (pendingNetInput.fireball = true,
+            // etc.) so holding 1/3 spammed Fireball/Thunderstorm. Movement is unaffected: it's set on
+            // the first keydown and cleared on keyup, so skipping repeats leaves moveDir held. (keys[]
+            // is already set above, so held-key polling still sees the key down.)
+            if (e.repeat) return;
+
             // Visual feedback for ability/parry keys
             showKeyPressedFeedback(e.code);
 
@@ -16424,7 +16431,11 @@
                 return;
             }
 
-            console.log('Rolling back from frame', currentFrame, 'to frame', toFrame);
+            // Per-rollback log is OFF by default: at 250ms RTT rollbacks fire on nearly every
+            // input change and flood the console, burying the rare [MP DESYNC] warnings that
+            // actually matter. Flip window.MP_LOG_ROLLBACKS = true to see them. The telemetry
+            // counters (overlay: "rollbacks N") still track every one.
+            if (window.MP_LOG_ROLLBACKS) console.log('Rolling back from frame', currentFrame, 'to frame', toFrame);
             mpSync.rollbacks++; mpSync.lastRollback = currentFrame - toFrame;   // netcode telemetry
 
             // Enable resimulation mode (mutes sounds)
