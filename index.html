@@ -14214,12 +14214,30 @@
         window.setHudHidden = setHudHidden;
         function debugForceEnd(win) {
             if (GameSM.state !== 'match') { console.log('[debug] Force Win/Lose only works during a match'); return; }
+            // Resolve the winning SIDE from the clicker's perspective (in SP the player is 'left').
+            const mySide = (gameMode === 'pvp' && typeof getLocalSide === 'function') ? getLocalSide() : 'left';
+            const otherSide = mySide === 'left' ? 'right' : 'left';
+            const winnerSide = win ? mySide : otherSide;
+            // Sync the end to the peer so the match ends for BOTH sides with the correct opposite
+            // results. (A real match-end already syncs via the deterministic sim — both peers detect
+            // the tower fall on the same frame. This makes the DEBUG shortcut behave the same.)
+            if (gameMode === 'pvp' && conn && conn.open) {
+                try { conn.send({ type: 'DEBUG_END', winnerSide: winnerSide }); } catch (e) {}
+            }
+            _applyDebugEnd(winnerSide);
+        }
+
+        // Apply a forced match end for a given winning side, on THIS peer. Shared by the debug
+        // button and the incoming DEBUG_END message so both sides resolve their own Victory/Defeat.
+        function _applyDebugEnd(winnerSide) {
             gameOver = true;
             paused = false;
-            if (combatants.left)  combatants.left.roundResult  = win ? 'victory' : 'defeat';
-            if (combatants.right) combatants.right.roundResult = win ? 'defeat'  : 'victory';
-            showVictoryScreen(win);   // real Victory/Defeat overlay + Continue
+            if (combatants.left)  combatants.left.roundResult  = (winnerSide === 'left')  ? 'victory' : 'defeat';
+            if (combatants.right) combatants.right.roundResult = (winnerSide === 'right') ? 'victory' : 'defeat';
+            const mySide = (gameMode === 'pvp' && typeof getLocalSide === 'function') ? getLocalSide() : 'left';
+            showVictoryScreen(winnerSide === mySide);   // real Victory/Defeat overlay + buttons
         }
+        window._applyDebugEnd = _applyDebugEnd;
         document.addEventListener('keydown', (e) => {
             if (e.code !== 'Backquote') return;
             const t = e.target;  // don't toggle while typing (e.g., MP join-code input)
@@ -15384,6 +15402,12 @@
                     // Opponent clicked Play Again — mirror their return to the connected lobby.
                     // The existing Ready/Start flow takes over from here.
                     _returnToConnectedLobby();
+                    break;
+
+                case 'DEBUG_END':
+                    // Opponent used the debug Force Win/Lose — end the match here too, resolving
+                    // this side's own Victory/Defeat from the shared winnerSide.
+                    _applyDebugEnd(data.winnerSide);
                     break;
             }
         }
