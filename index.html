@@ -15292,7 +15292,18 @@
 
                 // If we're joining, connect to the host
                 if (connectTo) {
-                    conn = peer.connect(connectTo, { reliable: true });
+                    // reliable: false -> PeerJS creates the RTCDataChannel with ordered: false.
+                    // WebRTC still RETRANSMITS lost packets (no maxRetransmits cap), so nothing is
+                    // ever dropped — lobby/rematch control messages all still arrive — but later
+                    // packets no longer queue behind a lost one (head-of-line blocking). With
+                    // ordered: true, one lost INPUT at 250ms RTT stalled EVERY input behind it for
+                    // a full retransmit round-trip -> burst arrivals -> giant rollback spikes.
+                    // Out-of-order delivery is safe for every message type here: INPUT/SYNC_HASH/
+                    // SYNC_DETAIL/INPUT_ACK are keyed by frame and idempotent, and lobby messages
+                    // are seconds apart. Pairs with INPUT_REDUNDANCY in sendLocalInput, which makes
+                    // the late-retransmitted original irrelevant. (The joiner originates the
+                    // channel, so this flag decides the mode for both peers.)
+                    conn = peer.connect(connectTo, { reliable: false });
                     setupConnection();
                 }
             });
@@ -16057,6 +16068,33 @@
             updateHealthBars();
         }
 
+        // Store one confirmed remote input frame. Idempotent by frame, so redundant copies and
+        // out-of-order arrival (unordered channel) are harmless. The update path deliberately
+        // leaves wasPredicted/predicted* untouched — checkForRollback compares them against the
+        // confirmed values to decide whether this frame needs a rollback.
+        function storeRemoteInput(frame, entry) {
+            if (!remoteInputHistory[frame]) {
+                remoteInputHistory[frame] = {
+                    moveDir: entry.moveDir,
+                    parry: entry.parry,
+                    fireball: entry.fireball,
+                    frostbolt: entry.frostbolt,
+                    thunderstorm: entry.thunderstorm || false,
+                    juice: entry.juice || false,
+                    confirmed: true
+                };
+            } else {
+                // Update prediction with actual value
+                remoteInputHistory[frame].moveDir = entry.moveDir;
+                remoteInputHistory[frame].parry = entry.parry;
+                remoteInputHistory[frame].fireball = entry.fireball;
+                remoteInputHistory[frame].frostbolt = entry.frostbolt;
+                remoteInputHistory[frame].thunderstorm = entry.thunderstorm || false;
+                remoteInputHistory[frame].juice = entry.juice || false;
+                remoteInputHistory[frame].confirmed = true;
+            }
+        }
+
         // Receive remote input from opponent
         function receiveRemoteInput(data) {
             const frame = data.frame;
@@ -16072,37 +16110,48 @@
                 remoteCurrentFrame = data.senderFrame;
             }
 
-            // Store the input
-            if (!remoteInputHistory[frame]) {
-                remoteInputHistory[frame] = {
-                    moveDir: data.moveDir,
-                    parry: data.parry,
-                    fireball: data.fireball,
-                    frostbolt: data.frostbolt,
-                    thunderstorm: data.thunderstorm || false,
-                    juice: data.juice || false,
-                    confirmed: true
-                };
-            } else {
-                // Update prediction with actual value
-                remoteInputHistory[frame].moveDir = data.moveDir;
-                remoteInputHistory[frame].parry = data.parry;
-                remoteInputHistory[frame].fireball = data.fireball;
-                remoteInputHistory[frame].frostbolt = data.frostbolt;
-                remoteInputHistory[frame].thunderstorm = data.thunderstorm || false;
-                remoteInputHistory[frame].juice = data.juice || false;
-                remoteInputHistory[frame].confirmed = true;
+            // Store the newest input
+            storeRemoteInput(frame, data);
+
+            // GGPO-style redundancy: the packet also carries the sender's previous N input frames.
+            // Any single lost/late packet is healed by the next one that arrives — no waiting on
+            // the (unordered channel's background) retransmit. Store-only: no ack per history
+            // entry, and storeRemoteInput's confirmed-idempotence makes duplicates free.
+            if (data.history) {
+                for (const h of data.history) storeRemoteInput(h.frame, h);
             }
 
-            // Send acknowledgment
+            // Send acknowledgment (newest frame only — history is redundancy, not new information)
             if (conn && conn.open) {
                 conn.send({ type: 'INPUT_ACK', frame: frame });
             }
         }
 
+        // GGPO-style input redundancy: every INPUT packet re-sends this many PREVIOUS input frames
+        // alongside the new one. Inputs are ~7 booleans, so 10 extra entries is still a tiny packet,
+        // and it means a lost packet costs nothing — the next packet (16ms later) carries the same
+        // frames. Required for the unordered channel to be loss-proof without waiting on retransmits.
+        const INPUT_REDUNDANCY = 10;
+
         // Send local input to opponent
         function sendLocalInput(frame, input) {
             if (conn && conn.open) {
+                // Bundle the previous N frames from our own history (newest-first; stop at a gap,
+                // which only occurs at match start before frame N exists).
+                const history = [];
+                for (let f = frame - 1; f >= Math.max(0, frame - INPUT_REDUNDANCY); f--) {
+                    const h = localInputHistory[f];
+                    if (!h) break;
+                    history.push({
+                        frame: f,
+                        moveDir: h.moveDir,
+                        parry: h.parry,
+                        fireball: h.fireball,
+                        frostbolt: h.frostbolt,
+                        thunderstorm: h.thunderstorm || false,
+                        juice: h.juice || false
+                    });
+                }
                 conn.send({
                     type: 'INPUT',
                     frame: frame,
@@ -16115,7 +16164,8 @@
                     fireball: input.fireball,
                     frostbolt: input.frostbolt,
                     thunderstorm: input.thunderstorm || false,
-                    juice: input.juice || false
+                    juice: input.juice || false,
+                    history: history
                 });
             }
         }
