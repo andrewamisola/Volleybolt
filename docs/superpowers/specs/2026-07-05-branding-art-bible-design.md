@@ -83,14 +83,22 @@ why two towers face each other across a court, and what the "bolt" volley
 ritual is. No world name / faction naming pass (explicitly out of scope —
 user chose light lore over a full naming pass).
 
-## Capture approach (Approach A — staged live-game captures)
+## Capture approach (Approach A — sandbox capture stage)
 
-- Drive the real game headlessly (Playwright), use debug/free-play to trigger
-  each spell cleanly, capture frame bursts, assemble GIFs with ffmpeg.
+- **Sandbox stage, black background:** a dedicated capture harness (a
+  standalone page in the spirit of `pickle_viewer.html`) that loads the
+  game's real effect code/materials/textures and spawns each spell in
+  isolation against a pure black backdrop — perfect framing, no arena
+  clutter, and black plates are easy for artists to work with / composite.
+- Drive it headlessly (Playwright), capture frame bursts, assemble GIFs with
+  ffmpeg.
 - Character turnarounds + animation GIFs via `pickle_viewer.html` camera
-  orbit (it renders the real GLB with the game's shading).
+  orbit (it renders the real GLB with the game's shading), same black
+  backdrop.
 - Reuse the existing 2880×1620 no-HUD shots for wides; capture new detail
   shots as needed.
+- **Priority:** the art bible page is the focus deliverable; the `brand/`
+  folder is populated by the same captures as a byproduct.
 
 Rejected alternatives: **B** custom clean-room capture scenes (more control,
 but no longer "the game" and more work); **C** raw match recordings (noisy,
