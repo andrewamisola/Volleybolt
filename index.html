@@ -12683,16 +12683,17 @@
                 const aiView = aiViewHistory[0];   // oldest retained ≈ `lag` frames old once warmed
                 const rightInput = decideAI(aiView, spFrameCounter, makeAIRng(spFrameCounter ^ AI_RNG_SEED), aiProfile);
                 window.VolleyboltSim.simulateNetworkFrame(leftInput, rightInput, dt, buildSimCtx());
-                updateSinglePlayerPresentation(dt);
+                updateMatchPresentation(dt);
             }
 
-            // Re-drives all SP-only presentation after the deterministic sim has advanced one
-            // fixed-timestep frame. Reads sim-authoritative state; NEVER writes proj.x/z/velX/velZ,
-            // paddleZ, mana, cooldowns, casting, castProgress, or freezeTime.
+            // Drives per-frame presentation for both SP and PvP after the deterministic sim
+            // has advanced one fixed-timestep frame. Reads sim-authoritative state; NEVER
+            // writes proj.x/z/velX/velZ, paddleZ, mana, cooldowns, casting, castProgress, or
+            // freezeTime. Call once per rendered frame on settled state — never inside rollback.
             // Sources: cast bars (old ~12256-12294), rotation (~12316-12379),
             //          footsteps (~12336-12352), ice-block visuals (~12225-12253),
             //          projectile trail/shadow/glow/sound (~12437-12507).
-            function updateSinglePlayerPresentation(dt) {
+            function updateMatchPresentation(dt) {
                 const leftC  = combatants.left;
                 const rightC = combatants.right;
 
@@ -16269,63 +16270,22 @@
                 netAccumulator -= TICK_MS;
             }
 
-            // Update UI (health bars, mana, etc.) after simulation
+            // Throttled UI: health bars, score, netcode telemetry. Mana and cast bars are
+            // now driven by updateMatchPresentation below (avoids double-driving).
             pvpUiAccumulator += renderDt;
             if (pvpUiAccumulator >= PVP_UI_INTERVAL) {
                 updateHealthBars();
-                if (combatants.left) updateCombatantManaUI(combatants.left);
-                if (combatants.right) updateCombatantManaUI(combatants.right);
                 updateScore();
                 updateMpOverlay();   // netcode telemetry overlay
                 pvpUiAccumulator = 0;
             }
 
-            // Update cast bars for PvP (keep smooth)
-            updatePvPCastBars();
-        }
-
-        // Update cast bars in PvP mode
-        function updatePvPCastBars() {
-            // Determine which combatant is "local" player visually
-            // With camera flip, client sees themselves on left, so we show their cast bar on the left
-            const localCombatant = isHost ? combatants.left : combatants.right;
-            const remoteCombatant = isHost ? combatants.right : combatants.left;
-
-            // Update local player's cast bar (shown on left/player position)
-            if (localCombatant && localCombatant.casting) {
-                const progress = localCombatant.castProgress / localCombatant.castTime;
-                const ability = abilities[localCombatant.casting];
-                updateCastBarUI(ability ? ability.name : localCombatant.casting, ability ? ability.element : 'fire', progress);
-                showCastBar(true);
-                // Update 3D cast bar above character
-                if (window.combatantUpdate3DCastBar) {
-                    combatantUpdate3DCastBar(localCombatant, progress, true);
-                }
-            } else {
-                showCastBar(false);
-                // Hide 3D cast bar when not casting
-                if (window.combatantUpdate3DCastBar) {
-                    combatantUpdate3DCastBar(localCombatant, 0, false);
-                }
-            }
-
-            // Update remote player's cast bar (shown on right/AI position)
-            if (remoteCombatant && remoteCombatant.casting) {
-                const progress = remoteCombatant.castProgress / remoteCombatant.castTime;
-                const ability = abilities[remoteCombatant.casting];
-                updateAICastBarUI(ability ? ability.name : remoteCombatant.casting, ability ? ability.element : 'fire', progress);
-                showAICastBar(true);
-                // Update 3D cast bar above character
-                if (window.combatantUpdate3DCastBar) {
-                    combatantUpdate3DCastBar(remoteCombatant, progress, true);
-                }
-            } else {
-                showAICastBar(false);
-                // Hide 3D cast bar when not casting
-                if (window.combatantUpdate3DCastBar) {
-                    combatantUpdate3DCastBar(remoteCombatant, 0, false);
-                }
-            }
+            // Per-frame presentation shared with SP: cast bars (correct no-flip layout —
+            // left combatant always drives left bar, right always drives right bar),
+            // paddle rotation targets, footsteps, ice/freeze visuals, cooldown/mana UI,
+            // and per-projectile trail/shadow/glow/sound. Called once per rendered frame on
+            // settled sim state (after the fixed-step while loop); isResimulating is false here.
+            updateMatchPresentation(renderDt);
         }
 
         // Update barrier pulse effect
