@@ -15702,6 +15702,12 @@
             // Capture the snapshot ONCE and feed both the main hash and the per-group diagnostic
             // hashes, so the group ring costs one extra field-pass (not a second captureGameState).
             const snap = captureGameState();
+            // FALSE-DESYNC FIX: captureGameState() stamps snap.frame with the LIVE currentFrame, but
+            // hashGameState mixes s.frame — so when a rollback RE-stores frame f's hash, s.frame is
+            // whatever the sim currently is (not f), and the two peers stamp different numbers for the
+            // same real state -> the 'misc' group diverges -> a FALSE desync. Stamp the frame this
+            // hash actually represents so s.frame is identical across peers (and across a re-store).
+            snap.frame = frame;
             mpSync.local[frame] = hashGameState(snap);
             mpSync.localGroups[frame] = hashGameStateGroups(snap);
             const r = mpSync.remote[frame];
