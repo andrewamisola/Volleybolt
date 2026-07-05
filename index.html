@@ -886,10 +886,14 @@
         let remoteInputHistory = [];   // Their inputs indexed by frame
         let lastConfirmedRemoteFrame = -1;
         let highestRemoteInputFrame = -1; // Highest remote INPUT frame received (for time-sync). Remote's est. frame ~= this - INPUT_DELAY.
+        let remoteCurrentFrame = -1;   // DEFECT 2: the peer's ACTUAL currentFrame, piggybacked on each INPUT msg (data.senderFrame). Gives a true frame gap instead of a latency-lagged estimate.
         let gameStateHistory = [];     // State snapshots for rollback
         const MAX_ROLLBACK_FRAMES = 8; // ~133ms at 60fps
         const INPUT_DELAY = 2;         // Frames of input delay (reduces rollbacks)
-        const MAX_FRAME_ADVANTAGE = 2; // Frame-advantage stall threshold: hold local pacing if we run this far ahead of the remote.
+        // DEFECT 2: frame-advantage stall threshold. Raised 2->4 so latency alone (which used to inflate
+        // the perceived advantage) no longer trips the stall every tick. Must stay safely below
+        // MAX_ROLLBACK_FRAMES(8). TUNABLE in the live 2-peer test (stutter vs safety margin).
+        const MAX_FRAME_ADVANTAGE = 4;
         const TICK_RATE = 60;
         const TICK_MS = 1000 / TICK_RATE;
         let netAccumulator = 0;        // For fixed timestep
@@ -15847,6 +15851,7 @@
             remoteInputHistory = [];
             lastConfirmedRemoteFrame = -1;
             highestRemoteInputFrame = -1;
+            remoteCurrentFrame = -1;
             gameStateHistory = [];
             nextProjectileId = 0;
             netAccumulator = 0;
@@ -15936,6 +15941,13 @@
             // Local pacing only — never used inside simulateNetworkFrame, so determinism holds.
             if (frame > highestRemoteInputFrame) highestRemoteInputFrame = frame;
 
+            // DEFECT 2: track the peer's ACTUAL currentFrame (piggybacked). This is the true frame
+            // gap, not the latency-lagged (highestRemoteInputFrame - INPUT_DELAY) estimate. Also
+            // pacing-only — never read inside simulateNetworkFrame.
+            if (typeof data.senderFrame === 'number' && data.senderFrame > remoteCurrentFrame) {
+                remoteCurrentFrame = data.senderFrame;
+            }
+
             // Store the input
             if (!remoteInputHistory[frame]) {
                 remoteInputHistory[frame] = {
@@ -15970,6 +15982,10 @@
                 conn.send({
                     type: 'INPUT',
                     frame: frame,
+                    // DEFECT 2: piggyback our live sim frame so the peer can compute the true frame
+                    // gap for the stall (frame is the DELAYED input frame = currentFrame + INPUT_DELAY;
+                    // senderFrame is where our sim actually is). Pacing metadata only.
+                    senderFrame: currentFrame,
                     moveDir: input.moveDir,
                     parry: input.parry,
                     fireball: input.fireball,
@@ -16311,6 +16327,14 @@
             const snapshot = gameStateHistory[stateIndex];
             restoreGameState(snapshot);
 
+            // DEFECT 1 fix: trim aged-out history NOW and keep [toFrame ... currentFrame-1]. Snapshot
+            // convention (from runNetworkFrame): gameStateHistory[f] holds the state captured BEFORE
+            // simulating frame f. snapshot{toFrame} is unaffected by the correction (it predates
+            // toFrame's input), so it stays valid. Every LATER retained snapshot embeds the old-timeline
+            // frame-toFrame result and is now STALE — we RE-CAPTURE each below after re-simulating, so a
+            // chained rollback to an intermediate frame restores CORRECTED state, not the old timeline.
+            gameStateHistory = gameStateHistory.slice(stateIndex);
+
             // Re-simulate from that frame to current
             for (let f = toFrame; f < currentFrame; f++) {
                 // Get inputs for this frame
@@ -16343,10 +16367,26 @@
                     rem.predictedThunderstorm = rem.thunderstorm;
                     rem.predictedJuice = rem.juice;
                 }
-            }
 
-            // Trim old state history
-            gameStateHistory = gameStateHistory.slice(stateIndex);
+                // DEFECT 1 fix: after simulating frame f the live state is "before frame f+1", which
+                // is exactly what snapshot{f+1} must hold. Overwrite the stale snapshot for every
+                // RETAINED frame (f+1 < currentFrame) with the just-corrected state so a later chained
+                // rollback restores the corrected timeline. We do NOT store a snapshot for currentFrame
+                // itself — the next runNetworkFrame captures that (matching the normal invariant, where
+                // the newest snapshot's frame == currentFrame-1). captureGameState() stamps .frame with
+                // the top-level currentFrame, so override it to the frame this snapshot represents.
+                const nextFrame = f + 1;
+                if (nextFrame < currentFrame) {
+                    const snap = captureGameState();
+                    snap.frame = nextFrame;
+                    const idx = gameStateHistory.findIndex(s => s.frame === nextFrame);
+                    if (idx >= 0) gameStateHistory[idx] = snap;
+                    else gameStateHistory.push(snap);
+                }
+            }
+            // History now holds corrected snapshots for [toFrame ... currentFrame-1], ascending and
+            // contiguous. Length == currentFrame - toFrame <= MAX_ROLLBACK_FRAMES (rollback range is
+            // bounded by the window), so no extra cap is needed here.
 
             isResimulating = false;
         }
@@ -16365,19 +16405,43 @@
 
             // Process fixed timestep frames
             while (netAccumulator >= TICK_MS) {
-                // Frame-advantage stall (BUG A): if we've run too far ahead of the remote,
+                // DEFECT 3 — START BARRIER: do not advance the local sim until we've heard from the
+                // peer at least once. During the connect/render startup gap one side can otherwise run
+                // many frames ahead; when the other's early inputs finally arrive they target frames
+                // already trimmed from the 8-snapshot window -> uncorrectable divergence. Gating on
+                // highestRemoteInputFrame >= 0 bounds the initial skew.
+                //
+                // We STILL transmit (and locally record) our input each barred tick — otherwise both
+                // peers would block here forever (mutual deadlock), since the only thing that lifts the
+                // barrier is receiving the peer's INPUT, which is only sent from this loop. Both peers
+                // send from frame 0, so each hears the other within ~1 RTT and both barriers lift. The
+                // frame-INPUT_DELAY input we announce here is what the frame-0 runNetworkFrame re-sends
+                // and simulates once the barrier lifts, so local and remote copies stay consistent.
+                if (highestRemoteInputFrame < 0) {
+                    const localInput = captureLocalInput();
+                    const inputFrame = currentFrame + INPUT_DELAY;
+                    localInputHistory[inputFrame] = localInput;
+                    sendLocalInput(inputFrame, localInput);
+                    netAccumulator = 0; // don't bank backlog while barred (avoids a burst on release)
+                    break;
+                }
+
+                // Frame-advantage stall (BUG A / DEFECT 2): if we've run too far ahead of the remote,
                 // hold this tick so it can catch up (keeps the gap under MAX_ROLLBACK_FRAMES).
-                // This is PURE LOCAL PACING — it only gates WHEN runNetworkFrame is called,
-                // never WHICH frames/inputs are simulated. Both peers still simulate the same
-                // frames with the same inputs, so determinism is unaffected. Never stall before
-                // the first remote input arrives, or the match could never start.
-                if (highestRemoteInputFrame >= 0) {
-                    const remoteFrameEst = highestRemoteInputFrame - INPUT_DELAY;
-                    const frameAdvantage = currentFrame - remoteFrameEst;
-                    if (frameAdvantage > MAX_FRAME_ADVANTAGE) {
-                        netAccumulator = 0; // drop backlog so we resume at 1x once the remote catches up (avoids a burst)
-                        break;
-                    }
+                // This is PURE LOCAL PACING — it only gates WHEN runNetworkFrame is called, never WHICH
+                // frames/inputs are simulated. Both peers still simulate the same frames with the same
+                // inputs, so determinism is unaffected.
+                //
+                // DEFECT 2: use the peer's ACTUAL currentFrame (remoteCurrentFrame, piggybacked on the
+                // INPUT msg) for a true frame gap, instead of the latency-lagged
+                // (highestRemoteInputFrame - INPUT_DELAY) estimate — the old estimate perceived the
+                // one-way latency as advantage, so at RTT > ~66ms both peers thought they were ahead and
+                // stalled every tick (stutter). remoteCurrentFrame is >= 0 here (it is set by the same
+                // INPUT message that lifts the barrier above).
+                const frameAdvantage = currentFrame - remoteCurrentFrame;
+                if (frameAdvantage > MAX_FRAME_ADVANTAGE) {
+                    netAccumulator = 0; // drop backlog so we resume at 1x once the remote catches up (avoids a burst)
+                    break;
                 }
                 runNetworkFrame();
                 netAccumulator -= TICK_MS;
@@ -17020,7 +17084,9 @@
                     // into an empty lobby.
                     if (!isHost) return;
                     if (!(conn && conn.open)) return;
-                    conn.send({ type: 'REMATCH' });
+                    // Wrap the send: a half-open conn can throw; if it does, bail instead of
+                    // dropping into an empty connected lobby (let handleDisconnect run).
+                    try { conn.send({ type: 'REMATCH' }); } catch (e) { return; }
                     _returnToConnectedLobby();
                 } else {
                     // Single-player rematch: fresh match vs AI, ELO carries over.

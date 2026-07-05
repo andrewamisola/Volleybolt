@@ -24,6 +24,27 @@
 ## Working log
 _Append-only. Newest at top. Each entry: date · decision/change · open issues._
 
+- 2026-07-05 · Fixed 3 launch-gate netcode defects (index.html driver only; no js/sim.js change, no ?v= bump).
+  **DEFECT 1 (CRITICAL, silent desync):** `performRollback` re-simulated [toFrame,currentFrame) but never
+  RE-CAPTURED the intermediate snapshots — kept stale value-copies embedding the old-timeline frame-toFrame
+  result, so a chained rollback to an intermediate frame restored the OLD timeline. Fix: moved the
+  `slice(stateIndex)` trim BEFORE the re-sim loop; after simulating each frame f, re-capture the corrected
+  state as snapshot{f+1} for every retained frame (`snap.frame=nextFrame` override since captureGameState
+  stamps top currentFrame). Retained window stays ascending/contiguous, length <= MAX_ROLLBACK_FRAMES.
+  findIndex<0 warn kept. Oracles bypass driver so 954ea557/5afbc1a6 can't move. **DEFECT 2 (stall
+  over-trigger at RTT>~66ms):** stall used latency-lagged (highestRemoteInputFrame-INPUT_DELAY) estimate, so
+  perceived advantage ≈ latency and both peers stalled every tick. Fix: added `remoteCurrentFrame` (:889,
+  reset :15850), piggybacked `senderFrame:currentFrame` on the INPUT msg (`sendLocalInput`), tracked it in
+  `receiveRemoteInput`, and changed `runPvPGameLoop` stall to `frameAdvantage=currentFrame-remoteCurrentFrame`
+  (true gap); MAX_FRAME_ADVANTAGE 2->4 (below 8), marked live-tunable. **DEFECT 3 (start skew > window):**
+  added a START BARRIER in `runPvPGameLoop` — while highestRemoteInputFrame<0 don't advance sim, but STILL
+  capture/record/send local input each barred tick (both peers send from frame 0) so barriers lift within
+  ~1 RTT (no deadlock); netAccumulator=0 to avoid a release burst. node --check on extracted inline PASS.
+  Report: .superpowers/sdd/netcode-review-fixes-report.md. Staged, NOT committed. · Open: (1)
+  MAX_FRAME_ADVANTAGE=4 still needs live 2-peer tuning. (2) DEFECT 1 chained-rollback correctness needs a
+  lossy/reordered-packet live test to confirm (silent case — oracles can't catch it). (3) NOT live-verified;
+  2-peer sync confirmation is the human's — code-made + reasoned-correct only.
+
 - 2026-07-05 · Fixed the two coupled launch-blocker bugs (unbounded frame drift + dead rollback)
   causing one-directional input propagation (ahead-peer sees behind-peer's paddle frozen). index.html
   only, no js/sim.js change, no ?v= bump. **BUG A (time-sync):** added module-level
