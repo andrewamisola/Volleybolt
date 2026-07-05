@@ -58,6 +58,7 @@ While channeling, the caster **cannot cast other spells** (the ult is a full com
   - (Thunderstorm is a projectile-clear; it does not affect the beam itself.)
 - **Interruption:** the channel ends early only on a **Frostbolt freeze** (or round end). Fireballs cannot interrupt it (they're disintegrated).
 - **End of channel:** clears the channel state, returns the caster to normal (can cast again).
+- **Channel feedback (UI, presentation-only):** while channeling, show the caster's **cast bar reused as a reversed channel meter** — it starts full and **depletes over the 6s duration** (`juiceTimer / DURATION`), labeled "Overdrive." This is in addition to the Juice bar draining (which also tracks the duration); the cast bar gives the clearer, in-place "I'm channeling, N seconds left" read at the caster. Both are positional/read-only (reuse the existing cast-bar path, driven off the sim's `juiceTimer`), so they never write sim state.
 
 ## 6. What is removed
 
