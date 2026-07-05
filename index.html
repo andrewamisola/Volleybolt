@@ -897,9 +897,19 @@
         //   MAX_ROLLBACK_FRAMES wide -> the re-sim window absorbs the full ~250ms gap WITHOUT stalling.
         //   MAX_FRAME_ADVANTAGE high (but < window) -> the stall is a rare backstop, not a constant
         //     view-freeze; it only fires if the gap would otherwise exceed the rollback window.
-        const MAX_ROLLBACK_FRAMES = 20; // ~333ms window: absorb a 250ms-RTT gap without stalling
+        const MAX_ROLLBACK_FRAMES = 30; // ~500ms window. Canonical GGPO rule: frame advantage must stay
+                                        //   WELL below the window or a late input targets an already-
+                                        //   trimmed snapshot -> "Cannot rollback ... no saved state" ->
+                                        //   unrecoverable desync. At 268ms RTT observed prediction lag
+                                        //   was 17 against the old 20-frame window (only 3 frames of
+                                        //   margin) — too thin; one jitter spike punched through. 30
+                                        //   gives ~13 frames of headroom over the advantage cap below.
+                                        //   Resim is cheap here (simple paddle sim), so a wide backstop
+                                        //   costs ~nothing and only the RARE worst-case rollback ever
+                                        //   nears it (steady-state rollbacks track the ~17 lag either way).
         const INPUT_DELAY = 1;          // 1 frame (~16ms) — essentially instant; rely on rollback, not delay
-        const MAX_FRAME_ADVANTAGE = 16; // backstop only (< MAX_ROLLBACK_FRAMES); won't trip until ~267ms drift
+        const MAX_FRAME_ADVANTAGE = 16; // stall point UNCHANGED (feel is identical); now sits comfortably
+                                        //   below the 30-frame window per the GGPO margin rule.
         const TICK_RATE = 60;
         const TICK_MS = 1000 / TICK_RATE;
         let netAccumulator = 0;        // For fixed timestep
