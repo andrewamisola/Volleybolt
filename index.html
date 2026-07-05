@@ -15374,6 +15374,12 @@
                     // Netcode test harness: peer's state hash for a settled frame.
                     mpCompareHash(data.frame, data.hash);
                     break;
+
+                case 'REMATCH':
+                    // Opponent clicked Play Again — mirror their return to the connected lobby.
+                    // The existing Ready/Start flow takes over from here.
+                    _returnToConnectedLobby();
+                    break;
             }
         }
 
@@ -16808,6 +16814,10 @@
             contBtn.disabled = true;                 // grace: greyed out until the report is readable
             contBtn.style.display = 'block';
             setTimeout(() => { const b = document.getElementById('victoryContinueBtn'); if (b) b.disabled = false; }, VICTORY_CONTINUE_GRACE_MS);
+            const paBtn = ensureVictoryPlayAgainBtn();
+            paBtn.disabled = true;                   // same grace period
+            paBtn.style.display = 'block';
+            setTimeout(() => { const b = document.getElementById('victoryPlayAgainBtn'); if (b) b.disabled = false; }, VICTORY_CONTINUE_GRACE_MS);
         }
         // DOM Continue button for the Victory/Defeat screen — styled like the menu buttons.
         function ensureVictoryContinueBtn() {
@@ -16816,7 +16826,7 @@
             btn = document.createElement('button');
             btn.id = 'victoryContinueBtn';
             btn.className = 'game-btn menu-btn';
-            btn.textContent = 'Continue';
+            btn.textContent = 'Main Menu';
             // Live INSIDE the 1920x1080 HUD scale layer (zoomed by --ui-scale) so the button
             // scales in lockstep with the GUI Battle Report above it — at every window size AND
             // fullscreen. (It used to be position:fixed on <body> with raw-px offsets, so it did
@@ -16829,6 +16839,66 @@
             (document.getElementById('hudScaleLayer') || document.body).appendChild(btn);
             btn.addEventListener('click', () => returnToMenuTransition());
             return btn;
+        }
+
+        // DOM Play Again button for the Victory/Defeat screen — placed ABOVE Main Menu.
+        // SP: immediately starts a fresh match vs AI (no ELO reset).
+        // MP: sends REMATCH message to peer and returns both to the connected lobby so the
+        //     existing Ready/Start flow handles a fresh match without dropping the connection.
+        function ensureVictoryPlayAgainBtn() {
+            let btn = document.getElementById('victoryPlayAgainBtn');
+            if (btn) return btn;
+            btn = document.createElement('button');
+            btn.id = 'victoryPlayAgainBtn';
+            btn.className = 'game-btn menu-btn';
+            btn.textContent = 'Play Again';
+            // Positioned ~48 px above the Main Menu button (which sits at 540+140=680px).
+            // 680 - 48 = 632 → expressed as calc(540px + 92px) to mirror the existing idiom.
+            btn.style.cssText = 'position:absolute;left:960px;top:calc(540px + 92px);transform:translateX(-50%);z-index:650;display:none;min-width:260px;pointer-events:auto';
+            (document.getElementById('hudScaleLayer') || document.body).appendChild(btn);
+            btn.addEventListener('click', () => {
+                if (Date.now() < victoryContinueAt) return;  // grace guard
+                if (gameMode === 'pvp') {
+                    // Multiplayer rematch: notify peer then return to connected lobby.
+                    if (conn && conn.open) conn.send({ type: 'REMATCH' });
+                    _returnToConnectedLobby();
+                } else {
+                    // Single-player rematch: fresh match vs AI, ELO carries over.
+                    _startRematchSP();
+                }
+            });
+            return btn;
+        }
+
+        // Shared SP rematch helper — hides victory, resets match state, starts immediately.
+        function _startRematchSP() {
+            try { if (window.clearAllProjectiles) clearAllProjectiles(); } catch (e) {}
+            try { if (window.clearAllLightningFX) clearAllLightningFX(); } catch (e) {}
+            try { if (window.clearAllCombatText)  clearAllCombatText();  } catch (e) {}
+            hideVictoryScreen();
+            resetGame();           // clears gameOver, scores, gates — NOT aiSkillRating
+            startGameInProgress = false;  // clear the double-click guard
+            gameState = "menu";    // startGame() guards on gameState==='menu'; reset it here
+            startGame();
+        }
+
+        // Shared MP rematch helper — keeps PeerJS connection, returns to connected lobby.
+        function _returnToConnectedLobby() {
+            try { if (window.clearAllProjectiles) clearAllProjectiles(); } catch (e) {}
+            try { if (window.clearAllLightningFX) clearAllLightningFX(); } catch (e) {}
+            try { if (window.clearAllCombatText)  clearAllCombatText();  } catch (e) {}
+            hideVictoryScreen();
+            // Re-enter lobby state without tearing down PeerJS.
+            gameOver = false;
+            roundTransitioning = false;
+            roundActive = false;
+            GameSM.state = 'lobby';
+            GameSM.show3D(false);
+            // Show the multiplayer lobby container and jump straight to the connected view.
+            const lobby = document.getElementById('multiplayerLobby');
+            if (lobby) lobby.classList.add('visible');
+            showLobbyView('lobbyConnectedView');
+            resetReadyState();  // both start un-ready; existing Ready/Start flow takes over
         }
 
         function hideVictoryScreen() {
@@ -16850,9 +16920,11 @@
                     window.guiElements.victoryLeaderboard.isVisible = false;
                 }
             }
-            // Hide the DOM Continue button.
+            // Hide the DOM Continue / Play Again buttons.
             const contBtn = document.getElementById('victoryContinueBtn');
             if (contBtn) contBtn.style.display = 'none';
+            const paBtn = document.getElementById('victoryPlayAgainBtn');
+            if (paBtn) paBtn.style.display = 'none';
         }
 
         function resetGame() {
