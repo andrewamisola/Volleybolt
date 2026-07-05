@@ -450,7 +450,9 @@
     <!-- Player Cast Bar -->
     <div id="castBarContainer">
         <div id="castBarLabel">Fireball</div>
-        <progress class="nes-progress is-warning" id="castBarProgress" value="0" max="100"></progress>
+        <!-- is-primary (team BLUE) to match the blue mana bar — was is-warning (yellow), which
+             broke team-color consistency against the red side's is-error cast bar -->
+        <progress class="nes-progress is-primary" id="castBarProgress" value="0" max="100"></progress>
     </div>
 
     <!-- AI Cast Bar -->
