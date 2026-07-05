@@ -172,6 +172,8 @@
                         <button class="fps-arrow" id="setFpsCapNext" aria-label="Next FPS option">&#9654;</button>
                     </div>
                 </div>
+                <label class="settings-row"><span>Show FPS</span>
+                    <input type="checkbox" class="settings-toggle" id="setShowFps"></label>
                 <div class="settings-section-label">Accessibility</div>
                 <label class="settings-row"><span>Reduce Motion &amp; Flashing</span>
                     <input type="checkbox" class="settings-toggle" id="setReduceMotion"></label>
@@ -371,6 +373,11 @@
                 <div class="lobby-view" id="lobbyConnectedView" style="display:none">
                     <p class="lobby-connected-msg">Connected!</p>
                     <p class="lobby-status" id="connectedPing">Ping: --ms</p>
+                    <!-- Shown only when software rendering was detected (window._softwareRenderer):
+                         the once-ever perf notice may be long dismissed, but an MP opponent will
+                         feel this player's choppiness, so remind at the moment it matters. -->
+                    <p class="lobby-status" id="lobbyPerfWarn" style="display:none;color:#e0a35c">
+                        &#9888; Hardware acceleration is off in your browser &mdash; matches may feel choppy. Enable it for smooth play.</p>
                     <p class="lobby-ready-line" id="readyStatusYou">You: Not Ready</p>
                     <p class="lobby-ready-line" id="readyStatusOpponent">Opponent: Not Ready</p>
                     <button class="game-btn menu-btn is-primary" id="btnReady">
@@ -2318,7 +2325,7 @@
         // ---- Persistent player settings (audio + fullscreen) -> localStorage ----
         const Settings = (() => {
             const KEY = 'volleybolt_settings';
-            const DEFAULTS = { master: 50, music: 50, sfx: 50, fullscreen: false, playerName: '', renderScale: 100, fpsCap: 0, reduceMotion: false, colorblind: false };
+            const DEFAULTS = { master: 50, music: 50, sfx: 50, fullscreen: false, playerName: '', renderScale: 100, fpsCap: 0, showFps: false, reduceMotion: false, colorblind: false };
             const values = { ...DEFAULTS };
 
             function load() {
@@ -2353,6 +2360,7 @@
                 else if (key === 'sfx')   { if (window.setSfxVolume)   window.setSfxVolume(value / 100); }
                 else if (key === 'renderScale') { if (window.applyRetroResolution) window.applyRetroResolution(); }
                 else if (key === 'fpsCap')      { if (window.setRenderFpsCap) window.setRenderFpsCap(value); }
+                else if (key === 'showFps')     { if (window.setFpsMonitorVisible) window.setFpsMonitorVisible(value); }
                 else if (key === 'reduceMotion') { if (window.applyReduceMotion) window.applyReduceMotion(value); }
                 else if (key === 'colorblind')   { if (window.applyColorblind)  window.applyColorblind(value); }
                 save();
@@ -2361,6 +2369,14 @@
         })();
         window.Settings = Settings;
         Settings.load();   // load on boot; audio applied when Tone initializes (see doToneInit)
+
+        // ===== Dev mode (ship-clean build) =====
+        // Gates every developer-facing surface: the backtick debug menu, the F2 netcode overlay,
+        // and the overlay's auto-show in PvP. Players never see any of it; for diagnosis (e.g. a
+        // playtester reporting a desync) have them add ?dev to the URL — no rebuild needed. The
+        // dbg.* console API stays unconditionally available (console-only, invisible to players).
+        window.DEV_MODE = new URLSearchParams(location.search).has('dev')
+                       || localStorage.getItem('volleybolt_dev') === '1';
 
         // ===== Accessibility runtime hooks (reduce motion + colorblind team palette) =====
         // Reduce Motion / Flashing: a global flag + an <html> class. The class kills CSS animations
@@ -12295,11 +12311,15 @@
                 lastLogTime: performance.now()
             };
 
-            // Create FPS display overlay
+            // Create FPS display overlay. HIDDEN by default (ship-clean): shown only via the
+            // Settings "Show FPS" toggle (Settings.set('showFps') -> setFpsMonitorVisible).
+            // Slow-frame logging below runs regardless — it's console-only.
             const fpsDiv = document.createElement('div');
             fpsDiv.id = 'fps-monitor';
             fpsDiv.style.cssText = 'position:fixed;top:10px;left:10px;background:rgba(0,0,0,0.8);color:#0f0;font-family:monospace;font-size:14px;padding:8px 12px;z-index:99999;border-radius:4px;';
+            fpsDiv.style.display = (window.Settings && Settings.values.showFps) ? 'block' : 'none';
             document.body.appendChild(fpsDiv);
+            window.setFpsMonitorVisible = (on) => { fpsDiv.style.display = on ? 'block' : 'none'; };
 
             // Log slow frames to console
             window.perfLog = [];  // Accessible from console
@@ -14344,6 +14364,7 @@
         window._applyDebugEnd = _applyDebugEnd;
         document.addEventListener('keydown', (e) => {
             if (e.code !== 'Backquote') return;
+            if (!window.DEV_MODE) return;   // ship-clean: debug menu only with ?dev (or the localStorage flag)
             const t = e.target;  // don't toggle while typing (e.g., MP join-code input)
             if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
             ensureDebugMenu();
@@ -15148,6 +15169,9 @@
             const rm = $('setReduceMotion'), cb = $('setColorblind');
             if (rm) rm.addEventListener('change', e => Settings.set('reduceMotion', e.target.checked));
             if (cb) cb.addEventListener('change', e => Settings.set('colorblind', e.target.checked));
+            // FPS monitor toggle (default off — dev/perf tool, ship-clean)
+            const sf = $('setShowFps');
+            if (sf) sf.addEventListener('change', e => Settings.set('showFps', e.target.checked));
             // Render resolution slider
             const renderScaleEl = $('setRenderScale'), renderScaleValEl = $('setRenderScaleVal');
             if (renderScaleEl) {
@@ -15193,7 +15217,8 @@
             }
             document.getElementById('setFullscreen').checked = !!document.fullscreenElement;
             { const rm = document.getElementById('setReduceMotion'); if (rm) rm.checked = !!Settings.values.reduceMotion;
-              const cb = document.getElementById('setColorblind');   if (cb) cb.checked = !!Settings.values.colorblind; }
+              const cb = document.getElementById('setColorblind');   if (cb) cb.checked = !!Settings.values.colorblind;
+              const sf = document.getElementById('setShowFps');      if (sf) sf.checked = !!Settings.values.showFps; }
             // Restore render scale slider + label
             const rsEl = document.getElementById('setRenderScale');
             const rsValEl = document.getElementById('setRenderScaleVal');
@@ -15337,6 +15362,11 @@
             conn.on('open', () => {
                 console.log('Connection established');
                 showLobbyView('lobbyConnectedView');
+
+                // Software-rendering reminder at the moment it matters for an opponent (the
+                // once-ever startup notice may be long dismissed). Detection ran at engine init.
+                const perfWarn = document.getElementById('lobbyPerfWarn');
+                if (perfWarn) perfWarn.style.display = window._softwareRenderer ? '' : 'none';
 
                 // Host shows Start Match (gated by ready); guest sees waiting label.
                 const btnStart = document.getElementById('btnStartMatch');
@@ -15802,8 +15832,8 @@
                 'R hp ' + Math.round(R.towerHealth || 0) + ' mp ' + (R.mana || 0).toFixed(1) + ' z ' + rz.toFixed(2) + (R.juiceActive ? ' JUICE' : '');
         }
 
-        // F2 toggles the overlay (works anytime).
-        document.addEventListener('keydown', (e) => { if (e.code === 'F2') { e.preventDefault(); toggleMpOverlay(); } });
+        // F2 toggles the overlay — dev mode only (ship-clean). dbg.overlay() also works from console.
+        document.addEventListener('keydown', (e) => { if (e.code === 'F2' && window.DEV_MODE) { e.preventDefault(); toggleMpOverlay(); } });
 
         // ---- Console commands ----
         window.dbg = {
@@ -15955,7 +15985,7 @@
                 return { steps, seed, fold, reproducible: fold === fold2 };
             };
         })();
-        console.log('%c[Volleybolt] MP debug ready — dbg.help() for commands · F2 toggles the netcode overlay', 'color:#2f8f6f');
+        console.log('%c[Volleybolt] MP debug ready — dbg.help() for commands · dbg.overlay() toggles the netcode overlay (F2 with ?dev)', 'color:#2f8f6f');
 
         // Start the multiplayer match
         function startMultiplayerMatch(seed, upgradeId = selectedUpgrade) {
@@ -16031,10 +16061,11 @@
             // Start the round
             startRound();
 
-            // Reset netcode test harness + show the telemetry overlay for this match
+            // Reset netcode test harness; telemetry overlay auto-shows in dev mode only
+            // (ship-clean — players see no debug UI; ?dev + F2 or dbg.overlay() brings it back).
             mpSync.local = {}; mpSync.remote = {}; mpSync.localGroups = {}; mpSync.detailSent = {}; mpSync.lastOkFrame = -1;
             mpSync.desync = null; mpSync.mismatches = 0; mpSync.rollbacks = 0; mpSync.lastRollback = 0;
-            toggleMpOverlay(true);
+            toggleMpOverlay(!!window.DEV_MODE);
 
             // Show gameplay UI (same as single player)
             if (window.guiElements) {
