@@ -12787,6 +12787,27 @@
                     if (window.updateAI3DCastBar) window.updateAI3DCastBar(0, false);
                 }
 
+                // ---- 1c. CASTING LOOP SFX (state-driven, per side) ----
+                // The sim starts the mid-cast loop (deps.castingStart) but has NO deps.castingStop,
+                // so nothing in the MP path ever stopped it — it looped until round end (worst on the
+                // joiner). Own the loop here from casting state instead: edge-triggered per LOCAL /
+                // REMOTE side (local caster → 'player' loop, remote caster → 'ai' loop), with a
+                // matching stop. Runs on settled state after the sim loop, so it never fires during
+                // rollback resim. Match/round-end already call castingStop('all') as a backstop.
+                if (window.ToneSFX) {
+                    const cs = (window._castLoopSfx || (window._castLoopSfx = { player: false, ai: false }));
+                    const localCasting  = !!(localC  && localC.casting);
+                    const remoteCasting = !!(remoteC && remoteC.casting);
+                    if (localCasting !== cs.player) {
+                        cs.player = localCasting;
+                        if (localCasting) ToneSFX.castingStart('player'); else ToneSFX.castingStop('player');
+                    }
+                    if (remoteCasting !== cs.ai) {
+                        cs.ai = remoteCasting;
+                        if (remoteCasting) ToneSFX.castingStart('ai'); else ToneSFX.castingStop('ai');
+                    }
+                }
+
                 // ---- 2. PADDLE ROTATION TARGET (old ~12316-12379, rotation-only) ----
                 // sim sets combatant.lastMoveDir; the render callback lerps rotation toward targetRotY.
                 // Player (leftC) faces right (baseRotY = π/2): moveDir +1 tilts +0.6, -1 tilts -0.6.
@@ -16651,7 +16672,10 @@
                     window.activeParryBubble = null;
                 }
             },
-            castingStart: () => { if (window.ToneSFX) ToneSFX.castingStart(); },
+            // No-op: the mid-cast loop is now owned by updateMatchPresentation (state-driven, per
+            // side, WITH a matching stop). The old unconditional 'player'-loop start here had no
+            // deps.castingStop in the sim path, so the loop leaked (looped forever) in MP.
+            castingStart: () => {},
             // Juice burst FX (gated by !isResimulating at the sim call sites). These route
             // to the SP FX entry points so MP looks identical: onJuiceStart builds the aura,
             // plays 'juiceUp', starts the drone and sets the white-hot tint; onJuiceEnd fades
