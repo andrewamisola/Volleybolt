@@ -106,28 +106,36 @@
     // damage. ctx.deps.* are FX-only (never gate STATE changes on isResimulating).
     function tickOverdrive(c, opp, dt, ctx) {
         if (!c || !c.juiceActive) return;
-        const OD = (ctx && ctx.consts && ctx.consts.overdrive) || { DURATION: 6, BLOCK_TOL: 0.9, DMG_START: 0.04, DMG_MAX: 0.10, RAMP_TIME: 2.5 };
+        const OD = (ctx && ctx.consts && ctx.consts.overdrive) || { DURATION: 6, WINDUP: 0.6, BLOCK_TOL: 0.9, DMG_START: 0.04, DMG_MAX: 0.10, RAMP_TIME: 2.5 };
         const JMAX = (ctx && ctx.consts && ctx.consts.juice && ctx.consts.juice.MAX) || 350;
         c.juiceTimer -= dt;
         const frac = Math.max(0, c.juiceTimer / OD.DURATION);
         c.juice = JMAX * frac;   // bar = time remaining
 
-        // Connect/block: beam is at the caster's Z; blocked while the opponent's paddle is within
-        // BLOCK_TOL of it. (Same coordinate space as paddleZ; no camera flip.)
-        const connected = opp && Math.abs((c.paddleZ || 0) - (opp.paddleZ || 0)) > OD.BLOCK_TOL;
-        if (connected) {
-            c.juiceRamp = Math.min(OD.RAMP_TIME, (c.juiceRamp || 0) + dt);
-            const rampFrac = OD.RAMP_TIME > 0 ? c.juiceRamp / OD.RAMP_TIME : 1;
-            const ratePerSec = OD.DMG_START + (OD.DMG_MAX - OD.DMG_START) * rampFrac;
-            const maxHP = (ctx && ctx.consts && typeof ctx.consts.maxTowerHealth === 'number') ? ctx.consts.maxTowerHealth : 20;
-            const dmg = ratePerSec * maxHP * dt;   // fraction/sec * maxHP * dt
-            opp.towerHealth = Math.max(0, (opp.towerHealth || 0) - dmg);
-            // Attacker gains charge? NO — no charging while channeling (addJuice guards on juiceActive).
-            if (ctx && ctx.deps && !ctx.isResimulating && ctx.deps.onOverdriveHit) {
-                ctx.deps.onOverdriveHit(c, opp, dmg);   // FX: beam impact spark, damage number
+        // Derived phase: the first WINDUP seconds after activation are a charge-up — no beam exists yet.
+        // windingUp = elapsed time < WINDUP, i.e. time remaining > DURATION - WINDUP.
+        const windingUp = (OD.DURATION - c.juiceTimer) < (OD.WINDUP || 0);
+
+        if (!windingUp) {
+            // Connect/block: beam is at the caster's Z; blocked while the opponent's paddle is within
+            // BLOCK_TOL of it. (Same coordinate space as paddleZ; no camera flip.)
+            const connected = opp && Math.abs((c.paddleZ || 0) - (opp.paddleZ || 0)) > OD.BLOCK_TOL;
+            if (connected) {
+                c.juiceRamp = Math.min(OD.RAMP_TIME, (c.juiceRamp || 0) + dt);
+                const rampFrac = OD.RAMP_TIME > 0 ? c.juiceRamp / OD.RAMP_TIME : 1;
+                const ratePerSec = OD.DMG_START + (OD.DMG_MAX - OD.DMG_START) * rampFrac;
+                const maxHP = (ctx && ctx.consts && typeof ctx.consts.maxTowerHealth === 'number') ? ctx.consts.maxTowerHealth : 20;
+                const dmg = ratePerSec * maxHP * dt;   // fraction/sec * maxHP * dt
+                opp.towerHealth = Math.max(0, (opp.towerHealth || 0) - dmg);
+                // Attacker gains charge? NO — no charging while channeling (addJuice guards on juiceActive).
+                if (ctx && ctx.deps && !ctx.isResimulating && ctx.deps.onOverdriveHit) {
+                    ctx.deps.onOverdriveHit(c, opp, dmg);   // FX: beam impact spark, damage number
+                }
+            } else {
+                c.juiceRamp = 0;   // block resets the ramp
             }
         } else {
-            c.juiceRamp = 0;   // block resets the ramp
+            c.juiceRamp = 0;   // no ramp accumulates during windup
         }
 
         if (c.juiceTimer <= 0) {
@@ -331,10 +339,10 @@
             // X-bounds guard: only vaporize projectiles on the caster's forward side (beam sweeps
             // from caster toward opponent; a fireball BEHIND the caster is not in the beam).
             if (proj.type === 'fireball' || !proj.type) {
-                const OD = (ctx.consts && ctx.consts.overdrive) || { BLOCK_TOL: 0.9 };
+                const OD = (ctx.consts && ctx.consts.overdrive) || { DURATION: 6, WINDUP: 0.6, BLOCK_TOL: 0.9 };
                 let vaporized = false;
                 for (const ch of [combatants.left, combatants.right]) {
-                    if (ch && ch.juiceActive && Math.abs(proj.z - (ch.paddleZ || 0)) <= OD.BLOCK_TOL) {
+                    if (ch && ch.juiceActive && ((OD.DURATION - ch.juiceTimer) >= (OD.WINDUP || 0)) && Math.abs(proj.z - (ch.paddleZ || 0)) <= OD.BLOCK_TOL) {
                         const dir = ch.side === 'left' ? 1 : -1;
                         // Only INCOMING fireballs vaporize (moving toward the channeling caster): the beam is
                         // defensive immunity, not a filter on the caster's own outbound shots — and parried

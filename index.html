@@ -649,7 +649,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=35-no-cast-while-channeling"></script>
+    <script type="module" src="js/sim.js?v=36-overdrive-windup"></script>
 
     <script>
         // Global error handler to debug doubles crash
@@ -1796,6 +1796,8 @@
         // All values TUNABLE in playtest; the ~45% fully-connected total is the balance anchor.
         const OVERDRIVE = {
             DURATION:  6,     // seconds of channel
+            WINDUP:    0.6,   // seconds of charge-up before the beam exists — no damage/ramp/disintegration,
+                              // and the ONLY window in which frostbolt can interrupt; TUNABLE
             BLOCK_TOL: 0.9,   // |beamZ - oppPaddleZ| <= this => blocked this tick (≈ paddle block half-width; tune)
             DMG_START: 0.04,  // fraction of max HP / sec on first connect
             DMG_MAX:   0.10,  // fraction of max HP / sec at full ramp
@@ -2167,7 +2169,10 @@
                         // side is the paddle being hit: 'left' or 'right'
                         const c = ctx.combatants[side];
                         c.freezeTime = ctx.abilities.frostbolt.freezeDuration;
-                        if (c.juiceActive) {   // Frostbolt freezes the caster -> interrupt Overdrive
+                        // Frostbolt landing during the WINDUP (before the beam erupts) cancels the channel entirely.
+                        // After eruption, the freeze lands but only PINS the beam's aim — the frozen paddle can't
+                        // move, so tickOverdrive keeps firing at the frozen Z, but the channel continues.
+                        if (c.juiceActive && (OVERDRIVE.DURATION - c.juiceTimer) < OVERDRIVE.WINDUP) {
                             c.juiceActive = false; c.juiceTimer = 0; c.juice = 0; c.juiceRamp = 0;
                             if (ctx.deps && !ctx.isResimulating && ctx.deps.onJuiceEnd) ctx.deps.onJuiceEnd(c);
                         }
