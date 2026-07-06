@@ -12765,6 +12765,38 @@
                 updateMatchPresentation(dt);
             }
 
+            // --- Overdrive beam lazy-create helpers (one-time, NOT per-frame) ---
+            // Defined outside updateMatchPresentation so function objects and the static
+            // descriptor array are allocated exactly once. They capture `scene` by closure
+            // (valid at call-time: lazy-create only runs after scene is built).
+            const _BEAM_TR_FALLBACK  = Object.freeze({ r: 1.0, g: 0.42, b: 0.33 });
+            const _BEAM_SIDE_DEFS    = Object.freeze([
+                Object.freeze({ rootKey: '_overdriveBeamRoot_left',  dir:  1, isLeft: true  }),
+                Object.freeze({ rootKey: '_overdriveBeamRoot_right', dir: -1, isLeft: false }),
+            ]);
+            function _odBeamMakeMat(name, colorRef, alpha) {
+                const m = new BABYLON.StandardMaterial(name, scene);
+                m.emissiveColor   = colorRef;   // shared Color3 ref — .set() updates it live
+                m.diffuseColor    = new BABYLON.Color3(0, 0, 0);
+                m.disableLighting = true;
+                m.backFaceCulling = false;
+                m.fogEnabled      = false;
+                m.alpha           = alpha;
+                m.alphaMode       = BABYLON.Engine.ALPHA_ADD;
+                return m;
+            }
+            function _odBeamMakeBox(name, yThick, zHeight, mat, root) {
+                const b = BABYLON.MeshBuilder.CreateBox(name,
+                    { width: 1, height: yThick, depth: zHeight }, scene);
+                b.material             = mat;
+                b.renderingGroupId     = 1;
+                b.isPickable           = false;
+                b.alwaysSelectAsActiveMesh = true;
+                b.position.set(0, 0.5, 0);   // local Y lift; root sits at world y=0
+                b.parent               = root;
+                return b;
+            }
+
             // Drives per-frame presentation for both SP and PvP after the deterministic sim
             // has advanced one fixed-timestep frame. Reads sim-authoritative state; NEVER
             // writes proj.x/z/velX/velZ, paddleZ, mana, cooldowns, casting, castProgress, or
@@ -12887,6 +12919,8 @@
                 // Per side: root TransformNode (_overdriveBeamRoot_{left,right}) + three child boxes.
                 // GLOW Z-height = 2*OVERDRIVE.BLOCK_TOL — the visual band IS the blockable band.
                 // Colors: white core, team mid, deep team glow; right reads window.TEAM_RIGHT/frame.
+                // Helpers (_odBeamMakeMat/_odBeamMakeBox) and _BEAM_SIDE_DEFS hoisted above this
+                // function so zero function/array allocations occur in the steady-state update path.
                 // Reads: juiceActive/juiceTimer/juiceRamp/paddlePositions. Never writes sim state.
                 (function () {
                     if (!scene) return;
@@ -12896,7 +12930,7 @@
 
                     // ---- Color cache (one-time alloc, updated in-place per frame) ----
                     if (!window._overdriveBeamColors) {
-                        const TR0 = window.TEAM_RIGHT || { r: 1.0, g: 0.42, b: 0.33 };
+                        const TR0 = window.TEAM_RIGHT || _BEAM_TR_FALLBACK;
                         window._overdriveBeamColors = {
                             core:      new BABYLON.Color3(0.98, 0.98, 0.98),
                             leftMid:   new BABYLON.Color3(0.00, 0.47, 0.97),        // #0078F8
@@ -12907,74 +12941,43 @@
                     }
                     // Update right-side colors in-place each frame (no alloc — handles colorblind swap)
                     const BC = window._overdriveBeamColors;
-                    const TR = window.TEAM_RIGHT || { r: 1.0, g: 0.42, b: 0.33 };
+                    const TR = window.TEAM_RIGHT || _BEAM_TR_FALLBACK;
                     BC.rightMid.set(TR.r, TR.g, TR.b);
                     BC.rightGlow.set(TR.r * 0.66, TR.g * 0.15, TR.b * 0.04);
 
-                    // ---- Helpers (only invoked during lazy-create, not per frame) ----
-                    function makeMat(name, colorRef, alpha) {
-                        const m = new BABYLON.StandardMaterial(name, scene);
-                        m.emissiveColor   = colorRef;   // shared ref — .set() above updates it live
-                        m.diffuseColor    = new BABYLON.Color3(0, 0, 0);
-                        m.disableLighting = true;
-                        m.backFaceCulling = false;
-                        m.fogEnabled      = false;
-                        m.alpha           = alpha;
-                        m.alphaMode       = BABYLON.Engine.ALPHA_ADD;
-                        return m;
-                    }
-                    function makeBox(name, yThick, zHeight, mat, root) {
-                        const b = BABYLON.MeshBuilder.CreateBox(name,
-                            { width: 1, height: yThick, depth: zHeight }, scene);
-                        b.material             = mat;
-                        b.renderingGroupId     = 1;
-                        b.isPickable           = false;
-                        b.alwaysSelectAsActiveMesh = true;
-                        b.position.set(0, 0.5, 0);   // local Y lift; root sits at world y=0
-                        b.parent               = root;
-                        return b;
-                    }
+                    // ---- Per-side update (iterates _BEAM_SIDE_DEFS — no alloc per frame) ----
+                    for (const sd of _BEAM_SIDE_DEFS) {
+                        // Live objects looked up by closure — no object allocation
+                        const c      = sd.isLeft ? leftC        : rightC;
+                        const paddle = sd.isLeft ? playerPaddle : aiPaddle;
+                        const oppC   = sd.isLeft ? rightC       : leftC;
+                        const oppPad = sd.isLeft ? aiPaddle     : playerPaddle;
+                        const midCol = sd.isLeft ? BC.leftMid   : BC.rightMid;
+                        const glowCol= sd.isLeft ? BC.leftGlow  : BC.rightGlow;
+                        const dir    = sd.dir;   // +1 left-fires-right, -1 right-fires-left
 
-                    // ---- Side definitions ----
-                    const sideDefs = [
-                        { rootKey: '_overdriveBeamRoot_left',  c: leftC,  paddle: playerPaddle,
-                          oppC: rightC, oppPad: aiPaddle,     dir:  1,
-                          midCol: BC.leftMid,  glowCol: BC.leftGlow  },
-                        { rootKey: '_overdriveBeamRoot_right', c: rightC, paddle: aiPaddle,
-                          oppC: leftC,  oppPad: playerPaddle, dir: -1,
-                          midCol: BC.rightMid, glowCol: BC.rightGlow },
-                    ];
-
-                    for (const sd of sideDefs) {
                         let root = window[sd.rootKey];
 
-                        // -- Lazy create (first call only) --
+                        // -- Lazy create (first call only — _odBeamMakeMat/_odBeamMakeBox hoisted) --
                         if (!root) {
                             root = new BABYLON.TransformNode(sd.rootKey, scene);
 
-                            const coreMat  = makeMat(sd.rootKey + '_coreMat',  BC.core,      0.95);
-                            const midMat   = makeMat(sd.rootKey + '_midMat',   sd.midCol,    0.70);
-                            const glowMat  = makeMat(sd.rootKey + '_glowMat',  sd.glowCol,   0.45);
+                            const coreMat  = _odBeamMakeMat(sd.rootKey + '_coreMat',  BC.core,   0.95);
+                            const midMat   = _odBeamMakeMat(sd.rootKey + '_midMat',   midCol,    0.70);
+                            const glowMat  = _odBeamMakeMat(sd.rootKey + '_glowMat',  glowCol,   0.45);
 
-                            const coreBox  = makeBox(sd.rootKey + '_core', 0.35, 0.50,               coreMat,  root);
-                            const midBox   = makeBox(sd.rootKey + '_mid',  0.50, 1.20,               midMat,   root);
+                            const coreBox  = _odBeamMakeBox(sd.rootKey + '_core', 0.35, 0.50,               coreMat, root);
+                            const midBox   = _odBeamMakeBox(sd.rootKey + '_mid',  0.50, 1.20,               midMat,  root);
                             // GLOW depth = 2*BLOCK_TOL: visual band == blockable band (invariant)
-                            const glowBox  = makeBox(sd.rootKey + '_glow', 0.65, 2 * OD.BLOCK_TOL,  glowMat,  root);
+                            const glowBox  = _odBeamMakeBox(sd.rootKey + '_glow', 0.65, 2 * OD.BLOCK_TOL,  glowMat, root);
 
                             root._beamRows = { core: coreBox, mid: midBox, glow: glowBox };
                             root.setEnabled(false);
 
-                            // Expose root for Tasks 3-4 (position orb/impact against it)
+                            // Expose root for Tasks 3-4; legacy {core,mid,glow} for Task 4 compat
                             window[sd.rootKey] = root;
-                            // Legacy key: window._overdriveBeam_{left,right} = { core, mid, glow }
                             window[sd.rootKey.replace('Root_', '_')] = root._beamRows;
                         }
-
-                        const c      = sd.c;
-                        const paddle = sd.paddle;
-                        const oppC   = sd.oppC;
-                        const oppPad = sd.oppPad;
-                        const dir    = sd.dir;   // +1 left-fires-right, -1 right-fires-left
 
                         // Hide when inactive
                         if (!c || !c.juiceActive) {
@@ -13007,8 +13010,9 @@
                         const activeEndX  = muzzleX + dir * activeLength;
                         const activeMidX  = (muzzleX + activeEndX) * 0.5;
 
-                        // ---- Root position (one position write; Z tracks caster) ----
+                        // ---- Root position (one position write per side; Z tracks caster) ----
                         root.position.x = activeMidX;
+                        root.position.y = 0;   // explicit: guard against parent drift
                         root.position.z = paddle.position.z;
 
                         // ---- Z-scale factors (no alloc — arithmetic only) ----
@@ -13024,7 +13028,7 @@
                         // ---- Update row scalings (no alloc — .set() in place) ----
                         const rows = root._beamRows;
                         if (rows) {
-                            // scaling: (X=beam length, Y=thickness baked in box, Z=band height factor)
+                            // scaling axes: X=beam length, Y=thickness baked in box, Z=band height
                             rows.core.scaling.set(activeLength * jitter, 1, coreZScale);
                             rows.mid.scaling.set(activeLength,           1, midZScale);
                             rows.glow.scaling.set(activeLength,          1, 1);
