@@ -14,7 +14,7 @@
 - **Presentation is read-only w.r.t. the sim:** the beam mesh, aura, and channel cast-bar may READ `juiceActive`/`juiceTimer`/`juiceRamp`/paddle Z but must never WRITE simulated state.
 - **Symmetry (project memory):** both combatants use the identical charge table and beam constants. No per-side difference.
 - **Anchor:** a fully-connected 6s beam ≈ **45%** of a health bar; tune the per-second rate to hit that, don't exceed it wildly.
-- Touch ONLY `index.html`.
+- Touch ONLY `index.html` and `js/sim.js`. **(AMENDED at execution pre-flight 2026-07-05:** the sim has been lifted to `js/sim.js` — `simulateNetworkFrame`, `simAddJuice`, `simActivateJuice`, and the juice drain now live there, loaded via `<script type="module" src="js/sim.js?v=...">`. Sim-side work goes in `js/sim.js`; index.html keeps constants, deps, presentation, and the oracle harness. **When `js/sim.js` changes, bump its `?v=` cache-bust in index.html's script tag.** Plan line numbers predate today's master changes — locate every edit by its code anchor, not the line number.)
 - The MP beam behavior can't be verified headlessly (needs 2 peers) — that's the human's live test. Verify determinism (oracles), SP behavior (console), and no crashes.
 
 ---
