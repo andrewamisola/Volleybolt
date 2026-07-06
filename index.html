@@ -12538,6 +12538,9 @@
 
             function decideAI(view, frame, rng, profile) {
                 // PURE: no performance.now / Date.now / Math.random / .mesh.
+                // (rng is currently UNUSED — reserved for future humanizing variance. Since the
+                //  2026-07-06 aggression rework the AI is fully deterministic per (view, frame,
+                //  profile); at full opening-urgency it casts with clockwork regularity.)
                 // Track-&-chase: the AI watches the ball's CURRENT position (from a
                 // reaction-lagged view) and chases it at player speed. It never solves
                 // for a future impact point, so fast / steep / bounced shots outrun it.
@@ -16261,7 +16264,13 @@
         // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "398443e4"  (re-pinned 2026-07-06:
         // turtle offense-suppression REMOVED + opening-reactive cast urgency added — the AI never
         // stops casting; a clear opening collapses the cadence toward instant, skill-scaled.
-        // Verified 2x-reproducible. Prior: 5afbc1a6, 2026-07-04 behavioral conditions.)
+        // Verified 3x-reproducible. Prior: 5afbc1a6, 2026-07-04 behavioral conditions.)
+        // KNOWN HASH LIMITATION: the harness only decides casts every 8th frame, and ANY
+        // effectiveCadence <= 8 fires on every eligible cast frame — so the golden CANNOT
+        // catch regressions in urgency DEPTH (cadence 1 vs 6 fold identically; verified by
+        // widening oppZ to ±4.0 with no fold change while seeds 43/7 fold differently).
+        // The urgency behavior is locked instead by direct decideAI probes (see ledger:
+        // open lane -> fireball frame 0; covered lane -> frostbolt frame 0).
         // Behavioral conditions covered: frostbolt lane-gating, opening-urgency (cadence collapse),
         // skill-scaled threat pick + save-both; synthetic view cycles incoming 0/1/2 AND varies
         // oppZ widely (-3.2..3.6) to exercise blocked vs open lane urgency branches.
@@ -16285,7 +16294,10 @@
                         freezeTime: 0, casting: null, castProgress: 0, castTime: 1.0, juice: 0, juiceActive: false, shieldCharges: 0,
                         towerHealth: (seed % 20) + 1,   // 1..20 — kept for view completeness
                     },
-                    opp:  { paddleZ: (seed % 9) * 0.8 - 3.2, towerHealth: 20 - (seed % 7) },
+                    // oppZ -4.0..4.0 (was 0.8-step, -3.2..3.2): max |gap| vs selfZ ±0.6 is now ~4.6 ->
+                    // openingFrac ~0.52, so the oracle hashes DEEP into the urgency curve (reviewer M2:
+                    // the old range only moved effectiveCadence one step and shadowed the sharp end).
+                    opp:  { paddleZ: (seed % 9) * 1.0 - 4.0, towerHealth: 20 - (seed % 7) },
                     geom: { tableWidth: 16, halfDepth: 4, paddleBoundary: 3.8 },
                     maxHealth: 20,
                     roundActive: true,
