@@ -2400,10 +2400,9 @@
         // playtester reporting a desync) have them add ?dev to the URL — no rebuild needed. The
         // dbg.* console API stays unconditionally available (console-only, invisible to players).
         window.DEV_MODE = new URLSearchParams(location.search).has('dev')
-                       || localStorage.getItem('volleybolt_dev') === '1'
-                       // Local dev server = always dev mode (the hosted build is never localhost,
-                       // so the ship-clean guarantee holds; no ?dev needed for local playtests).
-                       || location.hostname === '127.0.0.1' || location.hostname === 'localhost';
+                       || localStorage.getItem('volleybolt_dev') === '1';
+                       // (localhost auto-dev removed 2026-07-06 per owner — debug menu is opt-in
+                       //  everywhere; add ?dev to the URL when a dev session needs it.)
 
         // ===== Accessibility runtime hooks (reduce motion + colorblind team palette) =====
         // Reduce Motion / Flashing: a global flag + an <html> class. The class kills CSS animations
