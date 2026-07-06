@@ -443,6 +443,11 @@ body.hud-hidden #hudScaleLayer {
 .beam-damage-pulse {
     animation: beamDamagePulse 0.3s steps(4) forwards;
 }
+/* OS-level reduce-motion users get no flash even if the in-game setting is off
+   (the JS side also gates on window._reduceMotion — this covers the OS pref). */
+@media (prefers-reduced-motion: reduce) {
+    .beam-damage-pulse { animation: none; }
+}
 
 /* Frozen text */
 .frozen-text {

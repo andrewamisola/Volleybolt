@@ -13206,6 +13206,7 @@
                                     _T4c.eruptKicked     = false;
                                     _T4c.prevWindingUp   = true;
                                     _T4c.dmgAcc          = 0;
+                                    _T4c.prevOppHealth   = 0;  // reset so inter-channel damage (fireballs during the NEXT windup) can't attribute to the next beam's first beat
                                     if (_T4c.beamLights) for (let _li = 0; _li < _T4c.beamLights.length; _li++) _T4c.beamLights[_li].setEnabled(false);
                                     if (_T4c.orbLight)   _T4c.orbLight.setEnabled(false);
                                     if (_T4c.blobRoot)   _T4c.blobRoot.setEnabled(false);
@@ -13316,6 +13317,7 @@
 
                         // Beam body stays hidden during windup (orb is the only visual during charge)
                         if (windingUp) {
+                            T4.live = false;   // defensive: never let a stale 'live' survive into a windup (review V4 #3)
                             if (root.isEnabled()) root.setEnabled(false);
                             continue;
                         }
@@ -13457,12 +13459,15 @@
                                         showCombatTextAt(new BABYLON.Vector3(endpointX, 1.8, _casterZ),
                                             '−' + _chunk, 'cancel');
                                     }
-                                    // Health-bar pulse on the OPPONENT's bar
-                                    const _hbId = sd.isLeft ? 'aiHealthBar' : 'playerHealthBar';
-                                    const _hbEl = document.getElementById(_hbId);
-                                    if (_hbEl) {
-                                        _hbEl.classList.add('beam-damage-pulse');
-                                        setTimeout(() => { if (_hbEl) _hbEl.classList.remove('beam-damage-pulse'); }, 320);
+                                    // Health-bar pulse on the OPPONENT's bar (visual flourish — skipped under
+                                    // Reduce Motion; the damage NUMBER above still shows, it's information)
+                                    if (!window._reduceMotion) {
+                                        const _hbId = sd.isLeft ? 'aiHealthBar' : 'playerHealthBar';
+                                        const _hbEl = document.getElementById(_hbId);
+                                        if (_hbEl) {
+                                            _hbEl.classList.add('beam-damage-pulse');
+                                            setTimeout(() => { if (_hbEl) _hbEl.classList.remove('beam-damage-pulse'); }, 320);
+                                        }
                                     }
                                     // Impact-blob scale kick
                                     T4.blobKick = 0.4;
