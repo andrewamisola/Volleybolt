@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Volleybolt — Art Bible</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --vb-gold: #f0c050;
+    --vb-gold-mid: #d4a849;
+    --vb-gold-dark: #8b6914;
+    --vb-gold-bright: #ffe9a8;
+    --vb-gold-amber: #fc9838;
+    --vb-steel-hi: rgba(84,96,118,0.90);
+    --vb-steel-lo: rgba(42,52,70,0.93);
+    --vb-rim: #dfe6f2;
+    --vb-rim-inner: rgba(16,24,40,0.75);
+    --vb-text: #f4f7ff;
+    --vb-text-dim: #b7bfd2;
+    --vb-bg: #15121b;
+    --vb-blue: #0078F8;
+    --vb-red: #F83800;
+    --vb-fire: #ffa040;
+    --vb-frost: #80d0ff;
+    --vb-lightning: #ffff40;
+    --vb-thunder-card: #d8d8ff;
+    --vb-success: #6ad26a;
+    --vb-amber: #FC9838;
+    --vb-cream: #F8F8F8;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; max-width: 100%; overflow-x: hidden; }
+  body {
+    background: var(--vb-bg);
+    color: var(--vb-text);
+    font-family: 'Press Start 2P', monospace;
+    font-size: 11px;
+    line-height: 2;
+    -webkit-font-smoothing: antialiased;
+  }
+  img { max-width: 100%; height: auto; display: block; }
+  .pixelated { image-rendering: pixelated; }
+
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 20px; }
+
+  section { padding: 64px 0; }
+  section + section { border-top: 1px solid rgba(223,230,242,0.08); }
+
+  h2.section-title {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 22px;
+    letter-spacing: 2px;
+    color: var(--vb-gold);
+    text-shadow: 2px 2px 0 #000;
+    margin: 0 0 28px 0;
+  }
+  h2.section-title .num {
+    color: var(--vb-text-dim);
+    font-size: 14px;
+    margin-right: 10px;
+  }
+
+  p { margin: 0 0 14px 0; }
+  ul.beats { list-style: none; margin: 0; padding: 0; }
+  ul.beats li {
+    position: relative;
+    padding-left: 26px;
+    margin-bottom: 16px;
+  }
+  ul.beats li::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 6px;
+    width: 0; height: 0;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    border-left: 10px solid var(--vb-gold);
+    filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.85));
+  }
+
+  /* ---- steel panel recipe (STYLE-GUIDE.md §3) ---- */
+  .panel {
+    position: relative;
+    background:
+      repeating-linear-gradient(118deg, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px, rgba(0,0,0,0.05) 1px, rgba(0,0,0,0.05) 2px, transparent 2px, transparent 4px),
+      linear-gradient(180deg, var(--vb-steel-hi) 0%, var(--vb-steel-lo) 100%);
+    border: 2px solid var(--vb-rim);
+    border-radius: 13px;
+    box-shadow:
+      inset 0 0 0 1px var(--vb-rim-inner),
+      inset 0 2px 3px rgba(255,255,255,0.22),
+      inset 0 -3px 4px rgba(0,0,0,0.38),
+      5px 5px 0 rgba(0,0,0,0.5);
+    padding: 24px;
+  }
+
+  /* tight image frame — same recipe, less padding */
+  .frame {
+    background:
+      repeating-linear-gradient(118deg, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px, rgba(0,0,0,0.05) 1px, rgba(0,0,0,0.05) 2px, transparent 2px, transparent 4px),
+      linear-gradient(180deg, var(--vb-steel-hi) 0%, var(--vb-steel-lo) 100%);
+    border: 2px solid var(--vb-rim);
+    border-radius: 8px;
+    box-shadow:
+      inset 0 0 0 1px var(--vb-rim-inner),
+      inset 0 2px 3px rgba(255,255,255,0.18),
+      4px 4px 0 rgba(0,0,0,0.5);
+    padding: 8px;
+  }
+  .frame img { border-radius: 4px; width: 100%; }
+  .frame figcaption {
+    text-align: center;
+    font-size: 10px;
+    color: var(--vb-text-dim);
+    margin-top: 10px;
+    letter-spacing: 0.5px;
+  }
+  figure { margin: 0; }
+
+  .badge-draft {
+    display: inline-block;
+    border: 2px solid var(--vb-gold);
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--vb-gold);
+    text-shadow: 1px 1px 0 #000;
+    background: rgba(16,24,40,0.4);
+    margin-bottom: 16px;
+  }
+  .badge-soon {
+    display: inline-block;
+    border: 2px solid var(--vb-gold);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 9px;
+    letter-spacing: 1px;
+    color: var(--vb-gold);
+    text-shadow: 1px 1px 0 #000;
+    background: rgba(16,24,40,0.55);
+  }
+
+  /* ---- hero ---- */
+  .hero {
+    position: relative;
+    min-height: 480px;
+    background: linear-gradient(180deg, rgba(21,18,27,0.25) 0%, rgba(21,18,27,0.55) 55%, var(--vb-bg) 100%),
+                url('world/arena-wide-1.png') center 35% / cover no-repeat;
+    display: flex;
+    align-items: flex-end;
+    padding: 0 0 48px 0;
+    border-top: none;
+  }
+  .hero .wrap { width: 100%; text-align: center; }
+  .title-gold {
+    font-family: 'Cinzel', serif;
+    font-weight: 700;
+    font-size: clamp(44px, 8vw, 84px);
+    letter-spacing: 8px;
+    margin: 0 0 16px 0;
+    background: linear-gradient(180deg, var(--vb-gold-bright) 0%, var(--vb-gold) 40%, var(--vb-gold-mid) 64%, var(--vb-gold-dark) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(4px 4px 0 #000) drop-shadow(0 0 16px rgba(212,168,73,0.35));
+  }
+  .tagline {
+    font-family: 'Cinzel', serif;
+    font-size: 20px;
+    font-style: italic;
+    color: var(--vb-cream);
+    text-shadow: 2px 2px 0 #000;
+    letter-spacing: 1px;
+  }
+  .kicker {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    color: var(--vb-text-dim);
+    letter-spacing: 2px;
+    margin-top: 20px;
+  }
+
+  /* ---- grids ---- */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+  @media (max-width: 900px) {
+    .grid-2, .grid-4, .grid-5 { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .two-col { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 28px; align-items: center; }
+  @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* ---- spell cards ---- */
+  .spell-card {
+    border: 3px solid var(--card-color, var(--vb-gold));
+    border-radius: 11px;
+    background:
+      repeating-linear-gradient(118deg, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px, rgba(0,0,0,0.05) 1px, rgba(0,0,0,0.05) 2px, transparent 2px, transparent 4px),
+      linear-gradient(180deg, var(--vb-steel-hi) 0%, var(--vb-steel-lo) 100%);
+    box-shadow:
+      inset 0 0 0 1px var(--vb-rim-inner),
+      4px 4px 0 rgba(0,0,0,0.5);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .spell-media {
+    border-radius: 6px;
+    overflow: hidden;
+    aspect-ratio: 1280 / 340;
+    background: rgba(0,0,0,0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .spell-media img { width: 100%; height: 100%; object-fit: cover; }
+  .spell-media.placeholder {
+    background: repeating-linear-gradient(135deg, rgba(240,192,80,0.10) 0 10px, rgba(0,0,0,0.25) 10px 20px);
+    border: 1px dashed rgba(240,192,80,0.5);
+  }
+  .spell-tex { display: flex; justify-content: center; margin-top: -2px; }
+  .spell-tex img {
+    width: 40px; height: 40px;
+    border: 1px solid rgba(223,230,242,0.4);
+    border-radius: 4px;
+  }
+  .spell-card h3 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 13px;
+    color: var(--vb-gold);
+    text-shadow: 2px 2px 0 #000;
+    margin: 0;
+    text-align: center;
+  }
+  .spell-card p {
+    font-size: 9.5px;
+    line-height: 1.8;
+    color: var(--vb-text-dim);
+    text-align: center;
+    margin: 0;
+  }
+  .spell-card .sub-note {
+    font-size: 8.5px;
+    color: var(--vb-text-dim);
+    opacity: 0.85;
+    font-style: normal;
+  }
+
+  /* ---- swatches ---- */
+  .swatch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 14px; }
+  .swatch { border-radius: 8px; overflow: hidden; border: 2px solid var(--vb-rim); box-shadow: 3px 3px 0 rgba(0,0,0,0.5); }
+  .swatch .chip { height: 56px; }
+  .swatch .label { background: rgba(16,20,32,0.85); padding: 8px; font-size: 9px; }
+  .swatch .label .hex { color: var(--vb-text-dim); display: block; margin-top: 4px; }
+
+  /* ---- demo panel (live steel panel) ---- */
+  .demo-menu { max-width: 320px; }
+  .demo-menu .demo-tab {
+    position: absolute;
+    top: -18px; left: 20px;
+    background:
+      repeating-linear-gradient(118deg, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px, rgba(0,0,0,0.05) 1px, rgba(0,0,0,0.05) 2px, transparent 2px, transparent 4px),
+      linear-gradient(180deg, var(--vb-steel-hi) 0%, var(--vb-steel-lo) 100%);
+    border: 2px solid var(--vb-rim);
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    padding: 4px 14px;
+    font-size: 10px;
+    color: var(--vb-gold);
+    text-shadow: 1px 1px 0 #000;
+  }
+  .demo-menu .item {
+    position: relative;
+    padding: 10px 10px 10px 30px;
+    font-size: 12px;
+    color: var(--vb-gold);
+    text-shadow: 2px 2px 0 #000;
+    border-bottom: 1px solid rgba(223,230,242,0.15);
+  }
+  .demo-menu .item:last-child { border-bottom: none; }
+  .demo-menu .item.hovered { color: #fff4c2; }
+  .demo-menu .item.hovered::before {
+    content: '';
+    position: absolute;
+    left: 8px; top: 50%;
+    transform: translateY(-50%);
+    width: 0; height: 0;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    border-left: 9px solid #f4f7ff;
+    filter: drop-shadow(1px 1px 0 rgba(8,12,26,0.85));
+  }
+
+  /* ---- world section ---- */
+  .tower-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .tower-row .frame img { max-height: 320px; object-fit: contain; margin: 0 auto; }
+
+  .arena-caption-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 20px; }
+  .arena-caption-row .cap {
+    text-align: center;
+    font-size: 10px;
+    color: var(--vb-text-dim);
+    line-height: 1.8;
+  }
+  .arena-caption-row .cap strong { color: var(--vb-gold); display: block; margin-bottom: 6px; font-size: 11px; }
+
+  /* ---- anim row ---- */
+  .anim-frame { height: 200px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.25); border-radius: 4px; }
+  .anim-frame img { max-height: 100%; width: auto; }
+
+  /* ---- brief columns ---- */
+  .do-dont { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 900px) { .do-dont { grid-template-columns: 1fr; } }
+  .do-dont .col { border-radius: 10px; padding: 20px; }
+  .do-dont .col.do { border: 2px solid var(--vb-success); }
+  .do-dont .col.dont { border: 2px solid var(--vb-red); }
+  .do-dont h3 { margin: 0 0 14px 0; font-size: 14px; text-shadow: 2px 2px 0 #000; }
+  .do-dont .col.do h3 { color: var(--vb-success); }
+  .do-dont .col.dont h3 { color: var(--vb-red); }
+  .do-dont ul { margin: 0; padding-left: 18px; }
+  .do-dont li { margin-bottom: 12px; font-size: 10px; line-height: 1.8; }
+
+  .lore-copy { font-size: 11px; line-height: 2; color: var(--vb-text); }
+
+  footer { text-align: center; padding: 40px 0 60px; font-size: 9px; color: var(--vb-text-dim); }
+</style>
+</head>
+<body>
+
+<!-- 1. HERO -->
+<header class="hero">
+  <div class="wrap">
+    <h1 class="title-gold">VOLLEYBOLT</h1>
+    <p class="tagline">"Magic answered with magic."</p>
+    <p class="kicker">ART BIBLE — REFERENCE PACK FOR ARTISTS</p>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- 2. WHAT IS VOLLEYBOLT -->
+  <section id="what">
+    <h2 class="section-title"><span class="num">01</span>What is Volleybolt</h2>
+    <div class="panel">
+      <p style="font-size:12px; line-height:2;">
+        Two tiny pickle wizards duel across a castle court, volleying elemental spells
+        back and forth — a fantasy sport where every exchange is pure skill:
+        <strong style="color:var(--vb-gold);">no randomness, ever</strong>.
+      </p>
+      <ul class="beats">
+        <li>Two rival towers — blue in the west, red in the east — have settled every dispute this way for generations.</li>
+        <li>The duelists are pickle-folk: small, brined, and utterly fearless spellcasters who train a lifetime for court day.</li>
+        <li>A volley is won by reading your opponent, not by fortune — fire scorches, frost slows, lightning splits the sky, and a well-timed parry turns the shot back.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 3. THE WORLD -->
+  <section id="world">
+    <h2 class="section-title"><span class="num">02</span>The World</h2>
+    <div class="two-col">
+      <div class="panel">
+        <span class="badge-draft">DRAFT — not yet canon</span>
+        <div class="lore-copy">
+          <p>Long ago, the wizards of two rival towers settled their disputes the civilized
+          way: by hurling spells at each other across a garden court until somebody's
+          gate gave in. The tradition stuck. Now every dispute — territorial, academic,
+          or purely personal — is settled by <strong style="color:var(--vb-gold);">the volley</strong>: magic answered with magic,
+          bolt for bolt, until one side can no longer return.</p>
+          <p>The duelists are pickle-folk: small, brined, and utterly fearless
+          spellcasters who train their whole lives for court day. Their code is strict —
+          no luck, no tricks, no dice. A volley is won by reading your opponent, not by
+          fortune. Fire scorches, frost slows, lightning splits the sky, and a
+          well-timed parry turns your enemy's best shot back at them.</p>
+          <p>The court sits between the two towers — blue in the west, red in the east — a
+          worn dirt road flanked by hedges, lit by a dusk that never quite ends.</p>
+        </div>
+      </div>
+      <figure class="frame">
+        <img src="world/court-biome.png" alt="The court biome — the duel road between the two towers">
+        <figcaption>The court biome — dusk that never quite ends</figcaption>
+      </figure>
+    </div>
+
+    <div class="tower-row" style="margin-top:24px;">
+      <figure class="frame">
+        <img src="world/tower-blue.png" alt="Blue team tower">
+        <figcaption>Tower Blue — west</figcaption>
+      </figure>
+      <figure class="frame">
+        <img src="world/tower-red.png" alt="Red team tower">
+        <figcaption>Tower Red — east</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 4. THE CHARACTER -->
+  <section id="character">
+    <h2 class="section-title"><span class="num">03</span>The Character</h2>
+
+    <div class="two-col">
+      <figure class="frame">
+        <img src="character/pickle-2d-concept.png" alt="Pickle wizard 2D concept art">
+        <figcaption>2D concept — canonical face + proportions</figcaption>
+      </figure>
+      <figure class="frame">
+        <img src="character/turn-front.png" alt="Pickle wizard 3D turnaround, front view">
+        <figcaption>3D render, front — same character, two mediums</figcaption>
+      </figure>
+    </div>
+
+    <div class="grid-2" style="margin-top:20px; align-items:start;">
+      <div class="panel" style="padding:16px;">
+        <p style="margin:0; font-size:10px; line-height:1.8;">
+          The face sprite below is the same character flattened into an always-front
+          FF9-style decal — this is what actually renders in-game at 64px.
+        </p>
+      </div>
+      <figure class="frame" style="max-width:220px;">
+        <img class="pixelated" src="character/pickle-face-sprite.png" alt="In-game face decal sprite">
+        <figcaption>In-game face decal (pixelated, always-front)</figcaption>
+      </figure>
+    </div>
+
+    <h3 style="font-family:'Press Start 2P',monospace; font-size:13px; color:var(--vb-gold); text-shadow:2px 2px 0 #000; margin:36px 0 16px;">Turnaround</h3>
+    <div class="grid-4">
+      <figure class="frame">
+        <img class="pixelated" src="character/turn-front.png" alt="Turnaround — front">
+        <figcaption>Front</figcaption>
+      </figure>
+      <figure class="frame">
+        <img class="pixelated" src="character/turn-threequarter.png" alt="Turnaround — three-quarter">
+        <figcaption>Three-quarter</figcaption>
+      </figure>
+      <figure class="frame">
+        <img class="pixelated" src="character/turn-side.png" alt="Turnaround — side">
+        <figcaption>Side</figcaption>
+      </figure>
+      <figure class="frame">
+        <img class="pixelated" src="character/turn-back.png" alt="Turnaround — back">
+        <figcaption>Back</figcaption>
+      </figure>
+    </div>
+
+    <h3 style="font-family:'Press Start 2P',monospace; font-size:13px; color:var(--vb-gold); text-shadow:2px 2px 0 #000; margin:36px 0 16px;">Motion personality</h3>
+    <div class="grid-4">
+      <figure class="frame">
+        <div class="anim-frame"><img src="character/anim-idle.gif" alt="Idle animation"></div>
+        <figcaption>Idle</figcaption>
+      </figure>
+      <figure class="frame">
+        <div class="anim-frame"><img src="character/anim-cast.gif" alt="Cast animation"></div>
+        <figcaption>Cast</figcaption>
+      </figure>
+      <figure class="frame">
+        <div class="anim-frame"><img src="character/anim-victory.gif" alt="Victory animation"></div>
+        <figcaption>Victory</figcaption>
+      </figure>
+      <figure class="frame">
+        <div class="anim-frame"><img src="character/anim-defeat.gif" alt="Defeat animation"></div>
+        <figcaption>Defeat</figcaption>
+      </figure>
+    </div>
+
+    <div class="panel" style="margin-top:24px;">
+      <p style="font-size:11px; line-height:2; margin:0;">
+        The pickle wizard is small, round, and charming; the spells are outsized and
+        dramatic — key art lives in that contrast. It's a wink at Pickleball's
+        character design, not a joke: in key art the pickle carries real hero energy.
+        In game the two duelists are the <strong style="color:var(--vb-gold);">same
+        pickle</strong> tinted per team — blue-side player left, red-side opponent
+        right. Never reverse the sides.
+      </p>
+    </div>
+  </section>
+
+  <!-- 5. THE MAGIC -->
+  <section id="magic">
+    <h2 class="section-title"><span class="num">04</span>The Magic</h2>
+    <div class="grid-5">
+      <div class="spell-card" style="--card-color:#ffa040;">
+        <div class="spell-media"><img src="spells/fireball.gif" alt="Fireball spell animation"></div>
+        <div class="spell-tex"><img class="pixelated" src="spells/tex-fireball.png" alt="Fireball texture"></div>
+        <h3>Fireball</h3>
+        <p>Fast streaking comet with a trailing burn.</p>
+      </div>
+      <div class="spell-card" style="--card-color:#80d0ff;">
+        <div class="spell-media"><img src="spells/frostbolt.gif" alt="Frostbolt spell animation"></div>
+        <div class="spell-tex"><img class="pixelated" src="spells/tex-frostbolt.png" alt="Frostbolt texture"></div>
+        <h3>Frostbolt</h3>
+        <p>Cold shard, crystalline trail.</p>
+      </div>
+      <div class="spell-card" style="--card-color:#d8d8ff;">
+        <div class="spell-media"><img src="spells/thunder.gif" alt="Thunder spell animation"></div>
+        <div class="spell-tex"><img class="pixelated" src="spells/tex-lightning.png" alt="Lightning texture"></div>
+        <h3>Thunder</h3>
+        <p>Jagged sky-strike, instant.</p>
+        <p class="sub-note">Reads pale-white/violet in game; UI lightning color is #ffff40.</p>
+      </div>
+      <div class="spell-card" style="--card-color:#0078F8;">
+        <div class="spell-media"><img src="spells/parry.gif" alt="Parry spell animation"></div>
+        <h3>Parry</h3>
+        <p>Crescent ward + deflection, team-colored.</p>
+      </div>
+      <div class="spell-card" style="--card-color:#f0c050;">
+        <div class="spell-media placeholder"><span class="badge-soon">COMING SOON</span></div>
+        <h3>Juice</h3>
+        <p>Beam ultimate — reworked; reference art lands soon. Leave room for it in compositions.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. THE ARENA -->
+  <section id="arena">
+    <h2 class="section-title"><span class="num">05</span>The Arena</h2>
+    <div class="grid-2">
+      <figure class="frame">
+        <img src="world/arena-wide-2.png" alt="Arena wide shot, calm">
+        <figcaption>The calm before</figcaption>
+      </figure>
+      <figure class="frame">
+        <img src="world/arena-fireball-rally.png" alt="Arena mid-rally, fireball in flight">
+        <figcaption>The volley — mid-rally</figcaption>
+      </figure>
+    </div>
+    <div class="arena-caption-row">
+      <div class="cap"><strong>Towers</strong>are the stakes — home turf, honor, the reason to fight.</div>
+      <div class="cap"><strong>Court</strong>is the duel — the only ground where the argument gets settled.</div>
+      <div class="cap"><strong>Dusk void</strong>is the mood — a sky that never quite resolves to night.</div>
+    </div>
+  </section>
+
+  <!-- 7. STYLE & UI -->
+  <section id="style-ui">
+    <h2 class="section-title"><span class="num">06</span>Style &amp; UI</h2>
+
+    <div class="swatch-grid">
+      <div class="swatch"><div class="chip" style="background:#f0c050;"></div><div class="label">Gold accent<span class="hex">#f0c050</span></div></div>
+      <div class="swatch"><div class="chip" style="background:#d4a849;"></div><div class="label">Mid gold<span class="hex">#d4a849</span></div></div>
+      <div class="swatch"><div class="chip" style="background:#8b6914;"></div><div class="label">Dark gold<span class="hex">#8b6914</span></div></div>
+      <div class="swatch"><div class="chip" style="background:#0078F8;"></div><div class="label">Team blue<span class="hex">#0078F8</span></div></div>
+      <div class="swatch"><div class="chip" style="background:#F83800;"></div><div class="label">Team red<span class="hex">#F83800</span></div></div>
+      <div class="swatch"><div class="chip" style="background:#ffa040;"></div><div class="label">Fire<span class="hex">#ffa040</span></div></div>
+      <div class="swatch"><div class="chip" style="background:#80d0ff;"></div><div class="label">Frost<span class="hex">#80d0ff</span></div></div>
+      <div class="swatch"><div class="chip" style="background:#ffff40;"></div><div class="label">Lightning<span class="hex">#ffff40</span></div></div>
+      <div class="swatch"><div class="chip" style="background:#6ad26a;"></div><div class="label">Success<span class="hex">#6ad26a</span></div></div>
+      <div class="swatch"><div class="chip" style="background:#fc9838;"></div><div class="label">NES amber<span class="hex">#fc9838</span></div></div>
+      <div class="swatch"><div class="chip" style="background:#f8f8f8;"></div><div class="label">NES cream<span class="hex">#F8F8F8</span></div></div>
+      <div class="swatch"><div class="chip" style="background:#15121b;"></div><div class="label">Backdrop dark<span class="hex">#15121b</span></div></div>
+      <div class="swatch"><div class="chip" style="background:rgba(46,56,76,0.94);"></div><div class="label">Steel panel bg<span class="hex">rgba(46,56,76,.94)</span></div></div>
+      <div class="swatch"><div class="chip" style="background:#dfe6f2;"></div><div class="label">Panel rim<span class="hex">#dfe6f2</span></div></div>
+    </div>
+
+    <div class="two-col" style="margin-top:32px;">
+      <figure class="frame">
+        <img src="ui/main-menu.png" alt="Main menu screen">
+        <figcaption>Main menu — the FF9 steel panel system in use</figcaption>
+      </figure>
+
+      <div class="panel demo-menu" style="position:relative;">
+        <div class="demo-tab">COMMAND</div>
+        <div class="item hovered">Fireball</div>
+        <div class="item">Frostbolt</div>
+        <div class="item">Thunder</div>
+        <div class="item">Parry</div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:24px;">
+      <p style="margin:0; font-size:10px; line-height:1.9;">
+        <strong style="color:var(--vb-gold);">Typography note:</strong> in-game text
+        runs on two local fonts — FF9UI (body/UI) and Ferrum (title/logo) — that live
+        only in the repo. This page substitutes the closest Google Fonts equivalents:
+        <strong>Press Start 2P</strong> for FF9UI, <strong>Cinzel</strong> for Ferrum.
+        Every FF9UI-style label on a dark background carries a hard
+        <code style="color:var(--vb-text-dim);">2px 2px 0 #000</code> text shadow — no blur, ever.
+      </p>
+    </div>
+  </section>
+
+  <!-- 8. BRIEF FOR ARTISTS -->
+  <section id="brief">
+    <h2 class="section-title"><span class="num">07</span>Brief for Artists</h2>
+    <p style="font-size:11px; color:var(--vb-text-dim); margin-bottom:24px;">
+      The ask: splash-style illustration (League of Legends key-art energy) that looks
+      like THIS game — PS1 fantasy, NES color discipline, cute-vs-epic.
+    </p>
+    <div class="do-dont">
+      <div class="col do panel" style="border-width:2px;">
+        <h3>DO</h3>
+        <ul>
+          <li>Low camera angle, pickle wizard mid-cast, spell lighting the scene</li>
+          <li>Team colors carrying the composition; gold #f0c050 for trim/title</li>
+          <li>The two-tower standoff as backdrop; dusk purple sky #15121b</li>
+          <li>Chunky, readable silhouettes (the game reads at 64px — key art should too)</li>
+        </ul>
+      </div>
+      <div class="col dont panel" style="border-width:2px;">
+        <h3>DON'T</h3>
+        <ul>
+          <li>Don't reverse team sides (blue left / red right)</li>
+          <li>Don't render the pickle hyper-real or gross — it's a hero, not a gag</li>
+          <li>Don't add dice, sparkle-chaos, or randomness motifs — this is a duel of skill</li>
+          <li>Don't introduce new spell colors — fire/frost/lightning only</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>Volleybolt Art Bible — reference pack, not final key art. Source: brand/README.md + docs/design-system/STYLE-GUIDE.md</footer>
+
+</body>
+</html>
