@@ -12838,6 +12838,93 @@
                     }
                 }
 
+                // --- Overdrive channel meter (depleting cast bar, positional) ---
+                // Runs AFTER normal cast-bar blocks so it overrides showCastBar(false) when juiceActive.
+                // A juicing combatant cannot be casting (sim guards), so the two paths are exclusive.
+                // Reads: juiceActive, juiceTimer, juiceRamp. Never writes sim state.
+                for (const [side, c] of [['left', leftC], ['right', rightC]]) {
+                    if (c && c.juiceActive) {
+                        const dur = (window.OVERDRIVE ? window.OVERDRIVE.DURATION : 6);
+                        const prog = Math.max(0, Math.min(1, (c.juiceTimer || 0) / dur));  // depletes from 1 → 0
+                        if (side === 'left') {
+                            const domLabel = document.getElementById('castBarLabel');
+                            const domBar   = document.getElementById('castBarProgress');
+                            if (domLabel) domLabel.textContent = 'Overdrive';
+                            if (domBar)   domBar.value = prog * 100;
+                            if (window.guiElements) {
+                                if (window.guiElements.playerCastLabel) window.guiElements.playerCastLabel.text = 'Overdrive';
+                                if (window.guiElements.playerCastFill)  window.guiElements.playerCastFill.width = (prog * 100) + '%';
+                                const htmlLabel = document.getElementById('playerCastLabelHtml');
+                                if (htmlLabel) { htmlLabel.textContent = 'Overdrive'; htmlLabel.classList.add('visible'); }
+                            }
+                            showCastBar(true);
+                        } else {
+                            const domLabel = document.getElementById('aiCastBarLabel');
+                            const domBar   = document.getElementById('aiCastBarProgress');
+                            if (domLabel) domLabel.textContent = 'Overdrive';
+                            if (domBar)   domBar.value = prog * 100;
+                            if (window.guiElements) {
+                                if (window.guiElements.aiCastLabel) window.guiElements.aiCastLabel.text = 'Overdrive';
+                                if (window.guiElements.aiCastFill)  window.guiElements.aiCastFill.width = (prog * 100) + '%';
+                                const htmlLabel = document.getElementById('aiCastLabelHtml');
+                                if (htmlLabel) { htmlLabel.textContent = 'Overdrive'; htmlLabel.classList.add('visible'); }
+                            }
+                            showAICastBar(true);
+                        }
+                    }
+                }
+
+                // --- Overdrive beam visual (presentation-only, never writes sim) ---
+                // Lazy-create one reusable stretched box per side. Positional: left beam tracks
+                // leftC / playerPaddle, right beam tracks rightC / aiPaddle. renderingGroupId 1
+                // matches characters so the beam renders above the floor. Optional juiceRamp pulse
+                // (read-only) makes a fully-ramped beam look hotter; skipped under Reduce Motion.
+                (function () {
+                    const beamTableW = 26;  // matches scene tableWidth
+                    // Colors are fixed per side — reuse cached Color3 to avoid per-frame alloc.
+                    if (!window._overdriveBeamColors) window._overdriveBeamColors = {
+                        left:  new BABYLON.Color3(0.4, 0.7, 1.0),
+                        right: new BABYLON.Color3(1.0, 0.4, 0.15)
+                    };
+                    const sides = [
+                        { key: '_overdriveBeam_left',  c: leftC,  paddle: playerPaddle, color: window._overdriveBeamColors.left },
+                        { key: '_overdriveBeam_right', c: rightC, paddle: aiPaddle,     color: window._overdriveBeamColors.right }
+                    ];
+                    for (const { key, c, paddle, color } of sides) {
+                        let beam = window[key];
+                        if (!beam && scene) {
+                            const beamMat = new BABYLON.StandardMaterial(key + 'Mat', scene);
+                            beamMat.emissiveColor = color;
+                            beamMat.disableLighting = true;
+                            beamMat.alpha = 0.72;
+                            beamMat.backFaceCulling = false;
+                            beamMat.fogEnabled = false;
+                            beam = BABYLON.MeshBuilder.CreateBox(key, { width: beamTableW, height: 0.18, depth: 0.18 }, scene);
+                            beam.material = beamMat;
+                            beam.renderingGroupId = 1;
+                            beam.isPickable = false;
+                            beam.position.set(0, 0.5, 0);
+                            beam.setEnabled(false);
+                            window[key] = beam;
+                        }
+                        if (beam) {
+                            if (c && c.juiceActive && paddle) {
+                                beam.position.z = paddle.position.z;
+                                if (!window._reduceMotion) {
+                                    const rampFrac = Math.min(1, (c.juiceRamp || 0) / ((window.OVERDRIVE && window.OVERDRIVE.RAMP_TIME) || 2.5));
+                                    const pulse = 1 + rampFrac * 0.35 * (0.88 + 0.12 * Math.sin(Date.now() * 0.012));
+                                    beam.scaling.set(1, pulse, pulse);
+                                } else {
+                                    beam.scaling.set(1, 1, 1);
+                                }
+                                if (!beam.isEnabled()) beam.setEnabled(true);
+                            } else {
+                                if (beam.isEnabled()) beam.setEnabled(false);
+                            }
+                        }
+                    }
+                })();
+
                 // --- 3D cast bars: always positional (left wizard ← leftC, right wizard ← rightC) ---
                 if (leftC && leftC.casting) {
                     const progress = leftC.castTime > 0 ? leftC.castProgress / leftC.castTime : 0;
@@ -15664,7 +15751,7 @@
                 mix(q(c.paddleZ)); mix(q(c.prevPaddleZ)); mix(q(c.moveAccum)); mix(q(c.mana)); mix(q(c.manaRegen));
                 mix(q(c.freezeTime)); mix(q(c.towerHealth)); mix(q(c.castProgress)); mix(q(c.castTime));
                 mix(q(cd.fireball)); mix(q(cd.frostbolt)); mix(q(cd.thunderstorm));
-                mix(q(c.juice)); mix(c.juiceActive ? 1 : 0); mix(q(c.juiceTimer));
+                mix(q(c.juice)); mix(c.juiceActive ? 1 : 0); mix(q(c.juiceTimer)); mix(q(c.juiceRamp));
             }
             for (const p of (s.projectiles || [])) {
                 mix(p.id | 0); mix(q(p.x)); mix(q(p.y)); mix(q(p.z));
@@ -15683,7 +15770,7 @@
         // localize any single-field desync. This does NOT feed the main hash and is OFF the compare
         // hot path — group hashes are stored per frame (cheap: 7 uint32s) and only EXCHANGED on a
         // detected desync. Groups: leftPaddle/rightPaddle (paddleZ/prevPaddleZ/moveAccum),
-        // leftCore/rightCore (mana/regen/freeze/tower/cast/cooldowns/juice), projectiles (the list),
+        // leftCore/rightCore (mana/regen/freeze/tower/cast/cooldowns/juice/juiceRamp), projectiles (the list),
         // rng (rngSeed/nextProjId), misc (frame/playerScore/aiScore).
         function hashGameStateGroups(snap) {
             const s = snap || captureGameState();
@@ -15696,7 +15783,7 @@
                 h = mix(h, q(c.mana)); h = mix(h, q(c.manaRegen)); h = mix(h, q(c.freezeTime));
                 h = mix(h, q(c.towerHealth)); h = mix(h, q(c.castProgress)); h = mix(h, q(c.castTime));
                 h = mix(h, q(cd.fireball)); h = mix(h, q(cd.frostbolt)); h = mix(h, q(cd.thunderstorm));
-                h = mix(h, q(c.juice)); h = mix(h, c.juiceActive ? 1 : 0); h = mix(h, q(c.juiceTimer));
+                h = mix(h, q(c.juice)); h = mix(h, c.juiceActive ? 1 : 0); h = mix(h, q(c.juiceTimer)); h = mix(h, q(c.juiceRamp));
                 return h >>> 0;
             };
             const sidePaddle = (c) => {
@@ -16244,7 +16331,8 @@
                     cooldowns: combatants.left ? { ...combatants.left.cooldowns } : { fireball: 0, frostbolt: 0 },
                     juice: combatants.left ? (combatants.left.juice || 0) : 0,
                     juiceActive: combatants.left ? (combatants.left.juiceActive || false) : false,
-                    juiceTimer: combatants.left ? (combatants.left.juiceTimer || 0) : 0
+                    juiceTimer: combatants.left ? (combatants.left.juiceTimer || 0) : 0,
+                    juiceRamp: combatants.left ? (combatants.left.juiceRamp || 0) : 0
                 },
                 right: {
                     paddleZ: aiPaddle ? aiPaddle.position.z : 0,
@@ -16260,7 +16348,8 @@
                     cooldowns: combatants.right ? { ...combatants.right.cooldowns } : { fireball: 0, frostbolt: 0 },
                     juice: combatants.right ? (combatants.right.juice || 0) : 0,
                     juiceActive: combatants.right ? (combatants.right.juiceActive || false) : false,
-                    juiceTimer: combatants.right ? (combatants.right.juiceTimer || 0) : 0
+                    juiceTimer: combatants.right ? (combatants.right.juiceTimer || 0) : 0,
+                    juiceRamp: combatants.right ? (combatants.right.juiceRamp || 0) : 0
                 },
 
                 // Parry state
@@ -16344,6 +16433,7 @@
                 combatants.left.juice = state.left.juice || 0;
                 combatants.left.juiceActive = state.left.juiceActive || false;
                 combatants.left.juiceTimer = state.left.juiceTimer || 0;
+                combatants.left.juiceRamp = state.left.juiceRamp || 0;
             }
 
             // Restore right combatant
@@ -16360,6 +16450,7 @@
                 combatants.right.juice = state.right.juice || 0;
                 combatants.right.juiceActive = state.right.juiceActive || false;
                 combatants.right.juiceTimer = state.right.juiceTimer || 0;
+                combatants.right.juiceRamp = state.right.juiceRamp || 0;
             }
 
             // Restore parry state
@@ -18348,6 +18439,45 @@
                 }
             }, 30);
         }
+
+        // Overdrive beam hit flash — fires once per connected tick via sim deps hook onOverdriveHit.
+        // Throttled to at most once per 200 ms wall-clock to stay cheap at 60 fps.
+        // Reads: opp paddle position (paddleX / paddleZ). Never writes sim state.
+        window.showOverdriveHitFX = (function () {
+            let _lastFxTime = 0;
+            return function showOverdriveHitFX(caster, opp, dmg) {
+                if (!scene) return;
+                const now = Date.now();
+                if (now - _lastFxTime < 200) return;  // throttle: max 5 Hz
+                _lastFxTime = now;
+                if (window._reduceMotion) return;  // no flash under Reduce Motion; beam still renders
+                const oppPaddle = (opp && opp.side === 'left') ? playerPaddle : aiPaddle;
+                const pos = oppPaddle
+                    ? new BABYLON.Vector3(oppPaddle.position.x, 0.5, oppPaddle.position.z)
+                    : new BABYLON.Vector3(0, 0.5, 0);
+                const flash = BABYLON.MeshBuilder.CreateSphere('odriveHitFlash_' + now, { diameter: 0.9, segments: 6 }, scene);
+                flash.position.copyFrom(pos);
+                const mat = new BABYLON.StandardMaterial('odriveHitMat_' + now, scene);
+                mat.emissiveColor = new BABYLON.Color3(1, 0.85, 0.3);
+                mat.disableLighting = true;
+                mat.alpha = 0.85;
+                flash.material = mat;
+                flash.renderingGroupId = 1;
+                flash.isPickable = false;
+                let frame = 0;
+                const iv = setInterval(() => {
+                    frame++;
+                    if (frame > 5) {
+                        clearInterval(iv);
+                        if (!flash.isDisposed()) flash.dispose();
+                        if (!mat.isDisposed()) mat.dispose();
+                    } else {
+                        mat.alpha = 0.85 * (1 - frame / 5);
+                        flash.scaling.scaleInPlace(1.4);
+                    }
+                }, 30);
+            };
+        })();
 
         // Legacy function stubs for compatibility
         function startThunderstormChannel(caster) {
