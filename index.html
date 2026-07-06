@@ -16258,8 +16258,10 @@
         // ---- AI determinism oracle (Phase 2.1) ----
         // Folds decideAI outputs over a scripted synthetic view sequence into a 32-bit hex hash.
         // No mesh reads, no game loop — pure function exercise only.
-        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "5afbc1a6"  (re-pinned 2026-07-04; value
-        // WILL CHANGE after next browser run — controller re-pins in-browser after each AI change)
+        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "398443e4"  (re-pinned 2026-07-06:
+        // turtle offense-suppression REMOVED + opening-reactive cast urgency added — the AI never
+        // stops casting; a clear opening collapses the cadence toward instant, skill-scaled.
+        // Verified 2x-reproducible. Prior: 5afbc1a6, 2026-07-04 behavioral conditions.)
         // Behavioral conditions covered: frostbolt lane-gating, opening-urgency (cadence collapse),
         // skill-scaled threat pick + save-both; synthetic view cycles incoming 0/1/2 AND varies
         // oppZ widely (-3.2..3.6) to exercise blocked vs open lane urgency branches.
