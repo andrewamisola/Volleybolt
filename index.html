@@ -649,7 +649,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=29-golden-repin"></script>
+    <script type="module" src="js/sim.js?v=30-overdrive-consts"></script>
 
     <script>
         // Global error handler to debug doubles crash
@@ -1788,8 +1788,16 @@
         // ============================================================
         const JUICE = {
             MAX: 350,                                               // points to fill (status bar shows the %)
-            DURATION: 8,                                            // seconds of burst
-            CHARGE: { damage: 12, cast: 8, parry: 10, minor: 4 },  // damage is PER damage point; minor = block/overpower/cancel
+            CHARGE: { damage: 12, cast: 8, parry: 10, minor: 4 },  // per action; damage is PER damage point
+        };
+        // Overdrive = the channeled beam ultimate (replaces the old buff burst).
+        // All values TUNABLE in playtest; the ~45% fully-connected total is the balance anchor.
+        const OVERDRIVE = {
+            DURATION:  6,     // seconds of channel
+            BLOCK_TOL: 0.9,   // |beamZ - oppPaddleZ| <= this => blocked this tick (≈ paddle block half-width; tune)
+            DMG_START: 0.04,  // fraction of max HP / sec on first connect
+            DMG_MAX:   0.10,  // fraction of max HP / sec at full ramp
+            RAMP_TIME: 2.5,   // seconds of CONTINUOUS connection to reach DMG_MAX
         };
         function resolveCombatant(ref) {
             if (!ref) return null;
@@ -1811,7 +1819,7 @@
             if (!c || c.juiceActive || (c.juice || 0) < JUICE.MAX) return false;
             c.juice = JUICE.MAX;                                   // stays full; drains as duration ticks
             c.juiceActive = true;
-            c.juiceTimer = JUICE.DURATION;
+            c.juiceTimer = OVERDRIVE.DURATION;
             if (c.cooldowns) { for (const k in c.cooldowns) c.cooldowns[k] = 0; }   // reset all cooldowns ONCE
             c.mana = getMaxMana(c.side);                                            // grant FULL mana on activation
             if (window.onJuiceStart) window.onJuiceStart(c);
@@ -1828,7 +1836,7 @@
                 if (!c || !c.juiceActive) continue;
                 if (window._juiceTint) window._juiceTint(c, true);  // re-assert the white-hot tint (hit-flash clobbers it)
                 c.juiceTimer -= dt;
-                const frac = Math.max(0, c.juiceTimer / JUICE.DURATION);
+                const frac = Math.max(0, c.juiceTimer / OVERDRIVE.DURATION);
                 c.juice = JUICE.MAX * frac;                        // bar drains = time remaining
                 if (c.juiceAura && c.juiceAura.outer) {                 // crazy wobble + fade as it drains
                     c.juiceAura.t = (c.juiceAura.t || 0) + dt;
@@ -1870,6 +1878,7 @@
         window.activateJuice = activateJuice;
         window.updateJuice = updateJuice;
         window.JUICE = JUICE;
+        window.OVERDRIVE = OVERDRIVE;
 
         // Get UI element IDs for a combatant
         function getCombatantUIElements(combatant) {
@@ -16856,7 +16865,7 @@
         function buildSimCtx() {
             return {
                 projectiles, combatants, abilities, pvpParryState, isResimulating,
-                consts: { parryWindow, parryFailCooldown, parrySuccessCooldown, parryHitboxExtend, manaRegenTime, juice: window.JUICE, arc: BLOCK_ARC },
+                consts: { parryWindow, parryFailCooldown, parrySuccessCooldown, parryHitboxExtend, manaRegenTime, juice: window.JUICE, overdrive: window.OVERDRIVE, arc: BLOCK_ARC },
                 deps: SIM_DEPS,
             };
         }
@@ -19184,11 +19193,12 @@
             const combatant = isPlayerTower ? combatants.left : combatants.right;
             if (combatant) {
                 combatant.towerHealth = Math.max(0, combatant.towerHealth - damage);
-                if (window.addJuice) window.addJuice(combatant, window.JUICE.CHARGE.damage * damage);  // catch-up charge
+                if (window.addJuice) window.addJuice(combatant, window.JUICE.CHARGE.minor);  // victim gets minor charge on being hit
             }
             // Per-match damage counter (Party Stats) — attribute to the ATTACKER, i.e. the
             // combatant on the opposite side of the tower being damaged.
             { const atk = isPlayerTower ? combatants.right : combatants.left; if (atk && atk.matchStats) atk.matchStats.damageDealt += damage;
+              if (atk && window.addJuice) window.addJuice(atk, window.JUICE.CHARGE.damage * damage);  // attacker charges per damage point
               if (window.logDamage) window.logDamage(isPlayerTower ? 'red' : 'blue', damage); }
             // LEGACY - sync tower health variables
             if (isPlayerTower) {

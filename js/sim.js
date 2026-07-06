@@ -87,7 +87,7 @@
         if ((combatant.juice || 0) < J.MAX) return false;
         combatant.juice      = J.MAX;       // stays full; drains as duration ticks
         combatant.juiceActive = true;
-        combatant.juiceTimer  = J.DURATION;
+        combatant.juiceTimer  = (ctx.consts.overdrive ? ctx.consts.overdrive.DURATION : 6);
         // Reset all cooldowns ONCE on activation (matches SP).
         if (combatant.cooldowns) { for (const k in combatant.cooldowns) combatant.cooldowns[k] = 0; }
         // Grant FULL mana on activation (Director call 2026-06-29).
@@ -569,7 +569,7 @@
         for (const c of [combatants.left, combatants.right]) {
             if (!c || !c.juiceActive) continue;
             c.juiceTimer -= dt;
-            const frac = Math.max(0, c.juiceTimer / consts.juice.DURATION);
+            const frac = Math.max(0, c.juiceTimer / (consts.overdrive ? consts.overdrive.DURATION : 6));
             c.juice = consts.juice.MAX * frac;   // bar drains = time remaining
             if (c.juiceTimer <= 0) {
                 c.juiceActive = false; c.juiceTimer = 0; c.juice = 0;
