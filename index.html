@@ -18470,7 +18470,7 @@
                     if (frame > 5) {
                         clearInterval(iv);
                         if (!flash.isDisposed()) flash.dispose();
-                        if (!mat.isDisposed()) mat.dispose();
+                        mat.dispose();   // Materials have no isDisposed() in this Babylon build; dispose() is safe to call directly
                     } else {
                         mat.alpha = 0.85 * (1 - frame / 5);
                         flash.scaling.scaleInPlace(1.4);
