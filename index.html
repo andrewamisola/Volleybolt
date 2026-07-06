@@ -12882,53 +12882,152 @@
                     }
                 }
 
-                // --- Overdrive beam visual (presentation-only, never writes sim) ---
-                // Lazy-create one reusable stretched box per side. Positional: left beam tracks
-                // leftC / playerPaddle, right beam tracks rightC / aiPaddle. renderingGroupId 1
-                // matches characters so the beam renders above the floor. Optional juiceRamp pulse
-                // (read-only) makes a fully-ramped beam look hotter; skipped under Reduce Motion.
+                // --- Overdrive beam visual v2: three-row Kamehameha body (presentation-only) ---
+                // Replaces v1 single-box placeholder with core/mid/glow rows stacked in Z.
+                // Per side: root TransformNode (_overdriveBeamRoot_{left,right}) + three child boxes.
+                // GLOW Z-height = 2*OVERDRIVE.BLOCK_TOL — the visual band IS the blockable band.
+                // Colors: white core, team mid, deep team glow; right reads window.TEAM_RIGHT/frame.
+                // Reads: juiceActive/juiceTimer/juiceRamp/paddlePositions. Never writes sim state.
                 (function () {
-                    const beamTableW = 26;  // matches scene tableWidth
-                    // Colors are fixed per side — reuse cached Color3 to avoid per-frame alloc.
-                    if (!window._overdriveBeamColors) window._overdriveBeamColors = {
-                        left:  new BABYLON.Color3(0.4, 0.7, 1.0),
-                        right: new BABYLON.Color3(1.0, 0.4, 0.15)
-                    };
-                    const sides = [
-                        { key: '_overdriveBeam_left',  c: leftC,  paddle: playerPaddle, color: window._overdriveBeamColors.left },
-                        { key: '_overdriveBeam_right', c: rightC, paddle: aiPaddle,     color: window._overdriveBeamColors.right }
+                    if (!scene) return;
+                    const OD = window.OVERDRIVE || { DURATION: 6, WINDUP: 0.6, BLOCK_TOL: 0.9, RAMP_TIME: 2.5 };
+                    const BEAM_GOAL_X   = 14;    // tableWidth/2 + 1 — matches sim const goalX
+                    const MUZZLE_OFFSET = 0.8;   // world units ahead of caster paddle face
+
+                    // ---- Color cache (one-time alloc, updated in-place per frame) ----
+                    if (!window._overdriveBeamColors) {
+                        const TR0 = window.TEAM_RIGHT || { r: 1.0, g: 0.42, b: 0.33 };
+                        window._overdriveBeamColors = {
+                            core:      new BABYLON.Color3(0.98, 0.98, 0.98),
+                            leftMid:   new BABYLON.Color3(0.00, 0.47, 0.97),        // #0078F8
+                            leftGlow:  new BABYLON.Color3(0.00, 0.00, 0.74),        // #0000BC
+                            rightMid:  new BABYLON.Color3(TR0.r, TR0.g, TR0.b),
+                            rightGlow: new BABYLON.Color3(TR0.r * 0.66, TR0.g * 0.15, TR0.b * 0.04),
+                        };
+                    }
+                    // Update right-side colors in-place each frame (no alloc — handles colorblind swap)
+                    const BC = window._overdriveBeamColors;
+                    const TR = window.TEAM_RIGHT || { r: 1.0, g: 0.42, b: 0.33 };
+                    BC.rightMid.set(TR.r, TR.g, TR.b);
+                    BC.rightGlow.set(TR.r * 0.66, TR.g * 0.15, TR.b * 0.04);
+
+                    // ---- Helpers (only invoked during lazy-create, not per frame) ----
+                    function makeMat(name, colorRef, alpha) {
+                        const m = new BABYLON.StandardMaterial(name, scene);
+                        m.emissiveColor   = colorRef;   // shared ref — .set() above updates it live
+                        m.diffuseColor    = new BABYLON.Color3(0, 0, 0);
+                        m.disableLighting = true;
+                        m.backFaceCulling = false;
+                        m.fogEnabled      = false;
+                        m.alpha           = alpha;
+                        m.alphaMode       = BABYLON.Engine.ALPHA_ADD;
+                        return m;
+                    }
+                    function makeBox(name, yThick, zHeight, mat, root) {
+                        const b = BABYLON.MeshBuilder.CreateBox(name,
+                            { width: 1, height: yThick, depth: zHeight }, scene);
+                        b.material             = mat;
+                        b.renderingGroupId     = 1;
+                        b.isPickable           = false;
+                        b.alwaysSelectAsActiveMesh = true;
+                        b.position.set(0, 0.5, 0);   // local Y lift; root sits at world y=0
+                        b.parent               = root;
+                        return b;
+                    }
+
+                    // ---- Side definitions ----
+                    const sideDefs = [
+                        { rootKey: '_overdriveBeamRoot_left',  c: leftC,  paddle: playerPaddle,
+                          oppC: rightC, oppPad: aiPaddle,     dir:  1,
+                          midCol: BC.leftMid,  glowCol: BC.leftGlow  },
+                        { rootKey: '_overdriveBeamRoot_right', c: rightC, paddle: aiPaddle,
+                          oppC: leftC,  oppPad: playerPaddle, dir: -1,
+                          midCol: BC.rightMid, glowCol: BC.rightGlow },
                     ];
-                    for (const { key, c, paddle, color } of sides) {
-                        let beam = window[key];
-                        if (!beam && scene) {
-                            const beamMat = new BABYLON.StandardMaterial(key + 'Mat', scene);
-                            beamMat.emissiveColor = color;
-                            beamMat.disableLighting = true;
-                            beamMat.alpha = 0.72;
-                            beamMat.backFaceCulling = false;
-                            beamMat.fogEnabled = false;
-                            beam = BABYLON.MeshBuilder.CreateBox(key, { width: beamTableW, height: 0.18, depth: 0.18 }, scene);
-                            beam.material = beamMat;
-                            beam.renderingGroupId = 1;
-                            beam.isPickable = false;
-                            beam.position.set(0, 0.5, 0);
-                            beam.setEnabled(false);
-                            window[key] = beam;
+
+                    for (const sd of sideDefs) {
+                        let root = window[sd.rootKey];
+
+                        // -- Lazy create (first call only) --
+                        if (!root) {
+                            root = new BABYLON.TransformNode(sd.rootKey, scene);
+
+                            const coreMat  = makeMat(sd.rootKey + '_coreMat',  BC.core,      0.95);
+                            const midMat   = makeMat(sd.rootKey + '_midMat',   sd.midCol,    0.70);
+                            const glowMat  = makeMat(sd.rootKey + '_glowMat',  sd.glowCol,   0.45);
+
+                            const coreBox  = makeBox(sd.rootKey + '_core', 0.35, 0.50,               coreMat,  root);
+                            const midBox   = makeBox(sd.rootKey + '_mid',  0.50, 1.20,               midMat,   root);
+                            // GLOW depth = 2*BLOCK_TOL: visual band == blockable band (invariant)
+                            const glowBox  = makeBox(sd.rootKey + '_glow', 0.65, 2 * OD.BLOCK_TOL,  glowMat,  root);
+
+                            root._beamRows = { core: coreBox, mid: midBox, glow: glowBox };
+                            root.setEnabled(false);
+
+                            // Expose root for Tasks 3-4 (position orb/impact against it)
+                            window[sd.rootKey] = root;
+                            // Legacy key: window._overdriveBeam_{left,right} = { core, mid, glow }
+                            window[sd.rootKey.replace('Root_', '_')] = root._beamRows;
                         }
-                        if (beam) {
-                            if (c && c.juiceActive && paddle) {
-                                beam.position.z = paddle.position.z;
-                                if (!window._reduceMotion) {
-                                    const rampFrac = Math.min(1, (c.juiceRamp || 0) / ((window.OVERDRIVE && window.OVERDRIVE.RAMP_TIME) || 2.5));
-                                    const pulse = 1 + rampFrac * 0.35 * (0.88 + 0.12 * Math.sin(Date.now() * 0.012));
-                                    beam.scaling.set(1, pulse, pulse);
-                                } else {
-                                    beam.scaling.set(1, 1, 1);
-                                }
-                                if (!beam.isEnabled()) beam.setEnabled(true);
-                            } else {
-                                if (beam.isEnabled()) beam.setEnabled(false);
-                            }
+
+                        const c      = sd.c;
+                        const paddle = sd.paddle;
+                        const oppC   = sd.oppC;
+                        const oppPad = sd.oppPad;
+                        const dir    = sd.dir;   // +1 left-fires-right, -1 right-fires-left
+
+                        // Hide when inactive
+                        if (!c || !c.juiceActive) {
+                            if (root.isEnabled()) root.setEnabled(false);
+                            continue;
+                        }
+                        // Windup: beam hidden (charge orb only — Task 3 handles that)
+                        const windingUp = (OD.DURATION - c.juiceTimer) < OD.WINDUP;
+                        if (windingUp) {
+                            if (root.isEnabled()) root.setEnabled(false);
+                            continue;
+                        }
+
+                        if (!root.isEnabled()) root.setEnabled(true);
+
+                        // ---- Endpoint (read-only block test — mirrors sim logic exactly) ----
+                        const blocked   = oppC && Math.abs((c.paddleZ || 0) - (oppC.paddleZ || 0)) <= OD.BLOCK_TOL;
+                        const muzzleX   = paddle.position.x + dir * MUZZLE_OFFSET;
+                        const endpointX = blocked
+                            ? (oppPad ? oppPad.position.x : muzzleX + dir * 0.5)   // short: stops at blocker
+                            : (dir > 0 ? BEAM_GOAL_X : -BEAM_GOAL_X);              // full: opponent gate line
+
+                        const fullLength = Math.abs(endpointX - muzzleX);
+
+                        // ---- Eruption wipe (first 0.15s after windup ends) ----
+                        const sinceErupt   = (OD.DURATION - c.juiceTimer) - OD.WINDUP;
+                        const lengthFactor = Math.min(1, sinceErupt / 0.15);
+                        const activeLength = fullLength * lengthFactor;
+                        // Beam grows from muzzle toward endpoint
+                        const activeEndX  = muzzleX + dir * activeLength;
+                        const activeMidX  = (muzzleX + activeEndX) * 0.5;
+
+                        // ---- Root position (one position write; Z tracks caster) ----
+                        root.position.x = activeMidX;
+                        root.position.z = paddle.position.z;
+
+                        // ---- Z-scale factors (no alloc — arithmetic only) ----
+                        const rampFrac   = Math.min(1, (c.juiceRamp || 0) / OD.RAMP_TIME);
+                        // End thin: last 0.3s — core/mid Z shrink toward 0, glow stays full
+                        const endThinFac = Math.min(1, c.juiceTimer / 0.3);
+                        const coreZScale = (1 + 0.5 * rampFrac) * endThinFac;
+                        const midZScale  = endThinFac;
+                        // Core length ±2% jitter (skip under Reduce Motion — static then)
+                        const jitter     = (!window._reduceMotion)
+                            ? (1 + (Math.random() * 0.04 - 0.02)) : 1;
+
+                        // ---- Update row scalings (no alloc — .set() in place) ----
+                        const rows = root._beamRows;
+                        if (rows) {
+                            // scaling: (X=beam length, Y=thickness baked in box, Z=band height factor)
+                            rows.core.scaling.set(activeLength * jitter, 1, coreZScale);
+                            rows.mid.scaling.set(activeLength,           1, midZScale);
+                            rows.glow.scaling.set(activeLength,          1, 1);
                         }
                     }
                 })();
