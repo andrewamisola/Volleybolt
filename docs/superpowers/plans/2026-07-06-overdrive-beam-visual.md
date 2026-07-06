@@ -79,6 +79,7 @@
 
 - [ ] Windup riser (0.6s pitch/filter sweep, one-shot on channel start), eruption boom (one-shot at windup→beam), beam roar LOOP per side (edge-triggered from observed state in presentation: start when `juiceActive && !windingUp`, stop on end/interrupt — mirror the `_castingDesired` desired-state pattern exactly, including the async-init race guard), quiet deflection crackle while blocked, power-down on interrupt.
 - [ ] **Damage-beat BOOM (spec §2.3)**: a punchy impact hit fired by Task 4's ~0.6s damage-beat flush while connecting — the "boom boom boom" read. Distinct from the roar loop; volume through the SFX bus.
+- [ ] **Roar sound-design (owner direction 2026-07-06)**: pure Tone.js synthesis (no samples — duration is unpredictable). Layered filtered noise + low oscillator; filter cutoff and slight pitch CLIMB slowly across the beam's life (the "woooohooooo" build — mirrors the damage ramp getting stronger). Cut-off must be instant-but-clickless: hard stop with a very short release envelope, fired the moment the channel dies for ANY reason (interrupt, expiry, round end, disconnect).
 - [ ] All through the SFX bus/volume settings; never started during resim (presentation layer never runs in resim anyway — keep the guard consistent with neighbors).
 - [ ] Controller browser check: sounds start/stop with phases across channel/interrupt/rematch ×3, no stuck loops. Commit: `Overdrive audio: windup riser, eruption, beam roar loop, deflection, power-down`.
 
