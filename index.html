@@ -14225,13 +14225,16 @@
                 // into the next game (user-reported: faded background persisted). ----
                 if (!window.resetOverdrivePresentation) {
                     window.resetOverdrivePresentation = function () {
-                        // Backdrop dim → restore instantly
+                        // Backdrop dim/tint → restore instantly (cur must snap too, or the next
+                        // frame lerps from the stale tinted value)
                         const d = window._odBgDim;
                         if (d && d.origColor && window.backdropLayer && window.backdropLayer.color) {
                             window.backdropLayer.color.r = d.origColor.r;
                             window.backdropLayer.color.g = d.origColor.g;
                             window.backdropLayer.color.b = d.origColor.b;
                             d.brightness = 1.0;
+                            if (d.cur) d.cur.copyFrom(d.origColor);
+                            if (d.target) d.target.copyFrom(d.origColor);
                         }
                         // Beam + orb roots off, scales normalized
                         for (const k of ['_overdriveBeamRoot_left', '_overdriveBeamRoot_right',
@@ -14278,27 +14281,43 @@
                     };
                 }
 
-                // ---- 1b. BACKGROUND DIM during overdrive ult ----
-                // Lerp backdropLayer.color toward 35% brightness while any side has juiceActive,
-                // back to 100% when no channel is live. Presentation-only: mesh/material writes only,
-                // no sim state. No per-frame allocations: all refs cached on first use.
+                // ---- 1b. BACKGROUND DIM + TEAM TINT during overdrive ult ----
+                // While a channel is live the backdrop plate dims AND tints toward the caster's
+                // team color — blue (left), red (right), PURPLE when both (clash vibes). Back to
+                // the cached original when no channel is live. Presentation-only; all Color3s
+                // cached (no per-frame allocation).
                 {
-                    const _anyJuice = (leftC && leftC.juiceActive) || (rightC && rightC.juiceActive);
+                    const _leftJ  = !!(leftC && leftC.juiceActive);
+                    const _rightJ = !!(rightC && rightC.juiceActive);
                     if (!window._odBgDim) {
-                        // Cache original color once (Layer default is (1,1,1,1) but cache it)
                         const _origC = window.backdropLayer ? window.backdropLayer.color.clone() : null;
-                        window._odBgDim = { brightness: 1.0, origColor: _origC };
+                        window._odBgDim = {
+                            brightness: 1.0,                        // kept for reset-path compat
+                            origColor: _origC,
+                            cur: _origC ? _origC.clone() : null,    // lerped live color
+                            target: _origC ? _origC.clone() : null, // per-frame target (reused, .set only)
+                            // Tinted-dim targets: team hue scaled dark so the plate reads dimmed AND colored
+                            blue:   new BABYLON.Color4(0.10, 0.18, 0.50, _origC ? _origC.a : 1),
+                            red:    new BABYLON.Color4(0.48, 0.14, 0.10, _origC ? _origC.a : 1),
+                            purple: new BABYLON.Color4(0.32, 0.10, 0.46, _origC ? _origC.a : 1)
+                        };
                     }
                     const _dim = window._odBgDim;
-                    const _dimTarget = _anyJuice ? 0.35 : 1.0;
-                    const _lerpRate = Math.min(1.0, dt / 0.3);  // 0.3s to full transition; no per-frame alloc
-                    _dim.brightness += (_dimTarget - _dim.brightness) * _lerpRate;
-                    if (window.backdropLayer && window.backdropLayer.color && _dim.origColor) {
-                        const _b = _dim.brightness;
-                        window.backdropLayer.color.r = _dim.origColor.r * _b;
-                        window.backdropLayer.color.g = _dim.origColor.g * _b;
-                        window.backdropLayer.color.b = _dim.origColor.b * _b;
-                        // alpha unchanged (no transparency effect on the forest plate)
+                    if (_dim.origColor && _dim.cur && _dim.target) {
+                        if (_leftJ && _rightJ)  _dim.target.copyFrom(_dim.purple);
+                        else if (_leftJ)        _dim.target.copyFrom(_dim.blue);
+                        else if (_rightJ)       _dim.target.copyFrom(_dim.red);
+                        else                    _dim.target.copyFrom(_dim.origColor);
+                        const _lr = Math.min(1.0, dt / 0.3);  // 0.3s to full transition
+                        _dim.cur.r += (_dim.target.r - _dim.cur.r) * _lr;
+                        _dim.cur.g += (_dim.target.g - _dim.cur.g) * _lr;
+                        _dim.cur.b += (_dim.target.b - _dim.cur.b) * _lr;
+                        if (window.backdropLayer && window.backdropLayer.color) {
+                            window.backdropLayer.color.r = _dim.cur.r;
+                            window.backdropLayer.color.g = _dim.cur.g;
+                            window.backdropLayer.color.b = _dim.cur.b;
+                            // alpha unchanged (no transparency effect on the forest plate)
+                        }
                     }
                 }
 
@@ -18645,6 +18664,10 @@
             // Clear any stale de-dup guard from a prior match so Continue can never be permanently
             // dead (a partial/aborted previous return-to-menu must not block this one).
             _returningToMenu = false;
+            // A JUICE-KILL ends the match MID-CHANNEL: presentation frames stop before the audio
+            // state machine can catch the falling edge, so the roar/rumble loops would replay
+            // forever over the victory screen. Kill everything channel-driven right here.
+            if (window.resetOverdrivePresentation) window.resetOverdrivePresentation();
             if (!window.guiElements) return;
 
             const overlay = window.guiElements.victoryOverlay;
@@ -18822,6 +18845,9 @@
             try { if (window.clearAllProjectiles) clearAllProjectiles(); } catch (e) {}
             try { if (window.clearAllLightningFX) clearAllLightningFX(); } catch (e) {}
             try { if (window.clearAllCombatText)  clearAllCombatText();  } catch (e) {}
+            // Full Overdrive reset — Play Again must clear the scene exactly like Main Menu does
+            // (dim/tint, fog colors, beam/orb/clash meshes, lights, jitter, audio loops)
+            if (window.resetOverdrivePresentation) window.resetOverdrivePresentation();
             hideVictoryScreen();
             resetGame();           // clears gameOver, scores, gates — NOT aiSkillRating
             startGameInProgress = false;  // clear the double-click guard
