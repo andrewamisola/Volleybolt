@@ -144,7 +144,12 @@ BABYLON.SceneLoader.ImportMesh('', 'models/pickle/', CLIP, scene,
   },
   null, (s, msg) => console.error('CAP_LOAD_ERROR', msg));
 
-const ANGLES = { front: -Math.PI/2, threequarter: -Math.PI/4, side: 0, back: Math.PI/2 };
+// Empirically verified against the model's face plane (see task-6 report): alpha=+PI/2
+// shows the face square-on (both eyes symmetric) = true front. alpha=-PI/2 (180 deg
+// opposite) shows plain hood/robe, no face = true back. alpha=0 (90 deg from front)
+// shows the face edge-on (near-zero width sliver) = true side/profile. alpha=+PI/4
+// (halfway between front and side) shows a partial, turned face = true threequarter.
+const ANGLES = { front: Math.PI/2, threequarter: Math.PI/4, side: 0, back: -Math.PI/2 };
 window.cap = {
   setAngle(name) { camera.alpha = ANGLES[name]; },
   still(name) {
@@ -152,14 +157,18 @@ window.cap = {
       fetch('/save?name=' + name + '.png', { method:'POST', body: canvas.toDataURL('image/png') }));
   },
   record(prefix, frames = 60, every = 2) {
+    if (this._obs) { console.warn('CAP already recording'); return; }
     let tick = 0, saved = 0;
-    const obs = scene.onAfterRenderObservable.add(() => {
+    this._obs = scene.onAfterRenderObservable.add(() => {
       if (tick++ % every !== 0) return;
-      if (saved >= frames) { scene.onAfterRenderObservable.remove(obs); console.log('CAP_DONE', prefix); return; }
+      if (saved >= frames) { this.stop(); console.log('CAP_DONE', prefix); return; }
       fetch('/save?name=' + prefix + '_' + String(saved).padStart(4,'0') + '.png',
             { method:'POST', body: canvas.toDataURL('image/png') });
       saved++;
     });
+  },
+  stop() {
+    if (this._obs) { scene.onAfterRenderObservable.remove(this._obs); this._obs = null; }
   }
 };
 engine.runRenderLoop(() => scene.render());
