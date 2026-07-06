@@ -13711,7 +13711,9 @@
                                     }
                                 }
                                 T4.prevOppHealth = _oppHP;
-                                if (T4.dmgAcc >= 1 && (_nowMs - T4.lastBeatTime) > 600) {
+                                // Beat cadence 300ms (owner tuning: fast −1 ticks — at 3.33 HP/s each
+                                // 0.3s accumulates ~1.0 HP, so beats flush −1 rapid-fire)
+                                if (T4.dmgAcc >= 1 && (_nowMs - T4.lastBeatTime) > 300) {
                                     T4.lastBeatTime = _nowMs;
                                     const _chunk = Math.floor(T4.dmgAcc);
                                     T4.dmgAcc -= _chunk;   // carry the fractional remainder into the next beat
@@ -13725,7 +13727,10 @@
                                         const _hbEl = document.getElementById(_hbId);
                                         if (_hbEl) {
                                             _hbEl.classList.add('beam-damage-pulse');
-                                            setTimeout(() => { if (_hbEl) _hbEl.classList.remove('beam-damage-pulse'); }, 320);
+                                            // 260ms removal < 300ms beat cadence, so the class is always gone
+                                            // before the next beat re-adds it (a still-present class would
+                                            // suppress the CSS animation restart -> pulse looks stuck)
+                                            setTimeout(() => { if (_hbEl) _hbEl.classList.remove('beam-damage-pulse'); }, 260);
                                         }
                                     }
                                     // Impact-blob scale kick
