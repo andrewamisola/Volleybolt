@@ -18,10 +18,11 @@
 
 - New constant `OVERDRIVE.WINDUP = 0.6` (seconds).
 - The 6s channel now = **0.6s windup + 5.4s beam**. The phase is **derived, not stored**: `windingUp = (DURATION - juiceTimer) < WINDUP`. No new state fields → no hash/snapshot changes.
-- During windup: **no damage, no ramp, no fireball disintegration** (the beam doesn't exist yet — only the orb). The caster can move (aiming). Frostbolt interrupt works throughout (freeze already ends the channel at any point).
-- `tickOverdrive` gates its connect/damage block on `!windingUp`; the vaporize check in `updateNetworkProjectiles` gates on the same derivation.
+- During windup: **no damage, no ramp, no fireball disintegration** (the beam doesn't exist yet — only the orb). The caster can move (aiming).
+- **Interrupt rule (CHANGED from the mechanic spec, user decision 2026-07-06): frostbolt only interrupts during the WINDUP.** Land a frostbolt on the caster while the orb is charging → freeze + full interrupt (channel ends, juice lost — the hard punish). **Once the beam has erupted, it is uninterruptible**: a frostbolt that hits the beaming caster still applies its normal FREEZE (it is never disintegrated), which **pins the beam's aim** — the frozen caster can't move, so the beam can't chase; the opponent can hold the lane or reposition freely until the freeze ends. Freeze during the beam = "pin it", not "end it". (This supersedes §5 of `2026-07-05-juice-overdrive-beam-design.md`, which allowed interrupt at any time.)
+- `tickOverdrive` gates its connect/damage block on `!windingUp`; the vaporize check in `updateNetworkProjectiles` gates on the same derivation; the frostbolt-freeze interrupt block gates on `windingUp`.
 - Deterministic (pure arithmetic on existing state). Sim golden re-pins once (from `19595947`); AI golden `5afbc1a6` unaffected.
-- Why 0.6s: long enough to read the telegraph and step into the lane from ~1 lane away; short enough that the ult still feels explosive. TUNABLE in the playtest.
+- Why 0.6s: long enough to read the telegraph and land a reactive frostbolt or step into the lane; short enough that the ult still feels explosive. TUNABLE in the playtest — it is now ALSO the entire interrupt window, so tune with that in mind.
 
 ## 2. Visual anatomy (presentation-only, per side)
 
@@ -53,7 +54,8 @@ All meshes lazy-created once per side and reused (enable/disable, never per-fram
 
 ### 2.4 Impact feel (cheap, gated)
 - **Screen shake:** a subtle sustained rumble while the beam is CONNECTING (amplitude scaling slightly with ramp), one sharper kick on eruption. Uses the existing screen-shake helper; fully skipped under Reduce Motion.
-- **Interrupt (frostbolt):** beam + orb collapse instantly (scale-in over ~0.1s), a brief fizzle burst at the caster, then the existing freeze FX takes over. No lingering meshes.
+- **Interrupt (frostbolt during WINDUP only):** orb collapses instantly (scale-in over ~0.1s), a brief fizzle burst at the caster, then the existing freeze FX takes over. No lingering meshes.
+- **Frozen mid-beam (frostbolt after eruption):** the beam KEEPS FIRING but its aim is pinned — visually, the existing freeze FX plays on the caster while the beam continues at the frozen Z (no special beam change needed; the aim simply stops tracking because the sim stops the paddle). Optionally tint the crackle ice-blue during the freeze if trivial.
 - **Natural end (timer):** beam thins out over the last ~0.3s (read the timer), then off.
 
 ## 3. Audio (Tone.js, presentation-only)
@@ -76,7 +78,7 @@ All meshes lazy-created once per side and reused (enable/disable, never per-fram
 1. Windup: press Q → orb swells 0.6s with crackle → beam erupts wide. Opponent sees the same telegraph (MP: sync stays green; sim golden re-pinned once, reproducible ×3, AI golden unchanged).
 2. The three rows are unmistakable (white core / team mid / deep glow) and their total height visually matches the blockable band — standing "on" the beam rows = blocked, confirmed in play.
 3. Blocked: beam visibly stops at the blocker with the deflection flare; connecting: full-length beam + growing impact blob + pillars; ramp growth is readable (core widens, pulses faster).
-4. Interrupt: frostbolt freeze collapses the whole effect instantly, no orphaned meshes/sounds.
+4. Interrupt: a frostbolt during the WINDUP collapses the whole effect instantly (freeze + channel lost), no orphaned meshes/sounds. A frostbolt AFTER eruption freezes the caster but the beam keeps firing, aim pinned, until the freeze ends or the channel expires.
 5. Sound starts/stops exactly with the phases; no loop leaks (the Tone.js casting-loop bug class).
 6. 0 console errors through repeated channels, rematches, and MP; Reduce Motion honored; no visible perf hit at 60fps.
 

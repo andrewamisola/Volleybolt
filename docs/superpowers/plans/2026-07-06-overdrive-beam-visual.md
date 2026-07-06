@@ -21,18 +21,19 @@
 
 ---
 
-### Task 1: Sim windup phase
+### Task 1: Sim windup phase + windup-only interrupt
 
-**Files:** Modify: `js/sim.js` (`tickOverdrive`, vaporize block in `updateNetworkProjectiles`), `index.html` (OVERDRIVE const, cache-bust, oracle golden comment).
+**Files:** Modify: `js/sim.js` (`tickOverdrive`, vaporize block in `updateNetworkProjectiles`), `index.html` (OVERDRIVE const, frostbolt `onPaddleHit` interrupt block, cache-bust, oracle golden comment).
 
 **Interfaces:** Produces `OVERDRIVE.WINDUP = 0.6` (window + `ctx.consts.overdrive`), and the derived-phase convention `windingUp = (DUR - juiceTimer) < WINDUP` that Tasks 2–5 read presentation-side.
 
-- [ ] Add `WINDUP: 0.6,` to the `OVERDRIVE` const in index.html (comment: seconds of charge-up before the beam exists — no damage/ramp/disintegration; TUNABLE).
+- [ ] Add `WINDUP: 0.6,` to the `OVERDRIVE` const in index.html (comment: seconds of charge-up before the beam exists — no damage/ramp/disintegration, and the ONLY window in which frostbolt can interrupt; TUNABLE).
 - [ ] In `tickOverdrive` (js/sim.js): after the timer drain, derive `const windingUp = (OD.DURATION - c.juiceTimer) < (OD.WINDUP || 0);` and wrap the ENTIRE connect/ramp/damage section in `if (!windingUp) { ... } else { c.juiceRamp = 0; }` (defensive fallback `WINDUP: 0.6` added to the OD fallback object).
 - [ ] In the vaporize block (js/sim.js `updateNetworkProjectiles`): extend the channeler test to `ch.juiceActive && ((OD.DURATION - ch.juiceTimer) >= (OD.WINDUP || 0))`.
+- [ ] **Windup-only interrupt (index.html, frostbolt `behavior.onPaddleHit`):** the existing interrupt block (`if (c.juiceActive) { clear channel... }`) gains the windup gate: only end the channel when `(OVERDRIVE.DURATION - c.juiceTimer) < OVERDRIVE.WINDUP`. The FREEZE APPLIES UNCONDITIONALLY either way (the line above the block is untouched) — a frostbolt landing after eruption freezes the caster (aim pinned: the frozen paddle can't move, tickOverdrive keeps firing at the frozen Z) but does NOT end the channel. Update the block's comment to say exactly that.
 - [ ] Bump sim.js cache-bust (v=36-overdrive-windup). `node --check js/sim.js`.
-- [ ] Controller: browser unit asserts (tickOverdrive with juiceTimer=6 → no damage, no ramp; juiceTimer=5 → damages) + re-pin goldens ×3 both seeds + AI golden unchanged; update the golden history comments (js/sim.js header + this plan's Global Constraints values in the ledger).
-- [ ] Commit: `Overdrive: 0.6s windup phase (no damage/vaporize until the beam erupts); re-pin golden`.
+- [ ] Controller: browser unit asserts — (a) tickOverdrive juiceTimer=6 → no damage/ramp; juiceTimer=5 → damages; (b) frostbolt onPaddleHit with juiceTimer=5.8 (windup) → freeze + channel ENDED; (c) with juiceTimer=4 (beaming) → freeze applied + channel STILL ACTIVE; then re-pin goldens ×3 both seeds + AI golden unchanged; update golden history comments (js/sim.js header) + ledger.
+- [ ] Commit: `Overdrive: 0.6s windup; frostbolt interrupts ONLY during windup (post-eruption it pins, not ends); re-pin golden`.
 
 ### Task 2: Beam body — the three rows
 
