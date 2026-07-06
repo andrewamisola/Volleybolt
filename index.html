@@ -13022,7 +13022,7 @@
                                 orbCrackles.push(cl);
                             }
                             orbRoot._crackles     = orbCrackles;
-                            orbRoot._crackleFrame = 0;
+                            orbRoot._crackleFrame = -1;  // -1 so the first randomize fires on the FIRST frame (0 % 4), not frame 4
                             orbRoot.setEnabled(false);
                             window[sd.orbKey]     = orbRoot;  // exposes _overdriveOrb_{left,right}
                         }
