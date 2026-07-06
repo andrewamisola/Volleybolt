@@ -329,7 +329,12 @@
                 for (const ch of [combatants.left, combatants.right]) {
                     if (ch && ch.juiceActive && Math.abs(proj.z - (ch.paddleZ || 0)) <= OD.BLOCK_TOL) {
                         const dir = ch.side === 'left' ? 1 : -1;
-                        if ((proj.x - (ch.paddleX || 0)) * dir >= 0) {
+                        // Only INCOMING fireballs vaporize (moving toward the channeling caster): the beam is
+                        // defensive immunity, not a filter on the caster's own outbound shots — and parried
+                        // returns (which keep their original owner) must still die, so we test the sign of
+                        // velX, not ownership. Also naturally covers far-wall bouncers coming back.
+                        const incoming = ch.side === 'left' ? (proj.velX || 0) < 0 : (proj.velX || 0) > 0;
+                        if (incoming && (proj.x - (ch.paddleX || 0)) * dir >= 0) {
                             toDestroy.push(proj);
                             vaporized = true;
                             break;
