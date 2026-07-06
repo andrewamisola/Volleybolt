@@ -649,7 +649,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=30-overdrive-consts"></script>
+    <script type="module" src="js/sim.js?v=31-juice-channel"></script>
 
     <script>
         // Global error handler to debug doubles crash
@@ -1712,6 +1712,7 @@
                 juice: 0,
                 juiceActive: false,
                 juiceTimer: 0,
+                juiceRamp: 0,          // Overdrive: seconds of CONTINUOUS beam connection (ramps damage)
 
                 // Cooldowns (keyed by ability ID)
                 cooldowns: { fireball: 0, frostbolt: 0, thunderstorm: 0 },
@@ -1812,17 +1813,18 @@
             if (!c || c.juiceActive) return;
             c.juice = Math.min(JUICE.MAX, (c.juice || 0) + amount);
         }
-        // Spend a full bar -> enter the burst. The bar stays full and DRAINS over the burst
-        // (it becomes the duration meter). Returns true if it fired.
+        // Spend a full bar -> start the Overdrive CHANNEL. The bar stays full and drains over the
+        // channel (it becomes the duration meter). No buff — the beam does the work. Returns true
+        // if it started. Cannot start while frozen or already channeling.
         function activateJuice(ref) {
             const c = resolveCombatant(ref);
             if (!c || c.juiceActive || (c.juice || 0) < JUICE.MAX) return false;
-            c.juice = JUICE.MAX;                                   // stays full; drains as duration ticks
+            if ((c.freezeTime || 0) > 0) return false;   // can't start Overdrive while frozen
+            c.juice = JUICE.MAX;
             c.juiceActive = true;
             c.juiceTimer = OVERDRIVE.DURATION;
-            if (c.cooldowns) { for (const k in c.cooldowns) c.cooldowns[k] = 0; }   // reset all cooldowns ONCE
-            c.mana = getMaxMana(c.side);                                            // grant FULL mana on activation
-            if (window.onJuiceStart) window.onJuiceStart(c);
+            c.juiceRamp = 0;
+            if (window.onJuiceStart) window.onJuiceStart(c);   // FX only (presentation)
             if (window.logJuice) window.logJuice(c.side === 'left' ? 'blue' : 'red');
             return true;
         }
@@ -1868,7 +1870,7 @@
                     wob(c.juiceAura.inner, 16, 0.40);
                 }
                 if (c.juiceTimer <= 0) {
-                    c.juiceActive = false; c.juiceTimer = 0; c.juice = 0;
+                    c.juiceActive = false; c.juiceTimer = 0; c.juice = 0; c.juiceRamp = 0;
                     if (window.onJuiceEnd) window.onJuiceEnd(c);
                     if (window.logCombat && window.combatLine) window.logCombat(c.side === 'left' ? 'blue' : 'red', window.combatLine(c.side === 'left', ' Juice faded'));
                 }
@@ -2056,7 +2058,7 @@
             // bar is left intact — accumulated Juice still builds across rounds within a match.
             if (combatant.juiceActive) {
                 if (window.onJuiceEnd) { try { window.onJuiceEnd(combatant); } catch (e) {} }
-                combatant.juiceActive = false; combatant.juiceTimer = 0; combatant.juice = 0;
+                combatant.juiceActive = false; combatant.juiceTimer = 0; combatant.juice = 0; combatant.juiceRamp = 0;
                 combatant._juiceReadyPinged = false; combatant._juiceHot = false;
             }
             // Don't reset cooldowns here - that's done separately per round/startRound
@@ -15920,7 +15922,7 @@
                         c.towerHealth = 9999; // avoid endRound side effects during the run
                         c.moveAccum = 0; c.paddleZ = 0; c.prevPaddleZ = 0; // clean, mode-independent paddle start
                         c.paddleX = (c.side === 'left' ? -11.5 : 11.5); // pin paddleX so onPaddleHit reposition is oracle-stable (immune to live mutation)
-                        c.juice = 0; c.juiceActive = false; c.juiceTimer = 0; // pin juice (hashed) so leftover live juice can't shift the golden
+                        c.juice = 0; c.juiceActive = false; c.juiceTimer = 0; c.juiceRamp = 0; // pin juice (hashed) so leftover live juice can't shift the golden
                     }
                     // Pin paddle meshes too so the run never inherits single-player paddle drift.
                     if (playerPaddle) playerPaddle.position.z = 0;
@@ -17399,7 +17401,7 @@
                 if (c.matchStats) c.matchStats = { spellsCast: 0, parries: 0, damageDealt: 0 };
                 // Juice does not carry across matches — clear the bar and end any live burst.
                 if (c.juiceActive && window.onJuiceEnd) { try { window.onJuiceEnd(c); } catch (e) {} }
-                c.juice = 0; c.juiceActive = false; c.juiceTimer = 0;
+                c.juice = 0; c.juiceActive = false; c.juiceTimer = 0; c.juiceRamp = 0;
                 c._juiceReadyPinged = false; c._juiceHot = false;
             }
             if (window.clearCombatLog) window.clearCombatLog();

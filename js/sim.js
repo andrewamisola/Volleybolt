@@ -75,23 +75,21 @@
         combatant.juice = Math.min(juiceConsts.MAX, (combatant.juice || 0) + amount);
     }
 
-    // Pure: same guard + effect as SP activateJuice (index.html ~1720), minus the FX
+    // Pure: same guard + effect as SP activateJuice (index.html), minus the FX
     // (those go through ctx.deps.onJuiceActivate, gated by !isResimulating).
-    // Spend a full bar -> enter the burst. The bar stays full and DRAINS over the burst
-    // (it becomes the duration meter). Resets ALL cooldowns once on activation. Returns
-    // true if it fired.
+    // Spend a full bar -> start the Overdrive CHANNEL. The bar stays full and drains over the
+    // channel (it becomes the duration meter). No buff — the beam does the work. Cannot start
+    // while frozen or already channeling. Returns true if it started.
     function simActivateJuice(combatant, ctx) {
         const J = ctx.consts.juice;
         if (!combatant) return false;
         if (combatant.juiceActive) return false;
         if ((combatant.juice || 0) < J.MAX) return false;
-        combatant.juice      = J.MAX;       // stays full; drains as duration ticks
+        if ((combatant.freezeTime || 0) > 0) return false;  // can't start Overdrive while frozen
+        combatant.juice      = J.MAX;
         combatant.juiceActive = true;
         combatant.juiceTimer  = (ctx.consts.overdrive ? ctx.consts.overdrive.DURATION : 6);
-        // Reset all cooldowns ONCE on activation (matches SP).
-        if (combatant.cooldowns) { for (const k in combatant.cooldowns) combatant.cooldowns[k] = 0; }
-        // Grant FULL mana on activation (Director call 2026-06-29).
-        combatant.mana = ctx.deps.getMaxMana(combatant.side);
+        combatant.juiceRamp   = 0;
         if (!ctx.isResimulating) ctx.deps.onJuiceActivate(combatant);
         return true;
     }
@@ -572,7 +570,7 @@
             const frac = Math.max(0, c.juiceTimer / (consts.overdrive ? consts.overdrive.DURATION : 6));
             c.juice = consts.juice.MAX * frac;   // bar drains = time remaining
             if (c.juiceTimer <= 0) {
-                c.juiceActive = false; c.juiceTimer = 0; c.juice = 0;
+                c.juiceActive = false; c.juiceTimer = 0; c.juice = 0; c.juiceRamp = 0;
                 if (!ctx.isResimulating) D.onJuiceEnd(c);
             }
         }
