@@ -1793,15 +1793,17 @@
             CHARGE: { damage: 12, cast: 8, parry: 10, minor: 4 },  // per action; damage is PER damage point
         };
         // Overdrive = the channeled beam ultimate (replaces the old buff burst).
-        // All values TUNABLE in playtest; the ~45% fully-connected total is the balance anchor.
+        // All values TUNABLE in playtest. TUNED 2026-07-06 (owner, sandbox pass): each ~0.6s damage
+        // beat should land ~2 HP at full ramp (~1 while ramping). Supersedes the original ~45%
+        // full-connect anchor — full-connect now totals ~75% of a 20HP bar; well-defended still ~20-30%.
         const OVERDRIVE = {
-            DURATION:  6,     // seconds of channel
-            WINDUP:    0.6,   // seconds of charge-up before the beam exists — no damage/ramp/disintegration,
-                              // and the ONLY window in which frostbolt can interrupt; TUNABLE
-            BLOCK_TOL: 0.9,   // |beamZ - oppPaddleZ| <= this => blocked this tick (≈ paddle block half-width; tune)
-            DMG_START: 0.04,  // fraction of max HP / sec on first connect
-            DMG_MAX:   0.10,  // fraction of max HP / sec at full ramp
-            RAMP_TIME: 2.5,   // seconds of CONTINUOUS connection to reach DMG_MAX
+            DURATION:  6,      // seconds of channel
+            WINDUP:    0.6,    // seconds of charge-up before the beam exists — no damage/ramp/disintegration,
+                               // and the ONLY window in which frostbolt can interrupt; TUNABLE
+            BLOCK_TOL: 0.9,    // |beamZ - oppPaddleZ| <= this => blocked this tick (≈ paddle block half-width; tune)
+            DMG_START: 0.06,   // fraction of max HP / sec on first connect  (1.2 HP/s -> beats open at ~1)
+            DMG_MAX:   0.1667, // fraction of max HP / sec at full ramp      (3.33 HP/s -> 2 HP per 0.6s beat)
+            RAMP_TIME: 2.5,    // seconds of CONTINUOUS connection to reach DMG_MAX
         };
         function resolveCombatant(ref) {
             if (!ref) return null;

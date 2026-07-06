@@ -19,10 +19,13 @@
 //
 // Determinism law (see docs/SHARED_CORE.md): same (state, inputs) -> same state.
 // No Math.random / Date.now / performance.now here. Verify any change against the
-// dbg.determinism golden-hash oracle in index.html (seed 12345 -> a0c3facb, seed
-// 99999 -> 9f1a1cb0, both stable; run from a FRESH SINGLE-PLAYER match — a mid-PvP
+// dbg.determinism golden-hash oracle in index.html (seed 12345 -> 18b0c26a, seed
+// 99999 -> 5c020e02, both stable; run from a FRESH SINGLE-PLAYER match — a mid-PvP
 // run reads pvp-mode deps and folds differently, that is oracle-environment
 // sensitivity, not a sim change).
+// (a0c3facb -> 18b0c26a, re-pinned 2026-07-06: OWNER TUNING — Overdrive DMG_START
+//  0.04->0.06, DMG_MAX 0.10->0.1667 so each ~0.6s damage beat lands ~2 HP at full ramp.
+//  Supersedes the 45% full-connect anchor (~75% now). Verified 2x-repro both seeds.)
 // (19595947 -> a0c3facb, re-pinned 2026-07-06: OVERDRIVE.WINDUP=0.6 — the first 0.6s of
 //  the channel is a charge-up with no damage/ramp/vaporize, and the frostbolt interrupt
 //  now only ends the channel during that windup (after eruption the freeze lands but only
@@ -69,7 +72,8 @@
 // (balance) -> 2dd677de (cancel-cast-on-move) -> 8f6e6da1 (arc collision; pinned stale,
 // see correction note above) -> 954ea557 (b7e492b balance changes, pin caught up) ->
 // 19595947 (2026-07-05 Overdrive beam, see note above) -> a0c3facb (2026-07-06 windup
-// + windup-only interrupt, see note above).
+// + windup-only interrupt, see note above) -> 18b0c26a (2026-07-06 owner damage tuning,
+// see note above).
 // NOTE: 3072141a was a contaminated mis-measure of the 2.3-A golden (a test had left
 // combatants.paddleX mutated when it was pinned); the real 2.3-A value was 3b37922a.
 // The oracle now pins paddleX so this can't recur.
@@ -112,7 +116,7 @@
     // damage. ctx.deps.* are FX-only (never gate STATE changes on isResimulating).
     function tickOverdrive(c, opp, dt, ctx) {
         if (!c || !c.juiceActive) return;
-        const OD = (ctx && ctx.consts && ctx.consts.overdrive) || { DURATION: 6, WINDUP: 0.6, BLOCK_TOL: 0.9, DMG_START: 0.04, DMG_MAX: 0.10, RAMP_TIME: 2.5 };
+        const OD = (ctx && ctx.consts && ctx.consts.overdrive) || { DURATION: 6, WINDUP: 0.6, BLOCK_TOL: 0.9, DMG_START: 0.06, DMG_MAX: 0.1667, RAMP_TIME: 2.5 };
         const JMAX = (ctx && ctx.consts && ctx.consts.juice && ctx.consts.juice.MAX) || 350;
         c.juiceTimer -= dt;
         const frac = Math.max(0, c.juiceTimer / OD.DURATION);
