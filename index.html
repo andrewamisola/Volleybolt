@@ -2887,16 +2887,13 @@
             synths.aiElectricLoop.volume.value = -6;
 
             // ---- Overdrive beam audio: real samples (windup / stereo roar / panned rumble) ----
-            // Three shared ToneAudioBuffers (one per file) so both sides' Players reference the
-            // same decoded audio — no double-decode, no redundant HTTP. All routes through sfxBus.
-            synths.overdriveBuffers = {
-                windup: new Tone.ToneAudioBuffer('sfx/beam_windup.ogg'),
-                roar:   new Tone.ToneAudioBuffer('sfx/beam_roar_loop.ogg'),
-                rumble: new Tone.ToneAudioBuffer('sfx/beam_rumble_loop.ogg')
-            };
-            // One shared windup Player (one-shot; both-sides simultaneous is extremely rare
-            // and double-fire would just be a tiny louder hit — acceptable for a one-shot).
-            synths.overdriveWindupPlayer = new Tone.Player(synths.overdriveBuffers.windup);
+            // Each Player loads its OWN URL. Do NOT share ToneAudioBuffers across Players: in
+            // Tone 14.x, wrapping a still-loading ToneAudioBuffer subscribes via a single onload
+            // slot, so the SECOND Player wrapping the same buffer clobbers the first's callback —
+            // the first Player's .loaded stays false forever (found live: the LEFT beam was
+            // silent while buffers.loaded was true). The browser HTTP-caches the file, so
+            // per-player URLs cost one extra decode per side, nothing more.
+            synths.overdriveWindupPlayer = new Tone.Player('sfx/beam_windup.ogg');
             synths.overdriveWindupPlayer.loop = false;
             synths.overdriveWindupPlayer.volume.value = -6;
             synths.overdriveWindupPlayer.connect(window.sfxBus);
@@ -2912,7 +2909,7 @@
                 const _ovCrk = new Tone.Noise('white');
                 _ovCrk.connect(_ovCrkFilt);
                 // Roar player: STEREO — connect DIRECTLY to sfxBus, NO panner (width is the power fantasy)
-                const _ovRoar = new Tone.Player(synths.overdriveBuffers.roar);
+                const _ovRoar = new Tone.Player('sfx/beam_roar_loop.ogg');
                 _ovRoar.loop = true;
                 _ovRoar.volume.value = -6;
                 _ovRoar.connect(window.sfxBus);
@@ -2920,7 +2917,7 @@
                 // left beam → right gate (+0.7);  right beam → left gate (-0.7)
                 const _rumblePan = _ovSk === 'left' ? 0.7 : -0.7;
                 const _rumblePanner = new Tone.Panner(_rumblePan).connect(window.sfxBus);
-                const _ovRumble = new Tone.Player(synths.overdriveBuffers.rumble);
+                const _ovRumble = new Tone.Player('sfx/beam_rumble_loop.ogg');
                 _ovRumble.loop = true;
                 _ovRumble.volume.value = -9;
                 _ovRumble.connect(_rumblePanner);
@@ -3434,6 +3431,20 @@
             // on each fire so two simultaneous channels never share a voice object.
 
             // Start the beam roar loop for one side. Returns true only when the player
+            // Debug introspection (closure state is otherwise unreachable from the console)
+            beamAudioDebug: () => ({
+                toneStarted: toneStarted,
+                overdriveExists: !!synths.overdrive,
+                windupLoaded: synths.overdriveWindupPlayer ? synths.overdriveWindupPlayer.loaded : null,
+                left: synths.overdrive && synths.overdrive.left ? {
+                    roarLoaded: synths.overdrive.left.roar.loaded, roarState: synths.overdrive.left.roar.state,
+                    rumbleLoaded: synths.overdrive.left.rumble.loaded
+                } : null,
+                right: synths.overdrive && synths.overdrive.right ? {
+                    roarLoaded: synths.overdrive.right.roar.loaded, roarState: synths.overdrive.right.roar.state,
+                    rumbleLoaded: synths.overdrive.right.rumble.loaded
+                } : null
+            }),
             // actually started (loaded-guard); the state machine only sets roarOn on true.
             beamRoarStart: (side) => {
                 if (!toneStarted || !synths.overdrive) return false;
