@@ -8596,10 +8596,15 @@
                         // wizard from frame one instead of sitting off-field until it appears "later".
                         B.shieldX = B.paddle.position.x + B.dir * (BLOCK_ARC.FWD + BLOCK_ARC.R);
                         B.pad.isVisible = true;
-                        B.pad.position.x = B.shieldX;
-                        B.pad.position.z = z;
+                        // beamJitX/beamJitZ: written by the overdrive beam IIFE each frame while
+                        // this side is actively blocking a beam channel; zeroed otherwise. This
+                        // lets the shield visual vibrate without touching the sim paddle.
+                        const _bjx = B.beamJitX || 0;
+                        const _bjz = B.beamJitZ || 0;
+                        B.pad.position.x = B.shieldX + _bjx;
+                        B.pad.position.z = z + _bjz;
                         // FLOOR LINE follows the paddle EVERY frame — lag-free, no rebuild, no churn.
-                        if (B.floor) { B.floor.isVisible = true; B.floor.position.x = B.shieldX; B.floor.position.z = z; }
+                        if (B.floor) { B.floor.isVisible = true; B.floor.position.x = B.shieldX + _bjx; B.floor.position.z = z + _bjz; }
                         // Block hit-flash: for ~170ms after a block, lighten the team color toward white and
                         // firm up the alpha for a quick "impact" pop. Otherwise a steady, static line.
                         const f = B.flashUntil > t ? Math.min(1, (B.flashUntil - t) / FLASH_MS) : 0;
@@ -12817,6 +12822,157 @@
                 return s;
             }
 
+            // ---- Task 4: Overdrive endpoint FX, lights, fog carving (module-scope helpers) ----
+            // All helpers below are hoisted above updateMatchPresentation so zero function/object
+            // allocations occur in the per-frame path. Called once-per-side at first beam activation.
+
+            // Factory: lazy-init all Task 4 resources for one side.
+            // midCol is the live Color3 ref from _overdriveBeamColors (shared — .set() auto-updates).
+            function _odT4Create(sd, midCol) {
+                const state = {
+                    prevJuiceActive:    false,  // collapse: true→false fires fizzle+collapse
+                    collapsing:         false,  collapseAge: 0,
+                    prevWindingUp:      true,   // eruption kick: windup→beam one-shot
+                    eruptKicked:        false,
+                    live:               false,  // true while beam renders this frame (for fog obs)
+                    // Damage beats
+                    dmgAcc:             0, prevOppHealth: 0, lastBeatTime: 0, blobKick: 0,
+                    // Throttle timestamps (ms, wall-clock via performance.now())
+                    lastSparkTime:      0, lastPillarTime:     0,
+                    lastFogCutTime:     0, lastBlockSparkTime: 0,
+                    // Fog data written per-frame; read by the fog observable
+                    muzzleX: 0, midX: 0, endX: 0, beamZ: 0, isLeftFog: sd.isLeft,
+                    // Babylon resources (set below)
+                    beamLights: null, beamLightColor: null, orbLight: null,
+                    blobRoot: null, pillarPool: null,
+                };
+
+                // Team color for lights — left=blue; right=right-team (updated via .set() per frame)
+                const lc = sd.isLeft
+                    ? new BABYLON.Color3(0.00, 0.47, 0.97)
+                    : new BABYLON.Color3(1.00, 0.42, 0.33);
+                state.beamLightColor = lc;
+
+                // Beam PointLights: 3 per side (muzzle/mid/endpoint), intensity/range >> fireball
+                // (fireball: intensity 1.2, range 12 → beam: intensity 3.5, range 22).
+                // maxSimultaneousLights note: beam rows use disableLighting=true, so the cap
+                // does not affect them. Arena/character mats cap at default 4; with 2 projectiles
+                // + 2 shields + 3 beam lights = 7 competing, some won't apply to every surface —
+                // acceptable tradeoff for avoiding a full material enumeration here.
+                const bls = [];
+                for (let li = 0; li < 3; li++) {
+                    const pl = new BABYLON.PointLight(sd.rootKey + '_bLight' + li,
+                        new BABYLON.Vector3(0, 0.5, 0), scene);
+                    pl.diffuse   = lc;
+                    pl.specular  = new BABYLON.Color3(0, 0, 0);
+                    pl.intensity = 3.5;
+                    pl.range     = 22;
+                    pl.setEnabled(false);
+                    bls.push(pl);
+                }
+                state.beamLights = bls;
+
+                // Orb PointLight: grows during windup alongside the charge orb
+                const orbPL = new BABYLON.PointLight(sd.orbKey + '_orbLight',
+                    new BABYLON.Vector3(0, 0.6, 0), scene);
+                orbPL.diffuse   = lc;
+                orbPL.specular  = new BABYLON.Color3(0, 0, 0);
+                orbPL.intensity = 0.8;
+                orbPL.range     = 8;
+                orbPL.setEnabled(false);
+                state.orbLight = orbPL;
+
+                // Impact blob: white inner sphere + team-color outer sphere at the gate endpoint.
+                // Both parented to blobRoot TransformNode for uniform scaling.
+                const blobRoot = new BABYLON.TransformNode(sd.rootKey + '_blobRoot', scene);
+                const blobInnerMat = new BABYLON.StandardMaterial(sd.rootKey + '_blobInMat', scene);
+                blobInnerMat.emissiveColor = new BABYLON.Color3(1, 1, 1);
+                blobInnerMat.disableLighting = true; blobInnerMat.backFaceCulling = false;
+                blobInnerMat.fogEnabled = false; blobInnerMat.alpha = 0.95;
+                blobInnerMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
+                const blobInner = BABYLON.MeshBuilder.CreateSphere(sd.rootKey + '_blobIn',
+                    { diameter: 0.6, segments: 6 }, scene);
+                blobInner.material = blobInnerMat; blobInner.renderingGroupId = 1;
+                blobInner.isPickable = false; blobInner.alwaysSelectAsActiveMesh = true;
+                blobInner.parent = blobRoot;
+
+                const blobOuterMat = new BABYLON.StandardMaterial(sd.rootKey + '_blobOutMat', scene);
+                blobOuterMat.emissiveColor = midCol;  // shared Color3 ref — auto-updates with BC.rightMid
+                blobOuterMat.disableLighting = true; blobOuterMat.backFaceCulling = false;
+                blobOuterMat.fogEnabled = false; blobOuterMat.alpha = 0.7;
+                blobOuterMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
+                const blobOuter = BABYLON.MeshBuilder.CreateSphere(sd.rootKey + '_blobOut',
+                    { diameter: 1.0, segments: 6 }, scene);
+                blobOuter.material = blobOuterMat; blobOuter.renderingGroupId = 1;
+                blobOuter.isPickable = false; blobOuter.alwaysSelectAsActiveMesh = true;
+                blobOuter.parent = blobRoot;
+                blobRoot.setEnabled(false);
+                state.blobRoot = blobRoot;
+
+                // Light pillars: pool of 3 hex cylinders (additive glow columns, FF8-style).
+                // ≤1 spawn per 0.5s with 0.4s lifetime → at most 1 visible at once.
+                // emissiveColor shared from midCol ref (same live-update pattern as beam rows).
+                const pool = [];
+                for (let pi = 0; pi < 3; pi++) {
+                    const pMesh = BABYLON.MeshBuilder.CreateCylinder(sd.rootKey + '_pillar' + pi,
+                        { diameter: 0.3, height: 2.0, tessellation: 6 }, scene);
+                    pMesh.renderingGroupId = 1; pMesh.isPickable = false;
+                    pMesh.alwaysSelectAsActiveMesh = true;
+                    const pMat = new BABYLON.StandardMaterial(sd.rootKey + '_pillarMat' + pi, scene);
+                    pMat.emissiveColor = midCol;
+                    pMat.disableLighting = true; pMat.backFaceCulling = false;
+                    pMat.fogEnabled = false; pMat.alphaMode = BABYLON.Engine.ALPHA_ADD; pMat.alpha = 0.6;
+                    pMesh.material = pMat;
+                    pMesh.setEnabled(false);
+                    pool.push({ mesh: pMesh, mat: pMat, age: -1, maxAge: 0.4 });
+                }
+                state.pillarPool = pool;
+
+                return state;
+            }
+
+            // Fizzle burst at caster on channel end/interrupt: 3 quick impact flashes.
+            // Uses createImpactFlash (bounded; already throttled via the per-collapse call gate).
+            function _odT4Fizzle(pos, col) {
+                if (!window.createImpactFlash || window._reduceMotion) return;
+                for (let fi = 0; fi < 3; fi++) {
+                    const fpos = new BABYLON.Vector3(
+                        pos.x + (Math.random() * 2 - 1) * 0.4,
+                        pos.y + 0.3 + Math.random() * 0.5,
+                        pos.z + (Math.random() * 2 - 1) * 0.4);
+                    window.createImpactFlash(fpos, col.clone(), 0.5 + Math.random() * 0.6);
+                }
+            }
+
+            // Pillar pool: age-out + alpha fade; no allocation per frame.
+            function _odT4UpdatePillars(pool, dt) {
+                for (let pi = 0; pi < pool.length; pi++) {
+                    const p = pool[pi];
+                    if (p.age < 0) continue;
+                    p.age += dt;
+                    if (p.age >= p.maxAge) {
+                        p.age = -1;
+                        p.mesh.setEnabled(false);
+                    } else {
+                        p.mat.alpha = 0.6 * (1 - p.age / p.maxAge);
+                        p.mesh.position.y = 1.0 + (p.age / p.maxAge) * 0.7;  // rises as it fades
+                    }
+                }
+            }
+
+            // Spawn one pillar from the pool at gate (x, z), random ±0.6 Z offset.
+            function _odT4SpawnPillar(x, z, pool) {
+                for (let pi = 0; pi < pool.length; pi++) {
+                    if (pool[pi].age < 0) {
+                        pool[pi].age = 0;
+                        pool[pi].mesh.position.set(x, 1.0, z + (Math.random() * 1.2 - 0.6));
+                        pool[pi].mat.alpha = 0.6;
+                        pool[pi].mesh.setEnabled(true);
+                        return;
+                    }
+                }
+            }
+
             // Drives per-frame presentation for both SP and PvP after the deterministic sim
             // has advanced one fixed-timestep frame. Reads sim-authoritative state; NEVER
             // writes proj.x/z/velX/velZ, paddleZ, mana, cooldowns, casting, castProgress, or
@@ -13038,6 +13194,46 @@
 
                         // -- Hide everything when channel is inactive --
                         if (!c || !c.juiceActive) {
+                            // Task 4 §6: detect juiceActive true→false and run scale-collapse over 0.1s.
+                            const _T4c = window['_odT4_' + (sd.isLeft ? 'left' : 'right')];
+                            if (_T4c) {
+                                if (_T4c.prevJuiceActive) {
+                                    // Edge: was live last frame, now off → trigger collapse
+                                    _T4c.prevJuiceActive = false;
+                                    _T4c.collapseAge     = 0;
+                                    _T4c.collapsing      = true;
+                                    _T4c.live            = false;
+                                    _T4c.eruptKicked     = false;
+                                    _T4c.prevWindingUp   = true;
+                                    _T4c.dmgAcc          = 0;
+                                    if (_T4c.beamLights) for (let _li = 0; _li < _T4c.beamLights.length; _li++) _T4c.beamLights[_li].setEnabled(false);
+                                    if (_T4c.orbLight)   _T4c.orbLight.setEnabled(false);
+                                    if (_T4c.blobRoot)   _T4c.blobRoot.setEnabled(false);
+                                    if (_T4c.pillarPool) for (let _pi = 0; _pi < _T4c.pillarPool.length; _pi++) { _T4c.pillarPool[_pi].age = -1; _T4c.pillarPool[_pi].mesh.setEnabled(false); }
+                                    // Clear blocker jitter
+                                    const _bkB = sd.isLeft ? window.aiBlockBarrier : window.playerBlockBarrier;
+                                    if (_bkB) { _bkB.beamJitX = 0; _bkB.beamJitZ = 0; }
+                                    // Fizzle burst at caster paddle
+                                    if (paddle) _odT4Fizzle(paddle.position, midCol);
+                                }
+                                if (_T4c.collapsing) {
+                                    _T4c.collapseAge += dt;
+                                    const _cf = 1 - Math.min(1, _T4c.collapseAge / 0.1);
+                                    if (_cf <= 0) {
+                                        _T4c.collapsing = false;
+                                        if (root.isEnabled())    root.setEnabled(false);
+                                        if (orbRoot.isEnabled()) orbRoot.setEnabled(false);
+                                        root.scaling.setAll(1);     // reset for next activation
+                                        orbRoot.scaling.setAll(1);
+                                    } else {
+                                        if (!root.isEnabled())    root.setEnabled(true);
+                                        if (!orbRoot.isEnabled()) orbRoot.setEnabled(true);
+                                        root.scaling.setAll(_cf);
+                                        orbRoot.scaling.setAll(_cf);
+                                    }
+                                    continue;
+                                }
+                            }
                             if (root.isEnabled())    root.setEnabled(false);
                             if (orbRoot.isEnabled()) orbRoot.setEnabled(false);
                             continue;
@@ -13089,13 +13285,42 @@
                             }
                         }
 
+                        // ---- Task 4: lazy-create per-side state + orb PointLight + eruption kick ----
+                        const _sideKey4 = sd.isLeft ? 'left' : 'right';
+                        if (!window['_odT4_' + _sideKey4]) {
+                            window['_odT4_' + _sideKey4] = _odT4Create(sd, midCol);
+                        }
+                        const T4 = window['_odT4_' + _sideKey4];
+                        T4.prevJuiceActive = true;   // mark live so collapse fires on next juiceActive=false
+
+                        // Update right-side beam light color in-place (colorblind swap responsiveness)
+                        if (!sd.isLeft && T4.beamLightColor) {
+                            T4.beamLightColor.set(TR.r, TR.g, TR.b);
+                        }
+
+                        // Orb PointLight: enabled for both windup and beam; intensity grows with orb scale
+                        if (T4.orbLight) {
+                            T4.orbLight.setEnabled(true);
+                            T4.orbLight.position.set(orbRoot.position.x, 0.6, orbRoot.position.z);
+                            const _os = orbRoot.scaling.x;
+                            T4.orbLight.intensity = Math.max(0.2, _os * 0.6);
+                            T4.orbLight.range     = 6 + _os * 3;
+                        }
+
+                        // Eruption kick: one-shot screen shake at the windingUp→beam transition
+                        if (T4.prevWindingUp && !windingUp && !T4.eruptKicked) {
+                            T4.eruptKicked = true;
+                            if (!window._reduceMotion && window.screenShake) window.screenShake(0.35, 0.3);
+                        }
+                        T4.prevWindingUp = windingUp;
+
                         // Beam body stays hidden during windup (orb is the only visual during charge)
                         if (windingUp) {
                             if (root.isEnabled()) root.setEnabled(false);
                             continue;
                         }
 
-                        if (!root.isEnabled()) root.setEnabled(true);
+                        if (!root.isEnabled()) { root.setEnabled(true); root.scaling.setAll(1); }  // reset collapse scale
 
                         // ---- Endpoint (read-only block test — mirrors sim logic exactly) ----
                         const blocked   = oppC && Math.abs((c.paddleZ || 0) - (oppC.paddleZ || 0)) <= OD.BLOCK_TOL;
@@ -13137,6 +13362,150 @@
                             rows.mid.scaling.set(activeLength,           1, midZScale);
                             rows.glow.scaling.set(activeLength,          1, 1);
                         }
+
+                        // ---- Task 4 beam-phase: lights, fog carving, impact blob, damage beats, chromatic block ----
+                        {
+                            const _casterZ = paddle.position.z;
+                            const _beamMid = (muzzleX + endpointX) * 0.5;
+                            const _nowMs   = performance.now();
+
+                            // Write fog data for the fog observable (runs inside scene.render same frame)
+                            T4.live    = true;
+                            T4.muzzleX = muzzleX;
+                            T4.midX    = _beamMid;
+                            T4.endX    = endpointX;
+                            T4.beamZ   = _casterZ;
+
+                            // 4a. Beam PointLights: 3 per side, repositioned every frame
+                            if (T4.beamLights) {
+                                T4.beamLights[0].position.set(muzzleX,   0.5, _casterZ);
+                                T4.beamLights[1].position.set(_beamMid,  0.5, _casterZ);
+                                T4.beamLights[2].position.set(endpointX, 0.5, _casterZ);
+                                for (let _li = 0; _li < 3; _li++) T4.beamLights[_li].setEnabled(true);
+                            }
+                            // Disable orb light during beam phase (muzzle beam light covers it)
+                            if (T4.orbLight && T4.orbLight.isEnabled()) T4.orbLight.setEnabled(false);
+
+                            // 4b. Fog cuts along beam lane (throttled ~0.15s, while connecting)
+                            if (!blocked && window.fogCuts && (_nowMs - T4.lastFogCutTime) > 150) {
+                                T4.lastFogCutTime = _nowMs;
+                                const _fStep  = 1.5;
+                                const _fSteps = Math.ceil(Math.abs(endpointX - muzzleX) / _fStep);
+                                let _fPushed  = 0;
+                                for (let si = 0; si <= _fSteps && _fPushed < 9; si++) {
+                                    const _fx = muzzleX + dir * si * _fStep;
+                                    // Center cut + ±Z lane-width offsets to carve the full beam channel
+                                    window.fogCuts.push({ x: _fx, z: _casterZ,       age: 0, maxAge: 0.8 });
+                                    window.fogCuts.push({ x: _fx, z: _casterZ + 0.9, age: 0, maxAge: 0.8 });
+                                    window.fogCuts.push({ x: _fx, z: _casterZ - 0.9, age: 0, maxAge: 0.8 });
+                                    _fPushed += 3;
+                                }
+                            }
+
+                            // 4c. Sustained screen rumble while connecting (amplitude scales with ramp)
+                            if (!blocked && !window._reduceMotion && window.screenShake) {
+                                window.screenShake(0.03 + rampFrac * 0.05, 0.12);
+                            }
+
+                            // 4d. Impact blob at gate endpoint (only while connecting)
+                            if (T4.blobRoot) {
+                                if (!blocked) {
+                                    T4.blobRoot.setEnabled(true);
+                                    T4.blobRoot.position.x = endpointX;
+                                    T4.blobRoot.position.y = 0.6;
+                                    T4.blobRoot.position.z = _casterZ;
+                                    const _bBase  = 1.0 + rampFrac * 0.5;
+                                    const _bPulse = (!window._reduceMotion)
+                                        ? Math.sin(_nowMs * 0.012) * 0.1 * (1 + rampFrac) : 0;
+                                    T4.blobKick = Math.max(0, T4.blobKick - 0.05);
+                                    T4.blobRoot.scaling.setAll(_bBase + _bPulse + T4.blobKick);
+
+                                    // Spark burst ~5Hz at the gate impact point
+                                    if ((_nowMs - T4.lastSparkTime) > 200 && !window._reduceMotion) {
+                                        T4.lastSparkTime = _nowMs;
+                                        if (window.createImpactFlash) {
+                                            const _sc = sd.isLeft ? BC.leftMid : BC.rightMid;
+                                            window.createImpactFlash(
+                                                new BABYLON.Vector3(endpointX, 0.6, _casterZ),
+                                                _sc.clone(), 0.8 + rampFrac * 0.5);
+                                        }
+                                    }
+
+                                    // Light pillar ≤1 per 0.5s
+                                    if (T4.pillarPool && (_nowMs - T4.lastPillarTime) > 500 && !window._reduceMotion) {
+                                        T4.lastPillarTime = _nowMs;
+                                        _odT4SpawnPillar(endpointX, _casterZ, T4.pillarPool);
+                                    }
+                                } else {
+                                    T4.blobRoot.setEnabled(false);
+                                }
+                            }
+                            if (T4.pillarPool) _odT4UpdatePillars(T4.pillarPool, dt);
+
+                            // 4e. Damage beats: accumulate opponent towerHealth drain; flush every ~0.6s
+                            if (!blocked && oppC) {
+                                const _oppHP = oppC.towerHealth || 0;
+                                const _drop  = T4.prevOppHealth - _oppHP;
+                                if (_drop > 0) T4.dmgAcc += _drop;
+                                T4.prevOppHealth = _oppHP;
+                                if (T4.dmgAcc > 0 && (_nowMs - T4.lastBeatTime) > 600) {
+                                    T4.lastBeatTime = _nowMs;
+                                    const _chunk = Math.round(T4.dmgAcc);
+                                    T4.dmgAcc = 0;
+                                    // Floating damage number at the gate (reuses showCombatTextAt)
+                                    if (window.showCombatTextAt) {
+                                        showCombatTextAt(new BABYLON.Vector3(endpointX, 1.8, _casterZ),
+                                            '−' + _chunk, 'cancel');
+                                    }
+                                    // Health-bar pulse on the OPPONENT's bar
+                                    const _hbId = sd.isLeft ? 'aiHealthBar' : 'playerHealthBar';
+                                    const _hbEl = document.getElementById(_hbId);
+                                    if (_hbEl) {
+                                        _hbEl.classList.add('beam-damage-pulse');
+                                        setTimeout(() => { if (_hbEl) _hbEl.classList.remove('beam-damage-pulse'); }, 320);
+                                    }
+                                    // Impact-blob scale kick
+                                    T4.blobKick = 0.4;
+                                    // Audio hook (Task 5 wires this up)
+                                    if (window.onOverdriveBeat) window.onOverdriveBeat(_sideKey4, _chunk);
+                                }
+                            } else {
+                                // Block or no opp: reset accumulator
+                                T4.dmgAcc = 0;
+                                if (oppC) T4.prevOppHealth = oppC.towerHealth || 0;
+                            }
+
+                            // 4f. Chromatic block on the blocker's shield while beam is blocked
+                            if (blocked) {
+                                const _blocker = sd.isLeft ? window.aiBlockBarrier : window.playerBlockBarrier;
+                                if (_blocker) {
+                                    if (!window._reduceMotion) {
+                                        // Continuously renew parry chromatic — barrier obs picks it up this frame
+                                        _blocker.parryFlashUntil = _nowMs + 80;
+                                        // Positional jitter on shield VISUAL (barrier obs applies it this frame)
+                                        _blocker.beamJitX = (Math.random() * 2 - 1) * 0.07;
+                                        _blocker.beamJitZ = (Math.random() * 2 - 1) * 0.04;
+                                        // Perpendicular spark spray (throttled ~8Hz)
+                                        if ((_nowMs - T4.lastBlockSparkTime) > 120 && window.createImpactFlash) {
+                                            T4.lastBlockSparkTime = _nowMs;
+                                            // Spray color = blocker's team (opposite of caster)
+                                            const _bkCol = sd.isLeft ? BC.rightMid : BC.leftMid;
+                                            window.createImpactFlash(
+                                                new BABYLON.Vector3(_blocker.pad.position.x, 0.5, _blocker.pad.position.z),
+                                                _bkCol.clone(), 0.5);
+                                        }
+                                    } else {
+                                        // Reduce Motion: steady bright shield glow instead of chromatic/jitter
+                                        _blocker.flashUntil = _nowMs + 100;
+                                        _blocker.beamJitX = 0; _blocker.beamJitZ = 0;
+                                    }
+                                }
+                            } else {
+                                // Clear jitter when not blocked this frame
+                                const _nbk = sd.isLeft ? window.aiBlockBarrier : window.playerBlockBarrier;
+                                if (_nbk) { _nbk.beamJitX = 0; _nbk.beamJitZ = 0; }
+                            }
+                        }  // end Task 4 beam-phase block
                     }
                 })();
 
@@ -13682,6 +14051,18 @@
                 const shieldLights = [[window.playerBlockBarrier, 2.0], [window.aiBlockBarrier, 3.0]];
                 for (const [B, type] of shieldLights) {
                     if (B && B.pad && B.pad.isVisible) pushLight(B.pad.position.x, B.pad.position.z, 0.7, type);
+                }
+                // Beam fog lights: 3 entries per live beam side, appended after projectiles+shields.
+                // type 1=ice for left/blue beam, 0=fire for right/red beam.
+                // Cap math: projectiles(≤4)+shields(2)+beams(≤6)=≤12 — fits exactly; over-cap
+                // entries are silently dropped by pushLight's lightCount>=12 guard (beams last).
+                for (let _bsi = 0; _bsi < 2; _bsi++) {
+                    const _bT4 = _bsi === 0 ? window._odT4_left : window._odT4_right;
+                    if (!_bT4 || !_bT4.live) continue;
+                    const _bFogType = _bT4.isLeftFog ? 1.0 : 0.0;
+                    pushLight(_bT4.muzzleX, _bT4.beamZ, 2.0, _bFogType);
+                    pushLight(_bT4.midX,    _bT4.beamZ, 1.5, _bFogType);
+                    pushLight(_bT4.endX,    _bT4.beamZ, 2.0, _bFogType);
                 }
                 // Pad to full size
                 while (lightArray.length < 48) {
@@ -18677,44 +19058,13 @@
             }, 30);
         }
 
-        // Overdrive beam hit flash — fires once per connected tick via sim deps hook onOverdriveHit.
-        // Throttled to at most once per 200 ms wall-clock to stay cheap at 60 fps.
-        // Reads: opp paddle position (paddleX / paddleZ). Never writes sim state.
-        window.showOverdriveHitFX = (function () {
-            let _lastFxTime = 0;
-            return function showOverdriveHitFX(caster, opp, dmg) {
-                if (!scene) return;
-                const now = Date.now();
-                if (now - _lastFxTime < 200) return;  // throttle: max 5 Hz
-                _lastFxTime = now;
-                if (window._reduceMotion) return;  // no flash under Reduce Motion; beam still renders
-                const oppPaddle = (opp && opp.side === 'left') ? playerPaddle : aiPaddle;
-                const pos = oppPaddle
-                    ? new BABYLON.Vector3(oppPaddle.position.x, 0.5, oppPaddle.position.z)
-                    : new BABYLON.Vector3(0, 0.5, 0);
-                const flash = BABYLON.MeshBuilder.CreateSphere('odriveHitFlash_' + now, { diameter: 0.9, segments: 6 }, scene);
-                flash.position.copyFrom(pos);
-                const mat = new BABYLON.StandardMaterial('odriveHitMat_' + now, scene);
-                mat.emissiveColor = new BABYLON.Color3(1, 0.85, 0.3);
-                mat.disableLighting = true;
-                mat.alpha = 0.85;
-                flash.material = mat;
-                flash.renderingGroupId = 1;
-                flash.isPickable = false;
-                let frame = 0;
-                const iv = setInterval(() => {
-                    frame++;
-                    if (frame > 5) {
-                        clearInterval(iv);
-                        if (!flash.isDisposed()) flash.dispose();
-                        mat.dispose();   // Materials have no isDisposed() in this Babylon build; dispose() is safe to call directly
-                    } else {
-                        mat.alpha = 0.85 * (1 - frame / 5);
-                        flash.scaling.scaleInPlace(1.4);
-                    }
-                }, 30);
-            };
-        })();
+        // Overdrive hit FX — Task 4: v1 yellow paddle flash REMOVED (confirmed confusing in playtest).
+        // Damage is to the GATE, not the opponent's body; effects at the paddle read as nonsense.
+        // The SIM_DEPS onOverdriveHit hook (line ~17314) stays wired; per-tick damage beats are now
+        // driven by the presentation-side accumulator inside the beam IIFE (Task 4 §4e).
+        window.showOverdriveHitFX = function showOverdriveHitFX(caster, opp, dmg) {
+            /* no-op — v1 yellow paddle flash replaced by Task 4 gate-endpoint damage beat FX */
+        };
 
         // Legacy function stubs for compatibility
         function startThunderstormChannel(caster) {

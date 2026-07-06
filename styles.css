@@ -434,6 +434,16 @@ body.hud-hidden #hudScaleLayer {
     100% { transform: translate(-50%, -150%) scale(1); opacity: 0; }    /* rise + fade */
 }
 
+/* Overdrive beam damage beat: brief brightness+scale pulse on the health bar element */
+@keyframes beamDamagePulse {
+    0%   { filter: brightness(2.5) saturate(1.5); transform: scaleX(1.04); }
+    60%  { filter: brightness(1.6) saturate(1.2); transform: scaleX(1.02); }
+    100% { filter: brightness(1)   saturate(1);   transform: scaleX(1); }
+}
+.beam-damage-pulse {
+    animation: beamDamagePulse 0.3s steps(4) forwards;
+}
+
 /* Frozen text */
 .frozen-text {
     position: absolute;
