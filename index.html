@@ -11417,8 +11417,9 @@
                 const pan = startX / 10;  // Convert X position to -1 to 1 pan
                 proj.loopSound = createFireRoarSound(pan);
 
-                // Juice fires REGULAR fireballs (no 6-tier burst); the burst's power is the 0 cooldown
-                // (set where the fireball cooldown is applied), so you can rapid-fire — cast time aside.
+                // (Overdrive note: while channeling, spell casting is blocked entirely — both
+                // tryNetworkCast and castFromLoadoutSlot gate on juiceActive — so no fireball
+                // can spawn during the beam. The old rapid-fire juice burst is gone.)
 
                 setupProjectileSceneFx(proj);
                 projectiles.push(proj);
