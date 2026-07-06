@@ -19,10 +19,16 @@
 //
 // Determinism law (see docs/SHARED_CORE.md): same (state, inputs) -> same state.
 // No Math.random / Date.now / performance.now here. Verify any change against the
-// dbg.determinism golden-hash oracle in index.html (seed 12345 -> 954ea557, seed
-// 99999 -> 56c1c1ac, both stable; run from a FRESH SINGLE-PLAYER match — a mid-PvP
+// dbg.determinism golden-hash oracle in index.html (seed 12345 -> 19595947, seed
+// 99999 -> 1501627, both stable; run from a FRESH SINGLE-PLAYER match — a mid-PvP
 // run reads pvp-mode deps and folds differently, that is oracle-environment
 // sensitivity, not a sim change).
+// (954ea557 -> 19595947, re-pinned 2026-07-05: Overdrive beam ultimate. The buff burst
+//  became a 6s channeled beam (tickOverdrive: drain/lane-match block/ramping DoT/fireball
+//  disintegration/frostbolt interrupt), juiceRamp joined the hash, the charge table changed
+//  (attacker earns damage-charge, victim gets minor), and the oracle's scripted sequence
+//  now FIRES an Overdrive at frame 30 (left side, bar pre-loaded in the harness setup) so
+//  the whole beam path is golden-covered. Verified 3x-reproducible on both pinned seeds.)
 // (954ea557 unchanged, 2026-07-03: index.html's updateFireballScale (called from this
 //  file's onPaddleHit and the shared parryProjectile path) now also grows proj.hitboxRadius
 //  proportionally with the ball's visual scale — hitboxRadius was pinned at spawn (0.25)
@@ -56,7 +62,8 @@
 // momentum + 1.25 divisor + 2.0 hitbox + prevPaddleZ in hash) -> 60bf20f3 (Phase 2.3
 // cast-rooting restored + oracle setup now pins paddleX/prevPaddleZ) -> e9717f89
 // (balance) -> 2dd677de (cancel-cast-on-move) -> 8f6e6da1 (arc collision; pinned stale,
-// see correction note above) -> 954ea557 (b7e492b balance changes, pin caught up).
+// see correction note above) -> 954ea557 (b7e492b balance changes, pin caught up) ->
+// 19595947 (2026-07-05 Overdrive beam, see note above).
 // NOTE: 3072141a was a contaminated mis-measure of the 2.3-A golden (a test had left
 // combatants.paddleX mutated when it was pinned); the real 2.3-A value was 3b37922a.
 // The oracle now pins paddleX so this can't recur.

@@ -15770,8 +15770,8 @@
         // localize any single-field desync. This does NOT feed the main hash and is OFF the compare
         // hot path — group hashes are stored per frame (cheap: 7 uint32s) and only EXCHANGED on a
         // detected desync. Groups: leftPaddle/rightPaddle (paddleZ/prevPaddleZ/moveAccum),
-        // leftCore/rightCore (mana/regen/freeze/tower/cast/cooldowns/juice/juiceRamp), projectiles (the list),
-        // rng (rngSeed/nextProjId), misc (frame/playerScore/aiScore).
+        // leftCore/rightCore (mana/regen/freeze/tower/cast/cooldowns/juice/juiceActive/juiceTimer/juiceRamp),
+        // projectiles (the list), rng (rngSeed/nextProjId), misc (frame/playerScore/aiScore).
         function hashGameStateGroups(snap) {
             const s = snap || captureGameState();
             const q = (n) => Math.round((n || 0) * 1000) | 0;
@@ -15988,6 +15988,11 @@
                         if (f % 37 === 5)  o.fireball = true;
                         if (f % 71 === 40) o.frostbolt = true;
                         if (f % 53 === 50) o.parry = true;
+                        if (f === 30)      o.juice = true;   // fire Overdrive (left's bar is pre-loaded in setup)
+                        // Frames 30+ exercise the whole beam path: channel drain, connect/block vs the
+                        // right paddle's scripted movement, ramp, DoT, fireball disintegration of right's
+                        // incoming casts, cast-refusal while channeling, and (if right's frostbolt lands)
+                        // the freeze interrupt — all deterministic, all folded into the golden.
                     } else {
                         if (f % 37 === 22) o.fireball = true;
                         if (f % 71 === 12) o.frostbolt = true;
@@ -16012,6 +16017,9 @@
                         c.paddleX = (c.side === 'left' ? -11.5 : 11.5); // pin paddleX so onPaddleHit reposition is oracle-stable (immune to live mutation)
                         c.juice = 0; c.juiceActive = false; c.juiceTimer = 0; c.juiceRamp = 0; // pin juice (hashed) so leftover live juice can't shift the golden
                     }
+                    // Pre-load LEFT's bar so the scripted frame-30 juice input actually starts the
+                    // Overdrive channel (simActivateJuice requires a full bar). Right stays 0.
+                    combatants.left.juice = (window.JUICE && JUICE.MAX) || 350;
                     // Pin paddle meshes too so the run never inherits single-player paddle drift.
                     if (playerPaddle) playerPaddle.position.z = 0;
                     if (aiPaddle) aiPaddle.position.z = 0;
