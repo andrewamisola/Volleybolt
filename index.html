@@ -12244,11 +12244,13 @@
                 if (window._reduceMotion) return;   // skip bright expanding impact flashes under Reduce Motion
                 const flash = BABYLON.MeshBuilder.CreateSphere("impact_" + Date.now(), { diameter: size }, scene);
                 flash.position.copyFrom(position);
+                flash.renderingGroupId = 2;     // above fog plane (group 1) — same fix as projectile/beam FX
 
                 const flashMat = new BABYLON.StandardMaterial("impactMat_" + Date.now(), scene);
                 flashMat.emissiveColor = color;
                 flashMat.alpha = 0.8;
                 flashMat.disableLighting = true;
+                flashMat.fogEnabled = false;    // consistent with all beam/FX materials
                 flash.material = flashMat;
 
                 // Stepped fading (retro style) - 0.8 → 0.6 → 0.4 → 0.2 → 0, 40ms per step
@@ -13107,7 +13109,7 @@
                 const b = BABYLON.MeshBuilder.CreateBox(name,
                     { width: 1, height: yThick, depth: zHeight }, scene);
                 b.material             = mat;
-                b.renderingGroupId     = 1;
+                b.renderingGroupId     = 2;   // above fog plane (group 1); beam rows are huge emissive and must never be buried
                 b.isPickable           = false;
                 b.alwaysSelectAsActiveMesh = true;
                 b.position.set(0, 0.5, 0);   // local Y lift; root sits at world y=0
@@ -13120,7 +13122,7 @@
                 const s = BABYLON.MeshBuilder.CreateSphere(name,
                     { diameter: diameter, segments: 6 }, scene);
                 s.material                 = mat;
-                s.renderingGroupId         = 1;
+                s.renderingGroupId         = 2;   // above fog plane (group 1)
                 s.isPickable               = false;
                 s.alwaysSelectAsActiveMesh = true;
                 return s;
@@ -13141,7 +13143,7 @@
                         '_odScatterSb_' + _skS + _si,
                         { width: 1, height: 0.04, depth: 0.06 }, scene);
                     sb.material                 = sMat;
-                    sb.renderingGroupId         = 1;
+                    sb.renderingGroupId         = 2;   // above fog plane (group 1)
                     sb.isPickable               = false;
                     sb.alwaysSelectAsActiveMesh = true;
                     sb.position.set(0, 0, 0);
@@ -13224,7 +13226,7 @@
                 blobInnerMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
                 const blobInner = BABYLON.MeshBuilder.CreateSphere(sd.rootKey + '_blobIn',
                     { diameter: 0.6, segments: 6 }, scene);
-                blobInner.material = blobInnerMat; blobInner.renderingGroupId = 1;
+                blobInner.material = blobInnerMat; blobInner.renderingGroupId = 2;   // above fog plane
                 blobInner.isPickable = false; blobInner.alwaysSelectAsActiveMesh = true;
                 blobInner.parent = blobRoot;
 
@@ -13235,7 +13237,7 @@
                 blobOuterMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
                 const blobOuter = BABYLON.MeshBuilder.CreateSphere(sd.rootKey + '_blobOut',
                     { diameter: 1.0, segments: 6 }, scene);
-                blobOuter.material = blobOuterMat; blobOuter.renderingGroupId = 1;
+                blobOuter.material = blobOuterMat; blobOuter.renderingGroupId = 2;   // above fog plane
                 blobOuter.isPickable = false; blobOuter.alwaysSelectAsActiveMesh = true;
                 blobOuter.parent = blobRoot;
                 blobRoot.setEnabled(false);
@@ -13248,7 +13250,7 @@
                 for (let pi = 0; pi < 3; pi++) {
                     const pMesh = BABYLON.MeshBuilder.CreateCylinder(sd.rootKey + '_pillar' + pi,
                         { diameter: 0.3, height: 2.0, tessellation: 6 }, scene);
-                    pMesh.renderingGroupId = 1; pMesh.isPickable = false;
+                    pMesh.renderingGroupId = 2; pMesh.isPickable = false;   // above fog plane
                     pMesh.alwaysSelectAsActiveMesh = true;
                     const pMat = new BABYLON.StandardMaterial(sd.rootKey + '_pillarMat' + pi, scene);
                     pMat.emissiveColor = midCol;
@@ -13304,6 +13306,16 @@
                     }
                 }
             }
+
+            // Module-scope state: allocated once here, never per-frame.
+            // These are captured by both updateMatchPresentation and window.resetOverdrivePresentation.
+
+            // Fog drama: cache original fog colors + live Color3s for the beam-driven LERP.
+            let _odFogState = null;
+
+            // Clash orb: lazy-created once, reused for "Naruto vs Sasuke" purple clash.
+            let _odClashOrbState  = null;
+            let _odClashWasActive = false;
 
             // Drives per-frame presentation for both SP and PvP after the deterministic sim
             // has advanced one fixed-timestep frame. Reads sim-authoritative state; NEVER
@@ -13454,6 +13466,22 @@
                     BC.rightMid.set(TR.r, TR.g, TR.b);
                     BC.rightGlow.set(TR.r * 0.66, TR.g * 0.15, TR.b * 0.04);
 
+                    // ---- CLASH detection (both past windup AND mutually within BLOCK_TOL) ----
+                    // Mirrors the sim's own block test; reads paddleZ from combatants (sim-authoritative).
+                    // When true: both beams meet at the midpoint; the clash orb replaces normal block FX.
+                    const _leftBeamPhase  = !!(leftC  && leftC.juiceActive  && ((OD.DURATION - (leftC.juiceTimer  || 0)) >= OD.WINDUP));
+                    const _rightBeamPhase = !!(rightC && rightC.juiceActive && ((OD.DURATION - (rightC.juiceTimer || 0)) >= OD.WINDUP));
+                    const _clashActive    = _leftBeamPhase && _rightBeamPhase &&
+                        (Math.abs((leftC.paddleZ || 0) - (rightC.paddleZ || 0)) <= OD.BLOCK_TOL);
+                    // Clash geometry — only valid when _clashActive; otherwise 0 (unused)
+                    const _clashMidX = _clashActive
+                        ? ((playerPaddle ? playerPaddle.position.x : -14) +
+                           (aiPaddle     ? aiPaddle.position.x     :  14)) * 0.5
+                        : 0;
+                    const _clashAvgZ = _clashActive
+                        ? (((leftC.paddleZ || 0) + (rightC.paddleZ || 0)) * 0.5)
+                        : 0;
+
                     // ---- Per-side update (iterates _BEAM_SIDE_DEFS — no alloc per frame) ----
                     for (const sd of _BEAM_SIDE_DEFS) {
                         // Live objects looked up by closure — no object allocation
@@ -13512,7 +13540,7 @@
                                 const cl = BABYLON.MeshBuilder.CreateBox(sd.orbKey + '_crack' + ci,
                                     { width: 0.8, height: 0.04, depth: 0.04 }, scene);
                                 cl.material                 = orbCrackMat;
-                                cl.renderingGroupId         = 1;
+                                cl.renderingGroupId         = 2;   // above fog plane
                                 cl.isPickable               = false;
                                 cl.alwaysSelectAsActiveMesh = true;
                                 cl.parent                   = orbRoot;
@@ -13675,9 +13703,11 @@
                         // ---- Endpoint (read-only block test — mirrors sim logic exactly) ----
                         const blocked   = oppC && Math.abs((c.paddleZ || 0) - (oppC.paddleZ || 0)) <= OD.BLOCK_TOL;
                         const muzzleX   = paddle.position.x + dir * MUZZLE_OFFSET;
-                        const endpointX = blocked
-                            ? (oppPad ? oppPad.position.x : muzzleX + dir * 0.5)   // short: stops at blocker
-                            : (dir > 0 ? BEAM_GOAL_X : -BEAM_GOAL_X);              // full: opponent gate line
+                        const endpointX = _clashActive
+                            ? _clashMidX                                                // clash: both beams converge at midpoint
+                            : blocked
+                                ? (oppPad ? oppPad.position.x : muzzleX + dir * 0.5)  // short: stops at blocker
+                                : (dir > 0 ? BEAM_GOAL_X : -BEAM_GOAL_X);             // full: opponent gate line
 
                         const fullLength = Math.abs(endpointX - muzzleX);
 
@@ -13849,7 +13879,9 @@
                             }
 
                             // 4f. Chromatic block on the blocker's shield + scatter stubs + blocker waver
-                            if (blocked) {
+                            //     SUPPRESSED during CLASH (_clashActive) — the clash orb IS the block visual.
+                            //     The else branch below still runs to clear any leftover FX from before clash.
+                            if (blocked && !_clashActive) {
                                 const _blocker = sd.isLeft ? window.aiBlockBarrier : window.playerBlockBarrier;
                                 if (_blocker) {
                                     if (!window._reduceMotion) {
@@ -13925,7 +13957,153 @@
                             }
                         }  // end Task 4 beam-phase block
                     }
+
+                    // ---- CLASH ORB (purple "Naruto vs Sasuke" orb at mutual-block midpoint) ----
+                    // Lazy-created once; reused every frame clash is active.
+                    // White-hot inner sphere + purple outer glow + 7 purple/white crackle arcs.
+                    // Reduce Motion: orb visible but scale static; crackles off; shake off.
+                    {
+                        if (!_odClashOrbState) {
+                            const _coPurple = new BABYLON.Color3(0.55, 0.00, 0.90);
+                            const _coWhite  = new BABYLON.Color3(1.00, 1.00, 1.00);
+                            const coRoot    = new BABYLON.TransformNode('_odClashOrbRoot', scene);
+
+                            const coInnerMat = _odBeamMakeMat('_odClash_innerMat', _coWhite,  0.95);
+                            const coOuterMat = _odBeamMakeMat('_odClash_outerMat', _coPurple, 0.75);
+                            const coCrackMat = _odBeamMakeMat('_odClash_crackMat', _coPurple, 0.85);
+
+                            const coInner = _odOrbMakeSphere('_odClash_inner', 0.55, coInnerMat);
+                            const coOuter = _odOrbMakeSphere('_odClash_outer', 1.20, coOuterMat);
+                            coInner.parent = coRoot;
+                            coOuter.parent = coRoot;
+
+                            const coCrackles = [];
+                            for (let _ci = 0; _ci < 7; _ci++) {
+                                const _cc = BABYLON.MeshBuilder.CreateBox('_odClash_crack' + _ci,
+                                    { width: 1.1, height: 0.05, depth: 0.05 }, scene);
+                                _cc.material                 = coCrackMat;
+                                _cc.renderingGroupId         = 2;   // above fog plane
+                                _cc.isPickable               = false;
+                                _cc.alwaysSelectAsActiveMesh = true;
+                                _cc.parent                   = coRoot;
+                                coCrackles.push(_cc);
+                            }
+
+                            coRoot.setEnabled(false);
+                            _odClashOrbState = {
+                                root:       coRoot,
+                                crackles:   coCrackles,
+                                crackFrame: 0,
+                            };
+                        }
+
+                        const _cos    = _odClashOrbState;
+                        const _clNowMs = performance.now();
+
+                        if (_clashActive) {
+                            if (!_cos.root.isEnabled()) _cos.root.setEnabled(true);
+
+                            // Position at clash midpoint
+                            _cos.root.position.set(_clashMidX, 0.6, _clashAvgZ);
+
+                            // Violent pulse — bigger than the impact blob (base 1.2, amp ±0.35)
+                            if (!window._reduceMotion) {
+                                const _clPulse = 1.2 + Math.sin(_clNowMs * 0.025) * 0.35;
+                                _cos.root.scaling.setAll(_clPulse);
+                            } else {
+                                _cos.root.scaling.setAll(1.2);   // static under Reduce Motion
+                            }
+
+                            // Crackle arcs: re-randomize every 3 frames
+                            _cos.crackFrame = (_cos.crackFrame + 1) | 0;
+                            const _doClashCrackle = (!window._reduceMotion) && (_cos.crackFrame % 3 === 0);
+                            for (let _ci = 0; _ci < _cos.crackles.length; _ci++) {
+                                const _cc = _cos.crackles[_ci];
+                                if (window._reduceMotion) {
+                                    if (_cc.isEnabled()) _cc.setEnabled(false);
+                                } else {
+                                    if (!_cc.isEnabled()) _cc.setEnabled(true);
+                                    if (_doClashCrackle) {
+                                        _cc.rotation.x = Math.random() * Math.PI * 2;
+                                        _cc.rotation.y = Math.random() * Math.PI * 2;
+                                        _cc.rotation.z = Math.random() * Math.PI * 2;
+                                        _cc.scaling.x  = 0.4 + Math.random() * 1.8;
+                                    }
+                                }
+                            }
+
+                            // Extra shake while clashing (stronger than connecting's 0.1)
+                            if (!window._reduceMotion && window.screenShake) {
+                                window.screenShake(0.15, 0.12);
+                            }
+
+                            _odClashWasActive = true;
+
+                        } else if (_odClashWasActive) {
+                            // Clash just ended — disable orb, reset crackle counter
+                            if (_cos.root.isEnabled()) _cos.root.setEnabled(false);
+                            _cos.crackFrame = 0;
+                            _odClashWasActive = false;
+                        }
+                    }
+
                 })();
+
+                // ---- FOG DRAMA: lerp both fog systems toward team color while beam(s) active ----
+                // Scene distance fog (scene.fogColor) and reactive fog plane shader ("fogColor" uniform)
+                // both shift toward the caster's team color over ~0.4s. Both beaming → purple.
+                // Restore to originals when no beam is live. No per-frame allocations: all Color3s
+                // in _odFogState are cached module-scope (declared before updateMatchPresentation).
+                {
+                    // Lazy-create fog state: capture originals on FIRST frame (before any beam runs)
+                    if (!_odFogState && scene && scene.fogColor) {
+                        _odFogState = {
+                            origSceneFog:  scene.fogColor.clone(),
+                            origMatFog:    new BABYLON.Color3(0.25, 0.28, 0.35),  // matches fogMaterial initial
+                            curSceneFog:   scene.fogColor.clone(),
+                            curMatFog:     new BABYLON.Color3(0.25, 0.28, 0.35),
+                            // Team targets (never mutated — computed fresh if TEAM_RIGHT swaps)
+                            _blueTarget:   new BABYLON.Color3(0.15, 0.30, 0.90),
+                            _purpleTarget: new BABYLON.Color3(0.30, 0.18, 0.72),
+                        };
+                    }
+
+                    if (_odFogState) {
+                        const _fst = _odFogState;
+                        const _TR3  = window.TEAM_RIGHT || { r: 1.0, g: 0.42, b: 0.33 };
+                        const _anyJuiceL = !!(leftC  && leftC.juiceActive);
+                        const _anyJuiceR = !!(rightC && rightC.juiceActive);
+
+                        // Determine target color this frame
+                        let _tFogR, _tFogG, _tFogB;
+                        if (_anyJuiceL && _anyJuiceR) {
+                            // Both beaming (includes clash) → deep purple
+                            _tFogR = _fst._purpleTarget.r; _tFogG = _fst._purpleTarget.g; _tFogB = _fst._purpleTarget.b;
+                        } else if (_anyJuiceL) {
+                            // Left/blue beam
+                            _tFogR = _fst._blueTarget.r; _tFogG = _fst._blueTarget.g; _tFogB = _fst._blueTarget.b;
+                        } else if (_anyJuiceR) {
+                            // Right/red-orange beam: deepen the team color for drama
+                            _tFogR = _TR3.r * 0.55; _tFogG = _TR3.g * 0.25; _tFogB = _TR3.b * 0.12;
+                        } else {
+                            // No beam → restore originals
+                            _tFogR = _fst.origSceneFog.r; _tFogG = _fst.origSceneFog.g; _tFogB = _fst.origSceneFog.b;
+                        }
+
+                        // LERP current colors toward target (~0.4s settle)
+                        const _fLr = Math.min(1.0, dt / 0.4);
+                        _fst.curSceneFog.r += (_tFogR - _fst.curSceneFog.r) * _fLr;
+                        _fst.curSceneFog.g += (_tFogG - _fst.curSceneFog.g) * _fLr;
+                        _fst.curSceneFog.b += (_tFogB - _fst.curSceneFog.b) * _fLr;
+                        _fst.curMatFog.r   += (_tFogR - _fst.curMatFog.r)   * _fLr;
+                        _fst.curMatFog.g   += (_tFogG - _fst.curMatFog.g)   * _fLr;
+                        _fst.curMatFog.b   += (_tFogB - _fst.curMatFog.b)   * _fLr;
+
+                        // Apply both fog systems
+                        scene.fogColor.copyFrom(_fst.curSceneFog);
+                        if (window.fogMaterial) window.fogMaterial.setColor3("fogColor", _fst.curMatFog);
+                    }
+                }
 
                 // --- 3D cast bars: always positional (left wizard ← leftC, right wizard ← rightC) ---
                 if (leftC && leftC.casting) {
@@ -14084,6 +14262,19 @@
                         if (combatants.right) combatants.right._blockerWavering = false;
                         // All beam audio (roar/rumble/crackle + _odAudioState) off
                         if (window.ToneSFX && ToneSFX.beamRoarStopAll) ToneSFX.beamRoarStopAll();
+                        // Fog drama → restore both fog systems instantly
+                        if (_odFogState && scene && scene.fogColor) {
+                            scene.fogColor.copyFrom(_odFogState.origSceneFog);
+                            _odFogState.curSceneFog.copyFrom(_odFogState.origSceneFog);
+                            _odFogState.curMatFog.copyFrom(_odFogState.origMatFog);
+                            if (window.fogMaterial) window.fogMaterial.setColor3("fogColor", _odFogState.origMatFog);
+                        }
+                        // Clash orb → off
+                        if (_odClashOrbState && _odClashOrbState.root && _odClashOrbState.root.setEnabled) {
+                            _odClashOrbState.root.setEnabled(false);
+                            _odClashOrbState.crackFrame = 0;
+                        }
+                        _odClashWasActive = false;
                     };
                 }
 
@@ -14627,9 +14818,9 @@
                     const _bT4 = _bsi === 0 ? window._odT4_left : window._odT4_right;
                     if (!_bT4 || !_bT4.live) continue;
                     const _bFogType = _bT4.isLeftFog ? 1.0 : 0.0;
-                    pushLight(_bT4.muzzleX, _bT4.beamZ, 2.0, _bFogType);
-                    pushLight(_bT4.midX,    _bT4.beamZ, 1.5, _bFogType);
-                    pushLight(_bT4.endX,    _bT4.beamZ, 2.0, _bFogType);
+                    pushLight(_bT4.muzzleX, _bT4.beamZ, 4.5, _bFogType);   // boosted 2× for visible fog glow
+                    pushLight(_bT4.midX,    _bT4.beamZ, 3.5, _bFogType);
+                    pushLight(_bT4.endX,    _bT4.beamZ, 4.5, _bFogType);
                 }
                 // Pad to full size
                 while (lightArray.length < 48) {
