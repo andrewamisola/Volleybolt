@@ -1707,8 +1707,8 @@
                 manaRegen: 0,
                 freezeTime: 0,
 
-                // Juice (ultimate / limit break): fills 0->100 from actions; spend to enter
-                // an 8s burst of free mana + halved cooldowns. Symmetric for player and AI.
+                // Juice (ultimate / limit break): fills from ALL actions; spend a full bar to
+                // channel the 6s Overdrive beam (see OVERDRIVE). Symmetric for player and AI.
                 juice: 0,
                 juiceActive: false,
                 juiceTimer: 0,
@@ -1828,8 +1828,8 @@
             if (window.logJuice) window.logJuice(c.side === 'left' ? 'blue' : 'red');
             return true;
         }
-        // Per-frame while bursting: drain the bar 100->0 over the duration + animate/fade the aura.
-        // (Mana and cooldowns are normal now; cooldowns are reset once at activation instead.)
+        // Per-frame while channeling: drain the bar 100->0 over the duration + animate/fade the aura.
+        // (No buff: mana and cooldowns tick normally during the channel — the beam does the work.)
         function updateJuice(dt) {
             const list = (typeof getAllCombatants === 'function')
                 ? getAllCombatants()
