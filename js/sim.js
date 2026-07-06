@@ -369,6 +369,9 @@
                         if (incoming && (proj.x - (ch.paddleX || 0)) * dir >= 0) {
                             toDestroy.push(proj);
                             vaporized = true;
+                            // FX-only: the Cancel! treatment (text + log + sound), same as
+                            // proj-vs-proj cancels. Never gates the state change above.
+                            if (!isResimulating && D.onBeamVaporize) D.onBeamVaporize(proj);
                             break;
                         }
                     }
