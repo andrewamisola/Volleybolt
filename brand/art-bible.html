@@ -258,8 +258,8 @@
   .swatch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 14px; }
   .swatch { border-radius: 8px; overflow: hidden; border: 2px solid var(--vb-rim); box-shadow: 3px 3px 0 rgba(0,0,0,0.5); }
   .swatch .chip { height: 56px; }
-  .swatch .label { background: rgba(16,20,32,0.85); padding: 8px; font-size: 9px; }
-  .swatch .label .hex { color: var(--vb-text-dim); display: block; margin-top: 4px; }
+  .swatch .label { background: rgba(16,20,32,0.85); padding: 8px; font-size: 9px; overflow-wrap: anywhere; }
+  .swatch .label .hex { color: var(--vb-text-dim); display: block; margin-top: 4px; overflow-wrap: anywhere; }
 
   /* ---- demo panel (live steel panel) ---- */
   .demo-menu { max-width: 320px; }
@@ -541,6 +541,33 @@
   <!-- 7. STYLE & UI -->
   <section id="style-ui">
     <h2 class="section-title"><span class="num">06</span>Style &amp; UI</h2>
+
+    <h3 style="font-family:'Press Start 2P',monospace; font-size:13px; color:var(--vb-gold); text-shadow:2px 2px 0 #000; margin:0 0 16px;">Style Pillars</h3>
+    <div class="grid-4" style="margin-bottom:32px;">
+      <div class="panel" style="padding:16px;">
+        <h4 style="margin:0 0 10px 0; font-size:10px; letter-spacing:0.5px;"><span style="color:var(--vb-text-dim); font-size:9px; margin-right:6px;">01</span><span style="color:var(--vb-gold); text-shadow:2px 2px 0 #000;">PS1-era fantasy.</span></h4>
+        <p style="margin:0; font-size:9px; line-height:1.8; color:var(--vb-text-dim);">Low-poly models, low-res render, 15-bit color with
+   Bayer dithering, affine-texture charm. Final Fantasy IX menus are the UI
+   north star: steel blue-grey panels, light rims, hard offset shadows, gold
+   headings.</p>
+      </div>
+      <div class="panel" style="padding:16px;">
+        <h4 style="margin:0 0 10px 0; font-size:10px; letter-spacing:0.5px;"><span style="color:var(--vb-text-dim); font-size:9px; margin-right:6px;">02</span><span style="color:var(--vb-gold); text-shadow:2px 2px 0 #000;">NES palette discipline.</span></h4>
+        <p style="margin:0; font-size:9px; line-height:1.8; color:var(--vb-text-dim);">Team Blue <code style="color:var(--vb-text-dim);">#0078F8</code> vs Team Red <code style="color:var(--vb-text-dim);">#F83800</code>,
+   amber <code style="color:var(--vb-text-dim);">#FC9838</code>, cream <code style="color:var(--vb-text-dim);">#F8F8F8</code>. Saturated, iconic, few colors.</p>
+      </div>
+      <div class="panel" style="padding:16px;">
+        <h4 style="margin:0 0 10px 0; font-size:10px; letter-spacing:0.5px;"><span style="color:var(--vb-text-dim); font-size:9px; margin-right:6px;">03</span><span style="color:var(--vb-gold); text-shadow:2px 2px 0 #000;">Cute body, epic magic.</span></h4>
+        <p style="margin:0; font-size:9px; line-height:1.8; color:var(--vb-text-dim);">The pickle wizard is small, round, and
+   charming; the spells are outsized and dramatic. Key art lives in that
+   contrast.</p>
+      </div>
+      <div class="panel" style="padding:16px;">
+        <h4 style="margin:0 0 10px 0; font-size:10px; letter-spacing:0.5px;"><span style="color:var(--vb-text-dim); font-size:9px; margin-right:6px;">04</span><span style="color:var(--vb-gold); text-shadow:2px 2px 0 #000;">Deterministic duel.</span></h4>
+        <p style="margin:0; font-size:9px; line-height:1.8; color:var(--vb-text-dim);">The fiction and the feel are honor-duel, not
+   chaos: readable arcs, clean geometry, nothing splattery or random.</p>
+      </div>
+    </div>
 
     <div class="swatch-grid">
       <div class="swatch"><div class="chip" style="background:#f0c050;"></div><div class="label">Gold accent<span class="hex">#f0c050</span></div></div>
