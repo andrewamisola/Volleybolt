@@ -58,9 +58,12 @@
 - [ ] Crackle: 4 thin jagged planes (or line meshes) parented near the orb, re-randomized rotation/scale every ~4 frames (`Math.random` is FINE here — presentation only), visible during windup + beam; skipped entirely under `_reduceMotion` (orb still swells, no pulse/crackle).
 - [ ] Controller browser check: orb swells during windup with no beam, beam erupts after, crackle animates, reduce-motion static. Commit: `Overdrive visual: charge orb + muzzle + crackle arcs (windup telegraph)`.
 
-### Task 4: Endpoint FX + shake + interrupt collapse
+### Task 4: Endpoint FX + shake + interrupt collapse + ATMOSPHERE (lights + fog carving)
 
-**Files:** Modify: `index.html` — rework `showOverdriveHitFX` + add blocked-flare + shake + collapse in the presentation block.
+**Files:** Modify: `index.html` — rework `showOverdriveHitFX` + add blocked-flare + shake + collapse + beam lighting/fog-reaction in the presentation block.
+
+- [ ] **Beam PointLights (spec §2.4):** 2–3 lazy-created team-colored PointLights per side, repositioned per frame along the live beam (muzzle/mid/endpoint), radius+intensity well above the fireball `fireLight_*` pattern (grep `proj.light = new BABYLON.PointLight` for the template); one smaller light on the charge orb during windup (grows with the orb); all disabled with the channel.
+- [ ] **Fog carving (spec §2.4):** while the beam is live, on a ~0.15s throttle push `fogCuts` sampled every ~1.5 units along the beam with ±Z lane offsets (grep `window.fogCuts` and the projectile push pattern with FOG_CUT_LIFETIME; use a SHORT maxAge so the lane re-fogs after); feed 2–3 beam entries into the shader `projLights` build (grep `setFloats("projLights")` — append beam lights to the same array, type 1/ice for left-blue, 0/fire for right-red, respecting the 12-light cap and leaving room for real projectiles). No cuts during windup.
 
 - [ ] CONNECTING end: impact blob (two spheres, white in team shell) at the gate endpoint, scale pulsing with juiceRamp; spark bursts (existing spark/zap particle pattern) throttled ~5Hz — fold the current `showOverdriveHitFX` throttle into this; 2–3 vertical light pillars (thin additive planes, 0.4s life, spawn ≤1 per 0.5s) — the FF8 flourish.
 - [ ] BLOCKED end: deflection flare at the blocker's paddle face (flattened bright burst mesh, reused) + perpendicular spark spray (throttled); no blob/pillars while blocked.

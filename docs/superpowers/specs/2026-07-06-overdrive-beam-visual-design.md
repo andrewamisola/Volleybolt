@@ -52,7 +52,19 @@ All meshes lazy-created once per side and reused (enable/disable, never per-fram
 - **Blocked (lane-matched):** the beam terminates AT the blocker's paddle in a **deflection flare** — a bright flattened burst hugging the paddle face, sparks spraying perpendicular (up/down in Z), the beam length visibly SHORT. Reads as "I am holding it." No damage FX beyond the flare.
 - Endpoint X each frame: blocked → blocker's paddle X; connecting → opponent gate X. The block decision is READ from the same test the sim uses (|casterZ − oppZ| vs BLOCK_TOL) — presentation recomputes it read-only, it never writes.
 
-### 2.4 Impact feel (cheap, gated)
+### 2.4 Atmosphere: the beam is PHYSICAL light (user addition 2026-07-06)
+
+The beam must interact with the arena atmosphere the same way a fireball does, scaled up:
+
+- **Scene lighting:** fireballs carry a `PointLight` (`proj.light`, the `fireLight_*` pattern). The beam gets **2–3 PointLights spaced along its length** (muzzle / midpoint / endpoint), team-colored, with a **much larger radius and higher intensity** than a fireball's — the court, wizards, and walls should visibly glow while it fires. Lights are lazy-created once per side, repositioned per frame along the live beam, disabled with it.
+- **Reactive fog — the beam CARVES the fog:** the fog plane's shader already reacts to projectiles via `fogCuts` (carved holes that age out) and `projLights` (up to 12 shader lights, fire/ice typed). While the beam is live:
+  - push `fogCuts` sampled along the FULL beam length (every ~1.5 units, with ±Z offsets covering the beam's lane width), on a throttle (~every 0.15s, short maxAge) so the lane stays carved open while firing and the fog rolls back in afterward — a clear channel of visibility where the beam burned through;
+  - feed 2–3 entries into the shader's `projLights` along the beam (type: ice-blue for the left/blue beam, fire for the right/red beam) so the surrounding fog GLOWS team-colored around the carved lane.
+  - Respect the existing caps (12 shader lights, fog-cut cap) — the beam must not evict all projectile trail cuts; keep its per-push count modest.
+- Windup: the charge orb alone gets ONE growing PointLight + a small fog glow (no cuts yet — the fog carves only when the beam erupts, which reads as the eruption's shockwave).
+- All presentation-only, driven from the beam block; skipped cleanly on channel end/interrupt (lights off, cuts age out naturally).
+
+### 2.5 Impact feel (cheap, gated)
 - **Screen shake:** a subtle sustained rumble while the beam is CONNECTING (amplitude scaling slightly with ramp), one sharper kick on eruption. Uses the existing screen-shake helper; fully skipped under Reduce Motion.
 - **Interrupt (frostbolt during WINDUP only):** orb collapses instantly (scale-in over ~0.1s), a brief fizzle burst at the caster, then the existing freeze FX takes over. No lingering meshes.
 - **Frozen mid-beam (frostbolt after eruption):** the beam KEEPS FIRING but its aim is pinned — visually, the existing freeze FX plays on the caster while the beam continues at the frozen Z (no special beam change needed; the aim simply stops tracking because the sim stops the paddle). Optionally tint the crackle ice-blue during the freeze if trivial.
