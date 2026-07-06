@@ -3730,9 +3730,13 @@
         // Overdrive damage-beat callback — called by Task 4 presentation block every ~0.6s
         // while the beam is connecting. Defined here (in the audio closure) for direct access
         // to toneStarted and synths; guard on both so it is safe before audio is unlocked.
+        // Damage beat = the SAME sound as a fireball hitting the gate (owner direction:
+        // beam damage should sound like damage the player already knows). Panned to the
+        // OPPONENT's gate (the thing being hit), volume scaling like dealDamageToTower's.
         window.onOverdriveBeat = (side, chunk) => {
-            if (!toneStarted || !synths.overdriveBeat) return;
-            ToneSFX.overdriveBeatBoom(side, chunk);
+            if (!toneStarted) return;
+            const gateX = side === 'left' ? 10 : -10;   // left's beam hits the RIGHT gate and vice versa
+            if (window.playSound) playSound('gateDamage', gateX, 0.6 + (chunk || 1) * 0.15);
         };
 
         // --- JRPG menu navigation sounds (delegated, covers every menu incl. pause/debug) ---
