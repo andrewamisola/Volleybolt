@@ -649,7 +649,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=36-overdrive-windup"></script>
+    <script type="module" src="js/sim.js?v=37-beam-cancel-fx"></script>
 
     <script>
         // Global error handler to debug doubles crash
@@ -9444,6 +9444,14 @@
                     return;
                 }
 
+                // 1b. Blocker waver (overdrive beam block) — defeat anim while blocking a beam.
+                // Checked AFTER roundResult so actual victory/defeat end-states still take priority.
+                // Set/cleared by the beam IIFE presentation code; never writes sim state.
+                if (combatant._blockerWavering) {
+                    playAnim(combatant, 'defeat');
+                    return;
+                }
+
                 // 2. Cast release (let it finish)
                 if (combatant.playingCastRelease) {
                     return;
@@ -12931,8 +12939,21 @@
                     thunderstorm = canThunderstorm;
                 }
 
-                // ---- Juice ----
-                const juice = s.juice >= JUICE.MAX && !s.juiceActive;
+                // ---- Juice (Overdrive) : fire the ult at an EFFECTIVE moment, not just on full ----
+                // Conditions (all deterministic view reads):
+                //  - bar full, not already channeling, not mid-cast (don't waste the cast)
+                //  - court is CLEAR (no incoming): the 0.6s windup is the interrupt window — an
+                //    in-flight frostbolt or pressure wave is exactly when NOT to stand and charge
+                //  - opponent NOT channeling (blocking their beam outranks firing ours)
+                //  - and EITHER the opponent is frozen (free connect: they can't chase the lane)
+                //    OR there's a real opening (they're well off our lane, so the beam starts
+                //    connecting the moment it erupts and they have to cross the court to block)
+                const oppFrozen  = (view.opp.freezeTime || 0) > 0.5;   // enough freeze left to matter
+                const beamOpening = Math.abs(view.opp.paddleZ - s.paddleZ) > BLOCK_TOL + 0.5;
+                const juice = s.juice >= JUICE.MAX && !s.juiceActive && !s.casting
+                    && incomingCount === 0
+                    && !view.opp.juiceActive
+                    && (oppFrozen || beamOpening);
 
                 return { moveDir, parry, fireball, frostbolt, thunderstorm, juice };
             }
@@ -12989,6 +13010,7 @@
                         paddleZ:     combatants.left.paddleZ,
                         towerHealth: (combatants.left.towerHealth != null) ? combatants.left.towerHealth : maxTowerHealth,
                         juiceActive: combatants.left.juiceActive || false,   // beam-block: the AI reacts to a channeling opponent
+                        freezeTime:  combatants.left.freezeTime  || 0,       // ult timing: a frozen opponent = free connect window
                     },
                     geom: {
                         tableWidth:     tableWidth,
@@ -13104,6 +13126,32 @@
                 return s;
             }
 
+            // Factory: scatter stubs for blocked-beam impact (Task 5a).
+            // Creates 4 thin box stubs that fan outward/backward from the contact point.
+            // Lazy-created once per side and stored in T4.scatterStubs; no per-frame allocations.
+            // midCol is the caster's live Color3 ref — material.emissiveColor assignment means
+            // .set() auto-updates the scatter color for colorblind-swap responsiveness.
+            function _odScatterCreate(sd, midCol) {
+                const _skS  = sd.isLeft ? 'left' : 'right';
+                const sRoot = new BABYLON.TransformNode('_odScatterRoot_' + _skS, scene);
+                const sMat  = _odBeamMakeMat('_odScatterMat_' + _skS, midCol, 0.70);
+                const stubs = [];
+                for (let _si = 0; _si < 4; _si++) {
+                    const sb = BABYLON.MeshBuilder.CreateBox(
+                        '_odScatterSb_' + _skS + _si,
+                        { width: 1, height: 0.04, depth: 0.06 }, scene);
+                    sb.material                 = sMat;
+                    sb.renderingGroupId         = 1;
+                    sb.isPickable               = false;
+                    sb.alwaysSelectAsActiveMesh = true;
+                    sb.position.set(0, 0, 0);
+                    sb.parent                   = sRoot;
+                    stubs.push(sb);
+                }
+                sRoot.setEnabled(false);
+                return { root: sRoot, stubs: stubs, mat: sMat, _cf: 0 };
+            }
+
             // ---- Task 4: Overdrive endpoint FX, lights, fog carving (module-scope helpers) ----
             // All helpers below are hoisted above updateMatchPresentation so zero function/object
             // allocations occur in the per-frame path. Called once-per-side at first beam activation.
@@ -13127,6 +13175,8 @@
                     // Babylon resources (set below)
                     beamLights: null, beamLightColor: null, orbLight: null,
                     blobRoot: null, pillarPool: null,
+                    // Scatter stubs + blocker waver (Task 5a/5b)
+                    scatterStubs: null, prevBlocked: false,
                 };
 
                 // Team color for lights — left=blue; right=right-team (updated via .set() per frame)
@@ -13497,6 +13547,16 @@
                                     // Clear blocker jitter
                                     const _bkB = sd.isLeft ? window.aiBlockBarrier : window.playerBlockBarrier;
                                     if (_bkB) { _bkB.beamJitX = 0; _bkB.beamJitZ = 0; }
+                                    // Disable scatter stubs + clear blocker waver
+                                    if (_T4c.scatterStubs && _T4c.scatterStubs.root.isEnabled()) {
+                                        _T4c.scatterStubs.root.setEnabled(false);
+                                        _T4c.scatterStubs._cf = 0;
+                                    }
+                                    if (_T4c.prevBlocked) {
+                                        const _bwCC = sd.isLeft ? combatants.right : combatants.left;
+                                        if (_bwCC) _bwCC._blockerWavering = false;
+                                    }
+                                    _T4c.prevBlocked = false;
                                     // Fizzle burst at caster paddle
                                     if (paddle) _odT4Fizzle(paddle.position, midCol);
                                 }
@@ -13577,6 +13637,11 @@
                         const T4 = window['_odT4_' + _sideKey4];
                         T4.prevJuiceActive = true;   // mark live so collapse fires on next juiceActive=false
 
+                        // Scatter stubs lazy-create (first beam activation for this side)
+                        if (!T4.scatterStubs) {
+                            T4.scatterStubs = _odScatterCreate(sd, midCol);
+                        }
+
                         // Update right-side beam light color in-place (colorblind swap responsiveness)
                         if (!sd.isLeft && T4.beamLightColor) {
                             T4.beamLightColor.set(TR.r, TR.g, TR.b);
@@ -13591,10 +13656,10 @@
                             T4.orbLight.range     = 6 + _os * 3;
                         }
 
-                        // Eruption kick: one-shot screen shake at the windingUp→beam transition
+                        // Eruption kick: BIG one-shot screen shake at the windingUp→beam transition
                         if (T4.prevWindingUp && !windingUp && !T4.eruptKicked) {
                             T4.eruptKicked = true;
-                            if (!window._reduceMotion && window.screenShake) window.screenShake(0.35, 0.3);
+                            if (!window._reduceMotion && window.screenShake) window.screenShake(0.55, 1.0);
                         }
                         T4.prevWindingUp = windingUp;
 
@@ -13687,9 +13752,13 @@
                                 }
                             }
 
-                            // 4c. Sustained screen rumble while connecting (amplitude scales with ramp)
-                            if (!blocked && !window._reduceMotion && window.screenShake) {
-                                window.screenShake(0.03 + rampFrac * 0.05, 0.12);
+                            // 4c. Screen shake tiers: MEDIUM steady while connecting; MINOR while blocked
+                            if (!window._reduceMotion && window.screenShake) {
+                                if (!blocked) {
+                                    window.screenShake(0.1, 0.12);   // MEDIUM sustained while connecting
+                                } else {
+                                    window.screenShake(0.04, 0.12);  // MINOR sustained while blocked
+                                }
                             }
 
                             // 4d. Impact blob at gate endpoint (only while connecting)
@@ -13779,7 +13848,7 @@
                                 if (oppC) T4.prevOppHealth = oppC.towerHealth || 0;
                             }
 
-                            // 4f. Chromatic block on the blocker's shield while beam is blocked
+                            // 4f. Chromatic block on the blocker's shield + scatter stubs + blocker waver
                             if (blocked) {
                                 const _blocker = sd.isLeft ? window.aiBlockBarrier : window.playerBlockBarrier;
                                 if (_blocker) {
@@ -13789,14 +13858,13 @@
                                         // Positional jitter on shield VISUAL (barrier obs applies it this frame)
                                         _blocker.beamJitX = (Math.random() * 2 - 1) * 0.07;
                                         _blocker.beamJitZ = (Math.random() * 2 - 1) * 0.04;
-                                        // Perpendicular spark spray (throttled ~8Hz)
-                                        if ((_nowMs - T4.lastBlockSparkTime) > 120 && window.createImpactFlash) {
+                                        // Perpendicular spark spray (throttled ~8Hz — brightened)
+                                        if ((_nowMs - T4.lastBlockSparkTime) > 80 && window.createImpactFlash) {
                                             T4.lastBlockSparkTime = _nowMs;
-                                            // Spray color = blocker's team (opposite of caster)
                                             const _bkCol = sd.isLeft ? BC.rightMid : BC.leftMid;
                                             window.createImpactFlash(
                                                 new BABYLON.Vector3(_blocker.pad.position.x, 0.5, _blocker.pad.position.z),
-                                                _bkCol.clone(), 0.5);
+                                                _bkCol.clone(), 0.7);
                                         }
                                     } else {
                                         // Reduce Motion: steady bright shield glow instead of chromatic/jitter
@@ -13804,10 +13872,56 @@
                                         _blocker.beamJitX = 0; _blocker.beamJitZ = 0;
                                     }
                                 }
+
+                                // Scatter stubs: 4 thin beams fanning outward/backward from contact point
+                                if (T4.scatterStubs) {
+                                    const _sc = T4.scatterStubs;
+                                    if (!_sc.root.isEnabled()) _sc.root.setEnabled(true);
+                                    _sc.root.position.set(endpointX, 0.5, _casterZ);
+                                    _sc._cf = (_sc._cf + 1) | 0;
+                                    // Re-randomize angles every 4 frames (same cadence as crackle)
+                                    // Reduce Motion: static stub layout (no re-randomize)
+                                    if (!window._reduceMotion && _sc._cf % 4 === 0) {
+                                        // Backward hemisphere: dir=+1 → around π; dir=-1 → around 0
+                                        const _backA = (dir > 0 ? Math.PI : 0);
+                                        for (let _si = 0; _si < _sc.stubs.length; _si++) {
+                                            _sc.stubs[_si].rotation.y = _backA + (Math.random() - 0.5) * (Math.PI * 0.75);
+                                            _sc.stubs[_si].scaling.x  = 0.3 + Math.random() * 1.2;
+                                        }
+                                    } else if (_sc._cf === 1) {
+                                        // First frame: set a static spread so stubs aren't all overlapping
+                                        const _backA = (dir > 0 ? Math.PI : 0);
+                                        const _step  = Math.PI * 0.75 / (_sc.stubs.length - 1);
+                                        for (let _si = 0; _si < _sc.stubs.length; _si++) {
+                                            _sc.stubs[_si].rotation.y = _backA - (Math.PI * 0.375) + _step * _si;
+                                            _sc.stubs[_si].scaling.x  = 0.4 + _si * 0.25;
+                                        }
+                                    }
+                                }
+
+                                // Blocker waver edge: start defeat anim on block-start edge only
+                                if (!T4.prevBlocked) {
+                                    const _bwC = sd.isLeft ? combatants.right : combatants.left;
+                                    if (_bwC) _bwC._blockerWavering = true;
+                                }
+                                T4.prevBlocked = true;
                             } else {
                                 // Clear jitter when not blocked this frame
                                 const _nbk = sd.isLeft ? window.aiBlockBarrier : window.playerBlockBarrier;
                                 if (_nbk) { _nbk.beamJitX = 0; _nbk.beamJitZ = 0; }
+
+                                // Disable scatter stubs when not blocked
+                                if (T4.scatterStubs && T4.scatterStubs.root.isEnabled()) {
+                                    T4.scatterStubs.root.setEnabled(false);
+                                    T4.scatterStubs._cf = 0;
+                                }
+
+                                // Blocker waver edge: clear defeat anim on block-end edge
+                                if (T4.prevBlocked) {
+                                    const _bwC = sd.isLeft ? combatants.right : combatants.left;
+                                    if (_bwC) _bwC._blockerWavering = false;
+                                }
+                                T4.prevBlocked = false;
                             }
                         }  // end Task 4 beam-phase block
                     }
@@ -13955,14 +14069,19 @@
                             if (t.orbLight) t.orbLight.setEnabled(false);
                             if (t.blobRoot) t.blobRoot.setEnabled(false);
                             if (t.pillarPool) for (let i = 0; i < t.pillarPool.length; i++) { t.pillarPool[i].age = -1; t.pillarPool[i].mesh.setEnabled(false); }
+                            if (t.scatterStubs && t.scatterStubs.root) { t.scatterStubs.root.setEnabled(false); t.scatterStubs._cf = 0; }
                             t.dmgAcc = 0; t.prevOppHealth = 0; t.live = false;
                             t.collapsing = false; t.eruptKicked = false;
                             t.prevJuiceActive = false; t.prevWindingUp = true;
+                            t.prevBlocked = false;
                         }
                         // Blocker shield jitter cleared
                         for (const bk of [window.playerBlockBarrier, window.aiBlockBarrier]) {
                             if (bk) { bk.beamJitX = 0; bk.beamJitZ = 0; }
                         }
+                        // Clear blocker waver on both combatants
+                        if (combatants.left)  combatants.left._blockerWavering  = false;
+                        if (combatants.right) combatants.right._blockerWavering = false;
                         // All beam audio (roar/rumble/crackle + _odAudioState) off
                         if (window.ToneSFX && ToneSFX.beamRoarStopAll) ToneSFX.beamRoarStopAll();
                     };
@@ -17135,14 +17254,16 @@
                         paddleX: 7, paddleZ: (seed % 7) * 0.2 - 0.6,
                         mana: 3,
                         cooldowns: { fireball: 0, frostbolt: 0, thunderstorm: 0 },
-                        freezeTime: 0, casting: null, castProgress: 0, castTime: 1.0, juice: 0, juiceActive: false, shieldCharges: 0,
+                        freezeTime: 0, casting: null, castProgress: 0, castTime: 1.0,
+                        juice: (seed % 10 === 0) ? 350 : 0,   // full bar cycles so the ULT-DECISION branch is golden-covered
+                        juiceActive: false, shieldCharges: 0,
                         towerHealth: (seed % 20) + 1,   // 1..20 — kept for view completeness
                     },
                     // oppZ -4.0..4.0 (was 0.8-step, -3.2..3.2): max |gap| vs selfZ ±0.6 is now ~4.6 ->
                     // openingFrac ~0.52, so the oracle hashes DEEP into the urgency curve (reviewer M2:
                     // the old range only moved effectiveCadence one step and shadowed the sharp end).
-                    // juiceActive cycles so the BEAM-BLOCK movement override is golden-covered.
-                    opp:  { paddleZ: (seed % 9) * 1.0 - 4.0, towerHealth: 20 - (seed % 7), juiceActive: (seed % 4 === 0) },
+                    // juiceActive + freezeTime cycle so BEAM-BLOCK movement + ult-timing branches are covered.
+                    opp:  { paddleZ: (seed % 9) * 1.0 - 4.0, towerHealth: 20 - (seed % 7), juiceActive: (seed % 4 === 0), freezeTime: (seed % 6 === 0) ? 1 : 0 },
                     geom: { tableWidth: 16, halfDepth: 4, paddleBoundary: 3.8 },
                     maxHealth: 20,
                     roundActive: true,
@@ -18157,6 +18278,13 @@
                 }
             },
             onOverdriveHit: (caster, opp, dmg) => { if (window.showOverdriveHitFX) window.showOverdriveHitFX(caster, opp, dmg); },
+            // Beam vaporized a fireball: the standard Cancel! treatment (same as proj-vs-proj)
+            onBeamVaporize: (proj) => {
+                const pos = new BABYLON.Vector3(proj.x, 1.2, proj.z);
+                if (window.showCombatTextAt) showCombatTextAt(pos, 'Cancel', 'cancel');
+                if (window.logNeutral) window.logNeutral('Cancel!');
+                if (window.playSound) playSound('cancel', proj.x, 0.7);
+            },
             getAbilityDef: (id) => getAbilityDef(id),
             // Deterministic thunderstorm zap: selects incoming ENEMY projectiles by pure state
             // (proj.x, proj.velX, proj.owner — NO mesh reads), destroys up to maxZaps in stable
