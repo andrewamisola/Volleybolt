@@ -13926,6 +13926,48 @@
                     }
                 }
 
+                // ---- 1b-pre. HARD RESET for everything channel-driven (defined once, callable
+                // from match-exit paths). The dim/meshes/lights/jitter only restore while
+                // presentation frames run — a match ending MID-CHANNEL (e.g. a beam kill)
+                // stops those frames with everything still in "ult" state, which then leaks
+                // into the next game (user-reported: faded background persisted). ----
+                if (!window.resetOverdrivePresentation) {
+                    window.resetOverdrivePresentation = function () {
+                        // Backdrop dim → restore instantly
+                        const d = window._odBgDim;
+                        if (d && d.origColor && window.backdropLayer && window.backdropLayer.color) {
+                            window.backdropLayer.color.r = d.origColor.r;
+                            window.backdropLayer.color.g = d.origColor.g;
+                            window.backdropLayer.color.b = d.origColor.b;
+                            d.brightness = 1.0;
+                        }
+                        // Beam + orb roots off, scales normalized
+                        for (const k of ['_overdriveBeamRoot_left', '_overdriveBeamRoot_right',
+                                         '_overdriveOrb_left', '_overdriveOrb_right']) {
+                            const n = window[k];
+                            if (n && n.setEnabled) { n.setEnabled(false); if (n.scaling) n.scaling.setAll(1); }
+                        }
+                        // T4 endpoint FX: lights, blob, pillars, accumulators
+                        for (const sk of ['left', 'right']) {
+                            const t = window['_odT4_' + sk];
+                            if (!t) continue;
+                            if (t.beamLights) for (let i = 0; i < t.beamLights.length; i++) t.beamLights[i].setEnabled(false);
+                            if (t.orbLight) t.orbLight.setEnabled(false);
+                            if (t.blobRoot) t.blobRoot.setEnabled(false);
+                            if (t.pillarPool) for (let i = 0; i < t.pillarPool.length; i++) { t.pillarPool[i].age = -1; t.pillarPool[i].mesh.setEnabled(false); }
+                            t.dmgAcc = 0; t.prevOppHealth = 0; t.live = false;
+                            t.collapsing = false; t.eruptKicked = false;
+                            t.prevJuiceActive = false; t.prevWindingUp = true;
+                        }
+                        // Blocker shield jitter cleared
+                        for (const bk of [window.playerBlockBarrier, window.aiBlockBarrier]) {
+                            if (bk) { bk.beamJitX = 0; bk.beamJitZ = 0; }
+                        }
+                        // All beam audio (roar/rumble/crackle + _odAudioState) off
+                        if (window.ToneSFX && ToneSFX.beamRoarStopAll) ToneSFX.beamRoarStopAll();
+                    };
+                }
+
                 // ---- 1b. BACKGROUND DIM during overdrive ult ----
                 // Lerp backdropLayer.color toward 35% brightness while any side has juiceActive,
                 // back to 100% when no channel is live. Presentation-only: mesh/material writes only,
@@ -15167,8 +15209,9 @@
             if (window.ToneSFX) {
                 ToneSFX.castingStop();
                 ToneSFX.musicStop();
-                ToneSFX.beamRoarStopAll();  // backstop: kills any orphaned roar if game exits mid-beam
             }
+            // Full Overdrive reset (dim/meshes/lights/jitter/audio) — supersedes the plain roar backstop
+            if (window.resetOverdrivePresentation) window.resetOverdrivePresentation();
 
             // Clear all pressed keys to prevent stuck movement
             for (const key in keys) {
@@ -15842,8 +15885,9 @@
             if (window.ToneSFX) {
                 ToneSFX.castingStop();
                 ToneSFX.musicStop();
-                ToneSFX.beamRoarStopAll();  // backstop: kills any orphaned roar on rematch
             }
+            // Full Overdrive reset (dim/meshes/lights/jitter/audio) — supersedes the plain roar backstop
+            if (window.resetOverdrivePresentation) window.resetOverdrivePresentation();
 
             // Cancel any active casts for both combatants
             for (const c of [combatants.left, combatants.right]) {
@@ -20421,9 +20465,11 @@
             // Stop casting sounds and switch to alpha waves for calm between rounds
             if (window.ToneSFX) {
                 ToneSFX.castingStop();
-                if (ToneSFX.beamRoarStopAll) ToneSFX.beamRoarStopAll();  // backstop: no beam roar survives a round/match end (covers the SP rematch path, review V5 #3)
                 ToneSFX.roundEnd();  // Alpha brainwaves for rest
             }
+            // Full Overdrive presentation reset (dim/beam/orb/lights/jitter/audio) — a match
+            // ending MID-CHANNEL otherwise strands the ult state into the next game
+            if (window.resetOverdrivePresentation) window.resetOverdrivePresentation();
             playerCasting = null;
             aiCasting = null;
 
