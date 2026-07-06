@@ -17339,6 +17339,7 @@
                     "dbg.freeze(side?,s?)  freeze a side for s sec (default: opponent, 1s)  [LOCAL poke]",
                     'dbg.win() / dbg.lose()    force match end',
                     'dbg.forceDesync()     nudge local RNG to TEST the desync detector',
+                    'dbg.capture.*         branding capture stage (stage/record/fireball/frostbolt/thunder/parry)',
                     "side = 'left' | 'right'.  LOCAL pokes change only this peer => will show DESYNC (expected)."
                 ].join('\n'));
             },
@@ -17503,6 +17504,85 @@
                 return { steps, seed, fold, reproducible: fold === fold2 };
             };
         })();
+
+        // ---- Capture stage (branding / marketing) — dbg.capture.* ------------------
+        // Presentation-side ONLY. Blacks the backdrop, hides env meshes + HUD, and
+        // streams canvas frames to the local capture server (tools/capture_server.py,
+        // POST /save). Spawns reuse the game's own window.spawn* / input paths and a
+        // running SP match — the sim is never modified. Safe: not reachable from gameplay.
+        window.dbg.capture = {
+            _hidden: [], _obs: null,
+            stage() {
+                if (!scene || !combatants.left || !combatants.left.paddle) { console.warn('[capture] start a battle first'); return; }
+                setHudHidden(true);
+                scene.fogMode = BABYLON.Scene.FOGMODE_NONE;
+                scene.clearColor = new BABYLON.Color4(0, 0, 0, 1);
+                if (window.backdropLayer) { if (this._backdropWas === undefined) this._backdropWas = window.backdropLayer.isEnabled; window.backdropLayer.isEnabled = false; }
+                const keep = new Set();
+                for (const side of ['left', 'right']) {
+                    const p = combatants[side] && combatants[side].paddle;
+                    if (!p) continue;
+                    keep.add(p);
+                    p.getChildMeshes().forEach(m => keep.add(m));
+                }
+                for (const m of scene.meshes.slice()) {
+                    if (keep.has(m) || !m.isEnabled()) continue;
+                    m.setEnabled(false);
+                    this._hidden.push(m);
+                }
+                console.log('[capture] stage ON — hid ' + this._hidden.length + ' meshes');
+            },
+            unstage() {
+                this.stop();
+                this._hidden.forEach(m => m.setEnabled(true));
+                this._hidden = [];
+                if (window.backdropLayer && this._backdropWas !== undefined) { window.backdropLayer.isEnabled = this._backdropWas; this._backdropWas = undefined; }
+                console.log('[capture] stage OFF — reload the page to fully restore fog/clearColor');
+            },
+            fireball(fromLeft = true) {
+                const c = combatants[fromLeft ? 'left' : 'right'];
+                const dir = fromLeft ? 1 : -1;
+                window.spawnFireball(fromLeft ? 'player' : 'ai',
+                    c.paddle.position.x + dir, c.paddle.position.z,
+                    dir * abilities.fireball.baseSpeed, 0);
+            },
+            frostbolt(fromLeft = true) {
+                const c = combatants[fromLeft ? 'left' : 'right'];
+                const dir = fromLeft ? 1 : -1;
+                window.spawnFrostbolt(fromLeft ? 'player' : 'ai',
+                    c.paddle.position.x + dir, c.paddle.position.z,
+                    dir * abilities.frostbolt.baseSpeed, 0);
+            },
+            thunder(x = 0, z = 0) {
+                const p = new BABYLON.Vector3(x, 0.6, z);
+                createSkyLightningStrike(p);
+                if (typeof createZapFlash === 'function') createZapFlash(p);
+            },
+            parry() { pendingNetInput.parry = true; },
+            record(name, frames = 45, every = 2) {
+                if (this._obs) { console.warn('[capture] already recording'); return; }
+                const canvas = window.gameEngine.getRenderingCanvas();
+                let tick = 0, saved = 0;
+                this._obs = scene.onAfterRenderObservable.add(() => {
+                    if (tick++ % every !== 0) return;
+                    if (saved >= frames) { this.stop(); return; }
+                    const idx = String(saved).padStart(4, '0');
+                    // toDataURL inside onAfterRender is synchronous with the draw, so it
+                    // works despite preserveDrawingBuffer:false on the engine.
+                    fetch('/save?name=' + name + '_' + idx + '.png',
+                          { method: 'POST', body: canvas.toDataURL('image/png') })
+                        .catch(e => console.warn('[capture] save failed', e));
+                    saved++;
+                });
+                console.log('[capture] recording ' + frames + ' frames of "' + name + '"');
+            },
+            stop() {
+                if (!this._obs) return;
+                scene.onAfterRenderObservable.remove(this._obs);
+                this._obs = null;
+                console.log('[capture] recording stopped');
+            }
+        };
         console.log('%c[Volleybolt] MP debug ready — dbg.help() for commands · dbg.overlay() toggles the netcode overlay (F2 with ?dev)', 'color:#2f8f6f');
 
         // Start the multiplayer match

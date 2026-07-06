@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Pickle — Capture Stage</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#c{width:100%;height:100%;display:block}</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script src="https://cdn.babylonjs.com/babylon.js"></script>
+<script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+<script>
+const ANIM = new URLSearchParams(location.search).get('anim') || 'idle';
+const CLIP = { idle:'pickle_idle.glb', cast:'pickle_cast.glb', cast_release:'pickle_cast_release.glb',
+               victory:'pickle_victory.glb', defeat:'pickle_defeat.glb' }[ANIM];
+
+const canvas = document.getElementById('c');
+const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer:true, stencil:true });
+const scene = new BABYLON.Scene(engine);
+scene.clearColor = new BABYLON.Color4(0, 0, 0, 1);
+
+const camera = new BABYLON.ArcRotateCamera('cam', -Math.PI/2, Math.PI/2.15, 3.2, new BABYLON.Vector3(0,0.9,0), scene);
+camera.attachControl(canvas, true);
+new BABYLON.HemisphericLight('h', new BABYLON.Vector3(0,1,0), scene).intensity = 0.9;
+const dir = new BABYLON.DirectionalLight('d', new BABYLON.Vector3(-0.5,-1,-0.5), scene);
+dir.intensity = 1.1;
+
+// ---- PS1 15-bit quantize + 4x4 Bayer ordered-dither pass, copied VERBATIM from
+// index.html:7388-7420 (the game's shipping screen-space grade; posterize/grain
+// stay disabled, matching the shipping game) ----
+BABYLON.Effect.ShadersStore["ps1DitherFragmentShader"] = `
+    precision highp float;
+    varying vec2 vUV;
+    uniform sampler2D textureSampler;
+    uniform vec2 screenSize;
+    uniform float levels;     // discrete steps per channel (32 = true 15-bit)
+    uniform float amount;     // 0..1 blend so it can be dialed back
+
+    // 4x4 Bayer ordered-dither threshold matrix, normalized to [0,1)
+    float bayer(vec2 p) {
+        int x = int(mod(p.x, 4.0));
+        int y = int(mod(p.y, 4.0));
+        int i = x + y * 4;
+        // matrix:  0  8  2 10 / 12 4 14 6 / 3 11 1 9 / 15 7 13 5
+        float m = 0.0;
+        if (i == 0) m = 0.0;   else if (i == 1) m = 8.0;  else if (i == 2) m = 2.0;  else if (i == 3) m = 10.0;
+        else if (i == 4) m = 12.0; else if (i == 5) m = 4.0;  else if (i == 6) m = 14.0; else if (i == 7) m = 6.0;
+        else if (i == 8) m = 3.0;  else if (i == 9) m = 11.0; else if (i == 10) m = 1.0; else if (i == 11) m = 9.0;
+        else if (i == 12) m = 15.0; else if (i == 13) m = 7.0; else if (i == 14) m = 13.0; else m = 5.0;
+        return m / 16.0;
+    }
+
+    void main(void) {
+        vec4 color = texture2D(textureSampler, vUV);
+        vec2 pixel = vUV * screenSize;
+        float steps = levels - 1.0;
+        // Ordered dither offset of +/- half a quantization step, then snap.
+        float d = (bayer(pixel) - 0.5) / steps;
+        vec3 q = floor((color.rgb + d) * steps + 0.5) / steps;
+        gl_FragColor = vec4(mix(color.rgb, q, amount), color.a);
+    }
+`;
+
+const ps1 = new BABYLON.PostProcess('ps1Dither', 'ps1Dither',
+  ['screenSize', 'levels', 'amount'], null, 1.0, camera,
+  BABYLON.Texture.NEAREST_SAMPLINGMODE);
+ps1.onApply = (effect) => {
+  effect.setVector2('screenSize', new BABYLON.Vector2(engine.getRenderWidth(), engine.getRenderHeight()));
+  effect.setFloat('levels', 32.0);   // 5 bits/channel = authentic 15-bit
+  effect.setFloat('amount', 1.0);
+};
+
+// ---- face seating: copied VERBATIM from pickle_viewer.html (buildFace + the
+// onBeforeRenderObservable seat block + const seat = {...}), minus the
+// updateSeatHud() call site and the one-shot _framedFront camera block. ----
+let facePlane = null;
+let _nodes = null;   // { head, front } glTF TransformNodes (true render space)
+// Seating offsets in REAL world units (model is ~1.7 tall), in the head's frame.
+// out = forward off the face, up = vertical, side = horizontal, scale = face width, roll = spin.
+const seat = { out: 0.18, up: 0, side: 0, scale: 0.5, roll: 0, flip: 1 };
+
+function updateSeatHud() {
+  document.getElementById('seat').textContent =
+    `out ${seat.out.toFixed(3)} up ${seat.up.toFixed(3)} side ${seat.side.toFixed(3)} | scale ${seat.scale.toFixed(3)} | roll ${seat.roll.toFixed(2)} | flip ${seat.flip}`;
+}
+
+function buildFace() {
+  // glTF nodes live in true render space (unlike the bone matrices, which are 48x off).
+  const head = scene.getTransformNodeByName('Head');
+  const front = scene.getTransformNodeByName('headfront');
+  if (!head || !front) { console.warn('Missing Head/headfront transform nodes'); return; }
+  _nodes = { head, front };
+
+  const tex = new BABYLON.Texture('models/pickle/pickle_face.png', scene, false, false,
+    BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
+  tex.hasAlpha = true;
+  tex.vScale = -1; tex.vOffset = 1;   // GLB/Babylon UV flips the sprite vertically; undo it
+  const mat = new BABYLON.StandardMaterial('faceMat', scene);
+  mat.diffuseTexture = tex;                 // alpha source
+  mat.emissiveTexture = tex;                // unlit color (flat FF9 look)
+  mat.useAlphaFromDiffuseTexture = true;
+  mat.disableLighting = true;
+  mat.backFaceCulling = false;
+  mat.diffuseColor = new BABYLON.Color3(0, 0, 0);
+
+  facePlane = BABYLON.MeshBuilder.CreatePlane('facePlane', { width: 1, height: 0.56 }, scene);
+  facePlane.material = mat;
+  facePlane.rotationQuaternion = BABYLON.Quaternion.Identity();
+  console.log('Face built; seating from Head/headfront/head_end bones each frame');
+}
+
+// Re-seat every frame from live bone world positions => rides the head, never skinned/warped.
+scene.onBeforeRenderObservable.add(() => {
+  if (!facePlane || !_nodes) return;
+  const { head, front } = _nodes;
+  const hp = head.getAbsolutePosition();
+  const fp = front.getAbsolutePosition();
+  const fwd = fp.subtract(hp).normalize();              // out the front of the face
+  const up0 = BABYLON.Axis.Y;                           // character stands upright
+  const right = BABYLON.Vector3.Cross(up0, fwd).normalize();
+  const up = BABYLON.Vector3.Cross(fwd, right).normalize();
+
+  const pos = hp
+    .add(fwd.scale(seat.out))
+    .add(up.scale(seat.up))
+    .add(right.scale(seat.side));
+  facePlane.position.copyFrom(pos);
+  facePlane.scaling.set(seat.scale * seat.flip, seat.scale, 1);   // width x (0.56*width)
+
+  const m = BABYLON.Matrix.Identity();
+  BABYLON.Matrix.FromXYZAxesToRef(right, up, fwd, m);
+  BABYLON.Quaternion.FromRotationMatrixToRef(m, facePlane.rotationQuaternion);
+  if (seat.roll) facePlane.rotate(BABYLON.Axis.Z, seat.roll, BABYLON.Space.LOCAL);
+});
+
+let groups = [];
+BABYLON.SceneLoader.ImportMesh('', 'models/pickle/', CLIP, scene,
+  (meshes, ps, sk, animationGroups) => {
+    groups = animationGroups;
+    groups.forEach(a => a.stop());
+    if (groups[0]) groups[0].start(true);
+    buildFace();
+    console.log('CAP_READY', ANIM, meshes.length, 'meshes', groups.map(a=>a.name));
+  },
+  null, (s, msg) => console.error('CAP_LOAD_ERROR', msg));
+
+// Empirically verified against the model's face plane (see task-6 report): alpha=+PI/2
+// shows the face square-on (both eyes symmetric) = true front. alpha=-PI/2 (180 deg
+// opposite) shows plain hood/robe, no face = true back. alpha=0 (90 deg from front)
+// shows the face edge-on (near-zero width sliver) = true side/profile. alpha=+PI/4
+// (halfway between front and side) shows a partial, turned face = true threequarter.
+const ANGLES = { front: Math.PI/2, threequarter: Math.PI/4, side: 0, back: -Math.PI/2 };
+window.cap = {
+  setAngle(name) { camera.alpha = ANGLES[name]; },
+  still(name) {
+    scene.onAfterRenderObservable.addOnce(() =>
+      fetch('/save?name=' + name + '.png', { method:'POST', body: canvas.toDataURL('image/png') }));
+  },
+  record(prefix, frames = 60, every = 2) {
+    if (this._obs) { console.warn('CAP already recording'); return; }
+    let tick = 0, saved = 0;
+    this._obs = scene.onAfterRenderObservable.add(() => {
+      if (tick++ % every !== 0) return;
+      if (saved >= frames) { this.stop(); console.log('CAP_DONE', prefix); return; }
+      fetch('/save?name=' + prefix + '_' + String(saved).padStart(4,'0') + '.png',
+            { method:'POST', body: canvas.toDataURL('image/png') });
+      saved++;
+    });
+  },
+  stop() {
+    if (this._obs) { scene.onAfterRenderObservable.remove(this._obs); this._obs = null; }
+  }
+};
+engine.runRenderLoop(() => scene.render());
+addEventListener('resize', () => engine.resize());
+</script>
+</body>
+</html>
