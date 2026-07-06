@@ -19,10 +19,14 @@
 //
 // Determinism law (see docs/SHARED_CORE.md): same (state, inputs) -> same state.
 // No Math.random / Date.now / performance.now here. Verify any change against the
-// dbg.determinism golden-hash oracle in index.html (seed 12345 -> 3ba3b864, seed
-// 99999 -> b7c274d6, both stable; run from a FRESH SINGLE-PLAYER match — a mid-PvP
+// dbg.determinism golden-hash oracle in index.html (seed 12345 -> 6c6801a3, seed
+// 99999 -> 574d9f9c, both stable; run from a FRESH SINGLE-PLAYER match — a mid-PvP
 // run reads pvp-mode deps and folds differently, that is oracle-environment
 // sensitivity, not a sim change).
+// (3ba3b864 -> 6c6801a3, re-pinned 2026-07-06: OWNER TUNING #3 — DURATION 6->4
+//  (0.6 windup + 3.4s beam; full-connect ceiling ~57% of a 20HP bar) and the AI now
+//  BEAM-BLOCKS: decideAI chases a channeling opponent's paddleZ off its reaction-lagged
+//  view (AI golden 398443e4 -> 549f5f05). Verified 2x-repro both seeds.)
 // (18b0c26a -> 3ba3b864, re-pinned 2026-07-06: OWNER TUNING #2 — Overdrive damage
 //  FLATTENED: DMG_START == DMG_MAX == 0.1667, every connecting 0.6s beat lands 2 HP
 //  regardless of ramp (ramp is visual heat-up only now). Verified 2x-repro both seeds.)
@@ -108,7 +112,7 @@
         if ((combatant.freezeTime || 0) > 0) return false;  // can't start Overdrive while frozen
         combatant.juice      = J.MAX;
         combatant.juiceActive = true;
-        combatant.juiceTimer  = (ctx.consts.overdrive ? ctx.consts.overdrive.DURATION : 6);
+        combatant.juiceTimer  = (ctx.consts.overdrive ? ctx.consts.overdrive.DURATION : 4);
         combatant.juiceRamp   = 0;
         if (!ctx.isResimulating) ctx.deps.onJuiceActivate(combatant);
         return true;
@@ -119,7 +123,7 @@
     // damage. ctx.deps.* are FX-only (never gate STATE changes on isResimulating).
     function tickOverdrive(c, opp, dt, ctx) {
         if (!c || !c.juiceActive) return;
-        const OD = (ctx && ctx.consts && ctx.consts.overdrive) || { DURATION: 6, WINDUP: 0.6, BLOCK_TOL: 0.9, DMG_START: 0.1667, DMG_MAX: 0.1667, RAMP_TIME: 2.5 };
+        const OD = (ctx && ctx.consts && ctx.consts.overdrive) || { DURATION: 4, WINDUP: 0.6, BLOCK_TOL: 0.9, DMG_START: 0.1667, DMG_MAX: 0.1667, RAMP_TIME: 2.5 };
         const JMAX = (ctx && ctx.consts && ctx.consts.juice && ctx.consts.juice.MAX) || 350;
         c.juiceTimer -= dt;
         const frac = Math.max(0, c.juiceTimer / OD.DURATION);
@@ -352,7 +356,7 @@
             // X-bounds guard: only vaporize projectiles on the caster's forward side (beam sweeps
             // from caster toward opponent; a fireball BEHIND the caster is not in the beam).
             if (proj.type === 'fireball' || !proj.type) {
-                const OD = (ctx.consts && ctx.consts.overdrive) || { DURATION: 6, WINDUP: 0.6, BLOCK_TOL: 0.9 };
+                const OD = (ctx.consts && ctx.consts.overdrive) || { DURATION: 4, WINDUP: 0.6, BLOCK_TOL: 0.9 };
                 let vaporized = false;
                 for (const ch of [combatants.left, combatants.right]) {
                     if (ch && ch.juiceActive && ((OD.DURATION - ch.juiceTimer) >= (OD.WINDUP || 0)) && Math.abs(proj.z - (ch.paddleZ || 0)) <= OD.BLOCK_TOL) {

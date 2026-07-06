@@ -1798,11 +1798,11 @@
         // state still drives the beam's visual heat-up, it just no longer scales damage).
         // Full-connect ceiling ≈ 90% of a 20HP bar; blocking is the defense.
         const OVERDRIVE = {
-            DURATION:  6,      // seconds of channel
+            DURATION:  4,      // seconds of channel (owner tuning: 6 -> 4; 0.6 windup + 3.4s beam)
             WINDUP:    0.6,    // seconds of charge-up before the beam exists — no damage/ramp/disintegration,
                                // and the ONLY window in which frostbolt can interrupt; TUNABLE
             BLOCK_TOL: 0.9,    // |beamZ - oppPaddleZ| <= this => blocked this tick (≈ paddle block half-width; tune)
-            DMG_START: 0.1667, // fraction of max HP / sec — FLAT (3.33 HP/s -> 2 HP per 0.6s beat, always)
+            DMG_START: 0.1667, // fraction of max HP / sec — FLAT (3.33 HP/s -> ~1 HP per 0.3s beat, always)
             DMG_MAX:   0.1667, // == DMG_START: no damage ramp (owner choice: readable, consistent beats)
             RAMP_TIME: 2.5,    // seconds of CONTINUOUS connection to full VISUAL heat (cosmetic only now)
         };
@@ -2895,7 +2895,7 @@
             for (const _ovSk of ['left', 'right']) {
                 const _ovPan = _ovSk === 'left' ? -0.35 : 0.35;
                 const _ovPanner = new Tone.Panner(_ovPan).connect(window.sfxBus);
-                const _ovVol = new Tone.Volume(-14);
+                const _ovVol = new Tone.Volume(-8);   // owner tuning: roar near the eruption boom level — it is a giant laser
                 _ovVol.connect(_ovPanner);
                 // Main bandpass filter swept 200→600 Hz across the beam's life (the "build")
                 const _ovFilt = new Tone.Filter({ type: 'bandpass', frequency: 200, Q: 1.5 });
@@ -3435,7 +3435,7 @@
                 if (!s || s.roarRunning) return;
                 s.roarRunning = true;
                 try {
-                    s.vol.volume.value = -14;
+                    s.vol.volume.value = -8;
                     if (s.noise.state !== 'started') s.noise.start();
                     if (s.osc.state !== 'started') s.osc.start();
                 } catch(e) {}
@@ -3457,7 +3457,7 @@
                     setTimeout(() => {
                         if (s._stopGen !== _gen || s.roarRunning) return;  // superseded by a newer start/stop
                         try { s.noise.stop(); s.osc.stop(); } catch(e2) {}
-                        try { s.vol.volume.value = -14; } catch(e2) {}   // reset for next channel
+                        try { s.vol.volume.value = -8; } catch(e2) {}   // reset for next channel
                     }, 80);
                 } catch(e) {}
             },
@@ -3479,7 +3479,7 @@
                             setTimeout(() => {
                                 if (_sRef._stopGen !== _gen || _sRef.roarRunning) return;
                                 try { _sRef.noise.stop(); _sRef.osc.stop(); } catch(e2) {}
-                                try { _sRef.vol.volume.value = -14; } catch(e2) {}
+                                try { _sRef.vol.volume.value = -8; } catch(e2) {}
                             }, 80);
                         } catch(e) {}
                     }
@@ -3506,7 +3506,7 @@
                 if (!toneStarted || !synths.overdrive) return;
                 const s = synths.overdrive[side];
                 if (!s || !s.roarRunning) return;
-                const _OD = window.OVERDRIVE || { DURATION: 6, WINDUP: 0.6 };
+                const _OD = window.OVERDRIVE || { DURATION: 4, WINDUP: 0.6 };
                 const _beamLife = _OD.DURATION - _OD.WINDUP;
                 if (_beamLife <= 0) return;   // guard: a WINDUP tuned >= DURATION would make _t NaN (silent Web Audio failure)
                 const _elapsed  = Math.max(0, _beamLife - (juiceTimer || 0));
@@ -12830,6 +12830,16 @@
                     const open = _aiFindOpenTarget(view);
                     if (Math.abs(open - s.paddleZ) > 1.5) targetZ = open;
                 }
+                // ---- BEAM BLOCK (owner design 2026-07-06): a channeling opponent outranks
+                // everything — chase the CASTER's paddleZ (the beam fires along their lane) to
+                // lane-match and block it. NO prediction: the view is reaction-lagged
+                // (aiViewHistory), so quick aim changes naturally buy the caster connect time,
+                // and trackDeadzone (< BLOCK_TOL) settles the AI inside the blockable band.
+                // (The AI's own beam needs no aim logic: with no threats, _aiFindOpenTarget
+                // already steers its lane AWAY from the opponent's paddle = connecting.)
+                if (view.opp && view.opp.juiceActive) {
+                    targetZ = view.opp.paddleZ;
+                }
                 let moveDir = 0;
                 if (targetZ !== null) {
                     const diff = targetZ - s.paddleZ;
@@ -12954,6 +12964,7 @@
                     opp: {
                         paddleZ:     combatants.left.paddleZ,
                         towerHealth: (combatants.left.towerHealth != null) ? combatants.left.towerHealth : maxTowerHealth,
+                        juiceActive: combatants.left.juiceActive || false,   // beam-block: the AI reacts to a channeling opponent
                     },
                     geom: {
                         tableWidth:     tableWidth,
@@ -13347,7 +13358,7 @@
                 // Reads: juiceActive/juiceTimer/juiceRamp/paddlePositions. Never writes sim state.
                 (function () {
                     if (!scene) return;
-                    const OD = window.OVERDRIVE || { DURATION: 6, WINDUP: 0.6, BLOCK_TOL: 0.9, RAMP_TIME: 2.5 };
+                    const OD = window.OVERDRIVE || { DURATION: 4, WINDUP: 0.6, BLOCK_TOL: 0.9, RAMP_TIME: 2.5 };
                     const BEAM_GOAL_X   = 14;    // tableWidth/2 + 1 — matches sim const goalX
                     const MUZZLE_OFFSET = 0.8;   // world units ahead of caster paddle face
 
@@ -13820,7 +13831,7 @@
                 // (natural expiry, frostbolt interrupt, round end, disconnect, rematch) so the
                 // falling-edge detection below fires without needing event hooks.
                 if (window.ToneSFX && toneStarted) {
-                    const _ODA = window.OVERDRIVE || { DURATION: 6, WINDUP: 0.6, BLOCK_TOL: 0.9 };
+                    const _ODA = window.OVERDRIVE || { DURATION: 4, WINDUP: 0.6, BLOCK_TOL: 0.9 };
                     const _odAS = window._odAudioState || (window._odAudioState = {
                         left:  { roarOn: false, crackleOn: false, wasActive: false, wasWinding: true, eruptFired: false, windupFired: false },
                         right: { roarOn: false, crackleOn: false, wasActive: false, wasWinding: true, eruptFired: false, windupFired: false }
@@ -16987,7 +16998,9 @@
         // ---- AI determinism oracle (Phase 2.1) ----
         // Folds decideAI outputs over a scripted synthetic view sequence into a 32-bit hex hash.
         // No mesh reads, no game loop — pure function exercise only.
-        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "398443e4"  (re-pinned 2026-07-06:
+        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "549f5f05"  (re-pinned 2026-07-06 #2:
+        // BEAM-BLOCK — a channeling opponent outranks all movement targets; the synthetic view
+        // now cycles opp.juiceActive (seed%4==0) to cover the branch. Prior: 398443e4:
         // turtle offense-suppression REMOVED + opening-reactive cast urgency added — the AI never
         // stops casting; a clear opening collapses the cadence toward instant, skill-scaled.
         // Verified 3x-reproducible. Prior: 5afbc1a6, 2026-07-04 behavioral conditions.)
@@ -17023,7 +17036,8 @@
                     // oppZ -4.0..4.0 (was 0.8-step, -3.2..3.2): max |gap| vs selfZ ±0.6 is now ~4.6 ->
                     // openingFrac ~0.52, so the oracle hashes DEEP into the urgency curve (reviewer M2:
                     // the old range only moved effectiveCadence one step and shadowed the sharp end).
-                    opp:  { paddleZ: (seed % 9) * 1.0 - 4.0, towerHealth: 20 - (seed % 7) },
+                    // juiceActive cycles so the BEAM-BLOCK movement override is golden-covered.
+                    opp:  { paddleZ: (seed % 9) * 1.0 - 4.0, towerHealth: 20 - (seed % 7), juiceActive: (seed % 4 === 0) },
                     geom: { tableWidth: 16, halfDepth: 4, paddleBoundary: 3.8 },
                     maxHealth: 20,
                     roundActive: true,
