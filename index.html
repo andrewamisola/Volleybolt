@@ -13401,8 +13401,15 @@
                 // Runs AFTER normal cast-bar blocks so it overrides showCastBar(false) when juiceActive.
                 // A juicing combatant cannot be casting (sim guards), so the two paths are exclusive.
                 // Reads: juiceActive, juiceTimer, juiceRamp. Never writes sim state.
+                // FINAL-REVIEW FIX: a NON-final-round beam-kill calls endRound (which resets the
+                // Overdrive presentation) but does NOT set gameOver — the sim keeps ticking through
+                // the round transition with juiceActive still true, so presentation would re-show
+                // the beam + restart the roar over the "Stage Won!" screen. Treat every channel as
+                // presentation-INACTIVE while roundTransitioning (sim state untouched; the channel
+                // legitimately never spans a serve, so this only suppresses the leaked frames).
+                const _odTransSuppress = !!roundTransitioning;
                 for (const [side, c] of [['left', leftC], ['right', rightC]]) {
-                    if (c && c.juiceActive) {
+                    if (c && c.juiceActive && !_odTransSuppress) {
                         const dur = (window.OVERDRIVE ? window.OVERDRIVE.DURATION : 6);
                         const prog = Math.max(0, Math.min(1, (c.juiceTimer || 0) / dur));  // depletes from 1 → 0
                         if (side === 'left') {
@@ -13551,8 +13558,9 @@
                             window[sd.orbKey]     = orbRoot;  // exposes _overdriveOrb_{left,right}
                         }
 
-                        // -- Hide everything when channel is inactive --
-                        if (!c || !c.juiceActive) {
+                        // -- Hide everything when channel is inactive (or suppressed by a round
+                        // transition — final-review fix: non-final beam-kills leak otherwise) --
+                        if (!c || !c.juiceActive || _odTransSuppress) {
                             // Task 4 §6: detect juiceActive true→false and run scale-collapse over 0.1s.
                             const _T4c = window['_odT4_' + (sd.isLeft ? 'left' : 'right')];
                             if (_T4c) {
@@ -14070,8 +14078,8 @@
                     if (_odFogState) {
                         const _fst = _odFogState;
                         const _TR3  = window.TEAM_RIGHT || { r: 1.0, g: 0.42, b: 0.33 };
-                        const _anyJuiceL = !!(leftC  && leftC.juiceActive);
-                        const _anyJuiceR = !!(rightC && rightC.juiceActive);
+                        const _anyJuiceL = !!(leftC  && leftC.juiceActive) && !_odTransSuppress;
+                        const _anyJuiceR = !!(rightC && rightC.juiceActive) && !_odTransSuppress;
 
                         // Determine target color this frame
                         let _tFogR, _tFogG, _tFogB;
@@ -14154,7 +14162,7 @@
                     for (const [_sk, _c] of [['left', leftC], ['right', rightC]]) {
                         if (!_c) continue;
                         const _st  = _odAS[_sk];
-                        const _active  = !!_c.juiceActive;
+                        const _active  = !!_c.juiceActive && !_odTransSuppress;   // round transition = channel dead to the audio machine
                         const _winding = _active && (_ODA.DURATION - (_c.juiceTimer || 0)) < _ODA.WINDUP;
                         const _beaming = _active && !_winding;
 
@@ -14286,8 +14294,8 @@
                 // the cached original when no channel is live. Presentation-only; all Color3s
                 // cached (no per-frame allocation).
                 {
-                    const _leftJ  = !!(leftC && leftC.juiceActive);
-                    const _rightJ = !!(rightC && rightC.juiceActive);
+                    const _leftJ  = !!(leftC && leftC.juiceActive) && !_odTransSuppress;
+                    const _rightJ = !!(rightC && rightC.juiceActive) && !_odTransSuppress;
                     if (!window._odBgDim) {
                         const _origC = window.backdropLayer ? window.backdropLayer.color.clone() : null;
                         window._odBgDim = {
