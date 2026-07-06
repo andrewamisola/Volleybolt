@@ -2172,6 +2172,9 @@
                         // Frostbolt landing during the WINDUP (before the beam erupts) cancels the channel entirely.
                         // After eruption, the freeze lands but only PINS the beam's aim — the frozen paddle can't
                         // move, so tickOverdrive keeps firing at the frozen Z, but the channel continues.
+                        // (Boundary note: tickOverdrive drains the timer BEFORE this projectile-loop code runs, so
+                        // a frostbolt arriving on the exact eruption frame is judged post-drain = beaming ->
+                        // freeze lands, channel continues. Deterministic, one frame, same on both peers.)
                         if (c.juiceActive && (OVERDRIVE.DURATION - c.juiceTimer) < OVERDRIVE.WINDUP) {
                             c.juiceActive = false; c.juiceTimer = 0; c.juice = 0; c.juiceRamp = 0;
                             if (ctx.deps && !ctx.isResimulating && ctx.deps.onJuiceEnd) ctx.deps.onJuiceEnd(c);
