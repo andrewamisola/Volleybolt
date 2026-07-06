@@ -649,7 +649,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=34-beam-incoming"></script>
+    <script type="module" src="js/sim.js?v=35-no-cast-while-channeling"></script>
 
     <script>
         // Global error handler to debug doubles crash
@@ -1526,6 +1526,7 @@
             // Get combatant
             const c = caster === 'player' ? (window.combatants ? window.combatants.left : null) : null;
             if (!c) return false;
+            if (c.juiceActive) return false;  // Overdrive is a full commitment — no casting while channeling
 
             // Map spell IDs to their casting logic
             // Each spell needs: cooldown check, mana check, cast function
@@ -13946,7 +13947,7 @@
             const startZ = paddle.position.z;
 
             // Set cooldown using combatant system
-            c.cooldowns.fireball = c.juiceActive ? 0 : abilities.fireball.cooldown;  // 0 during juice burst (rapid-fire)
+            c.cooldowns.fireball = abilities.fireball.cooldown;
             // Sync legacy cooldowns
             if (caster === 'player') {
                 playerFireballCooldown = abilities.fireball.cooldown;
@@ -18639,8 +18640,7 @@
             const velX = isLeft ? speed : -speed;
             const startZ = paddle.position.z;
 
-            // 0 cooldown during a juice burst -> rapid-fire fireballs (cast time aside).
-            const effectiveCooldown = c.juiceActive ? 0 : abilities.fireball.cooldown;
+            const effectiveCooldown = abilities.fireball.cooldown;
 
             // Set cooldown using combatant system
             c.cooldowns.fireball = effectiveCooldown;

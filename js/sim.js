@@ -498,6 +498,7 @@
         const { abilities, isResimulating, deps: D } = ctx;
         if (!combatant || combatant.freezeTime > 0) return;
         if (combatant.casting) return;  // Already casting
+        if (combatant.juiceActive) return;  // Overdrive is a full commitment — no casting while channeling
 
         const ability = abilities[abilityId];
         if (!ability) return;
