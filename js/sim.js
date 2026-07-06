@@ -94,6 +94,41 @@
         return true;
     }
 
+    // Deterministic Overdrive channel tick — runs INSIDE the sim for caster `c` vs `opp`.
+    // Drains the timer, tests lane-match block, ramps damage while connected, applies tower
+    // damage. ctx.deps.* are FX-only (never gate STATE changes on isResimulating).
+    function tickOverdrive(c, opp, dt, ctx) {
+        if (!c || !c.juiceActive) return;
+        const OD = (ctx && ctx.consts && ctx.consts.overdrive) || { DURATION: 6, BLOCK_TOL: 0.9, DMG_START: 0.04, DMG_MAX: 0.10, RAMP_TIME: 2.5 };
+        const JMAX = (ctx && ctx.consts && ctx.consts.juice && ctx.consts.juice.MAX) || 350;
+        c.juiceTimer -= dt;
+        const frac = Math.max(0, c.juiceTimer / OD.DURATION);
+        c.juice = JMAX * frac;   // bar = time remaining
+
+        // Connect/block: beam is at the caster's Z; blocked while the opponent's paddle is within
+        // BLOCK_TOL of it. (Same coordinate space as paddleZ; no camera flip.)
+        const connected = opp && Math.abs((c.paddleZ || 0) - (opp.paddleZ || 0)) > OD.BLOCK_TOL;
+        if (connected) {
+            c.juiceRamp = Math.min(OD.RAMP_TIME, (c.juiceRamp || 0) + dt);
+            const rampFrac = OD.RAMP_TIME > 0 ? c.juiceRamp / OD.RAMP_TIME : 1;
+            const ratePerSec = OD.DMG_START + (OD.DMG_MAX - OD.DMG_START) * rampFrac;
+            const maxHP = (ctx && ctx.consts && typeof ctx.consts.maxTowerHealth === 'number') ? ctx.consts.maxTowerHealth : 20;
+            const dmg = ratePerSec * maxHP * dt;   // fraction/sec * maxHP * dt
+            opp.towerHealth = Math.max(0, (opp.towerHealth || 0) - dmg);
+            // Attacker gains charge? NO — no charging while channeling (addJuice guards on juiceActive).
+            if (ctx && ctx.deps && !ctx.isResimulating && ctx.deps.onOverdriveHit) {
+                ctx.deps.onOverdriveHit(c, opp, dmg);   // FX: beam impact spark, damage number
+            }
+        } else {
+            c.juiceRamp = 0;   // block resets the ramp
+        }
+
+        if (c.juiceTimer <= 0) {
+            c.juiceActive = false; c.juiceTimer = 0; c.juice = 0; c.juiceRamp = 0;
+            if (ctx && ctx.deps && !ctx.isResimulating && ctx.deps.onJuiceEnd) ctx.deps.onJuiceEnd(c);
+        }
+    }
+
     // Pure, deterministic block-ARC hit test (replaces the old axis-aligned paddle box).
     // The shield is a FILLED convex region, not a thin ring: a projectile of radius projRadius
     // is blocked when it is within the shield radius (dist < R + COLL_HALF + projRadius) AND
@@ -560,21 +595,6 @@
     function simulateNetworkFrame(leftInput, rightInput, dt, ctx) {
         const { combatants, consts, deps: D } = ctx;
 
-        // Juice drain — runs UNCONDITIONALLY every frame, even while frozen (matches SP
-        // updateJuice ~1733). The full bar becomes the duration meter: MAX -> 0 over
-        // OVERDRIVE.DURATION seconds; at expiry the burst clears. FX (aura fade) go through
-        // onJuiceEnd, gated by !isResimulating.
-        for (const c of [combatants.left, combatants.right]) {
-            if (!c || !c.juiceActive) continue;
-            c.juiceTimer -= dt;
-            const frac = Math.max(0, c.juiceTimer / (consts.overdrive ? consts.overdrive.DURATION : 6));
-            c.juice = consts.juice.MAX * frac;   // bar drains = time remaining
-            if (c.juiceTimer <= 0) {
-                c.juiceActive = false; c.juiceTimer = 0; c.juice = 0; c.juiceRamp = 0;
-                if (!ctx.isResimulating) D.onJuiceEnd(c);
-            }
-        }
-
         // Update freeze timers
         if (combatants.left && combatants.left.freezeTime > 0) {
             combatants.left.freezeTime -= dt;
@@ -651,6 +671,10 @@
         applyNetworkMovement(combatants.left, leftInput.moveDir, dt, ctx);
         applyNetworkMovement(combatants.right, rightInput.moveDir, dt, ctx);
 
+        // Overdrive channel (deterministic; both sides). left's opponent is right and vice-versa.
+        tickOverdrive(combatants.left,  combatants.right, dt, ctx);
+        tickOverdrive(combatants.right, combatants.left,  dt, ctx);
+
         // Process ability inputs
         if (leftInput.fireball && combatants.left) tryNetworkCast(combatants.left, 'fireball', ctx);
         if (leftInput.frostbolt && combatants.left) tryNetworkCast(combatants.left, 'frostbolt', ctx);
@@ -673,6 +697,8 @@
     // Bridge to the classic inline script (which calls window.VolleyboltSim.*).
     window.VolleyboltSim = window.VolleyboltSim || {};
     window.VolleyboltSim.simulateNetworkFrame = simulateNetworkFrame;
+    window.VolleyboltSim.tickOverdrive = tickOverdrive;
+    window.tickOverdrive = tickOverdrive;
     window.VolleyboltSim.updateNetworkProjectiles = updateNetworkProjectiles;
     window.VolleyboltSim.applyNetworkMovement = applyNetworkMovement;
     window.VolleyboltSim.tryNetworkCast = tryNetworkCast;

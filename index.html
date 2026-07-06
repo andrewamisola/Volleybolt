@@ -649,7 +649,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=31-juice-channel"></script>
+    <script type="module" src="js/sim.js?v=32-overdrive-tick"></script>
 
     <script>
         // Global error handler to debug doubles crash
@@ -1831,15 +1831,15 @@
         // Per-frame while channeling: drain the bar 100->0 over the duration + animate/fade the aura.
         // (No buff: mana and cooldowns tick normally during the channel — the beam does the work.)
         function updateJuice(dt) {
+            // Gameplay (timer drain, juice=MAX*frac, end-of-channel state clearing) is now owned
+            // by tickOverdrive in js/sim.js (runs inside simulateNetworkFrame for both SP + MP).
+            // This function is PRESENTATION-ONLY: aura wobble + white-hot tint re-assertion.
             const list = (typeof getAllCombatants === 'function')
                 ? getAllCombatants()
                 : [combatants && combatants.left, combatants && combatants.right];
             for (const c of list) {
                 if (!c || !c.juiceActive) continue;
                 if (window._juiceTint) window._juiceTint(c, true);  // re-assert the white-hot tint (hit-flash clobbers it)
-                c.juiceTimer -= dt;
-                const frac = Math.max(0, c.juiceTimer / OVERDRIVE.DURATION);
-                c.juice = JUICE.MAX * frac;                        // bar drains = time remaining
                 if (c.juiceAura && c.juiceAura.outer) {                 // crazy wobble + fade as it drains
                     c.juiceAura.t = (c.juiceAura.t || 0) + dt;
                     const t = c.juiceAura.t;
@@ -1868,11 +1868,6 @@
                     };
                     wob(c.juiceAura.outer, 12, 0.28);
                     wob(c.juiceAura.inner, 16, 0.40);
-                }
-                if (c.juiceTimer <= 0) {
-                    c.juiceActive = false; c.juiceTimer = 0; c.juice = 0; c.juiceRamp = 0;
-                    if (window.onJuiceEnd) window.onJuiceEnd(c);
-                    if (window.logCombat && window.combatLine) window.logCombat(c.side === 'left' ? 'blue' : 'red', window.combatLine(c.side === 'left', ' Juice faded'));
                 }
             }
         }
@@ -16867,7 +16862,7 @@
         function buildSimCtx() {
             return {
                 projectiles, combatants, abilities, pvpParryState, isResimulating,
-                consts: { parryWindow, parryFailCooldown, parrySuccessCooldown, parryHitboxExtend, manaRegenTime, juice: window.JUICE, overdrive: window.OVERDRIVE, arc: BLOCK_ARC },
+                consts: { parryWindow, parryFailCooldown, parrySuccessCooldown, parryHitboxExtend, manaRegenTime, juice: window.JUICE, overdrive: window.OVERDRIVE, arc: BLOCK_ARC, maxTowerHealth: maxTowerHealth },
                 deps: SIM_DEPS,
             };
         }
@@ -16982,6 +16977,7 @@
                     window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' Juice faded'));
                 }
             },
+            onOverdriveHit: (caster, opp, dmg) => { if (window.showOverdriveHitFX) window.showOverdriveHitFX(caster, opp, dmg); },
             getAbilityDef: (id) => getAbilityDef(id),
             // Deterministic thunderstorm zap: selects incoming ENEMY projectiles by pure state
             // (proj.x, proj.velX, proj.owner — NO mesh reads), destroys up to maxZaps in stable
