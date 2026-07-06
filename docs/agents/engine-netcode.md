@@ -24,6 +24,78 @@
 ## Working log
 _Append-only. Newest at top. Each entry: date · decision/change · open issues._
 
+- 2026-07-05 · Post-250ms-test: added desync FIELD diagnostics + high-latency stutter mitigation
+  (index.html driver only; hashGameState UNCHANGED, no js/sim.js change, no ?v= bump). **A) FIELD
+  DIAGNOSTICS:** new `hashGameStateGroups(snap)` computes 7 independent-accumulator sub-hashes
+  (leftPaddle/rightPaddle = paddleZ/prevPaddleZ/moveAccum; leftCore/rightCore = mana/regen/freeze/
+  tower/cast/cooldowns/juice; projectiles; rng = rngSeed/nextProjId; misc = frame/scores) whose
+  union == exactly the field set hashGameState mixes, same 1e-3 quant. `mpStoreHash` now captures
+  the snapshot ONCE and stores both the main hash and groups in a new `mpSync.localGroups` ring
+  (pruned same as .local at currentFrame-300; reset in startMultiplayerMatch). On the FIRST desync
+  at frame N, `mpCompareHash` calls `mpSendDetail(N)` (guarded by `mpSync.detailSent`) -> new
+  `SYNC_DETAIL {frame,groups}` msg; peer's `mpReceiveDetail` compares to its own groups, warns
+  `[MP DESYNC FIELDS] frame N: <group>=local <lh> != remote <rh>, ...` (differing groups ONLY),
+  then reflects its groups back (guarded, no loop) so BOTH peers print. Off the hot path (exchange
+  only on detected desync). **B) LATENCY CONSTANTS:** INPUT_DELAY 2->4, MAX_ROLLBACK_FRAMES 8->12,
+  MAX_FRAME_ADVANTAGE 4->8 (all commented latency-tunable). Rationale: 250ms RTT ~= 7-8 frame
+  one-way latency was tripping the old advantage=4 stall every tick (stutter); 8<12 keeps a stalled
+  gap inside the rollback window. Retention audited: gameStateHistory caps at MAX_ROLLBACK_FRAMES
+  (scales to 12), rollback scan bounded by gameStateHistory[0].frame (no hardcode), input history
+  keeps 120 (>>12+4), MP_SYNC_LAG=MAX_ROLLBACK_FRAMES+2=14, prune cutoff 300. **Determinism:**
+  hashGameState byte-unchanged; oracle drives simulateNetworkFrame directly and never reads the
+  changed constants (only runNetworkFrame/runPvPGameLoop/checkForRollback/performRollback/
+  cleanupOldHistory/mpMaybeSendHash do), so 954ea557/5afbc1a6 provably can't move. node --check on
+  extracted inline PASS. Report: .superpowers/sdd/netcode-diag-report.md. Staged, NOT committed. ·
+  Open: (1) new constants need live 2-peer tuning (stutter vs safety at 250ms; smooth <100ms goal).
+  (2) oracle live re-run is human's (browser-only) — reasoned green, not run. (3) if [MP DESYNC
+  FIELDS] ever prints "all group hashes MATCH", the diverged field is outside hashGameState's set
+  (shouldn't happen — groups cover it fully) — investigate hash coverage.
+
+- 2026-07-05 · Fixed 3 launch-gate netcode defects (index.html driver only; no js/sim.js change, no ?v= bump).
+  **DEFECT 1 (CRITICAL, silent desync):** `performRollback` re-simulated [toFrame,currentFrame) but never
+  RE-CAPTURED the intermediate snapshots — kept stale value-copies embedding the old-timeline frame-toFrame
+  result, so a chained rollback to an intermediate frame restored the OLD timeline. Fix: moved the
+  `slice(stateIndex)` trim BEFORE the re-sim loop; after simulating each frame f, re-capture the corrected
+  state as snapshot{f+1} for every retained frame (`snap.frame=nextFrame` override since captureGameState
+  stamps top currentFrame). Retained window stays ascending/contiguous, length <= MAX_ROLLBACK_FRAMES.
+  findIndex<0 warn kept. Oracles bypass driver so 954ea557/5afbc1a6 can't move. **DEFECT 2 (stall
+  over-trigger at RTT>~66ms):** stall used latency-lagged (highestRemoteInputFrame-INPUT_DELAY) estimate, so
+  perceived advantage ≈ latency and both peers stalled every tick. Fix: added `remoteCurrentFrame` (:889,
+  reset :15850), piggybacked `senderFrame:currentFrame` on the INPUT msg (`sendLocalInput`), tracked it in
+  `receiveRemoteInput`, and changed `runPvPGameLoop` stall to `frameAdvantage=currentFrame-remoteCurrentFrame`
+  (true gap); MAX_FRAME_ADVANTAGE 2->4 (below 8), marked live-tunable. **DEFECT 3 (start skew > window):**
+  added a START BARRIER in `runPvPGameLoop` — while highestRemoteInputFrame<0 don't advance sim, but STILL
+  capture/record/send local input each barred tick (both peers send from frame 0) so barriers lift within
+  ~1 RTT (no deadlock); netAccumulator=0 to avoid a release burst. node --check on extracted inline PASS.
+  Report: .superpowers/sdd/netcode-review-fixes-report.md. Staged, NOT committed. · Open: (1)
+  MAX_FRAME_ADVANTAGE=4 still needs live 2-peer tuning. (2) DEFECT 1 chained-rollback correctness needs a
+  lossy/reordered-packet live test to confirm (silent case — oracles can't catch it). (3) NOT live-verified;
+  2-peer sync confirmation is the human's — code-made + reasoned-correct only.
+
+- 2026-07-05 · Fixed the two coupled launch-blocker bugs (unbounded frame drift + dead rollback)
+  causing one-directional input propagation (ahead-peer sees behind-peer's paddle frozen). index.html
+  only, no js/sim.js change, no ?v= bump. **BUG A (time-sync):** added module-level
+  `highestRemoteInputFrame` (index.html:888) tracked in `receiveRemoteInput` (:15822) + reset in
+  `startMultiplayerMatch` (:15734); added `MAX_FRAME_ADVANTAGE=2` (:892); added a frame-advantage
+  STALL in `runPvPGameLoop`'s fixed-step loop (:16254-16269) that holds local pacing (netAccumulator=0
+  + break, guarded on highestRemoteInputFrame>=0) when currentFrame runs > MAX_FRAME_ADVANTAGE ahead of
+  the remote's estimated frame (highestRemoteInputFrame - INPUT_DELAY), keeping the gap inside
+  MAX_ROLLBACK_FRAMES=8. Pure local pacing — never changes which frames/inputs simulateNetworkFrame
+  sees. **BUG B (dead rollback):** `checkForRollback` (:16154) lower bound changed from the wrong var
+  `lastConfirmedRemoteFrame+1` (set only by INPUT_ACK ~= currentFrame+INPUT_DELAY, so the scan range was
+  always empty) to `gameStateHistory[0].frame` (oldest re-simulable snapshot); still returns the earliest
+  mismatch. Added reconciliation in `performRollback`'s re-sim loop (:16205-16221): snap
+  predicted*=actual for CONFIRMED previously-predicted frames after re-sim so a corrected frame triggers
+  exactly ONE rollback then goes silent (still-predicted frames keep wasPredicted/predicted* so their
+  later arrival can still roll back). Determinism-safe: dbg.determinism(180,12345)=954ea557 and
+  dbg.aiDeterminism(50,42)=5afbc1a6 cannot move — every edit is in netcode-driver funcs the oracles
+  bypass (they call simulateNetworkFrame directly); sim + AI paths untouched. node --check on extracted
+  inline: PASS. Report: .superpowers/sdd/netcode-fix-report.md. Changes staged, NOT committed. · Open:
+  (1) MAX_FRAME_ADVANTAGE=2 is untuned — needs live 2-peer tuning (stutter vs safety margin). (2) A
+  prolonged stall on total input loss reads as a freeze until the existing disconnect path fires
+  (disconnect handling out of scope, unchanged). (3) NOT live-verified — 2-peer sync confirmation is the
+  human's; this is code-made + reasoned-correct only, NOT a sync-fixed claim.
+
 - 2026-07-02 (golden re-pin) · Golden-hash stale-pin correction (owner-authorized; closes the
   re-baseline open issue from the two entries below). **Root cause found via `git log -S 8f6e6da1`:**
   the `8f6e6da1` pin was added IN `b7e492b` itself — that big squashed playtest commit measured the

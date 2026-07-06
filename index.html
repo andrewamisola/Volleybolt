@@ -172,6 +172,8 @@
                         <button class="fps-arrow" id="setFpsCapNext" aria-label="Next FPS option">&#9654;</button>
                     </div>
                 </div>
+                <label class="settings-row"><span>Show FPS</span>
+                    <input type="checkbox" class="settings-toggle" id="setShowFps"></label>
                 <div class="settings-section-label">Accessibility</div>
                 <label class="settings-row"><span>Reduce Motion &amp; Flashing</span>
                     <input type="checkbox" class="settings-toggle" id="setReduceMotion"></label>
@@ -371,6 +373,11 @@
                 <div class="lobby-view" id="lobbyConnectedView" style="display:none">
                     <p class="lobby-connected-msg">Connected!</p>
                     <p class="lobby-status" id="connectedPing">Ping: --ms</p>
+                    <!-- Shown only when software rendering was detected (window._softwareRenderer):
+                         the once-ever perf notice may be long dismissed, but an MP opponent will
+                         feel this player's choppiness, so remind at the moment it matters. -->
+                    <p class="lobby-status" id="lobbyPerfWarn" style="display:none;color:#e0a35c">
+                        &#9888; Hardware acceleration is off in your browser &mdash; matches may feel choppy. Enable it for smooth play.</p>
                     <p class="lobby-ready-line" id="readyStatusYou">You: Not Ready</p>
                     <p class="lobby-ready-line" id="readyStatusOpponent">Opponent: Not Ready</p>
                     <button class="game-btn menu-btn is-primary" id="btnReady">
@@ -885,9 +892,31 @@
         let localInputHistory = [];    // Our inputs indexed by frame
         let remoteInputHistory = [];   // Their inputs indexed by frame
         let lastConfirmedRemoteFrame = -1;
+        let highestRemoteInputFrame = -1; // Highest remote INPUT frame received (for time-sync). Remote's est. frame ~= this - INPUT_DELAY.
+        let remoteCurrentFrame = -1;   // DEFECT 2: the peer's ACTUAL currentFrame, piggybacked on each INPUT msg (data.senderFrame). Gives a true frame gap instead of a latency-lagged estimate.
         let gameStateHistory = [];     // State snapshots for rollback
-        const MAX_ROLLBACK_FRAMES = 8; // ~133ms at 60fps
-        const INPUT_DELAY = 2;         // Frames of input delay (reduces rollbacks)
+        // LATENCY-TUNING VALUES — "prioritize YOUR OWN input" config (a precise paddle game must not
+        // feel input-delayed). Philosophy: near-zero local input delay + lean on PREDICTION+ROLLBACK
+        // for the opponent, rather than delaying yourself or stalling your own view. Trade-off: at
+        // high ping the OPPONENT visibly rewinds/jitters more (that's on their side, not your control,
+        // which is the acceptable trade); under ~100ms it's clean. TUNABLE from live 2-peer tests.
+        //   INPUT_DELAY low  -> your paddle responds instantly (predicted locally).
+        //   MAX_ROLLBACK_FRAMES wide -> the re-sim window absorbs the full ~250ms gap WITHOUT stalling.
+        //   MAX_FRAME_ADVANTAGE high (but < window) -> the stall is a rare backstop, not a constant
+        //     view-freeze; it only fires if the gap would otherwise exceed the rollback window.
+        const MAX_ROLLBACK_FRAMES = 30; // ~500ms window. Canonical GGPO rule: frame advantage must stay
+                                        //   WELL below the window or a late input targets an already-
+                                        //   trimmed snapshot -> "Cannot rollback ... no saved state" ->
+                                        //   unrecoverable desync. At 268ms RTT observed prediction lag
+                                        //   was 17 against the old 20-frame window (only 3 frames of
+                                        //   margin) — too thin; one jitter spike punched through. 30
+                                        //   gives ~13 frames of headroom over the advantage cap below.
+                                        //   Resim is cheap here (simple paddle sim), so a wide backstop
+                                        //   costs ~nothing and only the RARE worst-case rollback ever
+                                        //   nears it (steady-state rollbacks track the ~17 lag either way).
+        const INPUT_DELAY = 1;          // 1 frame (~16ms) — essentially instant; rely on rollback, not delay
+        const MAX_FRAME_ADVANTAGE = 16; // stall point UNCHANGED (feel is identical); now sits comfortably
+                                        //   below the 30-frame window per the GGPO margin rule.
         const TICK_RATE = 60;
         const TICK_MS = 1000 / TICK_RATE;
         let netAccumulator = 0;        // For fixed timestep
@@ -2296,7 +2325,7 @@
         // ---- Persistent player settings (audio + fullscreen) -> localStorage ----
         const Settings = (() => {
             const KEY = 'volleybolt_settings';
-            const DEFAULTS = { master: 50, music: 50, sfx: 50, fullscreen: false, playerName: '', renderScale: 100, fpsCap: 0, reduceMotion: false, colorblind: false };
+            const DEFAULTS = { master: 50, music: 50, sfx: 50, fullscreen: false, playerName: '', renderScale: 100, fpsCap: 0, showFps: false, reduceMotion: false, colorblind: false };
             const values = { ...DEFAULTS };
 
             function load() {
@@ -2331,6 +2360,7 @@
                 else if (key === 'sfx')   { if (window.setSfxVolume)   window.setSfxVolume(value / 100); }
                 else if (key === 'renderScale') { if (window.applyRetroResolution) window.applyRetroResolution(); }
                 else if (key === 'fpsCap')      { if (window.setRenderFpsCap) window.setRenderFpsCap(value); }
+                else if (key === 'showFps')     { if (window.setFpsMonitorVisible) window.setFpsMonitorVisible(value); }
                 else if (key === 'reduceMotion') { if (window.applyReduceMotion) window.applyReduceMotion(value); }
                 else if (key === 'colorblind')   { if (window.applyColorblind)  window.applyColorblind(value); }
                 save();
@@ -2339,6 +2369,14 @@
         })();
         window.Settings = Settings;
         Settings.load();   // load on boot; audio applied when Tone initializes (see doToneInit)
+
+        // ===== Dev mode (ship-clean build) =====
+        // Gates every developer-facing surface: the backtick debug menu, the F2 netcode overlay,
+        // and the overlay's auto-show in PvP. Players never see any of it; for diagnosis (e.g. a
+        // playtester reporting a desync) have them add ?dev to the URL — no rebuild needed. The
+        // dbg.* console API stays unconditionally available (console-only, invisible to players).
+        window.DEV_MODE = new URLSearchParams(location.search).has('dev')
+                       || localStorage.getItem('volleybolt_dev') === '1';
 
         // ===== Accessibility runtime hooks (reduce motion + colorblind team palette) =====
         // Reduce Motion / Flashing: a global flag + an <html> class. The class kills CSS animations
@@ -2604,6 +2642,11 @@
 
         let toneStarted = false;
         const synths = {};
+        // Desired play-state per side for the casting loop. Guards the async race: castingStart
+        // awaits initToneJS() on first use; if the cast ends during that await, castingStop runs
+        // first (stopping a not-yet-started loop = no-op) and then the awaited start() would loop
+        // forever with no matching stop. Gating start() on this flag prevents the orphaned loop.
+        const _castingDesired = { player: false, ai: false };
         let therapyReverb = null;
         let therapyDelay = null;
         let therapyPanner = null;
@@ -3251,11 +3294,14 @@
 
             // Casting loop start - plays mid-cast.wav looping (panned by side)
             castingStart: async (side = 'player') => {
+                const key = side === 'player' ? 'player' : 'ai';
+                _castingDesired[key] = true;                 // intent: this side wants the loop
                 if (!toneStarted) await initToneJS();
-                const loop = side === 'player' ? synths.playerCastingLoop : synths.aiCastingLoop;
+                if (!_castingDesired[key]) return;           // a stop() landed during init → don't start
+                const loop = key === 'player' ? synths.playerCastingLoop : synths.aiCastingLoop;
                 if (loop && loop.loaded) {
                     try {
-                        loop.start();
+                        if (loop.state !== 'started') loop.start();  // never stack a second play
                     } catch (e) {
                         // Ignore if already playing
                     }
@@ -3266,12 +3312,14 @@
             castingStop: async (side = 'all') => {
                 // Stop player casting loop
                 if (side === 'all' || side === 'player') {
+                    _castingDesired.player = false;
                     if (synths.playerCastingLoop) {
                         try { synths.playerCastingLoop.stop(); } catch (e) {}
                     }
                 }
                 // Stop AI casting loop
                 if (side === 'all' || side === 'ai') {
+                    _castingDesired.ai = false;
                     if (synths.aiCastingLoop) {
                         try { synths.aiCastingLoop.stop(); } catch (e) {}
                     }
@@ -3507,13 +3555,21 @@
 
             keys[e.code] = true;
 
+            // Ignore OS keyboard auto-repeat. Holding a key fires keydown every ~30ms; without this
+            // guard each repeat re-pulses the one-shot actions below (pendingNetInput.fireball = true,
+            // etc.) so holding 1/3 spammed Fireball/Thunderstorm. Movement is unaffected: it's set on
+            // the first keydown and cleared on keyup, so skipping repeats leaves moveDir held. (keys[]
+            // is already set above, so held-key polling still sees the key down.)
+            if (e.repeat) return;
+
             // Visual feedback for ability/parry keys
             showKeyPressedFeedback(e.code);
 
             // PvP mode - update network input buffer
             if (gameMode === 'pvp' && roundActive) {
-                // Movement (continuous) - invert for client since camera is flipped
-                const moveMultiplier = isHost ? 1 : -1;
+                // Movement (continuous). PvP has NO camera flip (the joiner sees the canonical
+                // view and plays the right side), so BOTH sides map up/down the same way.
+                const moveMultiplier = 1;
                 if (e.code === 'KeyW' || e.code === 'ArrowUp') {
                     pendingNetInput.moveDir = 1 * moveMultiplier;
                 }
@@ -3595,8 +3651,8 @@
 
             // PvP mode - update movement when key released
             if (gameMode === 'pvp') {
-                // Use same inversion as keydown for client
-                const moveMultiplier = isHost ? 1 : -1;
+                // Same mapping as keydown (no camera flip → no inversion).
+                const moveMultiplier = 1;
                 if (e.code === 'KeyW' || e.code === 'ArrowUp') {
                     if (pendingNetInput.moveDir === 1 * moveMultiplier) pendingNetInput.moveDir = 0;
                 }
@@ -3783,6 +3839,12 @@
         };
 
         function pollGamepadMenuNav() {
+            // Never navigate menus during live match play. The stick/d-pad drives the paddle then;
+            // if any screen ever leaks a 'visible'/open state into a live match, paddle movement
+            // must NOT be reinterpreted as menu navigation (which also played uiHover beeps). Pause
+            // (paused), the victory report (gameOver) and the main menu (gameState!=='playing') all
+            // still navigate normally — this only silences nav during active, unpaused play.
+            if (gameState === 'playing' && !paused && !gameOver) { window._navRoot = null; return; }
             const root = isAnyMenuOpen();
             if (!root) { window._navRoot = null; return; }
 
@@ -10256,7 +10318,12 @@
                     // Render the ORIGINAL high-detail mesh (clean texture + face); the 3d_rigging
                     // clips share its Meshy rig, so animations retarget onto it. (The 3d_rigging
                     // GLBs are decimated ~18x and re-baked, which smears the painted texture.)
-                    const basePath = '.pickle/', baseFile = 'pickle_wizard_v1.glb';
+                    // LIVES IN models/pickle/ with the other shipped pickle assets. It used to load
+                    // from '.pickle/' (a GITIGNORED dot-folder with force-added files) — that worked
+                    // locally and on old deploys by accident, then broke on GitHub Pages when the
+                    // upload-pages-artifact bump started excluding hidden folders from the artifact
+                    // (404 -> no character models). Never ship an asset from a dot-folder.
+                    const basePath = 'models/pickle/', baseFile = 'pickle_wizard_v1.glb';
 
                     BABYLON.SceneLoader.ImportMesh("", basePath, baseFile, scene,
                         (meshes, particleSystems, skeletons, animationGroups) => {
@@ -12230,6 +12297,7 @@
             const goalX = tableWidth/2 + 1;
             let spFrameCounter = 0;   // deterministic fixed-step counter for the singles-AI think cadence (Phase 2.1)
             let aiViewHistory = [];   // ring of recent AI views for the reactionFrames input-lag (Phase 2.3 tune)
+            const aiThreatSight = {};   // projectile id → frames continuously incoming (driver-owned; keeps decideAI pure)
             const paddleHalfDepth = 1.25;
             const paddleHalfWidth = 0.2;
             // Perspective correction: expand hitbox based on character height and camera angle
@@ -12248,11 +12316,15 @@
                 lastLogTime: performance.now()
             };
 
-            // Create FPS display overlay
+            // Create FPS display overlay. HIDDEN by default (ship-clean): shown only via the
+            // Settings "Show FPS" toggle (Settings.set('showFps') -> setFpsMonitorVisible).
+            // Slow-frame logging below runs regardless — it's console-only.
             const fpsDiv = document.createElement('div');
             fpsDiv.id = 'fps-monitor';
             fpsDiv.style.cssText = 'position:fixed;top:10px;left:10px;background:rgba(0,0,0,0.8);color:#0f0;font-family:monospace;font-size:14px;padding:8px 12px;z-index:99999;border-radius:4px;';
+            fpsDiv.style.display = (window.Settings && Settings.values.showFps) ? 'block' : 'none';
             document.body.appendChild(fpsDiv);
+            window.setFpsMonitorVisible = (on) => { fpsDiv.style.display = on ? 'block' : 'none'; };
 
             // Log slow frames to console
             window.perfLog = [];  // Accessible from console
@@ -12319,25 +12391,74 @@
 
             const AI_RNG_SEED = 0xA1DE;  // fixed constant; stable seed offset for per-frame RNG
 
-            const DEFAULT_AI_PARAMS = {
-                reactionFrames:   5,      // WIRED (2.3): the AI acts on the world it saw N frames ago
-                                          //   (~85ms at 60Hz). The "can't block everything" lever — fast/multiple
-                                          //   incoming beat its late reaction. 9->5: the 150ms window broke
-                                          //   lead-prediction on bounced/re-angled balls (velZ changed mid-window),
-                                          //   making defense feel unreliable while things moved. Still human.
-                aimError:         1.4,    // POSITIONING error: max |Z| world-unit offset the paddle parks
-                                          //   off the true intercept (stable per BALL). Higher = misses blocks
-                                          //   more. 0.85->1.4: prediction now LEADS the ball (targets the real
-                                          //   impact point), so it needs more error to be beatable. (Old "1.2
-                                          //   too easy" was pre-prediction, when it aimed at the wrong spot.)
-                parryTimingError: 0.4,    // fraction of parry opportunities the AI whiffs (per-projectile,
-                                          //   deterministic). 0 = never whiffs, 1 = never parries. 0.25->0.4.
-                castAggression:   0.55,   // fraction of cast opportunities the AI takes (per think-cycle).
-                                          //   1.0 = casts every chance; 0.65->0.55 (ease offensive pressure).
-                thinkIntervalK:   22,     // think cadence: decide every K frames (~0.37s at 60Hz). Higher =
-                                          //   reacts slower / re-targets less often (feels less omnipresent).
-                                          //   Raised 13->22 (post-2.3 AI felt too fast/always in position).
-            };
+            // ── AI COMPETENCE SEAM ─────────────────────────────────────────────
+            // getAISkill() is the ONLY difficulty input. Returns skill ∈ [0,1].
+            // DYNAMIC (ELO-style): a persistent rating that tracks the player's level. It
+            // rises when the player wins a match and eases when they lose, so the fight
+            // stays fair as the player improves. Adjusted between matches by adaptAISkill().
+            // INVARIANT: this scalar only feeds skillToProfile → COMPETENCE. It must never
+            // grant speed / mana / cooldown / cast-time / damage — see the symmetry banner
+            // on skillToProfile. A sharper AI plays BETTER, never STRONGER.
+            const AI_SKILL_AVERAGE = 0.58;   // fresh-start / default rating (raised 0.45→0.58: too easy
+                                             //   on playtest; stays just under the 0.6 thunderstorm /
+                                             //   save-both thresholds so it's "a bit harder", not a cliff)
+            const AI_SKILL_MIN     = 0.15;   // never fully trivial
+            const AI_SKILL_MAX     = 0.95;   // never literally perfect
+            const AI_SKILL_STEP    = 0.06;   // base per-match adjustment (scaled by margin)
+            const AI_SKILL_KEY     = 'volleybolt_ai_skill';
+
+            function _clampSkill(v) { return Math.max(AI_SKILL_MIN, Math.min(AI_SKILL_MAX, v)); }
+            function _loadAISkill() {
+                try {
+                    const raw = localStorage.getItem(AI_SKILL_KEY);
+                    if (raw != null) { const v = parseFloat(raw); if (isFinite(v)) return _clampSkill(v); }
+                } catch (e) {}
+                return AI_SKILL_AVERAGE;
+            }
+            let aiSkillRating = _loadAISkill();
+            function getAISkill() { return aiSkillRating; }
+
+            // Called once per completed singles match (from endRound). playerWon = the player
+            // took the match; roundMargin = |rounds won − rounds lost| this match (dominance).
+            // Bidirectional + margin-scaled so the rating converges on the player's level.
+            function adaptAISkill(playerWon, roundMargin) {
+                const margin = Math.max(1, roundMargin | 0);
+                const marginFactor = Math.min(1 + (margin - 1) * 0.3, 2.0);   // 1x (close) .. 2x (blowout)
+                const delta = AI_SKILL_STEP * marginFactor * (playerWon ? 1 : -1);
+                aiSkillRating = _clampSkill(aiSkillRating + delta);
+                try { localStorage.setItem(AI_SKILL_KEY, String(aiSkillRating)); } catch (e) {}
+                console.log('%c[AI ELO] match ' + (playerWon ? 'WON by player' : 'LOST by player') +
+                    ' · margin ' + margin + ' → AI skill ' + aiSkillRating.toFixed(3),
+                    'color:#c080ff');
+                return aiSkillRating;
+            }
+            window.adaptAISkill = adaptAISkill;
+            window.getAISkill = getAISkill;   // (re-exported below too; harmless)
+
+            function _aiLerp(a, b, t) { return a + (b - a) * t; }
+
+            // ┌────────────────────────────────────────────────────────────────┐
+            // │ SYMMETRY BANNER — skillToProfile may return ONLY competence      │
+            // │ values: perception lag, tracking tightness, sight windows,       │
+            // │ decision cadence. NEVER speed / mana / cooldown / cast-time /    │
+            // │ damage. Difficulty = how WELL the AI plays, never how STRONG.   │
+            // └────────────────────────────────────────────────────────────────┘
+            // Pure: skill → concrete behavior values consumed by decideAI. This is
+            // the single tuning curve (endpoints are starting guesses; the shape —
+            // monotonic, easiest at skill=0 — is the contract). skill=0 easiest,
+            // skill=1 hardest.
+            function skillToProfile(skill) {
+                const s = Math.max(0, Math.min(1, skill));
+                return {
+                    reactionFrames:    Math.round(_aiLerp(12, 2, s)),  // acts on an older world at low skill
+                    trackDeadzone:     _aiLerp(1.1, 0.34, s),          // tracks loosely at low skill
+                    dodgeSightFrames:  Math.round(_aiLerp(18, 3, s)),  // frames a frostbolt must be seen before dodging
+                    parrySight:        Math.round(_aiLerp(14, 2, s)),  // frames a threat must be seen before parrying
+                    castCadence:       Math.round(_aiLerp(10, 2, s)),  // offensive cast phase-gate period (in think-cycles)
+                    thunderstormSkill: s,                              // gate value: uses thunderstorm well only at high s
+                    multiThreatSkill:  s,                              // gate value: prioritize biggest threat + save-both only at high s
+                };
+            }
 
             // Pure AI helpers — no mesh reads, no Math.random, no wall-clock.
 
@@ -12346,13 +12467,35 @@
                 return view.projectiles.filter(p => p.velX > 0 && p.owner !== 'ai');
             }
 
-            function _aiFindUrgentThreat(view) {
-                const incoming = _aiIncomingProjectiles(view);
-                if (!incoming.length) return null;
+            function _aiClosestIncoming(incoming, paddleX) {
                 // Closest to AI paddle by remaining X distance.
                 return incoming.reduce((a, b) =>
-                    Math.abs(a.x - view.self.paddleX) < Math.abs(b.x - view.self.paddleX) ? a : b
+                    Math.abs(a.x - paddleX) < Math.abs(b.x - paddleX) ? a : b
                 );
+            }
+
+            // The AI locks onto ONE incoming threat at a time (limited attention → two good
+            // shots overwhelm it). Low skill picks the CLOSEST; a smart AI (high skill) picks
+            // the BIGGEST threat (most-rallied ball, tie-break closest).
+            function _aiPrimaryThreat(view, preferBiggest) {
+                const incoming = _aiIncomingProjectiles(view);
+                if (!incoming.length) return null;
+                if (preferBiggest) {
+                    return incoming.reduce((a, b) => {
+                        const sa = a.volleyCount || 0, sb = b.volleyCount || 0;
+                        if (sa !== sb) return sa > sb ? a : b;
+                        return Math.abs(a.x - view.self.paddleX) < Math.abs(b.x - view.self.paddleX) ? a : b;
+                    });
+                }
+                return _aiClosestIncoming(incoming, view.self.paddleX);
+            }
+
+            // The next-most-urgent incoming after the primary — used by a smart AI to "save both".
+            function _aiSecondThreat(view, primary) {
+                const pid = primary ? primary.id : null;
+                const rest = _aiIncomingProjectiles(view).filter(p => p.id !== pid);
+                if (!rest.length) return null;
+                return _aiClosestIncoming(rest, view.self.paddleX);
             }
 
             function _aiFindOpenTarget(view) {
@@ -12370,133 +12513,131 @@
                 return _aiIncomingProjectiles(view).length === 0;
             }
 
-            // Reflect a Z coordinate into [-wall, wall] as if it bounced off the court walls
-            // (triangle wave). Pure — used to predict a ball's impact Z through any bounces.
-            function _reflectZ(z, wall) {
-                if (wall <= 0) return 0;
-                const span = 2 * wall;                 // court width in Z
-                let t = (z + wall) % (2 * span);       // period = 4*wall
-                if (t < 0) t += 2 * span;
-                return t <= span ? t - wall : (3 * wall - t);
-            }
-
-            function decideAI(view, frame, rng, params) {
+            function decideAI(view, frame, rng, profile) {
                 // PURE: no performance.now / Date.now / Math.random / .mesh.
-                if (!view.roundActive) {
-                    return { moveDir: 0, parry: false, fireball: false, frostbolt: false, thunderstorm: false, juice: false };
-                }
+                // Track-&-chase: the AI watches the ball's CURRENT position (from a
+                // reaction-lagged view) and chases it at player speed. It never solves
+                // for a future impact point, so fast / steep / bounced shots outrun it.
+                const idle = { moveDir: 0, parry: false, fireball: false, frostbolt: false, thunderstorm: false, juice: false };
+                if (!view.roundActive) return idle;
 
-                const K = params.thinkIntervalK;
-                const isThinkFrame = (frame % K === 0);
-                const cycle = Math.floor(frame / K);   // stable index for per-think-cycle difficulty rolls
+                const s      = view.self;
+                const halfD  = view.geom.halfDepth;
 
-                // --- Movement: PURPOSEFUL only (no idle tracking / back-and-forth). The AI holds
-                // position unless it has a reason: intercept an incoming fireball, dodge an incoming
-                // frostbolt (blocking it would freeze us), or reposition to attack when idle+off-lane. ---
-                const threat  = _aiFindUrgentThreat(view);
-                const halfD   = view.geom.halfDepth;
-                let   targetZ = null;   // null = no reason to move → hold still
+                // ---- Situation read: pressure + HP → turtle (defend-only) mode ----
+                const incoming      = _aiIncomingProjectiles(view);
+                const incomingCount = incoming.length;
+                const maxHP         = view.maxHealth || 20;
+                const selfHP        = (s.towerHealth != null) ? s.towerHealth : maxHP;
+                const hpFrac        = maxHP > 0 ? selfHP / maxHP : 1;
+                // Turtle = drop offense, play defense + parry. Trigger on being swarmed OR low
+                // HP; the lower the HP, the lower the pressure needed (defends sooner when
+                // losing). Above half HP it takes a real swarm (2+); hurt, a single shot suffices.
+                const turtle = (hpFrac < 0.30) || (incomingCount >= (hpFrac > 0.5 ? 2 : 1));
+
+                // One threat at a time; a smart (high-skill) AI targets the biggest, else closest.
+                const smartThreat = profile.multiThreatSkill >= 0.6;
+                const threat = _aiPrimaryThreat(view, smartThreat);   // or null
+
+                // ---- Movement (every frame) ----
+                let targetZ = null;   // null = no reason to move → hold
                 if (threat) {
-                    if (threat.type === 'frostbolt') {
-                        // Dodge: commit to the opposite half from the frostbolt's lane (fixed target,
-                        // so we don't run to the wall as paddleZ changes).
+                    const dodging = threat.type === 'frostbolt'
+                        && (threat.sightFrames || 0) >= profile.dodgeSightFrames;
+                    if (dodging) {
+                        // Recognized the frostbolt in time → commit to the opposite half
+                        // (blocking it would freeze us). Fixed target so we don't chase a wall.
                         targetZ = threat.z >= 0 ? -halfD * 0.5 : halfD * 0.5;
                     } else {
-                        // Intercept/block: LEAD the ball — predict where it will be when it reaches our
-                        // paddle X (folding any wall bounces back into the court), not where it is now.
-                        // This is the difference between catching diagonal/bouncing shots and whiffing
-                        // them; it reacts as soon as the ball is incoming and commits to the impact spot.
-                        const ballWall = halfD - 0.5;   // ball bounces at ±(depth/2 - 0.5) — matches the sim
-                        // Aim at where the shield ACTUALLY blocks, not the paddle centre: the ball is caught
-                        // at the shield plane (paddleX − (FWD+R) for the right-side AI), and the collision
-                        // biases the catch window by +ZPERSP (isometric parallax). Without these the AI parks
-                        // ~1.15 too far off and mistimes. reach/ZPERSP read from BLOCK_ARC (single source).
-                        const reach   = BLOCK_ARC.FWD + BLOCK_ARC.R;
-                        const blockX  = view.self.paddleX - reach;   // AI shield sits toward the field (−X)
-                        const timeToImpact = (blockX - threat.x) / threat.velX;  // velX > 0 = incoming
-                        targetZ = _reflectZ(threat.z + threat.velZ * timeToImpact, ballWall) + BLOCK_ARC.ZPERSP;
-                        // Positioning error STABLE PER BALL (keyed to the projectile id, not the think-
-                        // cycle), so the paddle commits to one spot instead of jittering.
-                        if (params.aimError > 0) {
-                            const posErr = (makeAIRng(((Math.imul(threat.id | 0, 2654435761)) ^ 0x50F1) >>> 0)() * 2 - 1) * params.aimError;
-                            targetZ += posErr;
+                        // Chase where the ball IS (frostbolt seen too late is treated like a
+                        // normal ball here → the AI tries to block it and gets frozen).
+                        targetZ = threat.z;
+                        // Save-both (smart/high skill only): once already positioned on the
+                        // primary, slide toward a second incoming so both get covered.
+                        if (smartThreat && incomingCount >= 2
+                            && Math.abs(threat.z - s.paddleZ) <= profile.trackDeadzone) {
+                            const second = _aiSecondThreat(view, threat);
+                            if (second) targetZ = second.z;
                         }
                     }
                 } else {
-                    // Idle: only reposition toward an open lane if meaningfully out of place.
+                    // Idle: only reposition toward the open lane if meaningfully out of place.
                     const open = _aiFindOpenTarget(view);
-                    if (Math.abs(open - view.self.paddleZ) > 1.5) targetZ = open;
+                    if (Math.abs(open - s.paddleZ) > 1.5) targetZ = open;
                 }
-                // Deadzone just above one 0.3 step: the AI makes small single-step corrections to
-                // track the ball as it approaches (human-like fidget) WITHOUT oscillating ±a step
-                // around the target (a sub-step deadzone would, given quantized movement).
                 let moveDir = 0;
                 if (targetZ !== null) {
-                    const diff = targetZ - view.self.paddleZ;
-                    if (Math.abs(diff) > 0.34) moveDir = Math.sign(diff);
+                    const diff = targetZ - s.paddleZ;
+                    if (Math.abs(diff) > profile.trackDeadzone) moveDir = Math.sign(diff);
                 }
-                // Defense over offense — but factor in TIMING so the AI doesn't bail the instant a
-                // threat appears. While casting, hold (let the cast land) unless the threat would
-                // reach us before the cast finishes. If the cast lands first (with a little slack to
-                // block/parry afterward), keep casting; otherwise keep the computed moveDir so moving
-                // to defend cancels the cast. (When already in position to block, moveDir is 0 anyway,
-                // so the cast continues and it just parries.)
-                if (view.self.casting) {
+                // Defense over offense: if mid-cast and a threat will reach us before the
+                // cast finishes (plus a little slack), bail to defend (moving cancels the
+                // cast); otherwise hold to let the cast land.
+                if (s.casting) {
                     let holdCast = true;
                     if (threat && threat.velX > 0) {
-                        const remainingCast = Math.max(0, (view.self.castTime || 0) - (view.self.castProgress || 0));
-                        const timeToImpact  = (view.self.paddleX - threat.x) / threat.velX;  // seconds until it reaches our X
-                        const REACT_MARGIN  = 0.2;  // slack (s) to reposition/parry after the cast lands
-                        if (timeToImpact < remainingCast + REACT_MARGIN) holdCast = false;  // can't make it → bail to defend
+                        const remainingCast = Math.max(0, (s.castTime || 0) - (s.castProgress || 0));
+                        const timeToImpact  = (s.paddleX - threat.x) / threat.velX;
+                        if (timeToImpact < remainingCast + 0.2) holdCast = false;
                     }
                     if (holdCast) moveDir = 0;
                 }
 
-                if (!isThinkFrame) {
-                    return { moveDir, parry: false, fireball: false, frostbolt: false, thunderstorm: false, juice: false };
+                // ---- Parry (every frame): press when an in-range threat has been SEEN
+                // long enough. Late/narrow perception at low skill → natural whiffs. ----
+                const PARRY_RANGE = 2.5;
+                const parry = !!(threat
+                    && Math.abs(threat.z - s.paddleZ) < PARRY_RANGE
+                    && (threat.sightFrames || 0) >= profile.parrySight);
+
+                // ---- Casting: gated to a fixed cast-decision cadence, with offensive
+                // casts further phase-gated by castCadence (low skill = sparse). ----
+                const K = 8;                                  // cast-decision base period (~0.13s @60Hz)
+                const isCastFrame = (frame % K === 0);
+                let fireball = false, frostbolt = false, thunderstorm = false;
+                if (isCastFrame) {
+                    const cycle = Math.floor(frame / K);
+                    const offenseOpen = (cycle % Math.max(1, profile.castCadence)) === 0;
+                    const safe = _aiSafeToStartCast(view);
+                    const cd   = s.cooldowns;
+                    // Offense is suppressed in turtle mode (under pressure / low HP → defend).
+                    const canFireball  = !turtle && offenseOpen && safe && cd.fireball  <= 0 && s.mana >= 1
+                        && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
+                    // Frostbolt is a LANE shot: only worth casting when the opponent is directly
+                    // in front (its payoff is freezing them). No alignment → no cast, so it stops
+                    // firing frostbolt into an empty lane.
+                    const FROST_ALIGN  = 1.2;
+                    const oppInFront   = Math.abs(s.paddleZ - view.opp.paddleZ) < FROST_ALIGN;
+                    const canFrostbolt = !turtle && offenseOpen && safe && cd.frostbolt <= 0 && s.mana >= 1
+                        && oppInFront && view.projectiles.length < 10 && !s.casting;
+                    // Thunderstorm is a DEFENSIVE panic-clear (allowed even in turtle): a skilled
+                    // AI recognizes the multi-projectile crunch.
+                    const canThunderstorm = cd.thunderstorm <= 0 && s.mana >= 2
+                        && incomingCount >= 2
+                        && profile.thunderstormSkill >= 0.6;
+                    frostbolt    = canFrostbolt;
+                    fireball     = canFireball && !frostbolt;
+                    thunderstorm = canThunderstorm;
                 }
 
-                // --- Cast decisions (think frames only) ---
-                const safe = _aiSafeToStartCast(view);
-                const s    = view.self;
-                const cd   = s.cooldowns;
-                // Cast aggression (difficulty): deterministically take only a fraction of offensive
-                // cast opportunities. Seeded per think-cycle. Thunderstorm is exempt (it's a defensive
-                // panic-clear of 2+ incoming, so the AI shouldn't randomly skip it).
-                const aggressive = (makeAIRng((cycle ^ 0xCA57) >>> 0)() < params.castAggression);
-
-                const canFireball     = aggressive && safe && cd.fireball    <= 0 && s.mana >= 1 && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
-                // Frostbolt is GOOD when the opponent is right in front (it freezes them) — so unlike
-                // fireball it does NOT avoid a blocking opponent; it wants that shot.
-                const canFrostbolt    = aggressive && safe && cd.frostbolt   <= 0 && s.mana >= 1 && view.projectiles.length < 10 && !s.casting;
-                const canThunderstorm = cd.thunderstorm <= 0 && s.mana >= 2 && _aiIncomingProjectiles(view).length >= 2;
-
-                // Frostbolt preferred when available; otherwise fireball.
-                const castFrostbolt_    = canFrostbolt;
-                const castFireball_     = canFireball && !castFrostbolt_;
-                const castThunderstorm_ = canThunderstorm;
-
-                // --- Parry (deterministic; whiffs a fraction of chances per parryTimingError) ---
-                const parryRange  = 2.5;
-                let   parry       = !!(threat && Math.abs(threat.z - s.paddleZ) < parryRange);
-                if (parry && params.parryTimingError > 0) {
-                    // Per-projectile miss roll → a given incoming is consistently parried or whiffed.
-                    const miss = makeAIRng((((threat.id | 0) * 2654435761) ^ 0x9A27) >>> 0)() < params.parryTimingError;
-                    if (miss) parry = false;
-                }
-
-                // --- Juice ---
+                // ---- Juice ----
                 const juice = s.juice >= JUICE.MAX && !s.juiceActive;
 
-                return { moveDir, parry, fireball: castFireball_, frostbolt: castFrostbolt_, thunderstorm: castThunderstorm_, juice };
+                return { moveDir, parry, fireball, frostbolt, thunderstorm, juice };
             }
 
             // Expose the pure AI pieces so the outer-scope dbg.aiDeterminism oracle can reach them.
             // (decideAI & friends live in this game-setup closure; window.dbg is defined in the outer scope.)
             window.decideAI = decideAI;
+            window.getAISkill = getAISkill;
+            window.skillToProfile = skillToProfile;
             window.makeAIRng = makeAIRng;
-            window.DEFAULT_AI_PARAMS = DEFAULT_AI_PARAMS;
             window.AI_RNG_SEED = AI_RNG_SEED;
+            // updateMatchPresentation lives in THIS inner closure (used by runSinglePlayerFrame),
+            // but runPvPGameLoop is in the OUTER scope and can't see it directly — expose it so the
+            // PvP loop can drive the same per-frame FX. (Fixes: "updateMatchPresentation is not
+            // defined" crash in runPvPGameLoop.) Function declaration → hoisted, safe to ref here.
+            window.updateMatchPresentation = updateMatchPresentation;
 
             // Sim-state snapshot for the AI view. Reads authoritative sim state (proj.x/z,
             // combatant.paddleX/paddleZ) only — no .mesh reads. Everything downstream (decideAI) is pure.
@@ -12511,6 +12652,7 @@
                     owner:       p.owner,
                     volleyCount: p.volleyCount,
                     type:        p.type,
+                    sightFrames: aiThreatSight[p.id] || 0,
                 }));
                 return {
                     projectiles: projSnaps,
@@ -12530,15 +12672,18 @@
                         juice:        cr.juice       || 0,
                         juiceActive:  cr.juiceActive || false,
                         shieldCharges: (cr.lightningShield && cr.lightningShield.charges) || 0,
+                        towerHealth:  (cr.towerHealth != null) ? cr.towerHealth : maxTowerHealth,
                     },
                     opp: {
-                        paddleZ: combatants.left.paddleZ,
+                        paddleZ:     combatants.left.paddleZ,
+                        towerHealth: (combatants.left.towerHealth != null) ? combatants.left.towerHealth : maxTowerHealth,
                     },
                     geom: {
                         tableWidth:     tableWidth,
                         halfDepth:      window.getEffectiveTableDepth() / 2,
                         paddleBoundary: getPaddleBoundary(),
                     },
+                    maxHealth:   maxTowerHealth,
                     roundActive: !!roundActive,
                 };
             }
@@ -12575,55 +12720,143 @@
                 // (Ready/Go, playing, round transitions) are unaffected.
                 if (gameState === 'menu') return;
                 spFrameCounter++;
+                // Update the driver-owned sight counter BEFORE snapshotting the view, so the
+                // snapshot (and thus the AI's lagged perception) carries correct sightFrames.
+                const _incoming = new Set();
+                for (const p of projectiles) {
+                    if (p.velX > 0 && p.owner !== 'ai') {
+                        _incoming.add(p.id);
+                        aiThreatSight[p.id] = (aiThreatSight[p.id] || 0) + 1;
+                    }
+                }
+                for (const k in aiThreatSight) { if (!_incoming.has(+k)) delete aiThreatSight[k]; }
+
                 const leftInput  = buildPlayerInput();
-                // Reaction delay: the AI decides on the world it saw `reactionFrames` ago — a human
-                // can't react instantly, so fast/multiple incoming balls beat it. decideAI stays pure;
-                // the lag lives here in the input pipeline (not in the sim, not in the AI oracle).
+                const aiProfile  = skillToProfile(getAISkill());
+                // Reaction delay: the AI decides on the world it saw `reactionFrames` ago.
                 aiViewHistory.push(buildAISingleView());
-                const lag = (DEFAULT_AI_PARAMS.reactionFrames | 0);
+                const lag = (aiProfile.reactionFrames | 0);
                 while (aiViewHistory.length > lag + 1) aiViewHistory.shift();
                 const aiView = aiViewHistory[0];   // oldest retained ≈ `lag` frames old once warmed
-                const rightInput = decideAI(aiView, spFrameCounter, makeAIRng(spFrameCounter ^ AI_RNG_SEED), DEFAULT_AI_PARAMS);
+                const rightInput = decideAI(aiView, spFrameCounter, makeAIRng(spFrameCounter ^ AI_RNG_SEED), aiProfile);
                 window.VolleyboltSim.simulateNetworkFrame(leftInput, rightInput, dt, buildSimCtx());
-                updateSinglePlayerPresentation(dt);
+                updateMatchPresentation(dt);
             }
 
-            // Re-drives all SP-only presentation after the deterministic sim has advanced one
-            // fixed-timestep frame. Reads sim-authoritative state; NEVER writes proj.x/z/velX/velZ,
-            // paddleZ, mana, cooldowns, casting, castProgress, or freezeTime.
+            // Drives per-frame presentation for both SP and PvP after the deterministic sim
+            // has advanced one fixed-timestep frame. Reads sim-authoritative state; NEVER
+            // writes proj.x/z/velX/velZ, paddleZ, mana, cooldowns, casting, castProgress, or
+            // freezeTime. Call once per rendered frame on settled state — never inside rollback.
             // Sources: cast bars (old ~12256-12294), rotation (~12316-12379),
             //          footsteps (~12336-12352), ice-block visuals (~12225-12253),
             //          projectile trail/shadow/glow/sound (~12437-12507).
-            function updateSinglePlayerPresentation(dt) {
+            function updateMatchPresentation(dt) {
                 const leftC  = combatants.left;
                 const rightC = combatants.right;
 
                 // ---- 1. CAST BARS (old ~12256-12294) ----
-                // Read sim-authoritative casting/castProgress/castTime; drive 2-D and 3-D bars.
+                // 2D under-mana cast bars are POSITIONAL. Both peers see the SAME canonical view
+                // (no camera flip; the HUD is canonical — applyClientPerspective is only ever called
+                // with false), so the LEFT wizard's cast drives the LEFT/player bar and the RIGHT
+                // wizard's drives the RIGHT/ai bar. This is one-to-one with the 3D bars above each
+                // wizard. (An earlier local/remote mapping put the joiner's cast on the host's side.)
+                // localC/remoteC below are used ONLY for the casting SOUND (local caster louder).
+                const localC  = (gameMode === 'pvp') ? (isHost ? leftC : rightC) : leftC;
+                const remoteC = (gameMode === 'pvp') ? (isHost ? rightC : leftC) : rightC;
+
+                // --- LEFT / player 2D bar (#castBarContainer + GUI playerCastContainer) ← leftC ---
                 if (leftC && leftC.casting) {
-                    const progress = leftC.castTime > 0 ? leftC.castProgress / leftC.castTime : 0;
+                    const rawProg = leftC.castTime > 0 ? leftC.castProgress / leftC.castTime : 0;
+                    const prog = (typeof rawProg === 'number' && isFinite(rawProg)) ? Math.max(0, Math.min(1, rawProg)) : 0;
                     const ab = getAbility(leftC.casting);
                     const spellName = ab ? ab.name : leftC.casting;
-                    const spellElem = ab ? ab.element : 'fire';
-                    updateCombatantCastBarUI(leftC, spellName, spellElem, progress);
-                    if (window.update3DCastBar) window.update3DCastBar(progress, true);
+                    const domLabel = document.getElementById('castBarLabel');
+                    const domBar   = document.getElementById('castBarProgress');
+                    if (domLabel) domLabel.textContent = spellName;
+                    if (domBar)   domBar.value = prog * 100;
+                    if (window.guiElements) {
+                        if (window.guiElements.playerCastLabel) window.guiElements.playerCastLabel.text = spellName;
+                        if (window.guiElements.playerCastFill)  window.guiElements.playerCastFill.width = (prog * 100) + '%';
+                        const htmlLabel = document.getElementById('playerCastLabelHtml');
+                        if (htmlLabel) { htmlLabel.textContent = spellName; htmlLabel.classList.add('visible'); }
+                    }
+                    // Ability-icon cast ring: only for the LOCAL player's own ability bar.
+                    if (leftC.isLocalPlayer) {
+                        const overlay = document.getElementById(leftC.casting + 'CastProgress');
+                        if (overlay) overlay.style.setProperty('--cast-progress', (360 - prog * 360) + 'deg');
+                    }
                     showCastBar(true);
                 } else {
-                    if (window.update3DCastBar) window.update3DCastBar(0, false);
                     showCastBar(false);
+                    if (window.guiElements) {
+                        const htmlLabel = document.getElementById('playerCastLabelHtml');
+                        if (htmlLabel) htmlLabel.classList.remove('visible');
+                    }
                 }
 
+                // --- RIGHT / ai 2D bar (#aiCastBarContainer + GUI aiCastContainer) ← rightC ---
                 if (rightC && rightC.casting) {
-                    const progress = rightC.castTime > 0 ? rightC.castProgress / rightC.castTime : 0;
+                    const rawProg = rightC.castTime > 0 ? rightC.castProgress / rightC.castTime : 0;
+                    const prog = (typeof rawProg === 'number' && isFinite(rawProg)) ? Math.max(0, Math.min(1, rawProg)) : 0;
                     const ab = getAbility(rightC.casting);
                     const spellName = ab ? ab.name : rightC.casting;
-                    const spellElem = ab ? ab.element : 'fire';
-                    updateCombatantCastBarUI(rightC, spellName, spellElem, progress);
-                    if (window.updateAI3DCastBar) window.updateAI3DCastBar(progress, true);
+                    const domLabel = document.getElementById('aiCastBarLabel');
+                    const domBar   = document.getElementById('aiCastBarProgress');
+                    if (domLabel) domLabel.textContent = spellName;
+                    if (domBar)   domBar.value = prog * 100;
+                    if (window.guiElements) {
+                        if (window.guiElements.aiCastLabel) window.guiElements.aiCastLabel.text = spellName;
+                        if (window.guiElements.aiCastFill)  window.guiElements.aiCastFill.width = (prog * 100) + '%';
+                        const htmlLabel = document.getElementById('aiCastLabelHtml');
+                        if (htmlLabel) { htmlLabel.textContent = spellName; htmlLabel.classList.add('visible'); }
+                    }
+                    // Ability-icon cast ring: only when the RIGHT wizard is the local player (joiner).
+                    if (rightC.isLocalPlayer) {
+                        const overlay = document.getElementById(rightC.casting + 'CastProgress');
+                        if (overlay) overlay.style.setProperty('--cast-progress', (360 - prog * 360) + 'deg');
+                    }
                     showAICastBar(true);
                 } else {
-                    if (window.updateAI3DCastBar) window.updateAI3DCastBar(0, false);
                     showAICastBar(false);
+                    if (window.guiElements) {
+                        const htmlLabel = document.getElementById('aiCastLabelHtml');
+                        if (htmlLabel) htmlLabel.classList.remove('visible');
+                    }
+                }
+
+                // --- 3D cast bars: always positional (left wizard ← leftC, right wizard ← rightC) ---
+                if (leftC && leftC.casting) {
+                    const progress = leftC.castTime > 0 ? leftC.castProgress / leftC.castTime : 0;
+                    if (window.update3DCastBar) window.update3DCastBar(progress, true);
+                } else {
+                    if (window.update3DCastBar) window.update3DCastBar(0, false);
+                }
+                if (rightC && rightC.casting) {
+                    const progress = rightC.castTime > 0 ? rightC.castProgress / rightC.castTime : 0;
+                    if (window.updateAI3DCastBar) window.updateAI3DCastBar(progress, true);
+                } else {
+                    if (window.updateAI3DCastBar) window.updateAI3DCastBar(0, false);
+                }
+
+                // ---- 1c. CASTING LOOP SFX (state-driven, per side) ----
+                // The sim starts the mid-cast loop (deps.castingStart) but has NO deps.castingStop,
+                // so nothing in the MP path ever stopped it — it looped until round end (worst on the
+                // joiner). Own the loop here from casting state instead: edge-triggered per LOCAL /
+                // REMOTE side (local caster → 'player' loop, remote caster → 'ai' loop), with a
+                // matching stop. Runs on settled state after the sim loop, so it never fires during
+                // rollback resim. Match/round-end already call castingStop('all') as a backstop.
+                if (window.ToneSFX) {
+                    const cs = (window._castLoopSfx || (window._castLoopSfx = { player: false, ai: false }));
+                    const localCasting  = !!(localC  && localC.casting);
+                    const remoteCasting = !!(remoteC && remoteC.casting);
+                    if (localCasting !== cs.player) {
+                        cs.player = localCasting;
+                        if (localCasting) ToneSFX.castingStart('player'); else ToneSFX.castingStop('player');
+                    }
+                    if (remoteCasting !== cs.ai) {
+                        cs.ai = remoteCasting;
+                        if (remoteCasting) ToneSFX.castingStart('ai'); else ToneSFX.castingStop('ai');
+                    }
                 }
 
                 // ---- 2. PADDLE ROTATION TARGET (old ~12316-12379, rotation-only) ----
@@ -13420,7 +13653,17 @@
 
             // Fade out decals over time (stepped for retro style)
             scene.onBeforeRenderObservable.add(() => {
-                const dt = engine.getDeltaTime() / 1000;
+                // Combat-text / decal lifetimes are TIMERS — drive them off authoritative
+                // wall-clock (performance.now delta between draws), NOT engine.getDeltaTime().
+                // Under the frame-skip FPS cap, scene.render() (and this observable) is throttled,
+                // and getDeltaTime's relationship to the real draw cadence is unreliable — which
+                // made floating text (e.g. spell-cast bubbles) linger far too long at a 30fps cap.
+                // Wall-clock makes these lifetimes framerate-independent by construction.
+                const _ctNow = performance.now();
+                const dt = window._combatTextLastNow
+                    ? Math.min((_ctNow - window._combatTextLastNow) / 1000, 0.1)   // cap: tab-away guard
+                    : (engine.getDeltaTime() / 1000);
+                window._combatTextLastNow = _ctNow;
                 for (let i = impactDecals.length - 1; i >= 0; i--) {
                     const d = impactDecals[i];
                     d.life -= dt;
@@ -14100,14 +14343,33 @@
         window.setHudHidden = setHudHidden;
         function debugForceEnd(win) {
             if (GameSM.state !== 'match') { console.log('[debug] Force Win/Lose only works during a match'); return; }
+            // Resolve the winning SIDE from the clicker's perspective (in SP the player is 'left').
+            const mySide = (gameMode === 'pvp' && typeof getLocalSide === 'function') ? getLocalSide() : 'left';
+            const otherSide = mySide === 'left' ? 'right' : 'left';
+            const winnerSide = win ? mySide : otherSide;
+            // Sync the end to the peer so the match ends for BOTH sides with the correct opposite
+            // results. (A real match-end already syncs via the deterministic sim — both peers detect
+            // the tower fall on the same frame. This makes the DEBUG shortcut behave the same.)
+            if (gameMode === 'pvp' && conn && conn.open) {
+                try { conn.send({ type: 'DEBUG_END', winnerSide: winnerSide }); } catch (e) {}
+            }
+            _applyDebugEnd(winnerSide);
+        }
+
+        // Apply a forced match end for a given winning side, on THIS peer. Shared by the debug
+        // button and the incoming DEBUG_END message so both sides resolve their own Victory/Defeat.
+        function _applyDebugEnd(winnerSide) {
             gameOver = true;
             paused = false;
-            if (combatants.left)  combatants.left.roundResult  = win ? 'victory' : 'defeat';
-            if (combatants.right) combatants.right.roundResult = win ? 'defeat'  : 'victory';
-            showVictoryScreen(win);   // real Victory/Defeat overlay + Continue
+            if (combatants.left)  combatants.left.roundResult  = (winnerSide === 'left')  ? 'victory' : 'defeat';
+            if (combatants.right) combatants.right.roundResult = (winnerSide === 'right') ? 'victory' : 'defeat';
+            const mySide = (gameMode === 'pvp' && typeof getLocalSide === 'function') ? getLocalSide() : 'left';
+            showVictoryScreen(winnerSide === mySide);   // real Victory/Defeat overlay + buttons
         }
+        window._applyDebugEnd = _applyDebugEnd;
         document.addEventListener('keydown', (e) => {
             if (e.code !== 'Backquote') return;
+            if (!window.DEV_MODE) return;   // ship-clean: debug menu only with ?dev (or the localStorage flag)
             const t = e.target;  // don't toggle while typing (e.g., MP join-code input)
             if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
             ensureDebugMenu();
@@ -14912,6 +15174,9 @@
             const rm = $('setReduceMotion'), cb = $('setColorblind');
             if (rm) rm.addEventListener('change', e => Settings.set('reduceMotion', e.target.checked));
             if (cb) cb.addEventListener('change', e => Settings.set('colorblind', e.target.checked));
+            // FPS monitor toggle (default off — dev/perf tool, ship-clean)
+            const sf = $('setShowFps');
+            if (sf) sf.addEventListener('change', e => Settings.set('showFps', e.target.checked));
             // Render resolution slider
             const renderScaleEl = $('setRenderScale'), renderScaleValEl = $('setRenderScaleVal');
             if (renderScaleEl) {
@@ -14957,7 +15222,8 @@
             }
             document.getElementById('setFullscreen').checked = !!document.fullscreenElement;
             { const rm = document.getElementById('setReduceMotion'); if (rm) rm.checked = !!Settings.values.reduceMotion;
-              const cb = document.getElementById('setColorblind');   if (cb) cb.checked = !!Settings.values.colorblind; }
+              const cb = document.getElementById('setColorblind');   if (cb) cb.checked = !!Settings.values.colorblind;
+              const sf = document.getElementById('setShowFps');      if (sf) sf.checked = !!Settings.values.showFps; }
             // Restore render scale slider + label
             const rsEl = document.getElementById('setRenderScale');
             const rsValEl = document.getElementById('setRenderScaleVal');
@@ -15056,7 +15322,18 @@
 
                 // If we're joining, connect to the host
                 if (connectTo) {
-                    conn = peer.connect(connectTo, { reliable: true });
+                    // reliable: false -> PeerJS creates the RTCDataChannel with ordered: false.
+                    // WebRTC still RETRANSMITS lost packets (no maxRetransmits cap), so nothing is
+                    // ever dropped — lobby/rematch control messages all still arrive — but later
+                    // packets no longer queue behind a lost one (head-of-line blocking). With
+                    // ordered: true, one lost INPUT at 250ms RTT stalled EVERY input behind it for
+                    // a full retransmit round-trip -> burst arrivals -> giant rollback spikes.
+                    // Out-of-order delivery is safe for every message type here: INPUT/SYNC_HASH/
+                    // SYNC_DETAIL/INPUT_ACK are keyed by frame and idempotent, and lobby messages
+                    // are seconds apart. Pairs with INPUT_REDUNDANCY in sendLocalInput, which makes
+                    // the late-retransmitted original irrelevant. (The joiner originates the
+                    // channel, so this flag decides the mode for both peers.)
+                    conn = peer.connect(connectTo, { reliable: false });
                     setupConnection();
                 }
             });
@@ -15090,6 +15367,11 @@
             conn.on('open', () => {
                 console.log('Connection established');
                 showLobbyView('lobbyConnectedView');
+
+                // Software-rendering reminder at the moment it matters for an opponent (the
+                // once-ever startup notice may be long dismissed). Detection ran at engine init.
+                const perfWarn = document.getElementById('lobbyPerfWarn');
+                if (perfWarn) perfWarn.style.display = window._softwareRenderer ? '' : 'none';
 
                 // Host shows Start Match (gated by ready); guest sees waiting label.
                 const btnStart = document.getElementById('btnStartMatch');
@@ -15265,6 +15547,25 @@
                     // Netcode test harness: peer's state hash for a settled frame.
                     mpCompareHash(data.frame, data.hash);
                     break;
+
+                case 'SYNC_DETAIL':
+                    // Desync field diagnostics: peer's per-group sub-hashes for a desynced frame.
+                    // Compare to ours and warn the exact diverged group(s).
+                    mpReceiveDetail(data.frame, data.groups);
+                    break;
+
+                case 'REMATCH':
+                    // Host clicked Play Again — the joiner mirrors the return to the connected lobby.
+                    // Guard: only while still on the post-match screen (gameOver) and not already
+                    // leaving to the menu, so a late REMATCH can't drag us back after we've left.
+                    if (gameMode === 'pvp' && gameOver && !_returningToMenu) _returnToConnectedLobby();
+                    break;
+
+                case 'DEBUG_END':
+                    // Opponent used the debug Force Win/Lose — end the match here too, resolving
+                    // this side's own Victory/Defeat from the shared winnerSide.
+                    _applyDebugEnd(data.winnerSide);
+                    break;
             }
         }
 
@@ -15332,7 +15633,7 @@
         // Each peer periodically broadcasts the hash of a settled (past-rollback) frame; the
         // other compares it to its own hash for that exact frame number and flags divergence.
         // ============================================================
-        const mpSync = { local: {}, remote: {}, lastOkFrame: -1, desync: null, mismatches: 0, rollbacks: 0, lastRollback: 0 };
+        const mpSync = { local: {}, remote: {}, localGroups: {}, detailSent: {}, lastOkFrame: -1, desync: null, mismatches: 0, rollbacks: 0, lastRollback: 0 };
         const MP_SYNC_INTERVAL = 20;        // broadcast a hash every N frames (~0.33s)
         const MP_SYNC_LAG = MAX_ROLLBACK_FRAMES + 2;   // hash a frame old enough to never roll back
 
@@ -15361,6 +15662,85 @@
         }
         window.hashGameState = hashGameState;
 
+        // DESYNC FIELD DIAGNOSTICS — per-field-group sub-hashes of a frame's state.
+        // Same quantization + FNV-1a fold as hashGameState, but each group has its OWN independent
+        // accumulator so a mismatch can be attributed to the exact group that diverged. The union of
+        // all groups covers exactly the field set hashGameState() mixes, so together they fully
+        // localize any single-field desync. This does NOT feed the main hash and is OFF the compare
+        // hot path — group hashes are stored per frame (cheap: 7 uint32s) and only EXCHANGED on a
+        // detected desync. Groups: leftPaddle/rightPaddle (paddleZ/prevPaddleZ/moveAccum),
+        // leftCore/rightCore (mana/regen/freeze/tower/cast/cooldowns/juice), projectiles (the list),
+        // rng (rngSeed/nextProjId), misc (frame/playerScore/aiScore).
+        function hashGameStateGroups(snap) {
+            const s = snap || captureGameState();
+            const q = (n) => Math.round((n || 0) * 1000) | 0;
+            const newH = () => 2166136261 >>> 0;
+            const mix = (h, v) => { h = (h ^ ((v | 0) & 0xffffffff)) >>> 0; return Math.imul(h, 16777619) >>> 0; };
+            const sideCore = (c) => {
+                c = c || {}; const cd = c.cooldowns || {};
+                let h = newH();
+                h = mix(h, q(c.mana)); h = mix(h, q(c.manaRegen)); h = mix(h, q(c.freezeTime));
+                h = mix(h, q(c.towerHealth)); h = mix(h, q(c.castProgress)); h = mix(h, q(c.castTime));
+                h = mix(h, q(cd.fireball)); h = mix(h, q(cd.frostbolt)); h = mix(h, q(cd.thunderstorm));
+                h = mix(h, q(c.juice)); h = mix(h, c.juiceActive ? 1 : 0); h = mix(h, q(c.juiceTimer));
+                return h >>> 0;
+            };
+            const sidePaddle = (c) => {
+                c = c || {}; let h = newH();
+                h = mix(h, q(c.paddleZ)); h = mix(h, q(c.prevPaddleZ)); h = mix(h, q(c.moveAccum));
+                return h >>> 0;
+            };
+            let hp = newH();
+            for (const p of (s.projectiles || [])) {
+                hp = mix(hp, p.id | 0); hp = mix(hp, q(p.x)); hp = mix(hp, q(p.y)); hp = mix(hp, q(p.z));
+                hp = mix(hp, q(p.velX)); hp = mix(hp, q(p.velY)); hp = mix(hp, q(p.velZ));
+                hp = mix(hp, p.volleyCount | 0); hp = mix(hp, p.isParried ? 1 : 0); hp = mix(hp, p.bounceCount | 0);
+            }
+            let hr = newH(); hr = mix(hr, s.rngSeed | 0); hr = mix(hr, s.nextProjId | 0);
+            let hm = newH(); hm = mix(hm, s.frame | 0); hm = mix(hm, q(s.playerScore)); hm = mix(hm, q(s.aiScore));
+            return {
+                leftPaddle: sidePaddle(s.left), rightPaddle: sidePaddle(s.right),
+                leftCore: sideCore(s.left), rightCore: sideCore(s.right),
+                projectiles: hp >>> 0, rng: hr >>> 0, misc: hm >>> 0
+            };
+        }
+
+        // Send our per-group sub-hashes for a desynced frame to the peer (once per frame). The peer
+        // compares against its own stored groups and prints the differing groups. Guarded so a
+        // reflected reply (peer echoing its groups back) does not loop.
+        function mpSendDetail(frame) {
+            if (mpSync.detailSent[frame]) return;
+            const groups = mpSync.localGroups[frame];
+            if (!groups) return;   // we no longer have this frame's groups (pruned / behind) — nothing to send
+            mpSync.detailSent[frame] = true;
+            if (conn && conn.open) {
+                try { conn.send({ type: 'SYNC_DETAIL', frame: frame, groups: groups }); } catch (e) {}
+            }
+        }
+
+        // Handle a peer's SYNC_DETAIL: compare their group sub-hashes to ours for the SAME frame and
+        // warn listing ONLY the groups that differ — pinpointing the exact diverged state field-group
+        // at the root desync frame. Then reflect our own groups back (guarded) so BOTH peers report.
+        function mpReceiveDetail(frame, remoteGroups) {
+            const localGroups = mpSync.localGroups[frame];
+            if (!localGroups || !remoteGroups) {
+                console.warn('[MP DESYNC FIELDS] frame ' + frame + ': cannot compare (missing ' +
+                             (!localGroups ? 'local' : 'remote') + ' group hashes)');
+            } else {
+                const diffs = [];
+                for (const g in localGroups) {
+                    if (localGroups[g] !== remoteGroups[g]) {
+                        diffs.push(g + '=local ' + (localGroups[g] >>> 0).toString(16) +
+                                   ' != remote ' + (remoteGroups[g] >>> 0).toString(16));
+                    }
+                }
+                if (diffs.length) console.warn('[MP DESYNC FIELDS] frame ' + frame + ': ' + diffs.join(', '));
+                else console.warn('[MP DESYNC FIELDS] frame ' + frame + ': all group hashes MATCH ' +
+                                  '(divergence is in a field not covered by the group set, or it healed by now)');
+            }
+            mpSendDetail(frame);   // reflect ours back so the other peer also gets the breakdown (guarded)
+        }
+
         function mpCompareHash(frame, remoteHash) {
             const local = mpSync.local[frame];
             if (local === undefined) { mpSync.remote[frame] = remoteHash; return; }  // we're behind; compare later
@@ -15371,6 +15751,10 @@
                 mpSync.desync = { frame, local, remote: remoteHash };   // keep the EARLIEST divergence (root)
                 console.warn('[MP DESYNC] frame ' + frame + ': local ' + (local >>> 0).toString(16) +
                              ' != remote ' + (remoteHash >>> 0).toString(16));
+                // Field-level diagnostics: exchange per-group sub-hashes for THIS exact frame so the
+                // next warn names the diverged state field-group. Off the hot path (only on a first
+                // detected desync at this frame).
+                mpSendDetail(frame);
             }
         }
 
@@ -15378,7 +15762,17 @@
         // so re-simulated frames overwrite their stale prediction-based hash with the settled one.
         function mpStoreHash(frame) {
             if (gameMode !== 'pvp') return;
-            mpSync.local[frame] = hashGameState();
+            // Capture the snapshot ONCE and feed both the main hash and the per-group diagnostic
+            // hashes, so the group ring costs one extra field-pass (not a second captureGameState).
+            const snap = captureGameState();
+            // FALSE-DESYNC FIX: captureGameState() stamps snap.frame with the LIVE currentFrame, but
+            // hashGameState mixes s.frame — so when a rollback RE-stores frame f's hash, s.frame is
+            // whatever the sim currently is (not f), and the two peers stamp different numbers for the
+            // same real state -> the 'misc' group diverges -> a FALSE desync. Stamp the frame this
+            // hash actually represents so s.frame is identical across peers (and across a re-store).
+            snap.frame = frame;
+            mpSync.local[frame] = hashGameState(snap);
+            mpSync.localGroups[frame] = hashGameStateGroups(snap);
             const r = mpSync.remote[frame];
             if (r !== undefined) { mpCompareHash(frame, r); delete mpSync.remote[frame]; }
         }
@@ -15393,9 +15787,11 @@
                 }
             }
             if (currentFrame % 64 === 0) {
-                const cutoff = currentFrame - 300;
+                const cutoff = currentFrame - 300;   // >> MAX_ROLLBACK_FRAMES + INPUT_DELAY, keeps ample re-sim + compare window
                 for (const k in mpSync.local) if ((k | 0) < cutoff) delete mpSync.local[k];
                 for (const k in mpSync.remote) if ((k | 0) < cutoff) delete mpSync.remote[k];
+                for (const k in mpSync.localGroups) if ((k | 0) < cutoff) delete mpSync.localGroups[k];
+                for (const k in mpSync.detailSent) if ((k | 0) < cutoff) delete mpSync.detailSent[k];
             }
         }
 
@@ -15441,8 +15837,8 @@
                 'R hp ' + Math.round(R.towerHealth || 0) + ' mp ' + (R.mana || 0).toFixed(1) + ' z ' + rz.toFixed(2) + (R.juiceActive ? ' JUICE' : '');
         }
 
-        // F2 toggles the overlay (works anytime).
-        document.addEventListener('keydown', (e) => { if (e.code === 'F2') { e.preventDefault(); toggleMpOverlay(); } });
+        // F2 toggles the overlay — dev mode only (ship-clean). dbg.overlay() also works from console.
+        document.addEventListener('keydown', (e) => { if (e.code === 'F2' && window.DEV_MODE) { e.preventDefault(); toggleMpOverlay(); } });
 
         // ---- Console commands ----
         window.dbg = {
@@ -15542,23 +15938,31 @@
         // ---- AI determinism oracle (Phase 2.1) ----
         // Folds decideAI outputs over a scripted synthetic view sequence into a 32-bit hex hash.
         // No mesh reads, no game loop — pure function exercise only.
-        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "8ea9157c"  (re-pinned 2026-06-29 after the
-        // difficulty-tuning pass wired aimError/parryTimingError/castAggression into decideAI)
+        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "5afbc1a6"  (re-pinned 2026-07-04:
+        // behavioral conditions — frostbolt lane-gating, HP/turtle mode, skill-scaled threat
+        // pick + save-both; synthetic view now cycles incoming 0/1/2 to cover those branches)
         (function attachAIDeterminism() {
             function _syntheticView(seed) {
+                // Projectile velX sign varies with seed so the incoming COUNT cycles through
+                // 0/1/2 — this exercises the turtle toggle, offense gating, frostbolt alignment,
+                // and threat-pick branches (a fixed 2-incoming view would leave turtle always on).
+                const v1 = (seed % 3 === 0) ? -8 : 8;   // sometimes outgoing (not a threat)
+                const v2 = (seed % 2 === 0) ?  6 : -6;
                 return {
                     projectiles: [
-                        { id: 1, x: 3.0, z: (seed % 5) * 0.4 - 1.0, velX: 8, velZ: 0.5,  owner: 'player', volleyCount: 1, type: 'fireball' },
-                        { id: 2, x: 5.0, z: (seed % 3) * 0.3,        velX: 6, velZ: -0.3, owner: 'player', volleyCount: 0, type: 'frostbolt' },
+                        { id: 1, x: 3.0, z: (seed % 5) * 0.4 - 1.0, velX: v1, velZ: 0.5,  owner: 'player', volleyCount: 1, type: 'fireball',  sightFrames: (seed % 13) },
+                        { id: 2, x: 5.0, z: (seed % 3) * 0.3,        velX: v2, velZ: -0.3, owner: 'player', volleyCount: 0, type: 'frostbolt', sightFrames: (seed % 7)  },
                     ],
                     self: {
                         paddleX: 7, paddleZ: (seed % 7) * 0.2 - 0.6,
                         mana: 3,
                         cooldowns: { fireball: 0, frostbolt: 0, thunderstorm: 0 },
                         freezeTime: 0, casting: null, castProgress: 0, castTime: 1.0, juice: 0, juiceActive: false, shieldCharges: 0,
+                        towerHealth: (seed % 20) + 1,   // 1..20 → exercises low-HP turtle path
                     },
-                    opp:  { paddleZ: (seed % 11) * 0.15 - 0.8 },
+                    opp:  { paddleZ: (seed % 11) * 0.15 - 0.8, towerHealth: 20 - (seed % 7) },
                     geom: { tableWidth: 16, halfDepth: 4, paddleBoundary: 3.8 },
+                    maxHealth: 20,
                     roundActive: true,
                 };
             }
@@ -15567,7 +15971,7 @@
                 let hash = 0;
                 for (let i = 0; i < steps; i++) {
                     const view   = _syntheticView(seed + i);
-                    const result = window.decideAI(view, i, window.makeAIRng((seed + i) ^ window.AI_RNG_SEED), window.DEFAULT_AI_PARAMS);
+                    const result = window.decideAI(view, i, window.makeAIRng((seed + i) ^ window.AI_RNG_SEED), window.skillToProfile(0.45));
                     hash = ((hash << 5) - hash + result.moveDir + 1)                 | 0;
                     hash = ((hash << 5) - hash + (result.parry        ? 7  : 0))     | 0;
                     hash = ((hash << 5) - hash + (result.fireball     ? 13 : 0))     | 0;
@@ -15666,7 +16070,7 @@
                 console.log('[capture] recording stopped');
             }
         };
-        console.log('%c[Volleybolt] MP debug ready — dbg.help() for commands · F2 toggles the netcode overlay', 'color:#2f8f6f');
+        console.log('%c[Volleybolt] MP debug ready — dbg.help() for commands · dbg.overlay() toggles the netcode overlay (F2 with ?dev)', 'color:#2f8f6f');
 
         // Start the multiplayer match
         function startMultiplayerMatch(seed, upgradeId = selectedUpgrade) {
@@ -15696,6 +16100,8 @@
             localInputHistory = [];
             remoteInputHistory = [];
             lastConfirmedRemoteFrame = -1;
+            highestRemoteInputFrame = -1;
+            remoteCurrentFrame = -1;
             gameStateHistory = [];
             nextProjectileId = 0;
             netAccumulator = 0;
@@ -15740,10 +16146,11 @@
             // Start the round
             startRound();
 
-            // Reset netcode test harness + show the telemetry overlay for this match
-            mpSync.local = {}; mpSync.remote = {}; mpSync.lastOkFrame = -1;
+            // Reset netcode test harness; telemetry overlay auto-shows in dev mode only
+            // (ship-clean — players see no debug UI; ?dev + F2 or dbg.overlay() brings it back).
+            mpSync.local = {}; mpSync.remote = {}; mpSync.localGroups = {}; mpSync.detailSent = {}; mpSync.lastOkFrame = -1;
             mpSync.desync = null; mpSync.mismatches = 0; mpSync.rollbacks = 0; mpSync.lastRollback = 0;
-            toggleMpOverlay(true);
+            toggleMpOverlay(!!window.DEV_MODE);
 
             // Show gameplay UI (same as single player)
             if (window.guiElements) {
@@ -15777,50 +16184,104 @@
             updateHealthBars();
         }
 
-        // Receive remote input from opponent
-        function receiveRemoteInput(data) {
-            const frame = data.frame;
-
-            // Store the input
+        // Store one confirmed remote input frame. Idempotent by frame, so redundant copies and
+        // out-of-order arrival (unordered channel) are harmless. The update path deliberately
+        // leaves wasPredicted/predicted* untouched — checkForRollback compares them against the
+        // confirmed values to decide whether this frame needs a rollback.
+        function storeRemoteInput(frame, entry) {
             if (!remoteInputHistory[frame]) {
                 remoteInputHistory[frame] = {
-                    moveDir: data.moveDir,
-                    parry: data.parry,
-                    fireball: data.fireball,
-                    frostbolt: data.frostbolt,
-                    thunderstorm: data.thunderstorm || false,
-                    juice: data.juice || false,
+                    moveDir: entry.moveDir,
+                    parry: entry.parry,
+                    fireball: entry.fireball,
+                    frostbolt: entry.frostbolt,
+                    thunderstorm: entry.thunderstorm || false,
+                    juice: entry.juice || false,
                     confirmed: true
                 };
             } else {
                 // Update prediction with actual value
-                remoteInputHistory[frame].moveDir = data.moveDir;
-                remoteInputHistory[frame].parry = data.parry;
-                remoteInputHistory[frame].fireball = data.fireball;
-                remoteInputHistory[frame].frostbolt = data.frostbolt;
-                remoteInputHistory[frame].thunderstorm = data.thunderstorm || false;
-                remoteInputHistory[frame].juice = data.juice || false;
+                remoteInputHistory[frame].moveDir = entry.moveDir;
+                remoteInputHistory[frame].parry = entry.parry;
+                remoteInputHistory[frame].fireball = entry.fireball;
+                remoteInputHistory[frame].frostbolt = entry.frostbolt;
+                remoteInputHistory[frame].thunderstorm = entry.thunderstorm || false;
+                remoteInputHistory[frame].juice = entry.juice || false;
                 remoteInputHistory[frame].confirmed = true;
             }
+        }
 
-            // Send acknowledgment
+        // Receive remote input from opponent
+        function receiveRemoteInput(data) {
+            const frame = data.frame;
+
+            // Track the furthest remote input frame for frame-advantage time-sync (BUG A).
+            // Local pacing only — never used inside simulateNetworkFrame, so determinism holds.
+            if (frame > highestRemoteInputFrame) highestRemoteInputFrame = frame;
+
+            // DEFECT 2: track the peer's ACTUAL currentFrame (piggybacked). This is the true frame
+            // gap, not the latency-lagged (highestRemoteInputFrame - INPUT_DELAY) estimate. Also
+            // pacing-only — never read inside simulateNetworkFrame.
+            if (typeof data.senderFrame === 'number' && data.senderFrame > remoteCurrentFrame) {
+                remoteCurrentFrame = data.senderFrame;
+            }
+
+            // Store the newest input
+            storeRemoteInput(frame, data);
+
+            // GGPO-style redundancy: the packet also carries the sender's previous N input frames.
+            // Any single lost/late packet is healed by the next one that arrives — no waiting on
+            // the (unordered channel's background) retransmit. Store-only: no ack per history
+            // entry, and storeRemoteInput's confirmed-idempotence makes duplicates free.
+            if (data.history) {
+                for (const h of data.history) storeRemoteInput(h.frame, h);
+            }
+
+            // Send acknowledgment (newest frame only — history is redundancy, not new information)
             if (conn && conn.open) {
                 conn.send({ type: 'INPUT_ACK', frame: frame });
             }
         }
 
+        // GGPO-style input redundancy: every INPUT packet re-sends this many PREVIOUS input frames
+        // alongside the new one. Inputs are ~7 booleans, so 10 extra entries is still a tiny packet,
+        // and it means a lost packet costs nothing — the next packet (16ms later) carries the same
+        // frames. Required for the unordered channel to be loss-proof without waiting on retransmits.
+        const INPUT_REDUNDANCY = 10;
+
         // Send local input to opponent
         function sendLocalInput(frame, input) {
             if (conn && conn.open) {
+                // Bundle the previous N frames from our own history (newest-first; stop at a gap,
+                // which only occurs at match start before frame N exists).
+                const history = [];
+                for (let f = frame - 1; f >= Math.max(0, frame - INPUT_REDUNDANCY); f--) {
+                    const h = localInputHistory[f];
+                    if (!h) break;
+                    history.push({
+                        frame: f,
+                        moveDir: h.moveDir,
+                        parry: h.parry,
+                        fireball: h.fireball,
+                        frostbolt: h.frostbolt,
+                        thunderstorm: h.thunderstorm || false,
+                        juice: h.juice || false
+                    });
+                }
                 conn.send({
                     type: 'INPUT',
                     frame: frame,
+                    // DEFECT 2: piggyback our live sim frame so the peer can compute the true frame
+                    // gap for the stall (frame is the DELAYED input frame = currentFrame + INPUT_DELAY;
+                    // senderFrame is where our sim actually is). Pacing metadata only.
+                    senderFrame: currentFrame,
                     moveDir: input.moveDir,
                     parry: input.parry,
                     fireball: input.fireball,
                     frostbolt: input.frostbolt,
                     thunderstorm: input.thunderstorm || false,
-                    juice: input.juice || false
+                    juice: input.juice || false,
+                    history: history
                 });
             }
         }
@@ -16112,8 +16573,15 @@
 
         // Check if we need to rollback
         function checkForRollback() {
-            // Look for frames where we predicted wrong
-            for (let f = lastConfirmedRemoteFrame + 1; f < currentFrame; f++) {
+            // BUG B fix: scan from the oldest frame we still have a snapshot for (the furthest
+            // back we could re-simulate) up to currentFrame, and return the EARLIEST frame whose
+            // confirmed remote input differs from what we predicted. The old lower bound used
+            // lastConfirmedRemoteFrame, which is set by INPUT_ACK (how far the REMOTE ack'd OUR
+            // input, ~currentFrame + INPUT_DELAY) — so the scan range was empty and rollback
+            // never fired. reconcileRollbackFrame() clears the mismatch after a rollback so the
+            // same frame does not re-trigger every tick.
+            const scanFrom = gameStateHistory.length ? gameStateHistory[0].frame : 0;
+            for (let f = scanFrom; f < currentFrame; f++) {
                 const remote = remoteInputHistory[f];
                 if (remote && remote.confirmed && remote.wasPredicted) {
                     // Compare predicted vs actual
@@ -16139,7 +16607,11 @@
                 return;
             }
 
-            console.log('Rolling back from frame', currentFrame, 'to frame', toFrame);
+            // Per-rollback log is OFF by default: at 250ms RTT rollbacks fire on nearly every
+            // input change and flood the console, burying the rare [MP DESYNC] warnings that
+            // actually matter. Flip window.MP_LOG_ROLLBACKS = true to see them. The telemetry
+            // counters (overlay: "rollbacks N") still track every one.
+            if (window.MP_LOG_ROLLBACKS) console.log('Rolling back from frame', currentFrame, 'to frame', toFrame);
             mpSync.rollbacks++; mpSync.lastRollback = currentFrame - toFrame;   // netcode telemetry
 
             // Enable resimulation mode (mutes sounds)
@@ -16148,6 +16620,14 @@
             // Restore to the snapshot
             const snapshot = gameStateHistory[stateIndex];
             restoreGameState(snapshot);
+
+            // DEFECT 1 fix: trim aged-out history NOW and keep [toFrame ... currentFrame-1]. Snapshot
+            // convention (from runNetworkFrame): gameStateHistory[f] holds the state captured BEFORE
+            // simulating frame f. snapshot{toFrame} is unaffected by the correction (it predates
+            // toFrame's input), so it stays valid. Every LATER retained snapshot embeds the old-timeline
+            // frame-toFrame result and is now STALE — we RE-CAPTURE each below after re-simulating, so a
+            // chained rollback to an intermediate frame restores CORRECTED state, not the old timeline.
+            gameStateHistory = gameStateHistory.slice(stateIndex);
 
             // Re-simulate from that frame to current
             for (let f = toFrame; f < currentFrame; f++) {
@@ -16165,10 +16645,42 @@
 
                 // Overwrite this re-simulated frame's hash with the settled value
                 mpStoreHash(f);
-            }
 
-            // Trim old state history
-            gameStateHistory = gameStateHistory.slice(stateIndex);
+                // Reconcile (BUG B fix): now that this frame's confirmed remote input has been
+                // applied, snap its stored prediction to the actual value so checkForRollback
+                // won't keep returning it every tick. Only reconcile CONFIRMED frames — an
+                // still-predicted frame must keep wasPredicted/predicted* intact so its real
+                // input can trigger a future rollback when it arrives. Pure bookkeeping on the
+                // input-history record; touches nothing simulateNetworkFrame reads.
+                const rem = remoteInputHistory[f];
+                if (rem && rem.confirmed && rem.wasPredicted) {
+                    rem.predictedMoveDir = rem.moveDir;
+                    rem.predictedParry = rem.parry;
+                    rem.predictedFireball = rem.fireball;
+                    rem.predictedFrostbolt = rem.frostbolt;
+                    rem.predictedThunderstorm = rem.thunderstorm;
+                    rem.predictedJuice = rem.juice;
+                }
+
+                // DEFECT 1 fix: after simulating frame f the live state is "before frame f+1", which
+                // is exactly what snapshot{f+1} must hold. Overwrite the stale snapshot for every
+                // RETAINED frame (f+1 < currentFrame) with the just-corrected state so a later chained
+                // rollback restores the corrected timeline. We do NOT store a snapshot for currentFrame
+                // itself — the next runNetworkFrame captures that (matching the normal invariant, where
+                // the newest snapshot's frame == currentFrame-1). captureGameState() stamps .frame with
+                // the top-level currentFrame, so override it to the frame this snapshot represents.
+                const nextFrame = f + 1;
+                if (nextFrame < currentFrame) {
+                    const snap = captureGameState();
+                    snap.frame = nextFrame;
+                    const idx = gameStateHistory.findIndex(s => s.frame === nextFrame);
+                    if (idx >= 0) gameStateHistory[idx] = snap;
+                    else gameStateHistory.push(snap);
+                }
+            }
+            // History now holds corrected snapshots for [toFrame ... currentFrame-1], ascending and
+            // contiguous. Length == currentFrame - toFrame <= MAX_ROLLBACK_FRAMES (rollback range is
+            // bounded by the window), so no extra cap is needed here.
 
             isResimulating = false;
         }
@@ -16187,67 +16699,66 @@
 
             // Process fixed timestep frames
             while (netAccumulator >= TICK_MS) {
+                // DEFECT 3 — START BARRIER: do not advance the local sim until we've heard from the
+                // peer at least once. During the connect/render startup gap one side can otherwise run
+                // many frames ahead; when the other's early inputs finally arrive they target frames
+                // already trimmed from the 8-snapshot window -> uncorrectable divergence. Gating on
+                // highestRemoteInputFrame >= 0 bounds the initial skew.
+                //
+                // We STILL transmit (and locally record) our input each barred tick — otherwise both
+                // peers would block here forever (mutual deadlock), since the only thing that lifts the
+                // barrier is receiving the peer's INPUT, which is only sent from this loop. Both peers
+                // send from frame 0, so each hears the other within ~1 RTT and both barriers lift. The
+                // frame-INPUT_DELAY input we announce here is what the frame-0 runNetworkFrame re-sends
+                // and simulates once the barrier lifts, so local and remote copies stay consistent.
+                if (highestRemoteInputFrame < 0) {
+                    const localInput = captureLocalInput();
+                    const inputFrame = currentFrame + INPUT_DELAY;
+                    localInputHistory[inputFrame] = localInput;
+                    sendLocalInput(inputFrame, localInput);
+                    netAccumulator = 0; // don't bank backlog while barred (avoids a burst on release)
+                    break;
+                }
+
+                // Frame-advantage stall (BUG A / DEFECT 2): if we've run too far ahead of the remote,
+                // hold this tick so it can catch up (keeps the gap under MAX_ROLLBACK_FRAMES).
+                // This is PURE LOCAL PACING — it only gates WHEN runNetworkFrame is called, never WHICH
+                // frames/inputs are simulated. Both peers still simulate the same frames with the same
+                // inputs, so determinism is unaffected.
+                //
+                // DEFECT 2: use the peer's ACTUAL currentFrame (remoteCurrentFrame, piggybacked on the
+                // INPUT msg) for a true frame gap, instead of the latency-lagged
+                // (highestRemoteInputFrame - INPUT_DELAY) estimate — the old estimate perceived the
+                // one-way latency as advantage, so at RTT > ~66ms both peers thought they were ahead and
+                // stalled every tick (stutter). remoteCurrentFrame is >= 0 here (it is set by the same
+                // INPUT message that lifts the barrier above).
+                const frameAdvantage = currentFrame - remoteCurrentFrame;
+                if (frameAdvantage > MAX_FRAME_ADVANTAGE) {
+                    netAccumulator = 0; // drop backlog so we resume at 1x once the remote catches up (avoids a burst)
+                    break;
+                }
                 runNetworkFrame();
                 netAccumulator -= TICK_MS;
             }
 
-            // Update UI (health bars, mana, etc.) after simulation
+            // Throttled UI: health bars, score, netcode telemetry. Mana and cast bars are
+            // now driven by updateMatchPresentation below (avoids double-driving).
             pvpUiAccumulator += renderDt;
             if (pvpUiAccumulator >= PVP_UI_INTERVAL) {
                 updateHealthBars();
-                if (combatants.left) updateCombatantManaUI(combatants.left);
-                if (combatants.right) updateCombatantManaUI(combatants.right);
                 updateScore();
                 updateMpOverlay();   // netcode telemetry overlay
                 pvpUiAccumulator = 0;
             }
 
-            // Update cast bars for PvP (keep smooth)
-            updatePvPCastBars();
-        }
-
-        // Update cast bars in PvP mode
-        function updatePvPCastBars() {
-            // Determine which combatant is "local" player visually
-            // With camera flip, client sees themselves on left, so we show their cast bar on the left
-            const localCombatant = isHost ? combatants.left : combatants.right;
-            const remoteCombatant = isHost ? combatants.right : combatants.left;
-
-            // Update local player's cast bar (shown on left/player position)
-            if (localCombatant && localCombatant.casting) {
-                const progress = localCombatant.castProgress / localCombatant.castTime;
-                const ability = abilities[localCombatant.casting];
-                updateCastBarUI(ability ? ability.name : localCombatant.casting, ability ? ability.element : 'fire', progress);
-                showCastBar(true);
-                // Update 3D cast bar above character
-                if (window.combatantUpdate3DCastBar) {
-                    combatantUpdate3DCastBar(localCombatant, progress, true);
-                }
-            } else {
-                showCastBar(false);
-                // Hide 3D cast bar when not casting
-                if (window.combatantUpdate3DCastBar) {
-                    combatantUpdate3DCastBar(localCombatant, 0, false);
-                }
-            }
-
-            // Update remote player's cast bar (shown on right/AI position)
-            if (remoteCombatant && remoteCombatant.casting) {
-                const progress = remoteCombatant.castProgress / remoteCombatant.castTime;
-                const ability = abilities[remoteCombatant.casting];
-                updateAICastBarUI(ability ? ability.name : remoteCombatant.casting, ability ? ability.element : 'fire', progress);
-                showAICastBar(true);
-                // Update 3D cast bar above character
-                if (window.combatantUpdate3DCastBar) {
-                    combatantUpdate3DCastBar(remoteCombatant, progress, true);
-                }
-            } else {
-                showAICastBar(false);
-                // Hide 3D cast bar when not casting
-                if (window.combatantUpdate3DCastBar) {
-                    combatantUpdate3DCastBar(remoteCombatant, 0, false);
-                }
-            }
+            // Per-frame presentation shared with SP: cast bars (correct no-flip layout —
+            // left combatant always drives left bar, right always drives right bar),
+            // paddle rotation targets, footsteps, ice/freeze visuals, cooldown/mana UI,
+            // and per-projectile trail/shadow/glow/sound. Called once per rendered frame on
+            // settled sim state (after the fixed-step while loop); isResimulating is false here.
+            // Via window: updateMatchPresentation is defined in the inner game-setup closure,
+            // which this outer-scope loop cannot reach directly.
+            if (window.updateMatchPresentation) window.updateMatchPresentation(renderDt);
         }
 
         // Update barrier pulse effect
@@ -16519,7 +17030,10 @@
                     window.activeParryBubble = null;
                 }
             },
-            castingStart: () => { if (window.ToneSFX) ToneSFX.castingStart(); },
+            // No-op: the mid-cast loop is now owned by updateMatchPresentation (state-driven, per
+            // side, WITH a matching stop). The old unconditional 'player'-loop start here had no
+            // deps.castingStop in the sim path, so the loop leaked (looped forever) in MP.
+            castingStart: () => {},
             // Juice burst FX (gated by !isResimulating at the sim call sites). These route
             // to the SP FX entry points so MP looks identical: onJuiceStart builds the aura,
             // plays 'juiceUp', starts the drone and sets the white-hot tint; onJuiceEnd fades
@@ -16766,10 +17280,52 @@
             // the main-menu / pause buttons exactly and clicks reliably. Keyboard Enter still works.
             if (window.guiElements.continueBtn) window.guiElements.continueBtn.isVisible = false;
             victoryContinueAt = Date.now() + VICTORY_CONTINUE_GRACE_MS;
+            // Both buttons live in one flex-column container BELOW the battle report, so they
+            // stack with a gap instead of overlapping each other or the report. Show the
+            // container; grace-disable both buttons until the report is readable.
             const contBtn = ensureVictoryContinueBtn();
-            contBtn.disabled = true;                 // grace: greyed out until the report is readable
-            contBtn.style.display = 'block';
-            setTimeout(() => { const b = document.getElementById('victoryContinueBtn'); if (b) b.disabled = false; }, VICTORY_CONTINUE_GRACE_MS);
+            const paBtn   = ensureVictoryPlayAgainBtn();
+            const waitEl  = ensureVictoryWaitLabel();
+            const btnBox  = ensureVictoryButtonContainer();
+            btnBox.style.display = 'flex';
+            // Host-authoritative rematch: the decider (SP local player, or the PvP HOST) gets Play
+            // Again; the PvP JOINER instead sees "Waiting for host..." and can only leave. This is
+            // why one player can't force the other into a rematch.
+            const joinerWaiting = (gameMode === 'pvp' && !isHost);
+            paBtn.style.display  = joinerWaiting ? 'none' : 'block';
+            waitEl.style.display = joinerWaiting ? 'block' : 'none';
+            contBtn.disabled = true;
+            paBtn.disabled = true;
+            setTimeout(() => {
+                const c = document.getElementById('victoryContinueBtn');   if (c) c.disabled = false;
+                const p = document.getElementById('victoryPlayAgainBtn');  if (p) p.disabled = false;
+            }, VICTORY_CONTINUE_GRACE_MS);
+        }
+
+        // Flex-column container holding the two victory buttons (Play Again on top, Main Menu
+        // below). Positioned once, BELOW the GUI Battle Report leaderboard (150px tall, centered
+        // at +20 → its bottom is ~+95 below center = ref-y 635). Lives in #hudScaleLayer (1920x1080
+        // reference, zoomed by --ui-scale), so it scales with the report at every size/fullscreen.
+        function ensureVictoryButtonContainer() {
+            let box = document.getElementById('victoryButtons');
+            if (box) return box;
+            box = document.createElement('div');
+            box.id = 'victoryButtons';
+            box.style.cssText = 'position:absolute;left:960px;top:calc(540px + 170px);transform:translateX(-50%);z-index:650;display:none;flex-direction:column;gap:14px;align-items:center;pointer-events:none';
+            (document.getElementById('hudScaleLayer') || document.body).appendChild(box);
+            return box;
+        }
+        // "Waiting for host..." label shown to the PvP joiner in Play Again's slot (order:1),
+        // since only the host starts a rematch (host-authoritative).
+        function ensureVictoryWaitLabel() {
+            let el = document.getElementById('victoryWaitLabel');
+            if (el) return el;
+            el = document.createElement('div');
+            el.id = 'victoryWaitLabel';
+            el.textContent = 'Waiting for host...';
+            el.style.cssText = "order:1;display:none;min-width:260px;text-align:center;color:#dfe6f2;font-family:'FF9UI',sans-serif;font-size:18px;opacity:0.85;pointer-events:none";
+            ensureVictoryButtonContainer().appendChild(el);
+            return el;
         }
         // DOM Continue button for the Victory/Defeat screen — styled like the menu buttons.
         function ensureVictoryContinueBtn() {
@@ -16778,14 +17334,91 @@
             btn = document.createElement('button');
             btn.id = 'victoryContinueBtn';
             btn.className = 'game-btn menu-btn';
-            btn.textContent = 'Continue';
-            // Anchored a fixed distance below screen center (like the GUI Battle Report panel,
-            // which ends ~+105px below center) so the gap stays consistent at any window size —
-            // %-of-height positioning left an awkward variable gap under the report.
-            btn.style.cssText = 'position:fixed;left:50%;top:calc(50% + 140px);transform:translateX(-50%);z-index:650;display:none;min-width:260px';
-            document.body.appendChild(btn);
-            btn.addEventListener('click', () => returnToMenuTransition());
+            btn.textContent = 'Main Menu';
+            // Flex item in #victoryButtons (order:2 → below Play Again). The container handles
+            // positioning + scaling (in #hudScaleLayer). pointer-events:auto re-enables clicks
+            // (the layer/container are pointer-events:none). Still a <body> descendant, so
+            // isAnyMenuOpen()'s gameOver→document.body root + getNavFocusables resolve it for
+            // controller nav.
+            btn.style.cssText = 'order:2;display:block;min-width:260px;pointer-events:auto';
+            ensureVictoryButtonContainer().appendChild(btn);
+            btn.addEventListener('click', () => {
+                // In PvP, leaving the match also DISCONNECTS the peer, so the opponent gets a clean
+                // "opponent left" (via LEAVE → handleDisconnect) and can't drag us back with a late
+                // rematch request.
+                if (gameMode === 'pvp') {
+                    try { sendLeaveMessage('Opponent returned to the menu'); } catch (e) {}
+                    try { cleanupPeer(); } catch (e) {}
+                }
+                returnToMenuTransition();
+            });
             return btn;
+        }
+
+        // DOM Play Again button for the Victory/Defeat screen — placed ABOVE Main Menu.
+        // SP: immediately starts a fresh match vs AI (no ELO reset).
+        // MP: sends REMATCH message to peer and returns both to the connected lobby so the
+        //     existing Ready/Start flow handles a fresh match without dropping the connection.
+        function ensureVictoryPlayAgainBtn() {
+            let btn = document.getElementById('victoryPlayAgainBtn');
+            if (btn) return btn;
+            btn = document.createElement('button');
+            btn.id = 'victoryPlayAgainBtn';
+            btn.className = 'game-btn menu-btn';
+            btn.textContent = 'Play Again';
+            // Flex item in #victoryButtons (order:1 → on top, above Main Menu). The container
+            // handles positioning/scaling; pointer-events:auto re-enables clicks.
+            btn.style.cssText = 'order:1;display:block;min-width:260px;pointer-events:auto';
+            ensureVictoryButtonContainer().appendChild(btn);
+            btn.addEventListener('click', () => {
+                if (Date.now() < victoryContinueAt) return;  // grace guard
+                if (gameMode === 'pvp') {
+                    // Host-authoritative: only the host starts a rematch. If the peer is already
+                    // gone, do nothing (the disconnect overlay handles that) instead of dropping
+                    // into an empty lobby.
+                    if (!isHost) return;
+                    if (!(conn && conn.open)) return;
+                    // Wrap the send: a half-open conn can throw; if it does, bail instead of
+                    // dropping into an empty connected lobby (let handleDisconnect run).
+                    try { conn.send({ type: 'REMATCH' }); } catch (e) { return; }
+                    _returnToConnectedLobby();
+                } else {
+                    // Single-player rematch: fresh match vs AI, ELO carries over.
+                    _startRematchSP();
+                }
+            });
+            return btn;
+        }
+
+        // Shared SP rematch helper — hides victory, resets match state, starts immediately.
+        function _startRematchSP() {
+            try { if (window.clearAllProjectiles) clearAllProjectiles(); } catch (e) {}
+            try { if (window.clearAllLightningFX) clearAllLightningFX(); } catch (e) {}
+            try { if (window.clearAllCombatText)  clearAllCombatText();  } catch (e) {}
+            hideVictoryScreen();
+            resetGame();           // clears gameOver, scores, gates — NOT aiSkillRating
+            startGameInProgress = false;  // clear the double-click guard
+            gameState = "menu";    // startGame() guards on gameState==='menu'; reset it here
+            startGame();
+        }
+
+        // Shared MP rematch helper — keeps PeerJS connection, returns to connected lobby.
+        function _returnToConnectedLobby() {
+            try { if (window.clearAllProjectiles) clearAllProjectiles(); } catch (e) {}
+            try { if (window.clearAllLightningFX) clearAllLightningFX(); } catch (e) {}
+            try { if (window.clearAllCombatText)  clearAllCombatText();  } catch (e) {}
+            hideVictoryScreen();
+            // Re-enter lobby state without tearing down PeerJS.
+            gameOver = false;
+            roundTransitioning = false;
+            roundActive = false;
+            GameSM.state = 'lobby';
+            GameSM.show3D(false);
+            // Show the multiplayer lobby container and jump straight to the connected view.
+            const lobby = document.getElementById('multiplayerLobby');
+            if (lobby) lobby.classList.add('visible');
+            showLobbyView('lobbyConnectedView');
+            resetReadyState();  // both start un-ready; existing Ready/Start flow takes over
         }
 
         function hideVictoryScreen() {
@@ -16807,9 +17440,9 @@
                     window.guiElements.victoryLeaderboard.isVisible = false;
                 }
             }
-            // Hide the DOM Continue button.
-            const contBtn = document.getElementById('victoryContinueBtn');
-            if (contBtn) contBtn.style.display = 'none';
+            // Hide the DOM victory-button container (Play Again + Main Menu).
+            const btnBox = document.getElementById('victoryButtons');
+            if (btnBox) btnBox.style.display = 'none';
         }
 
         function resetGame() {
@@ -18778,6 +19411,10 @@
                     // Track match win and commit stats
                     StatTracker.increment('matches_won');
                     StatTracker.commitMatch();
+                    // Adapt AI competence (ELO): player took the match → AI sharpens next time.
+                    if (gameMode !== 'pvp' && window.adaptAISkill) {
+                        window.adaptAISkill(true, Math.abs(playerScore - aiScore));
+                    }
                     // Show victory screen instantly
                     showVictoryScreen(localWon);
                 } else {
@@ -18809,6 +19446,10 @@
                     // Track match loss and commit stats
                     StatTracker.increment('matches_lost');
                     StatTracker.commitMatch();
+                    // Adapt AI competence (ELO): player lost the match → AI eases off next time.
+                    if (gameMode !== 'pvp' && window.adaptAISkill) {
+                        window.adaptAISkill(false, Math.abs(playerScore - aiScore));
+                    }
                     // Show defeat screen instantly
                     showVictoryScreen(localWon);
                 } else {

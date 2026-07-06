@@ -66,7 +66,7 @@ function buildFace() {
   if (!head || !front) { console.warn('Missing Head/headfront transform nodes'); return; }
   _nodes = { head, front };
 
-  const tex = new BABYLON.Texture('.pickle/pickle_face.png', scene, false, false,
+  const tex = new BABYLON.Texture('models/pickle/pickle_face.png', scene, false, false,
     BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
   tex.hasAlpha = true;
   tex.vScale = -1; tex.vOffset = 1;   // GLB/Babylon UV flips the sprite vertically; undo it
@@ -123,7 +123,7 @@ scene.onBeforeRenderObservable.add(() => {
   }
 });
 
-BABYLON.SceneLoader.ImportMesh('', '.pickle/', 'pickle_wizard_v1.glb', scene,
+BABYLON.SceneLoader.ImportMesh('', 'models/pickle/', 'pickle_wizard_v1.glb', scene,
   (meshes, ps, skeletons, animationGroups) => {
     groups = animationGroups;
     groups.forEach(a => a.stop());
