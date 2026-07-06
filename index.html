@@ -12477,6 +12477,7 @@
                     dodgeSightFrames:  Math.round(_aiLerp(18, 3, s)),  // frames a frostbolt must be seen before dodging
                     parrySight:        Math.round(_aiLerp(14, 2, s)),  // frames a threat must be seen before parrying
                     castCadence:       Math.round(_aiLerp(10, 2, s)),  // offensive cast phase-gate period (in think-cycles)
+                    openingSharpness:  _aiLerp(0.3, 1.0, s),          // how aggressively cadence collapses on an open lane (0=dull, 1=instant)
                     thunderstormSkill: s,                              // gate value: uses thunderstorm well only at high s
                     multiThreatSkill:  s,                              // gate value: prioritize biggest threat + save-both only at high s
                 };
@@ -12546,16 +12547,9 @@
                 const s      = view.self;
                 const halfD  = view.geom.halfDepth;
 
-                // ---- Situation read: pressure + HP → turtle (defend-only) mode ----
+                // ---- Situation read: incoming threats ----
                 const incoming      = _aiIncomingProjectiles(view);
                 const incomingCount = incoming.length;
-                const maxHP         = view.maxHealth || 20;
-                const selfHP        = (s.towerHealth != null) ? s.towerHealth : maxHP;
-                const hpFrac        = maxHP > 0 ? selfHP / maxHP : 1;
-                // Turtle = drop offense, play defense + parry. Trigger on being swarmed OR low
-                // HP; the lower the HP, the lower the pressure needed (defends sooner when
-                // losing). Above half HP it takes a real swarm (2+); hurt, a single shot suffices.
-                const turtle = (hpFrac < 0.30) || (incomingCount >= (hpFrac > 0.5 ? 2 : 1));
 
                 // One threat at a time; a smart (high-skill) AI targets the biggest, else closest.
                 const smartThreat = profile.multiThreatSkill >= 0.6;
@@ -12612,28 +12606,40 @@
                     && Math.abs(threat.z - s.paddleZ) < PARRY_RANGE
                     && (threat.sightFrames || 0) >= profile.parrySight);
 
+                // ---- Opening urgency: collapse cast cadence when the opponent is off the lane.
+                // openingSize = gap between opponent paddle and AI paddle beyond the block tolerance.
+                // Larger opening → effective cadence shrinks toward 1 (cast every K-period).
+                // Scale with openingSharpness (skill-scaled): low skill barely notices; high
+                // skill snaps to immediate on any meaningful gap. Formula is continuous —
+                // no HP triggers, no special cases.
+                const BLOCK_TOL   = 1.5;   // matches _aiIsOppBlocking radius
+                const openingSize = Math.max(0, Math.abs(view.opp.paddleZ - s.paddleZ) - BLOCK_TOL);
+                const MAX_OPENING = view.geom.halfDepth * 1.5;   // opening saturates at ≈1.5× half-court
+                const openingFrac = Math.min(1, openingSize / MAX_OPENING);
+                const effectiveCadence = Math.max(1, Math.round(profile.castCadence * (1 - openingFrac * profile.openingSharpness)));
+
                 // ---- Casting: gated to a fixed cast-decision cadence, with offensive
-                // casts further phase-gated by castCadence (low skill = sparse). ----
+                // casts further phase-gated by effectiveCadence (low skill = sparse;
+                // urgency on clear opening pulls it toward instant). ----
                 const K = 8;                                  // cast-decision base period (~0.13s @60Hz)
                 const isCastFrame = (frame % K === 0);
                 let fireball = false, frostbolt = false, thunderstorm = false;
                 if (isCastFrame) {
                     const cycle = Math.floor(frame / K);
-                    const offenseOpen = (cycle % Math.max(1, profile.castCadence)) === 0;
+                    const offenseOpen = (cycle % effectiveCadence) === 0;
                     const safe = _aiSafeToStartCast(view);
                     const cd   = s.cooldowns;
-                    // Offense is suppressed in turtle mode (under pressure / low HP → defend).
-                    const canFireball  = !turtle && offenseOpen && safe && cd.fireball  <= 0 && s.mana >= 1
+                    const canFireball  = offenseOpen && safe && cd.fireball  <= 0 && s.mana >= 1
                         && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
                     // Frostbolt is a LANE shot: only worth casting when the opponent is directly
                     // in front (its payoff is freezing them). No alignment → no cast, so it stops
                     // firing frostbolt into an empty lane.
                     const FROST_ALIGN  = 1.2;
                     const oppInFront   = Math.abs(s.paddleZ - view.opp.paddleZ) < FROST_ALIGN;
-                    const canFrostbolt = !turtle && offenseOpen && safe && cd.frostbolt <= 0 && s.mana >= 1
+                    const canFrostbolt = offenseOpen && safe && cd.frostbolt <= 0 && s.mana >= 1
                         && oppInFront && view.projectiles.length < 10 && !s.casting;
-                    // Thunderstorm is a DEFENSIVE panic-clear (allowed even in turtle): a skilled
-                    // AI recognizes the multi-projectile crunch.
+                    // Thunderstorm is a DEFENSIVE panic-clear: a skilled AI recognizes the
+                    // multi-projectile crunch and fires regardless of cadence.
                     const canThunderstorm = cd.thunderstorm <= 0 && s.mana >= 2
                         && incomingCount >= 2
                         && profile.thunderstormSkill >= 0.6;
@@ -16252,16 +16258,19 @@
         // ---- AI determinism oracle (Phase 2.1) ----
         // Folds decideAI outputs over a scripted synthetic view sequence into a 32-bit hex hash.
         // No mesh reads, no game loop — pure function exercise only.
-        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "5afbc1a6"  (re-pinned 2026-07-04:
-        // behavioral conditions — frostbolt lane-gating, HP/turtle mode, skill-scaled threat
-        // pick + save-both; synthetic view now cycles incoming 0/1/2 to cover those branches)
+        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "5afbc1a6"  (re-pinned 2026-07-04; value
+        // WILL CHANGE after next browser run — controller re-pins in-browser after each AI change)
+        // Behavioral conditions covered: frostbolt lane-gating, opening-urgency (cadence collapse),
+        // skill-scaled threat pick + save-both; synthetic view cycles incoming 0/1/2 AND varies
+        // oppZ widely (-3.2..3.6) to exercise blocked vs open lane urgency branches.
         (function attachAIDeterminism() {
             function _syntheticView(seed) {
-                // Projectile velX sign varies with seed so the incoming COUNT cycles through
-                // 0/1/2 — this exercises the turtle toggle, offense gating, frostbolt alignment,
-                // and threat-pick branches (a fixed 2-incoming view would leave turtle always on).
+                // velX sign cycles incoming count 0/1/2 — covers offense gating, frostbolt
+                // alignment, and threat-pick branches.
                 const v1 = (seed % 3 === 0) ? -8 : 8;   // sometimes outgoing (not a threat)
                 const v2 = (seed % 2 === 0) ?  6 : -6;
+                // oppZ range -3.2..3.6 (via seed%9 * 0.8 - 3.2): exercises both blocked lanes
+                // (|gap| < 1.5) and wide-open lanes (|gap| >> 1.5) for the urgency function.
                 return {
                     projectiles: [
                         { id: 1, x: 3.0, z: (seed % 5) * 0.4 - 1.0, velX: v1, velZ: 0.5,  owner: 'player', volleyCount: 1, type: 'fireball',  sightFrames: (seed % 13) },
@@ -16272,9 +16281,9 @@
                         mana: 3,
                         cooldowns: { fireball: 0, frostbolt: 0, thunderstorm: 0 },
                         freezeTime: 0, casting: null, castProgress: 0, castTime: 1.0, juice: 0, juiceActive: false, shieldCharges: 0,
-                        towerHealth: (seed % 20) + 1,   // 1..20 → exercises low-HP turtle path
+                        towerHealth: (seed % 20) + 1,   // 1..20 — kept for view completeness
                     },
-                    opp:  { paddleZ: (seed % 11) * 0.15 - 0.8, towerHealth: 20 - (seed % 7) },
+                    opp:  { paddleZ: (seed % 9) * 0.8 - 3.2, towerHealth: 20 - (seed % 7) },
                     geom: { tableWidth: 16, halfDepth: 4, paddleBoundary: 3.8 },
                     maxHealth: 20,
                     roundActive: true,
