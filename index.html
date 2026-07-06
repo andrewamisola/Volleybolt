@@ -649,7 +649,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=32-overdrive-tick"></script>
+    <script type="module" src="js/sim.js?v=33-beam-projectiles"></script>
 
     <script>
         // Global error handler to debug doubles crash
@@ -2166,6 +2166,10 @@
                         // side is the paddle being hit: 'left' or 'right'
                         const c = ctx.combatants[side];
                         c.freezeTime = ctx.abilities.frostbolt.freezeDuration;
+                        if (c.juiceActive) {   // Frostbolt freezes the caster -> interrupt Overdrive
+                            c.juiceActive = false; c.juiceTimer = 0; c.juice = 0; c.juiceRamp = 0;
+                            if (ctx.deps && !ctx.isResimulating && ctx.deps.onJuiceEnd) ctx.deps.onJuiceEnd(c);
+                        }
                         if (!ctx.isResimulating) {
                             const px = c.paddleX;
                             ctx.deps.playSound('frozen', px, 0.7);

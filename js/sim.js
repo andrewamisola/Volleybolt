@@ -320,6 +320,25 @@
                 if (!isResimulating) D.playSound('woosh', proj.x, 0.5);
             }
 
+            // Overdrive beam vaporizes Fireballs in its lane (NOT Frostbolt — that's the counter).
+            // X-bounds guard: only vaporize projectiles on the caster's forward side (beam sweeps
+            // from caster toward opponent; a fireball BEHIND the caster is not in the beam).
+            if (proj.type === 'fireball' || !proj.type) {
+                const OD = (ctx.consts && ctx.consts.overdrive) || { BLOCK_TOL: 0.9 };
+                let vaporized = false;
+                for (const ch of [combatants.left, combatants.right]) {
+                    if (ch && ch.juiceActive && Math.abs(proj.z - (ch.paddleZ || 0)) <= OD.BLOCK_TOL) {
+                        const dir = ch.side === 'left' ? 1 : -1;
+                        if ((proj.x - (ch.paddleX || 0)) * dir >= 0) {
+                            toDestroy.push(proj);
+                            vaporized = true;
+                            break;
+                        }
+                    }
+                }
+                if (vaporized) continue;
+            }
+
             // Paddle collisions — now against the curved block ARC (was an axis-aligned box).
             // The arc shape comes from ctx.consts.arc (the shared BLOCK_ARC). The height gate
             // (proj.y < maxHitHeight) is kept "exactly how it was" so ground-level projectiles
