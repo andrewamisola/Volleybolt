@@ -69,7 +69,7 @@
     'use strict';
 
     // Pure helper — no mesh, no RNG, no wall-clock.
-    // juiceConsts = ctx.consts.juice = { MAX, DURATION, CHARGE }
+    // juiceConsts = ctx.consts.juice = { MAX, CHARGE } (duration lives on ctx.consts.overdrive)
     function simAddJuice(combatant, amount, juiceConsts) {
         if (!combatant || combatant.juiceActive) return;
         combatant.juice = Math.min(juiceConsts.MAX, (combatant.juice || 0) + amount);
@@ -564,7 +564,7 @@
 
         // Juice drain — runs UNCONDITIONALLY every frame, even while frozen (matches SP
         // updateJuice ~1733). The full bar becomes the duration meter: MAX -> 0 over
-        // JUICE.DURATION seconds; at expiry the burst clears. FX (aura fade) go through
+        // OVERDRIVE.DURATION seconds; at expiry the burst clears. FX (aura fade) go through
         // onJuiceEnd, gated by !isResimulating.
         for (const c of [combatants.left, combatants.right]) {
             if (!c || !c.juiceActive) continue;
