@@ -12771,8 +12771,8 @@
             // (valid at call-time: lazy-create only runs after scene is built).
             const _BEAM_TR_FALLBACK  = Object.freeze({ r: 1.0, g: 0.42, b: 0.33 });
             const _BEAM_SIDE_DEFS    = Object.freeze([
-                Object.freeze({ rootKey: '_overdriveBeamRoot_left',  dir:  1, isLeft: true  }),
-                Object.freeze({ rootKey: '_overdriveBeamRoot_right', dir: -1, isLeft: false }),
+                Object.freeze({ rootKey: '_overdriveBeamRoot_left',  orbKey: '_overdriveOrb_left',  dir:  1, isLeft: true  }),
+                Object.freeze({ rootKey: '_overdriveBeamRoot_right', orbKey: '_overdriveOrb_right', dir: -1, isLeft: false }),
             ]);
             function _odBeamMakeMat(name, colorRef, alpha) {
                 const m = new BABYLON.StandardMaterial(name, scene);
@@ -12795,6 +12795,17 @@
                 b.position.set(0, 0.5, 0);   // local Y lift; root sits at world y=0
                 b.parent               = root;
                 return b;
+            }
+            // Sphere factory for charge orb (Task 3). No Y offset — orbRoot sits at world y=0.6.
+            // Caller sets .parent; local position stays (0,0,0).
+            function _odOrbMakeSphere(name, diameter, mat) {
+                const s = BABYLON.MeshBuilder.CreateSphere(name,
+                    { diameter: diameter, segments: 6 }, scene);
+                s.material                 = mat;
+                s.renderingGroupId         = 1;
+                s.isPickable               = false;
+                s.alwaysSelectAsActiveMesh = true;
+                return s;
             }
 
             // Drives per-frame presentation for both SP and PvP after the deterministic sim
@@ -12937,6 +12948,7 @@
                             leftGlow:  new BABYLON.Color3(0.00, 0.00, 0.74),        // #0000BC
                             rightMid:  new BABYLON.Color3(TR0.r, TR0.g, TR0.b),
                             rightGlow: new BABYLON.Color3(TR0.r * 0.66, TR0.g * 0.15, TR0.b * 0.04),
+                            orbWhite:  new BABYLON.Color3(1.00, 1.00, 1.00),        // orb inner — NOT BC.core (never mutated)
                         };
                     }
                     // Update right-side colors in-place each frame (no alloc — handles colorblind swap)
@@ -12979,13 +12991,96 @@
                             window[sd.rootKey.replace('Root_', '_')] = root._beamRows;
                         }
 
-                        // Hide when inactive
+                        // -- Task 3: Charge orb lazy-create (once per side, then reused) --
+                        // Two concentric spheres (white inner d≈0.5, team-color outer d≈0.8) +
+                        // 4 crackle thin boxes, all parented to orbRoot TransformNode.
+                        // Materials use _odBeamMakeMat (same emissive+additive recipe as beam rows).
+                        // orbWhite is its own Color3 — BC.core is NOT used here (not mutated).
+                        // midCol ref for outer/crackle: BC.rightMid.set() earlier this frame handles
+                        // colorblind swap automatically (no per-frame recolor needed).
+                        // sd.orbKey is in _BEAM_SIDE_DEFS (hoisted constant) — no string alloc per frame.
+                        let orbRoot = window[sd.orbKey];
+                        if (!orbRoot) {
+                            orbRoot = new BABYLON.TransformNode(sd.orbKey, scene);
+                            const orbInnerMat = _odBeamMakeMat(sd.orbKey + '_innerMat', BC.orbWhite, 0.95);
+                            const orbOuterMat = _odBeamMakeMat(sd.orbKey + '_outerMat', midCol,      0.70);
+                            const orbCrackMat = _odBeamMakeMat(sd.orbKey + '_crackMat', midCol,      0.80);
+                            const orbInner    = _odOrbMakeSphere(sd.orbKey + '_inner', 0.5, orbInnerMat);
+                            const orbOuter    = _odOrbMakeSphere(sd.orbKey + '_outer', 0.8, orbOuterMat);
+                            orbInner.parent   = orbRoot;
+                            orbOuter.parent   = orbRoot;
+                            // 4 crackle thin boxes at local origin; rotation/length randomized per crackle tick
+                            const orbCrackles = [];
+                            for (let ci = 0; ci < 4; ci++) {
+                                const cl = BABYLON.MeshBuilder.CreateBox(sd.orbKey + '_crack' + ci,
+                                    { width: 0.8, height: 0.04, depth: 0.04 }, scene);
+                                cl.material                 = orbCrackMat;
+                                cl.renderingGroupId         = 1;
+                                cl.isPickable               = false;
+                                cl.alwaysSelectAsActiveMesh = true;
+                                cl.parent                   = orbRoot;
+                                orbCrackles.push(cl);
+                            }
+                            orbRoot._crackles     = orbCrackles;
+                            orbRoot._crackleFrame = 0;
+                            orbRoot.setEnabled(false);
+                            window[sd.orbKey]     = orbRoot;  // exposes _overdriveOrb_{left,right}
+                        }
+
+                        // -- Hide everything when channel is inactive --
                         if (!c || !c.juiceActive) {
-                            if (root.isEnabled()) root.setEnabled(false);
+                            if (root.isEnabled())    root.setEnabled(false);
+                            if (orbRoot.isEnabled()) orbRoot.setEnabled(false);
                             continue;
                         }
-                        // Windup: beam hidden (charge orb only — Task 3 handles that)
+
+                        // Windup phase: beam hidden, orb swells as the gameplay telegraph
                         const windingUp = (OD.DURATION - c.juiceTimer) < OD.WINDUP;
+
+                        // -- Task 3: Charge orb per-frame update (runs for BOTH windup and beam phases) --
+                        // Positions orbRoot in world space each frame; scales it for swell/muzzle.
+                        // No per-frame allocation: arithmetic + property sets only.
+                        {
+                            if (!orbRoot.isEnabled()) orbRoot.setEnabled(true);
+                            orbRoot.position.x = paddle.position.x + dir * MUZZLE_OFFSET;
+                            orbRoot.position.y = 0.6;
+                            orbRoot.position.z = paddle.position.z;
+
+                            // Scale: swell 0.3→1.6 during windup; snap to 1.1 as muzzle core during beam
+                            let orbScale;
+                            if (windingUp) {
+                                const p = Math.max(0, Math.min(1,
+                                    (OD.DURATION - c.juiceTimer) / OD.WINDUP));
+                                const baseSwell = 0.3 + 1.3 * p;
+                                // Accelerating pulse adds tension (omitted under Reduce Motion — swell still runs)
+                                const pulse = (!window._reduceMotion) ? Math.sin(p * p * 40) * 0.08 * p : 0;
+                                orbScale = baseSwell + pulse;
+                            } else {
+                                orbScale = 1.1;   // muzzle core: persists at fixed scale while beam is live
+                            }
+                            orbRoot.scaling.setAll(orbScale);
+
+                            // Crackle arcs: re-randomize every ~4 frames. Entirely off under Reduce Motion.
+                            orbRoot._crackleFrame = (orbRoot._crackleFrame + 1) | 0;
+                            const doCrackleStep = (!window._reduceMotion) &&
+                                                  (orbRoot._crackleFrame % 4 === 0);
+                            for (let ci = 0; ci < orbRoot._crackles.length; ci++) {
+                                const cl = orbRoot._crackles[ci];
+                                if (window._reduceMotion) {
+                                    if (cl.isEnabled()) cl.setEnabled(false);
+                                } else {
+                                    if (!cl.isEnabled()) cl.setEnabled(true);
+                                    if (doCrackleStep) {
+                                        cl.rotation.x = Math.random() * Math.PI * 2;
+                                        cl.rotation.y = Math.random() * Math.PI * 2;
+                                        cl.rotation.z = Math.random() * Math.PI * 2;
+                                        cl.scaling.x  = 0.5 + Math.random() * 1.5;  // arc length 0.5–2.0×
+                                    }
+                                }
+                            }
+                        }
+
+                        // Beam body stays hidden during windup (orb is the only visual during charge)
                         if (windingUp) {
                             if (root.isEnabled()) root.setEnabled(false);
                             continue;
