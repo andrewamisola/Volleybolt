@@ -1,7 +1,7 @@
 # Volleybolt itch.io Launch Copy and Kit
 
 **Date:** 2026-07-04
-**Status:** Draft for owner review
+**Status:** LIVE — published 2026-07-07 at https://andura.itch.io/volleybolt (In development / public). `[PLAY_URL]` = that page. Remaining placeholders: contact (Instagram + email, owner filling in) and `[STEAM_URL]` (future).
 **Author:** Claude (with Andrew)
 **Purpose:** Everything written needed to publish Volleybolt on itch.io as a free, in-browser open playtest, and to funnel players into Discord and toward a future Steam release.
 
