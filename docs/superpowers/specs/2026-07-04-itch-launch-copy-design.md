@@ -56,6 +56,13 @@ Parry: send an incoming shot straight back at whoever cast it.
 
 Mana and cooldowns gate every spell. You pick your moments.
 
+**UNLEASH OVERDRIVE**
+
+Every action charges your Overdrive bar. Casts, parries, damage dealt, hits taken.
+Fill it and unleash a channeled beam. Aim it by moving. It burns through fireballs and melts the enemy tower.
+Your opponent has two answers: stand in the beam's lane to block it, or freeze you during the windup to cancel it.
+If both players fire at once, the beams clash in the middle. Hold the line or lose it.
+
 **PLAY SOLO OR ONLINE**
 
 Solo: face an AI that reads your skill and adjusts to keep matches close. Beat it and it sharpens. Lose and it eases off.
@@ -80,9 +87,13 @@ Wishlist on Steam: [STEAM_URL]
 Move your wizard up and down to cover the volley.
 Cast a spell to break the volley past your opponent.
 Parry a shot to send it back before it reaches your tower.
+Fill your Overdrive bar and unleash the beam.
 Watch your mana and cooldowns. You cannot cast on empty.
 
-Keyboard and controller are supported. `[CONFIRM_KEYS]` exact bindings before publishing (movement keys, one key per spell, parry, pause). A safe default to confirm: move with W and S or the arrow keys, cast with the ability keys or controller face buttons, parry with its own key or button, pause with Escape or Start.
+Keyboard: W and S or the arrow keys to move. 1, 2, 3 for spells. Space to parry. Q for Overdrive. Escape to pause.
+Controller: stick or d-pad to move. Face buttons for spells. RB to parry. Y for Overdrive. Start to pause.
+
+(CONFIRMED from code 2026-07-06: keys[Digit1-3]=loadout slots, Space=parry, Q/KeyQ=juice, Esc=pause; pad GP={slot0:X(2), slot1:A(0), slot2:B(1), ult:Y(3), parry:RB(5)}.)
 
 ---
 
@@ -93,6 +104,7 @@ Use these on itch under the description or as a short "Features" block. Objectiv
 - Real-time 1v1 spell duels.
 - Fully symmetric. No upgrades, no pay-to-win. Skill decides every match.
 - Four spells: Fireball, Frostbolt, Thunderstorm, and Parry.
+- Overdrive: charge an ultimate beam, aim it by moving, clash it against theirs.
 - Rally the volley, break it, and topple the enemy tower across a MOBA-style push.
 - An adaptive AI that tracks your skill and keeps matches close.
 - Online 1v1 against another player.
@@ -122,7 +134,7 @@ Concrete settings for the itch.io "Edit game" form.
 
 ## 5. Asset checklist (what to capture and make)
 
-The page needs images. Capture these from the running game.
+The page needs images. **UPDATE 2026-07-06: the `brand/` pack (from the art-bible pass) already covers most of this** — spell GIFs (`brand/spells/fireball.gif`, `frostbolt.gif`, `thunder.gif`, `parry.gif`), world shots (`brand/world/arena-wide-1/2.png`, `arena-fireball-rally.png`, `tower-blue/red.png`), UI (`brand/ui/main-menu.png`), and character turnarounds. Still worth capturing fresh: an OVERDRIVE beam shot / clash GIF (the new signature moment — best cover-image candidate) and a tower-fall. Capture the rest from the running game if the brand crops don't fit itch's ratios.
 
 - **Cover image (required):** 630 x 500 px. itch crops it to that ratio, so frame it there. Put the logo and one clean action shot of a spell mid-volley. An animated GIF is allowed for the cover and stands out in listings.
 - **Screenshots (3 to 5):** 
