@@ -1,0 +1,47 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+@font-face { font-family:'FF9UI'; src:url('fonts/ff9ui.ttf') format('truetype'); }
+* { margin:0; padding:0; box-sizing:border-box; }
+html,body { width:630px; height:500px; overflow:hidden; }
+.cover {
+  width:630px; height:500px; position:relative;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  /* warm purple dusk (rgb 69,54,77), darker at edges for a vignette */
+  background:
+    radial-gradient(120% 90% at 50% 42%, #5a4763 0%, #3d3049 45%, #241c2e 100%);
+}
+/* faint CRT scanlines like the game's finish */
+.cover::after {
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background:repeating-linear-gradient(0deg, rgba(0,0,0,0.10) 0 1px, transparent 1px 3px);
+  mix-blend-mode:multiply;
+}
+.title {
+  font-family:'FF9UI', serif; font-size:70px; font-weight:700; letter-spacing:4px;
+  line-height:1;
+  background:linear-gradient(180deg, #ffe9a8 0%, #f0c050 40%, #d4a849 64%, #8b6914 100%);
+  -webkit-background-clip:text; background-clip:text;
+  color:transparent; -webkit-text-fill-color:transparent;
+  filter:drop-shadow(4px 4px 0 #000) drop-shadow(0 0 22px rgba(212,168,73,0.35));
+}
+/* the Overdrive nod: a thin beam, blue -> white-hot purple -> red, clashing at center */
+.beam {
+  width:340px; height:5px; margin:22px 0 18px;
+  border-radius:3px;
+  background:linear-gradient(90deg,
+     #0078f8 0%, #4aa0ff 28%, #ffffff 48%, #c060ff 52%, #ff5a4a 72%, #f83820 100%);
+  box-shadow:0 0 14px rgba(160,90,255,0.7), 0 0 4px #fff;
+}
+.tag {
+  font-family:'FF9UI', sans-serif; font-size:20px; font-weight:700; letter-spacing:6px;
+  color:#dfe6f2; text-transform:uppercase;
+  text-shadow:2px 2px 0 #000;
+}
+</style></head>
+<body>
+  <div class="cover">
+    <div class="title">VOLLEYBOLT</div>
+    <div class="beam"></div>
+    <div class="tag">Pong, Evolved</div>
+  </div>
+</body></html>
