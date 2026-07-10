@@ -3888,6 +3888,12 @@
                 return;  // swallow all other keys during game over
             }
 
+            // Queue Juice before the waiting-to-serve early return. A full bar can remain ready
+            // between rounds, and Q should both start the round and activate on its first sim tick.
+            if (e.code === 'KeyQ' && !gameOver && !roundTransitioning) {
+                pendingNetInput.juice = true;
+            }
+
             if (waitingToServe && !gameOver && !talentVisible && !roundTransitioning) {
                 resetRound();  // Reset gates/health first
                 startRound();
@@ -3921,11 +3927,6 @@
                         pendingNetInput[sp.id] = true;
                     }
                 }
-            }
-            // Q = activate Juice (ultimate). Usable any time during a match once the bar is full
-            // (not gated on roundActive, so it never feels unresponsive). activateJuice guards readiness.
-            if (e.code === 'KeyQ' && !gameOver && !roundTransitioning) {
-                pendingNetInput.juice = true;   // route through the sim input channel (singles + MP)
             }
         });
         document.addEventListener('keyup', (e) => {
@@ -6309,35 +6310,15 @@
                 titleText.top = "-3px";   // FF9UI glyphs sit low; nudge up to optically center in the tab
                 titleTab.addControl(titleText);
 
-                // "JUICE READY" prompt — a command-styled box that appears above the command window
-                // when the local player's bar is full, with the Q key shown as a badge. Hidden otherwise.
-                const READY_W = 174, READY_H = 30;
-                const juiceReadyBox = new G.Rectangle("juiceReadyBox");
-                juiceReadyBox.width = READY_W + "px"; juiceReadyBox.height = READY_H + "px";
-                juiceReadyBox.background = STEEL; juiceReadyBox.color = "#f0c050"; juiceReadyBox.thickness = 2; juiceReadyBox.cornerRadius = 6;
-                juiceReadyBox.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_CENTER;
-                juiceReadyBox.verticalAlignment = ALN.VERTICAL_ALIGNMENT_BOTTOM;
-                juiceReadyBox.left = CMD_LEFT + "px";
-                juiceReadyBox.top = (-(BOTTOM_PAD + BOX_H + 16)) + "px";   // float just above the command window
-                juiceReadyBox.zIndex = 70;
-                juiceReadyBox.isVisible = false;
-                guiTexture.addControl(juiceReadyBox);
-                const juiceReadyLabel = new G.TextBlock();
-                juiceReadyLabel.text = "JUICE READY";
-                juiceReadyLabel.color = "#ffe27a"; juiceReadyLabel.fontSize = 14; juiceReadyLabel.fontWeight = "700";
-                juiceReadyLabel.fontFamily = "'FF9UI', sans-serif";
-                juiceReadyLabel.outlineWidth = 2.5; juiceReadyLabel.outlineColor = "#000000";
-                juiceReadyLabel.resizeToFit = true;
-                juiceReadyLabel.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
-                juiceReadyLabel.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
-                juiceReadyLabel.left = "12px"; juiceReadyLabel.top = "-2px";
-                juiceReadyBox.addControl(juiceReadyLabel);
-                const qBadge = new G.Rectangle();
-                qBadge.width = "24px"; qBadge.height = "22px";
-                qBadge.background = "rgba(16,24,40,0.55)"; qBadge.color = "rgba(206,214,230,0.6)";
+                // When Juice is ready, a command-key-styled Q badge shares this title tab with
+                // "JUICE READY". It replaces COMMAND in-place rather than creating another box.
+                const qBadge = new G.Rectangle("juiceReadyQBadge");
+                qBadge.width = "26px"; qBadge.height = "24px";
+                qBadge.background = "rgba(16,24,40,0.55)"; qBadge.color = "rgba(206,214,230,0.5)";
                 qBadge.thickness = 1; qBadge.cornerRadius = 4;
-                qBadge.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT; qBadge.left = "-10px";
-                juiceReadyBox.addControl(qBadge);
+                qBadge.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT; qBadge.left = "-8px";
+                qBadge.isVisible = false;
+                titleTab.addControl(qBadge);
                 const qText = new G.TextBlock();
                 qText.text = "Q"; qText.color = "#cdd8ef"; qText.fontSize = 14; qText.fontWeight = "600";
                 qText.fontFamily = "'FF9UI', sans-serif"; qText.top = "-2px";
@@ -7021,22 +7002,23 @@
                         } else if (!ready) {
                             localJ._juiceReadyPinged = false;
                         }
-                        // Contextual command-tab title: "COMMAND" normally, "JUICE READY" (pulsing
-                        // gold) when the bar is full, "JUICE" while the burst is live. Replaces the
-                        // old separate floating prompt so the HUD reads as one clean element.
-                        if (juiceReadyBox.isVisible) juiceReadyBox.isVisible = false;
+                        // Contextual command-tab title: JUICE READY + Q temporarily replaces COMMAND.
+                        qBadge.isVisible = ready;
                         const goldPulse = (Math.sin(Date.now() / 180) > 0) ? "#ffe89a" : "#f0c050";
                         if (localJ.juiceActive) {
+                            titleText.left = "0px";
                             box.color = goldPulse;                                     // pulsing gold command border
                             titleText.text = "JUICE";  titleText.color = goldPulse;  titleTab.color = goldPulse;
                             juiceStrip.top = ((localJ === bl ? 42 : 86) - 4) + "px";   // the local player's status row
                             juiceStrip.color = goldPulse;
                             if (!juiceStrip.isVisible) juiceStrip.isVisible = true;
                         } else if (ready) {
-                            titleText.text = "JUICE READY";  titleText.color = goldPulse;  titleTab.color = "#f0c050";
+                            titleText.left = "-14px";
+                            titleText.text = "JUICE READY"; titleText.color = goldPulse; titleTab.color = "#f0c050";
                             if (box.color !== RIM) box.color = RIM;
                             if (juiceStrip.isVisible) juiceStrip.isVisible = false;
                         } else {
+                            titleText.left = "0px";
                             if (titleText.text !== "COMMAND") { titleText.text = "COMMAND"; titleText.color = "#ffffff"; titleTab.color = RIM; }
                             if (box.color !== RIM) box.color = RIM;
                             if (juiceStrip.isVisible) juiceStrip.isVisible = false;
