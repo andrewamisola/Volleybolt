@@ -16333,12 +16333,32 @@
                 if (window.setDOMMenuVisible) setDOMMenuVisible(true);
             });
 
+            // Join-attempt watchdog (audit #7): WebRTC NAT-traversal failure often fires NO error —
+            // the connection just never opens. Bound the wait so the player gets an actionable
+            // message instead of an eternal "Connecting...".
+            let joinAttemptTimer = null;
+            const JOIN_TIMEOUT_MS = 15000;
+            window.clearJoinAttemptTimer = () => {
+                if (joinAttemptTimer) { clearTimeout(joinAttemptTimer); joinAttemptTimer = null; }
+            };
+
             const connectJoinHandler = () => {
                 const code = (joinInput ? joinInput.value : '').toUpperCase().trim();
                 if (code.length >= 4) {
                     isHost = false;
                     if (joinStatus) joinStatus.textContent = 'Connecting...';
                     initializePeer(null, code.toLowerCase());
+                    // Arm AFTER initializePeer: its first act is cleanupPeer(), which clears this
+                    // timer — arming first would self-cancel the watchdog in the same tick.
+                    window.clearJoinAttemptTimer();
+                    joinAttemptTimer = setTimeout(() => {
+                        joinAttemptTimer = null;
+                        if (conn && conn.open) return;   // opened after all — never overwrite a live lobby
+                        cleanupPeer();
+                        if (joinStatus) joinStatus.textContent =
+                            "Couldn't reach the host — a firewall or network may be blocking peer-to-peer. " +
+                            "Both players trying a different network (a phone hotspot often works) usually fixes it.";
+                    }, JOIN_TIMEOUT_MS);
                 } else {
                     if (joinStatus) joinStatus.textContent = 'Enter a valid room code';
                 }
@@ -16842,6 +16862,7 @@
             });
 
             peer.on('error', (err) => {
+                if (window.clearJoinAttemptTimer) window.clearJoinAttemptTimer();
                 console.error('PeerJS error:', err);
                 const joinStatus = document.getElementById('joinStatus');
                 const hostStatus = document.getElementById('hostStatus');
@@ -16860,6 +16881,7 @@
             if (!conn) return;
 
             conn.on('open', () => {
+                if (window.clearJoinAttemptTimer) window.clearJoinAttemptTimer();
                 console.log('Connection established');
                 showLobbyView('lobbyConnectedView');
 
@@ -16906,6 +16928,7 @@
         }
 
         function cleanupPeer() {
+            if (window.clearJoinAttemptTimer) window.clearJoinAttemptTimer();
             if (conn) {
                 conn.close();
                 conn = null;
