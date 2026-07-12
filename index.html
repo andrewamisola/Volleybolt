@@ -652,8 +652,15 @@
     <script type="module" src="js/sim.js?v=37-beam-cancel-fx"></script>
 
     <script>
-        // Global error handler to debug doubles crash
+        // Build identifier for bug reports (audit #6). Date-based: bump on every player-facing
+        // release (itch upload). Logged at boot, shown in the pause menu, embedded in dbg.report().
+        const GAME_VERSION = '2026.07.12';
+        console.log('%cVolleybolt ' + GAME_VERSION, 'color:#f0c050;font-weight:bold');
+
+        // Global error handler to debug doubles crash + last-error capture for bug reports
         window.onerror = function(msg, url, lineNo, columnNo, error) {
+            window.lastError = { msg: String(msg), line: lineNo, col: columnNo,
+                                 stack: error && error.stack, time: new Date().toISOString() };
             console.error('=== CRASH DEBUG ===');
             console.error('Message:', msg);
             console.error('Line:', lineNo, 'Column:', columnNo);
@@ -661,6 +668,10 @@
             console.error('===================');
             return false;
         };
+        window.addEventListener('unhandledrejection', (e) => {
+            window.lastError = { msg: 'unhandledrejection: ' + (e.reason && e.reason.message || e.reason),
+                                 stack: e.reason && e.reason.stack, time: new Date().toISOString() };
+        });
 
         // Game state
         let playerScore = 0;
@@ -15722,6 +15733,8 @@
                 '<button id="pauseResumeBtn" class="game-btn menu-btn" style="display:block;width:240px;margin:10px auto">Resume</button>' +
                 '<button id="pauseSettingsBtn" class="game-btn menu-btn" style="display:block;width:240px;margin:10px auto">Settings</button>' +
                 '<button id="pauseQuitBtn" class="game-btn menu-btn" style="display:block;width:240px;margin:10px auto">Quit to Menu</button>' +
+                '<button id="pauseBugBtn" class="game-btn menu-btn" style="display:block;width:240px;margin:10px auto">Copy Bug Report</button>' +
+                '<div style="color:#8a93a6;font-size:12px;margin-top:14px">v' + GAME_VERSION + '</div>' +
                 '</div>';
             document.body.appendChild(ov);
             ov.querySelector('#pauseResumeBtn').addEventListener('click', () => GameSM.resumeMatch());
@@ -15730,6 +15743,13 @@
                 paused = false;
                 ov.style.display = 'none';
                 returnToMenuTransition();   // verified clean teardown -> 2D menu
+            });
+            ov.querySelector('#pauseBugBtn').addEventListener('click', () => {
+                const btn = ov.querySelector('#pauseBugBtn');
+                window.copyBugReport().then((toClipboard) => {
+                    btn.textContent = toClipboard ? 'Copied!' : 'Printed to console';
+                    setTimeout(() => { btn.textContent = 'Copy Bug Report'; }, 1500);
+                });
             });
         }
         // Shared by the Escape key AND the gamepad Start/Menu button (index 9) — same "close
@@ -17369,6 +17389,27 @@
             state() { return { mode: gameMode, isHost, localSide: (typeof getLocalSide === 'function' ? getLocalSide() : '?'), frame: currentFrame, confirmed: lastConfirmedRemoteFrame, lag: currentFrame - lastConfirmedRemoteFrame, ping: netPing, rollbacks: mpSync.rollbacks, lastOkFrame: mpSync.lastOkFrame, mismatches: mpSync.mismatches, desync: mpSync.desync, projectiles: projectiles ? projectiles.length : 0 }; },
             hash() { return (hashGameState() >>> 0).toString(16); },
             sync() { return mpSync.desync ? ('DESYNC @frame ' + mpSync.desync.frame + ' (local ' + (mpSync.desync.local >>> 0).toString(16) + ' != remote ' + (mpSync.desync.remote >>> 0).toString(16) + '), ' + mpSync.mismatches + ' mismatch(es)') : ('in sync; last verified frame ' + mpSync.lastOkFrame); },
+            // One-paste bug report: everything needed to act on a stranger's Discord report.
+            // Babylon objects (mesh/particles/paddle) are stripped — they're circular and huge.
+            report() {
+                const r = {
+                    version: GAME_VERSION,
+                    time: new Date().toISOString(),
+                    ua: navigator.userAgent,
+                    mode: gameMode, isHost, frame: currentFrame, ping: netPing,
+                    sync: { lastOkFrame: mpSync.lastOkFrame, mismatches: mpSync.mismatches,
+                            desync: mpSync.desync, rollbacks: mpSync.rollbacks },
+                    lastError: window.lastError || null,
+                    perfTail: (window.perfLog || []).slice(-20),
+                    state: (typeof captureGameState === 'function') ? captureGameState() : null,
+                };
+                const seen = new WeakSet();
+                return JSON.stringify(r, (k, v) => {
+                    if (k === 'mesh' || k === 'particles' || k === 'paddle' || typeof v === 'function') return undefined;
+                    if (v && typeof v === 'object') { if (seen.has(v)) return undefined; seen.add(v); }
+                    return v;
+                });
+            },
             ping() { return netPing + 'ms'; },
             juice(side) { const c = combatants[side || (typeof getLocalSide === 'function' ? getLocalSide() : 'left')]; if (!c) return 'no combatant'; c.juice = (window.JUICE && window.JUICE.MAX) || 350; const owner = c.side === 'left' ? 'player' : 'ai'; const r = window.activateJuice ? window.activateJuice(owner) : false; return 'juice ' + c.side + ' -> ' + r; },
             freeze(side, s) { const c = combatants[side || (typeof getRemoteSide === 'function' ? getRemoteSide() : 'right')]; if (!c) return 'no combatant'; c.freezeTime = s || 1; if (c.side === 'left' && window.freezePlayerAnim) freezePlayerAnim(); if (c.side === 'right' && window.freezeAIAnim) freezeAIAnim(); return 'froze ' + c.side + ' for ' + (s || 1) + 's'; },
@@ -17449,6 +17490,21 @@
                 console.log('%c[dbg.determinism] frames=' + frames + ' seed=' + seed + ' fold=' + foldHex, 'color:#2f8f6f');
                 return { frames, seed, fold: foldHex, last: hashes.slice(-3).map(x => (x >>> 0).toString(16)) };
             }
+        };
+
+        // Player-facing (no ?dev needed): pause-menu "Copy Bug Report" lands here.
+        // window.dbg is defined unconditionally (the ?dev flag only gates the debug UI),
+        // so report() is always available.
+        // Resolves true if the blob reached the clipboard, false if it fell back to the console.
+        window.copyBugReport = () => {
+            let blob;
+            try { blob = window.dbg.report(); }
+            catch (e) { blob = JSON.stringify({ version: GAME_VERSION, reportError: String(e), lastError: window.lastError || null }); }
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                return navigator.clipboard.writeText(blob).then(() => true, () => { console.log('[bug report]', blob); return false; });
+            }
+            console.log('[bug report]', blob);
+            return Promise.resolve(false);
         };
 
         // ---- AI determinism oracle (Phase 2.1) ----
