@@ -18412,8 +18412,11 @@
         // checkPvPParryHitsForSide lifted to js/sim.js (window.VolleyboltSim).
 
         function syncLocalParryUI() {
-            if (gameMode !== 'pvp' || isResimulating) return;
-            const localSide = getLocalSide();
+            // Runs for BOTH sim-driven modes. PvP: host=left, guest=right. Singles: the human
+            // is always the LEFT combatant (isHost is stale outside PvP — do not use it here).
+            if (isResimulating) return;
+            if (gameMode !== 'pvp' && gameMode !== 'single') return;
+            const localSide = (gameMode === 'pvp') ? getLocalSide() : 'left';
             const state = getPvPParryState(localSide);
 
             canParry = state.canParry;
