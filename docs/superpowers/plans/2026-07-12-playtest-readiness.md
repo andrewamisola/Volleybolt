@@ -1,6 +1,6 @@
 # Playtest Readiness (Audit Recommendations) Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Implement the still-open items from the 2026-07-02 full audit's recommendation list — desync gets a player-facing consequence (#3), one-click bug reports + version tag (#6), a join-attempt timeout message (#7), and the parry-HUD static-in-singles fix (#9).
 
@@ -32,13 +32,13 @@ The legacy singles parry UI path (`checkParryHits` at `index.html:12457`, `updat
 - Consumes: `pvpParryState` (sim-owned parry state for both sides, `index.html:946`), `getPvPParryState(side)` (`index.html:18398`), `getLocalSide()` (`index.html:928` — PvP only: `isHost ? 'left' : 'right'`; in singles `isHost` is stale, so singles must hard-code `'left'`).
 - Produces: nothing new — same function, now live in singles.
 
-- [ ] **Step 1: Reproduce the bug (verify it exists before touching code)**
+- [x] **Step 1: Reproduce the bug (verify it exists before touching code)**
 
 Run: `./play.command` (or `python3 -m http.server 8000` and open `http://localhost:8000/?dev`). Start a single-player match. Press Space to parry, let the window expire, wait out the cooldown.
 
 Expected: the Parry slot in the ability bar stays visually static through the whole cycle (never shows active/cooldown/ready transitions), while the in-world parry bubble VFX still appears. That's the bug.
 
-- [ ] **Step 2: Apply the fix**
+- [x] **Step 2: Apply the fix**
 
 At `index.html:18414`, the function currently reads:
 
@@ -63,18 +63,18 @@ Replace those four lines with:
 
 Everything after (the `state.active` / cooldown / ready branches) stays byte-identical.
 
-- [ ] **Step 3: Verify the fix**
+- [x] **Step 3: Verify the fix**
 
 Reload, start a fresh single-player match, run a full parry cycle (press Space → let it expire → wait out cooldown → parry again and connect one).
 
 Expected: the Parry slot now animates — active state during the window, cooldown sweep after, back to ready. Confirm PvP is unregressed: host+join two tabs (`http://localhost:8000/?dev` twice), start a match, parry on each side — each client's button reflects its OWN parry only.
 
-- [ ] **Step 4: Confirm sim untouched**
+- [x] **Step 4: Confirm sim untouched**
 
 In a fresh single-player match console: `dbg.determinism(180, 12345)`.
 Expected: the golden hash pinned in the `js/sim.js` header comment. (This change is HUD-read-only; any other result means something else is wrong — stop and investigate.)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add index.html
@@ -99,13 +99,13 @@ Detection nuance: `mpSync.mismatches` only increments when an *earlier* divergen
 - Consumes: `handleDisconnect(reason)` (`index.html:16902`), `conn` (PeerJS DataConnection), `gameMode`.
 - Produces: network message `{ type: 'DESYNC_ABORT', frame: <number> }`; function `abortOnDesync(frame)`; state `mpSync.badStreak` (number), `mpDesyncAborted` (boolean, module-scope `let`).
 
-- [ ] **Step 1: Verify current behavior (detector fires, nothing happens)**
+- [x] **Step 1: Verify current behavior (detector fires, nothing happens)**
 
 Two tabs at `http://localhost:8000/?dev`, host + join, start a match. In one tab's console: `dbg.forceDesync()` (nudges the local RNG seed — the detector must flip to ❌ within ~20 frames; this is the sanity path the audit used).
 
 Expected today: `[MP DESYNC]` warning in console, F2 overlay shows ❌, **match keeps playing on both clients**. That's the gap.
 
-- [ ] **Step 2: Add the streak field to the mpSync literal**
+- [x] **Step 2: Add the streak field to the mpSync literal**
 
 At `index.html:17111`:
 
@@ -119,7 +119,7 @@ becomes:
         const mpSync = { local: {}, remote: {}, localGroups: {}, detailSent: {}, lastOkFrame: -1, desync: null, mismatches: 0, badStreak: 0, rollbacks: 0, lastRollback: 0 };
 ```
 
-- [ ] **Step 3: Maintain the streak and trigger the abort in mpCompareHash**
+- [x] **Step 3: Maintain the streak and trigger the abort in mpCompareHash**
 
 At `index.html:17219`, the function currently reads:
 
@@ -174,7 +174,7 @@ Then add, directly after the closing brace of `mpCompareHash`:
         }
 ```
 
-- [ ] **Step 4: Reset the new state at match start**
+- [x] **Step 4: Reset the new state at match start**
 
 At `index.html:17654-17655` (the existing per-match reset block):
 
@@ -191,19 +191,20 @@ becomes:
             mpDesyncAborted = false;
 ```
 
-- [ ] **Step 5: Handle the peer's abort message**
+- [x] **Step 5: Handle the peer's abort message**
 
 In `handleNetworkMessage` (`index.html:16967`), add a case alongside the existing ones (e.g., directly after the `'PING'` case):
 
 ```js
                 case 'DESYNC_ABORT':
                     console.warn('[MP DESYNC] peer aborted (their frame ' + data.frame + ')');
-                    mpDesyncAborted = true;   // don't echo an abort back
+                    if (mpDesyncAborted) break;   // we already aborted locally — don't re-run teardown
+                    mpDesyncAborted = true;
                     handleDisconnect('Match lost sync — please rematch');
                     break;
 ```
 
-- [ ] **Step 6: Verify live**
+- [x] **Step 6: Verify live**
 
 Two tabs, `?dev`, host + join, start a match, let it run ~2s clean (overlay ✅). Then in one tab: `dbg.forceDesync()`.
 
@@ -211,7 +212,7 @@ Expected: within ~1-2 seconds BOTH tabs show the disconnect overlay reading "Mat
 
 Also verify no false positives: run one full untouched match (no forceDesync) to a round win — no abort should ever fire.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add index.html
@@ -234,11 +235,11 @@ A Discord bug report from a stranger is only actionable if it carries version + 
 - Consumes: `captureGameState()` (`index.html:17798` area), `mpSync`, `window.perfLog` (`index.html:12613`), `gameMode`, `isHost`, `currentFrame`, `netPing`.
 - Produces: `const GAME_VERSION` (string, module scope — visible to all inline code), `window.lastError` (object or undefined), `dbg.report()` → JSON string, `window.copyBugReport()` → Promise<boolean> (true = clipboard, false = console fallback).
 
-- [ ] **Step 1: Verify the gap**
+- [x] **Step 1: Verify the gap**
 
 Console on a running game: `typeof GAME_VERSION` → `"undefined"`, `window.lastError` → `undefined`, `dbg.report` → `undefined` (with `?dev`). Pause menu (Esc) has three buttons and no version tag.
 
-- [ ] **Step 2: Version constant + error recorder**
+- [x] **Step 2: Version constant + error recorder**
 
 At `index.html:656`, the block currently reads:
 
@@ -279,7 +280,7 @@ Replace with:
         });
 ```
 
-- [ ] **Step 3: dbg.report() + copyBugReport()**
+- [x] **Step 3: dbg.report() + copyBugReport()**
 
 In the `dbg` object (`index.html:~17330`, alongside `state()` / `sync()`), add:
 
@@ -293,11 +294,15 @@ In the `dbg` object (`index.html:~17330`, alongside `state()` / `sync()`), add:
                     ua: navigator.userAgent,
                     mode: gameMode, isHost, frame: currentFrame, ping: netPing,
                     sync: { lastOkFrame: mpSync.lastOkFrame, mismatches: mpSync.mismatches,
+                            badStreak: mpSync.badStreak, aborted: mpDesyncAborted,
                             desync: mpSync.desync, rollbacks: mpSync.rollbacks },
                     lastError: window.lastError || null,
                     perfTail: (window.perfLog || []).slice(-20),
-                    state: (typeof captureGameState === 'function') ? captureGameState() : null,
                 };
+                // Never let a mid-crash captureGameState() take down the whole report — the
+                // crash-adjacent report is the one that matters most.
+                try { r.state = (typeof captureGameState === 'function') ? captureGameState() : null; }
+                catch (e) { r.state = null; r.stateError = String(e); }
                 const seen = new WeakSet();
                 return JSON.stringify(r, (k, v) => {
                     if (k === 'mesh' || k === 'particles' || k === 'paddle' || typeof v === 'function') return undefined;
@@ -328,7 +333,7 @@ Directly after the `dbg` object's closing statement, add:
 
 (Verified 2026-07-12: `window.dbg = {` at `index.html:17319` is unconditional — no `?dev` gate on the object itself.)
 
-- [ ] **Step 4: Pause overlay button + version tag**
+- [x] **Step 4: Pause overlay button + version tag**
 
 In `ensurePauseOverlay` (`index.html:15714`), the `ov.innerHTML` string currently ends:
 
@@ -358,7 +363,7 @@ And after the existing `pauseQuitBtn` listener, add:
             });
 ```
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 1. Reload (NO `?dev`): console shows the gold `Volleybolt 2026.07.12` boot line.
 2. Start a singles match, press Esc: pause menu shows the new button + `v2026.07.12` tag.
@@ -367,7 +372,7 @@ And after the existing `pauseQuitBtn` listener, add:
 5. With `?dev`: `dbg.report()` returns the same JSON string.
 6. PvP smoke: host+join, mid-match Esc → copy → blob's `sync` block present, `mode: "pvp"`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add index.html
@@ -390,11 +395,11 @@ git commit -m "GAME_VERSION + one-click bug report: dbg.report(), lastError capt
 - Consumes: `initializePeer(id, code)`, `cleanupPeer()` (`index.html:16889`), `conn`, the `joinStatus` DOM label.
 - Produces: module-scope `let joinAttemptTimer = null;` and `function clearJoinAttemptTimer()` — called from the three sites above.
 
-- [ ] **Step 1: Reproduce the hang**
+- [x] **Step 1: Reproduce the hang**
 
 Open `http://localhost:8000/`, Join Game, enter a well-formed code for a room that was hosted and then closed mid-handshake — or simpler: host in tab A, kill tab A entirely, then join its code from tab B *after* the PeerJS broker has dropped it... if that yields `peer-unavailable` ("Room not found"), the true repro is network-level: join a code hosted from a device on a network that blocks WebRTC. If no easy repro is available, verify the gap statically: nothing in `connectJoinHandler` or `initializePeer` bounds the wait — "Connecting..." can persist forever.
 
-- [ ] **Step 2: Add the timer**
+- [x] **Step 2: Add the timer**
 
 Directly above `const connectJoinHandler = () => {` (`index.html:16316`), add:
 
@@ -440,7 +445,7 @@ becomes:
                 } else {
 ```
 
-- [ ] **Step 3: Clear the timer on every resolution path**
+- [x] **Step 3: Clear the timer on every resolution path**
 
 `window.clearJoinAttemptTimer` is exposed on `window` because the three call sites live in a different closure scope than the lobby wiring. Guard each call with existence (`if (window.clearJoinAttemptTimer) window.clearJoinAttemptTimer();`):
 
@@ -448,14 +453,14 @@ becomes:
 2. `peer.on('error', ...)` (`index.html:16824`) — first line of the handler (so "Room not found. Check the code." stands and isn't replaced 15s later by the timeout text).
 3. `cleanupPeer()` (`index.html:16889`) — first line (leaving the lobby cancels the watchdog).
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 1. Happy path: host tab A, join from tab B → connects normally; wait 20s in the lobby → status does NOT get overwritten by the timeout message (timer was cleared on open).
 2. Room not found: join a garbage code (e.g. `ZZZZ9`) → "Room not found. Check the code." appears and STAYS (wait 20s to confirm no overwrite).
 3. Timeout path: in DevTools on the join tab, set network to Offline AFTER the page loads, then join a well-formed code. Expected within ~15s (broker errors may surface a different message first — `network` type errors route to handleDisconnect; if so, throttle to a blocked-WebRTC profile instead or accept the static check from Step 1): the timeout message appears and the lobby returns to a re-attemptable state (entering a code and pressing Connect again works).
 4. Back out of the join view mid-attempt (Back button → `cleanupPeer`) → no message appears later.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add index.html
@@ -466,6 +471,6 @@ git commit -m "Join-attempt watchdog: 15s timeout with actionable NAT/firewall m
 
 ## Final verification (after all tasks)
 
-- [ ] Fresh single-player match with `?dev`: `dbg.determinism(180, 12345)` equals the golden pinned in the `js/sim.js` header (sim untouched by this whole plan).
-- [ ] `git diff master --stat` shows only `index.html` (plus this plan file) changed.
-- [ ] Full manual smoke: singles match start→round win, PvP host+join+play+quit, pause menu in both modes.
+- [x] Fresh single-player match with `?dev`: `dbg.determinism(180, 12345)` equals the golden pinned in the `js/sim.js` header (sim untouched by this whole plan).
+- [x] `git diff master --stat` shows only `index.html` (plus this plan file) changed.
+- [x] Full manual smoke: singles match start→round win, PvP host+join+play+quit, pause menu in both modes.

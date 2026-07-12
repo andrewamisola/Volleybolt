@@ -17421,11 +17421,15 @@
                     ua: navigator.userAgent,
                     mode: gameMode, isHost, frame: currentFrame, ping: netPing,
                     sync: { lastOkFrame: mpSync.lastOkFrame, mismatches: mpSync.mismatches,
+                            badStreak: mpSync.badStreak, aborted: mpDesyncAborted,
                             desync: mpSync.desync, rollbacks: mpSync.rollbacks },
                     lastError: window.lastError || null,
                     perfTail: (window.perfLog || []).slice(-20),
-                    state: (typeof captureGameState === 'function') ? captureGameState() : null,
                 };
+                // Never let a mid-crash captureGameState() take down the whole report — the
+                // crash-adjacent report is the one that matters most.
+                try { r.state = (typeof captureGameState === 'function') ? captureGameState() : null; }
+                catch (e) { r.state = null; r.stateError = String(e); }
                 const seen = new WeakSet();
                 return JSON.stringify(r, (k, v) => {
                     if (k === 'mesh' || k === 'particles' || k === 'paddle' || typeof v === 'function') return undefined;
