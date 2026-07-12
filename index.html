@@ -16970,6 +16970,13 @@
                     conn.send({ type: 'PONG', time: data.time });
                     break;
 
+                case 'DESYNC_ABORT':
+                    console.warn('[MP DESYNC] peer aborted (their frame ' + data.frame + ')');
+                    if (mpDesyncAborted) break;   // we already aborted locally — don't re-run teardown
+                    mpDesyncAborted = true;
+                    handleDisconnect('Match lost sync — please rematch');
+                    break;
+
                 case 'PONG':
                     // Calculate RTT
                     netPing = Math.round(performance.now() - data.time);
@@ -17108,7 +17115,7 @@
         // Each peer periodically broadcasts the hash of a settled (past-rollback) frame; the
         // other compares it to its own hash for that exact frame number and flags divergence.
         // ============================================================
-        const mpSync = { local: {}, remote: {}, localGroups: {}, detailSent: {}, lastOkFrame: -1, desync: null, mismatches: 0, rollbacks: 0, lastRollback: 0 };
+        const mpSync = { local: {}, remote: {}, localGroups: {}, detailSent: {}, lastOkFrame: -1, desync: null, mismatches: 0, badStreak: 0, rollbacks: 0, lastRollback: 0 };
         const MP_SYNC_INTERVAL = 20;        // broadcast a hash every N frames (~0.33s)
         const MP_SYNC_LAG = MAX_ROLLBACK_FRAMES + 2;   // hash a frame old enough to never roll back
 
@@ -17216,12 +17223,21 @@
             mpSendDetail(frame);   // reflect ours back so the other peer also gets the breakdown (guarded)
         }
 
+        // A real desync never heals (the peers' states have genuinely diverged), so N consecutive
+        // mismatched hash exchanges ≈ N * MP_SYNC_INTERVAL frames of confirmed divergence. 3 keeps
+        // it transient-proof while still aborting within ~a second of real divergence.
+        const DESYNC_ABORT_STREAK = 3;
+
         function mpCompareHash(frame, remoteHash) {
             const local = mpSync.local[frame];
             if (local === undefined) { mpSync.remote[frame] = remoteHash; return; }  // we're behind; compare later
             if (local === remoteHash) {
                 if (frame > mpSync.lastOkFrame) mpSync.lastOkFrame = frame;
-            } else if (!mpSync.desync || frame < mpSync.desync.frame) {
+                mpSync.badStreak = 0;
+            } else if (++mpSync.badStreak >= DESYNC_ABORT_STREAK) {
+                abortOnDesync(frame);
+            }
+            if (local !== remoteHash && (!mpSync.desync || frame < mpSync.desync.frame)) {
                 mpSync.mismatches++;
                 mpSync.desync = { frame, local, remote: remoteHash };   // keep the EARLIEST divergence (root)
                 console.warn('[MP DESYNC] frame ' + frame + ': local ' + (local >>> 0).toString(16) +
@@ -17231,6 +17247,22 @@
                 // detected desync at this frame).
                 mpSendDetail(frame);
             }
+        }
+
+        // Desync consequence (audit #3): a confirmed, sustained hash divergence ends the match
+        // cleanly on BOTH peers instead of silently playing out two different games. Reuses the
+        // disconnect overlay + teardown; the DESYNC_ABORT message makes the peer abort too
+        // (their own streak would also fire, but the message makes it immediate and symmetric).
+        let mpDesyncAborted = false;
+        function abortOnDesync(frame) {
+            if (mpDesyncAborted || gameMode !== 'pvp') return;
+            mpDesyncAborted = true;
+            console.warn('[MP DESYNC] aborting match: sustained divergence since frame ' +
+                         (mpSync.desync ? mpSync.desync.frame : frame));
+            if (conn && conn.open) {
+                try { conn.send({ type: 'DESYNC_ABORT', frame: frame }); } catch (e) {}
+            }
+            handleDisconnect('Match lost sync — please rematch');
         }
 
         // Record a frame's post-sim hash. Called from the normal step AND from rollback resim,
@@ -17652,7 +17684,8 @@
             // Reset netcode test harness; telemetry overlay auto-shows in dev mode only
             // (ship-clean — players see no debug UI; ?dev + F2 or dbg.overlay() brings it back).
             mpSync.local = {}; mpSync.remote = {}; mpSync.localGroups = {}; mpSync.detailSent = {}; mpSync.lastOkFrame = -1;
-            mpSync.desync = null; mpSync.mismatches = 0; mpSync.rollbacks = 0; mpSync.lastRollback = 0;
+            mpSync.desync = null; mpSync.mismatches = 0; mpSync.badStreak = 0; mpSync.rollbacks = 0; mpSync.lastRollback = 0;
+            mpDesyncAborted = false;
             toggleMpOverlay(!!window.DEV_MODE);
 
             // Show gameplay UI (same as single player)
