@@ -13390,8 +13390,17 @@
                 // ---- Casting: gated to a fixed cast-decision cadence, with offensive
                 // casts further phase-gated by effectiveCadence (low skill = sparse;
                 // urgency on clear opening pulls it toward instant). ----
-                const K = profile.castK || 8;                 // cast-decision base period (~0.13s @60Hz).
-                                                              // Doubles overrides per role (7 front / 11 back,
+                // Back-role mana-rich override (owner playtest round 3: "my teammate in the
+                // back is so ass" — too passive). Reads its OWN per-wizard pool (post-f288605
+                // per-wizard mana). Once rich (>=2), a back joins the normal offensive cadence
+                // by borrowing FRONT's faster think-period instead of its own slower one — it
+                // fights like a front does when it can afford to. Below the reserve, today's
+                // slower/conservative back cadence stands. Golden-dead in singles/PvP/oracle:
+                // no `role` there ⇒ manaRich always false ⇒ K stays profile.castK||8, unchanged.
+                const manaRich = profile.role === 'back' && s.mana >= 2;
+                const K = manaRich ? DOUBLES_AI.front.castK : (profile.castK || 8);   // cast-decision
+                                                              // base period (~0.13s @60Hz). Doubles
+                                                              // overrides per role (7 front / 11 back,
                                                               // coprime); absent (singles/oracle) ⇒ 8 ⇒ golden-identical.
                 const isCastFrame = (frame % K === 0);
                 let fireball = false, frostbolt = false, thunderstorm = false;
@@ -13402,10 +13411,11 @@
                     const cd   = s.cooldowns;
                     // Back-role coordination (doubles): counter an opposing FRONT channel with a
                     // frostbolt (pressure/interrupt), and hold its OWN pool (per-wizard mana,
-                    // playtest round 2) when it's nearly dry (mana<2) unless actively countering.
-                    // Golden-dead in singles/oracle: no `role`, no `oppCasting` ⇒ countering/manaHold stay false.
+                    // playtest round 2) when it's nearly dry (mana<2, i.e. !manaRich) unless
+                    // actively countering. Golden-dead in singles/oracle: no `role`, no
+                    // `oppCasting` ⇒ countering/manaHold stay false (manaRich is also false there).
                     const countering = profile.role === 'back' && !!view.oppCasting;
-                    const manaHold   = profile.role === 'back' && !countering && s.mana < 2;
+                    const manaHold   = profile.role === 'back' && !countering && !manaRich;
                     const canFireball  = offenseOpen && safe && cd.fireball  <= 0 && s.mana >= 1
                         && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
                     // Frostbolt is a LANE shot: only worth casting when the opponent is directly
@@ -16708,20 +16718,9 @@
                 startGameInProgress = false;  // Reset so the Start button works again
 
                 // Belt-and-suspenders: force-hide cast UI that menu setup doesn't touch
-                const castBar = document.getElementById('castBarContainer');
-                if (castBar) { castBar.classList.remove('casting'); castBar.style.display = 'none'; }
-                const aiCastBar = document.getElementById('aiCastBarContainer');
-                if (aiCastBar) { aiCastBar.classList.remove('casting'); aiCastBar.style.display = 'none'; }
-                if (window.guiElements) {
-                    if (window.guiElements.playerCastContainer) window.guiElements.playerCastContainer.isVisible = false;
-                    if (window.guiElements.aiCastContainer) window.guiElements.aiCastContainer.isVisible = false;
-                    if (window.guiElements.playerCastLabel) window.guiElements.playerCastLabel.text = "";
-                    if (window.guiElements.aiCastLabel) window.guiElements.aiCastLabel.text = "";
-                }
-                if (combatants.left && combatants.left.castBar3D) combatants.left.castBar3D.visibility = 0;
-                if (combatants.left && combatants.left.castFill3D) combatants.left.castFill3D.visibility = 0;
-                if (combatants.right && combatants.right.castBar3D) combatants.right.castBar3D.visibility = 0;
-                if (combatants.right && combatants.right.castFill3D) combatants.right.castFill3D.visibility = 0;
+                // (block extracted verbatim into the shared hideAllCastBars helper — owner
+                // playtest round 3; it also covers the doubles backs via getAllCombatants)
+                if (window.hideAllCastBars) hideAllCastBars();
 
                 // Step 3: Fade back in (400ms)
                 setTimeout(() => {
@@ -17173,6 +17172,13 @@
         // two boolean checks per frame and need no parallel cleanup.
         function exitDoublesState() {
             document.body.classList.remove('doubles');     // TEAM mana-pool labels off
+            // Belt-and-braces: showVictoryScreen already sweeps floating combat text + cast
+            // bars at match end, but this teardown runs on every doubles->singles/PvP
+            // transition (not just match end), so a leftover back-row cast bubble or frozen
+            // cast bar can never survive into the next mode either way. Cast bars must hide
+            // BEFORE the backs are nulled below (getAllCombatants stops returning them).
+            if (window.clearAllCombatText) clearAllCombatText();
+            if (window.hideAllCastBars) hideAllCastBars();
             // STATUS window: back to the 2-row singles/PvP layout (playtest round 2). Callers
             // (startSinglesMatch, startMultiplayerMatch) already set teamSize=1 before reaching
             // this shared teardown, so this reads the correct (post-transition) mode.
@@ -20078,6 +20084,18 @@
             // state machine can catch the falling edge, so the roar/rumble loops would replay
             // forever over the victory screen. Kill everything channel-driven right here.
             if (window.resetOverdrivePresentation) window.resetOverdrivePresentation();
+            // A match can also end MID-CAST: a spell-cast bubble or other floating combat text
+            // (frostbolt Frozen!, NO TARGET, damage numbers, etc.) is a DOM element that renders
+            // above the canvas — nothing subsequently clears it, so it hangs there over the
+            // Victory/Defeat overlay (owner report: a cast bubble stuck over 'DEFEAT'). This is
+            // the single universal game-over choke point (SP, doubles, PvP host/guest, debug
+            // force-end all route here), so one sweep here covers every mode without touching
+            // normal mid-match round-transition behavior (which already has its own sweeps).
+            if (window.clearAllCombatText) clearAllCombatText();
+            // Same mid-cast match-end class, different surface: the wizard-anchored 3D cast
+            // bars (and 2D/GUI cast bars) freeze visible because stepFixedSim early-returns
+            // on gameOver, so updateMatchPresentation never runs its hide branch again.
+            if (window.hideAllCastBars) hideAllCastBars();
             if (!window.guiElements) return;
 
             const overlay = window.guiElements.victoryOverlay;
@@ -22102,6 +22120,34 @@
             }
             for (const item of floatingTexts) if (item.el) item.el.remove();
             floatingTexts.length = 0;
+        };
+
+        // Force-hide every cast-bar presentation surface (owner playtest round 3 reviewer
+        // follow-up): a match ending MID-CAST leaves the wizard-anchored 3D cast bars (and
+        // the 2D/GUI cast bars) frozen visible over the Victory/Defeat overlay, because
+        // stepFixedSim early-returns on gameOver so updateMatchPresentation never runs the
+        // "not casting -> hide" branch again. clearAllCombatText only sweeps floating TEXT
+        // primitives — the cast BARS are a separate presentation surface. Idiom lifted
+        // verbatim from returnToMenuTransition's belt-and-suspenders block (which now calls
+        // this instead — deduped), extended to all four combatants (backs' castBar3D is
+        // null in singles/PvP and covered by the null guards in doubles). Only called from
+        // match-end/teardown sites (showVictoryScreen, exitDoublesState,
+        // returnToMenuTransition) — never mid-match, so normal cast-bar behavior is untouched.
+        window.hideAllCastBars = () => {
+            const castBar = document.getElementById('castBarContainer');
+            if (castBar) { castBar.classList.remove('casting'); castBar.style.display = 'none'; }
+            const aiCastBar = document.getElementById('aiCastBarContainer');
+            if (aiCastBar) { aiCastBar.classList.remove('casting'); aiCastBar.style.display = 'none'; }
+            if (window.guiElements) {
+                if (window.guiElements.playerCastContainer) window.guiElements.playerCastContainer.isVisible = false;
+                if (window.guiElements.aiCastContainer) window.guiElements.aiCastContainer.isVisible = false;
+                if (window.guiElements.playerCastLabel) window.guiElements.playerCastLabel.text = "";
+                if (window.guiElements.aiCastLabel) window.guiElements.aiCastLabel.text = "";
+            }
+            for (const c of getAllCombatants()) {
+                if (c && c.castBar3D) c.castBar3D.visibility = 0;
+                if (c && c.castFill3D) c.castFill3D.visibility = 0;
+            }
         };
 
         // Sound cooldown to prevent double-plays on rapid hits
