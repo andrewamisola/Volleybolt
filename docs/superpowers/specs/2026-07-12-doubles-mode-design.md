@@ -137,6 +137,19 @@ degenerate loops. Defense is structural asymmetry, never randomness:
    with a short manual checklist (mode entry, rails, arcs, shared pools, AI behavior,
    goldens via `?dev` console).
 
+## Resolved during M1 playtest (Andrew, 2026-07-13)
+
+- Front rail: tennis NET-PLAYER position — fronts at ±3.5 (~31% of the half-court from
+  midfield), backs on the baseline rail ±11.5. ("Teammates too close" at the original ±8.0.)
+- Teammate HUD chip: removed — with a shared mana pool there is nothing worth a HUD element
+  for an AI teammate; may return redesigned in M3 with human teammates.
+- Committed-cast rule: a cast that starts with mana available always completes, even if a
+  teammate drains the pool mid-cast (free, never negative). Kept deliberately — the pool is
+  "committed" at cast start; coordination play, not a bug.
+- Cast pushback: team-level for M1 — blocking pressure disrupts the team's FRONT caster
+  regardless of which rail blocked. Revisit only if playtests feel wrong (per-wizard needs
+  a dep redesign).
+
 ## Open questions (deliberately deferred)
 
 - Overdrive caster rule (front-only is provisional).
