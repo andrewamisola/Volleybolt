@@ -2569,6 +2569,21 @@
             const n = (((window.Settings && Settings.values.playerName) || '') + '').trim();
             return n || 'Blue';
         };
+        // Canonical doubles slot labels (owner rule 2026-07-13): P1-P4, with the Settings
+        // player name overriding YOUR OWN slot only — everyone else always shows their P#. In
+        // M2/M3 online doubles each peer's settings name will replace THEIR P# the same way
+        // (isLocalHuman will be computed per-peer instead of hardcoded to slot 1/combatants.left).
+        // getPlayerName() above never returns '' — it falls back to the literal placeholder
+        // 'Blue' when unset — so that's the exact string this checks against to decide whether a
+        // REAL custom name was set (an empty-string check would never fire).
+        function doublesSlotLabel(slotIndex, isLocalHuman) {
+            if (isLocalHuman) {
+                const n = window.getPlayerName ? window.getPlayerName() : '';
+                if (n && n !== 'Blue') return n;
+            }
+            return 'P' + slotIndex;
+        }
+        window.doublesSlotLabel = doublesSlotLabel;
         // Combat-log name: truncate to a short form so the ACTION stays readable
         // ("xXDrago… parries!"). maxChars is the only knob — lower it for tighter lines.
         window.shortPlayerName = function (maxChars) {
@@ -2581,8 +2596,12 @@
         // Fit a name into a fixed-width slot at CONSTANT size: full name while it fits, else
         // ellipsis-truncate (no font shrinking — keeps the panel text uniform).
         window._nameMeasCtx = document.createElement('canvas').getContext('2d');
-        window.fitPlayerName = function (tb, maxW, baseSize) {
-            const base = baseSize || 16, ctx = window._nameMeasCtx, name = window.getPlayerName();
+        // labelOverride (optional): use this string instead of getPlayerName() — lets a doubles
+        // caller fit doublesSlotLabel(1, true) into the same slot without duplicating the
+        // ellipsis-fit measuring logic.
+        window.fitPlayerName = function (tb, maxW, baseSize, labelOverride) {
+            const base = baseSize || 16, ctx = window._nameMeasCtx;
+            const name = (labelOverride != null) ? labelOverride : window.getPlayerName();
             tb.fontSize = base; ctx.font = "600 " + base + "px 'FF9UI', sans-serif";
             if (ctx.measureText(name).width <= maxW) { tb.text = name; return; }
             let s = name;
@@ -2591,14 +2610,33 @@
         };
         window._playerNameLabels = [];
         // fitWidth (optional) = fixed slot to fit into; without it the label just takes the full name.
-        window.registerPlayerNameLabel = function (tb, fitWidth) {
+        // labelFn (optional) = () => string, called fresh on every refresh instead of getPlayerName()
+        // — the doubles STATUS blue row uses this to swap between doublesSlotLabel(1, true) and
+        // getPlayerName() depending on teamSize, so a live Settings edit or per-match
+        // refreshPlayerName() call always lands on the mode-correct label instead of stomping it
+        // back to plain getPlayerName()/"Blue".
+        window.registerPlayerNameLabel = function (tb, fitWidth, labelFn) {
             if (!tb) return;
-            const apply = fitWidth ? function () { window.fitPlayerName(tb, fitWidth); }
-                                   : function () { tb.text = window.getPlayerName(); };
+            const apply = fitWidth ? function () { window.fitPlayerName(tb, fitWidth, undefined, labelFn ? labelFn() : undefined); }
+                                   : function () { tb.text = labelFn ? labelFn() : window.getPlayerName(); };
             window._playerNameLabels.push(apply);
             apply();
         };
-        window.refreshPlayerName = function () { window._playerNameLabels.forEach(function (fn) { fn(); }); };
+        window.refreshPlayerName = function () {
+            window._playerNameLabels.forEach(function (fn) { fn(); });
+            // Doubles 3D name tag (P1): keep the local player's model-anchored tag in the same
+            // live-refresh loop as the STATUS blue row, so a mid-match Settings rename updates it
+            // too. Updated directly (not via registerPlayerNameLabel) because _playerNameLabels
+            // never unregisters — a registration would go stale (disposed TextBlock) after every
+            // doubles teardown, while this reads the CURRENT tag or no-ops. Null when no doubles
+            // match is live (singles/PvP: zero extra work beyond this one check). Safe to
+            // reference the later-declared `let doublesNameTags` here: this function only runs at
+            // runtime, after the whole top-level script (incl. that declaration, and initGame()'s
+            // own top-level call below it) has evaluated — no TDZ window.
+            if (doublesNameTags && doublesNameTags.left && doublesNameTags.left.tb) {
+                doublesNameTags.left.tb.text = doublesSlotLabel(1, true);
+            }
+        };
         // Combat-log line: compose "{name}{suffix}" but truncate the NAME (ellipsis) so the whole
         // line fits the log box — the ACTION at the end (" casts Frostbolt") is always preserved.
         window._combatLogWidth = 9999;   // overwritten with the real box content width when the log GUI builds
@@ -6899,10 +6937,16 @@
                     // window.TEAM_RIGHT — the colorblind toggle already doesn't recolor this GUI text
                     // (refreshTeamColors only touches barrierMaterials.ai / aiBlockBarrier), so these
                     // follow the same pre-existing convention instead of inventing new plumbing.
-                    leftBack:  statusRow("Player 2", "#3d6a94", 68),
-                    rightBack: statusRow("Player 4", "#a84f3c", 142),
+                    leftBack:  statusRow(doublesSlotLabel(2, false), "#3d6a94", 68),
+                    rightBack: statusRow(doublesSlotLabel(4, false), "#a84f3c", 142),
                 };
-                window.registerPlayerNameLabel(statusRefs.blue.nameLabel, 72);  // ellipsis-fit the name column (HP starts at x96)
+                // Blue row: getPlayerName() in singles/PvP (unchanged); doublesSlotLabel(1, true) —
+                // "P1" unless a real Settings name is set — while a doubles match is live (owner
+                // rule 2026-07-13). labelFn is re-read on every refreshPlayerName() call (Settings
+                // name edits, per-match resetGame resync) AND on every configureStatusRowsForMode()
+                // mode switch below, so teamSize flipping always lands the right label.
+                window.registerPlayerNameLabel(statusRefs.blue.nameLabel, 72,
+                    () => (teamSize === 2 ? doublesSlotLabel(1, true) : window.getPlayerName()));
 
                 // ----- STATUS window mode switch (playtest round 2): singles/PvP 2-row layout <->
                 // doubles 4-row layout. Row-Y constants: singles values are the window's ORIGINAL
@@ -6928,7 +6972,11 @@
 
                     statusRefs.blue.reposition(rows.blue);
                     statusRefs.red.reposition(rows.red);
-                    statusRefs.red.nameLabel.text = doubles ? "Player 3" : "Red";   // singles label unchanged
+                    // Canonical P1-P4 labels (owner rule 2026-07-13, doublesSlotLabel — single
+                    // source of truth, defined near getPlayerName above). Singles/PvP label is
+                    // UNCHANGED ("Red"); blue's own live label is handled by its labelFn
+                    // registration above, not here.
+                    statusRefs.red.nameLabel.text = doubles ? doublesSlotLabel(3, false) : "Red";   // singles label unchanged
                     statusFrontRowTop.blue = rows.blue;
                     statusFrontRowTop.red = rows.red;
 
@@ -6941,6 +6989,15 @@
                         // statusRefs) — a back row never shows them, blank/omitted per the mockup.
                         r.setTeamColsVisible(false);
                     }
+                    // leftBack/rightBack (P2/P4) never change (AI-only slots in M1) — set once,
+                    // redundant with the statusRow() constructor call above, but keeps this
+                    // function the one place that ever WRITES these labels.
+                    statusRefs.leftBack.nameLabel.text  = doublesSlotLabel(2, false);
+                    statusRefs.rightBack.nameLabel.text = doublesSlotLabel(4, false);
+                    // Re-apply the blue row's live registration immediately (rather than waiting
+                    // for the next resetGame()) so the P1/getPlayerName swap lands the instant the
+                    // mode toggles (startDoublesMatch/exitDoublesState both call this function).
+                    if (window.refreshPlayerName) window.refreshPlayerName();
                 };
                 window.configureStatusRowsForMode();   // establish the singles default at build time
 
@@ -17099,6 +17156,72 @@
             });
         }
 
+        // Doubles-only (M1): a small name tag above each wizard's head — FULL opacity for the
+        // LOCAL player's own tag (combatants.left in M1; each peer's own tag in M2/M3), 50% for
+        // the other three (owner design). Anchored the way on-body VFX (playerIceLight/
+        // aiIceLight) and the visual model itself are: a node parented to the combatant's
+        // modelRoot, NOT the paddle — modelRoot already carries the MODEL_BACK slide-back offset
+        // baked into its position.x (see modelBackFor/checkAllLoaded), so a child of it inherits
+        // that offset automatically and tracks the model exactly, front or back row.
+        // castBar3D is a plain box+material parented to the PADDLE (no text capability); a name
+        // tag needs actual glyphs, so this uses Babylon GUI (TextBlock.linkWithMesh) on the
+        // existing fullscreen guiTexture instead — showCombatTextAt is a transient, age-limited
+        // DOM popup (not a persistent label) and there's no other 3D-anchored text mechanism in
+        // the codebase to reuse. linkWithMesh's per-frame screen-position update is handled
+        // internally by Babylon's GUI render pass (guiTexture already updates every frame for the
+        // rest of the HUD), so this adds no new per-frame code of our own.
+        const NAME_TAG_HEIGHT = 2.35;   // world units above modelRoot's local origin — clears the 3D cast bar's 2.0-unit height (see create3DCastBars) so the two never overlap while both show
+        let doublesNameTags = null;     // { left, leftBack, right, rightBack } -> { tb, anchor } while a doubles match is live; null otherwise
+        function createDoublesNameTag(combatant, slotIndex, isLocalHuman, color) {
+            if (!combatant || !combatant.modelRoot || !scene || !window.guiTexture) return null;   // null-guard: mid-load window (lazy back models) or scene not ready
+            const anchor = new BABYLON.TransformNode('nameTagAnchor' + slotIndex, scene);
+            anchor.parent = combatant.modelRoot;
+            anchor.position.set(0, NAME_TAG_HEIGHT, 0);
+            const tb = new BABYLON.GUI.TextBlock();
+            tb.text = doublesSlotLabel(slotIndex, isLocalHuman);
+            tb.color = color;
+            tb.fontFamily = "'FF9UI', sans-serif";
+            tb.fontSize = 14;
+            tb.fontWeight = "600";
+            tb.resizeToFit = true;   // small, content-sized — no fixed box to overlap other HUD elements
+            tb.outlineWidth = 3; tb.outlineColor = "#000000";   // legible over the arena/sky, not just the STATUS panel's dark background
+            tb.alpha = isLocalHuman ? 1.0 : 0.5;   // owner design: self 100%, others 50%
+            window.guiTexture.addControl(tb);
+            tb.linkWithMesh(anchor);
+            return { tb, anchor };
+        }
+        // Build all 4 tags. Called from startDoublesMatch() ONLY from inside beginBackModels's
+        // onReady callback — at that point EVERY combatant (fronts, already loaded at boot; backs,
+        // just cache-reattached or freshly loaded) has a modelRoot, so there's no partial-tag
+        // window to null-guard against. Colors mirror the STATUS rows' literal hex EXACTLY (see
+        // statusRefs above) — red shades stay HARDCODED rather than reading window.TEAM_RIGHT,
+        // matching that same pre-existing convention (the colorblind toggle doesn't recolor this
+        // GUI text either; see the statusRefs comment).
+        function createDoublesNameTags() {
+            destroyDoublesNameTags();   // idempotent guard against double-create (defensive; no known caller does this)
+            doublesNameTags = {
+                left:      createDoublesNameTag(combatants.left,      1, true,  "#6fb0ff"),
+                leftBack:  createDoublesNameTag(combatants.leftBack,  2, false, "#3d6a94"),
+                right:     createDoublesNameTag(combatants.right,     3, false, "#e76e55"),
+                rightBack: createDoublesNameTag(combatants.rightBack, 4, false, "#a84f3c"),
+            };
+        }
+        window.createDoublesNameTags = createDoublesNameTags;
+        // Standing teardown — called from exitDoublesState (the ONE doubles-leaving path; see its
+        // own header comment for the full list of callers). Idempotent/boot-safe: a no-op if tags
+        // were never built (fresh boot, singles-only session).
+        function destroyDoublesNameTags() {
+            if (!doublesNameTags) return;
+            for (const key of Object.keys(doublesNameTags)) {
+                const t = doublesNameTags[key];
+                if (!t) continue;
+                if (t.tb && t.tb.dispose) t.tb.dispose();
+                if (t.anchor && t.anchor.dispose) t.anchor.dispose();
+            }
+            doublesNameTags = null;
+        }
+        window.destroyDoublesNameTags = destroyDoublesNameTags;
+
         // Doubles (M1): create/enable the back-row paddle meshes and advance the front paddles
         // toward midfield. Lazy + idempotent — the meshes are built once and reused/repositioned
         // on every subsequent doubles match start. Lives at top level (like startSinglesMatch/
@@ -17140,6 +17263,7 @@
             // (startSinglesMatch, startMultiplayerMatch) already set teamSize=1 before reaching
             // this shared teardown, so this reads the correct (post-transition) mode.
             if (window.configureStatusRowsForMode) window.configureStatusRowsForMode();
+            destroyDoublesNameTags();   // name tags are doubles-only presentation — see its own header comment
             combatants.leftBack = null;
             combatants.rightBack = null;
             if (combatants.left)  combatants.left.position  = 'solo';
@@ -17235,9 +17359,10 @@
             }
             if (window.resizeStageForMode) window.resizeStageForMode();
             if (window.resetAISlotState) window.resetAISlotState();   // clear per-slot lag rings + threat-sight
-            // Gate the actual match start on the back-wizard models being ready (lazy-loaded on the
-            // first doubles match; every later match re-attaches the cache — see beginBackModels).
-            beginBackModels(() => startGame());
+            // Gate the actual match start (AND the name tags, which need every modelRoot to exist)
+            // on the back-wizard models being ready (lazy-loaded on the first doubles match; every
+            // later match re-attaches the cache — see beginBackModels).
+            beginBackModels(() => { createDoublesNameTags(); startGame(); });
         }
         window.startDoublesMatch = startDoublesMatch;
 
