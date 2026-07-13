@@ -2238,7 +2238,8 @@
                         // Juice charge on cast (matches SP castFrostbolt ~13778). Instant cast: this
                         // onCast IS the cast, so charge here. Pure state (addJuice caps + skips when
                         // bursting); deliberately NOT gated by isResimulating.
-                        if (window.addJuice) window.addJuice(combatant, window.JUICE.CHARGE.cast);
+                        // Team juice lives on the FRONT carrier (a back's own juice field is dead — never spendable).
+                        if (window.addJuice) window.addJuice(getFrontCarrier(combatant.side), window.JUICE.CHARGE.cast);
                     },
                     // railKey (optional 4th arg, Task 6 review fix): the SLOT whose arc actually
                     // blocked ('leftBack'/'rightBack' for a back rail; === side for fronts). The
@@ -2303,7 +2304,8 @@
                             combatant.cooldowns.thunderstorm = a.cooldown;
                             // Juice charge only on a real cast (had a target), matching SP
                             // castThunderstorm ~17274. Pure state; not gated by isResimulating.
-                            if (window.addJuice) window.addJuice(combatant, window.JUICE.CHARGE.cast);
+                            // Team juice lives on the FRONT carrier (a back's own juice field is dead — never spendable).
+                            if (window.addJuice) window.addJuice(carrier, window.JUICE.CHARGE.cast);
                         }
                     },
                 },
