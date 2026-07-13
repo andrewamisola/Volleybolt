@@ -99,6 +99,20 @@
         combatant.juice = Math.min(juiceConsts.MAX, (combatant.juice || 0) + amount);
     }
 
+    // Deterministic combatant iteration order for doubles: left, right, leftBack, rightBack.
+    // Back slots are null outside doubles, so this yields exactly [left, right] at teamSize 1.
+    function allCombatants(combatants) {
+        return [combatants.left, combatants.right, combatants.leftBack, combatants.rightBack].filter(Boolean);
+    }
+
+    // Team mana lives on the FRONT carrier. A back wizard gates/debits the front on its side;
+    // a front/solo wizard IS its own carrier (position !== 'back' -> returns c, byte-identical singles).
+    // Mirrors index.html's getFrontCarrier(side) — duplicated because the module boundary
+    // prevents sharing; keep the two in sync.
+    function manaCarrierOf(combatants, c) {
+        return c.position === 'back' ? (c.side === 'left' ? combatants.left : combatants.right) : c;
+    }
+
     // Pure: same guard + effect as SP activateJuice (index.html), minus the FX
     // (those go through ctx.deps.onJuiceActivate, gated by !isResimulating).
     // Spend a full bar -> start the Overdrive CHANNEL. The bar stays full and drains over the
@@ -538,7 +552,7 @@
         const ability = abilities[abilityId];
         if (!ability) return;
 
-        if (combatant.mana < ability.manaCost) return;
+        if (manaCarrierOf(ctx.combatants, combatant).mana < ability.manaCost) return;
         if (combatant.cooldowns[abilityId] > 0) return;
 
         const beh = (ctx.deps.getAbilityDef ? ctx.deps.getAbilityDef(abilityId) : null)?.behavior;
@@ -656,13 +670,11 @@
         const { combatants, consts, deps: D } = ctx;
 
         // Update freeze timers
-        if (combatants.left && combatants.left.freezeTime > 0) {
-            combatants.left.freezeTime -= dt;
-            if (combatants.left.freezeTime < 0) combatants.left.freezeTime = 0;
-        }
-        if (combatants.right && combatants.right.freezeTime > 0) {
-            combatants.right.freezeTime -= dt;
-            if (combatants.right.freezeTime < 0) combatants.right.freezeTime = 0;
+        for (const c of allCombatants(combatants)) {
+            if (c.freezeTime > 0) {
+                c.freezeTime -= dt;
+                if (c.freezeTime < 0) c.freezeTime = 0;
+            }
         }
 
         // Update parry system (PvP)
@@ -682,8 +694,7 @@
         if (rightInput.juice && combatants.right) simActivateJuice(combatants.right, ctx);
 
         // Update cooldowns
-        for (const c of [combatants.left, combatants.right]) {
-            if (!c) continue;
+        for (const c of allCombatants(combatants)) {
             if (c.cooldowns.fireball > 0) c.cooldowns.fireball -= dt;
             if (c.cooldowns.frostbolt > 0) c.cooldowns.frostbolt -= dt;
             if (c.cooldowns.gravity > 0) c.cooldowns.gravity -= dt;
@@ -696,6 +707,7 @@
         }
 
         // Mana regeneration (stops while frozen) - discrete 0.5 every 2 seconds
+        // Team mana pools live on the FRONT combatants; backs never regen (doubles design).
         for (const c of [combatants.left, combatants.right]) {
             if (!c) continue;
             if (c.freezeTime > 0) continue;
@@ -710,13 +722,13 @@
         }
 
         // Process casting
-        for (const c of [combatants.left, combatants.right]) {
-            if (!c || !c.casting) continue;
+        for (const c of allCombatants(combatants)) {
+            if (!c.casting) continue;
             c.castProgress += dt;
             if (c.castProgress >= c.castTime) {
                 // Complete the cast
                 const side = c.side === 'left' ? 'player' : 'ai';
-                D.completeCasting(side);
+                D.completeCasting(side, c.position === 'back');
             }
         }
 
@@ -730,6 +742,20 @@
         if (combatants.right) combatants.right.lastMoveDir = rightInput.moveDir;
         applyNetworkMovement(combatants.left, leftInput.moveDir, dt, ctx);
         applyNetworkMovement(combatants.right, rightInput.moveDir, dt, ctx);
+        // Back wizards (doubles): same order — cancelCastOnMove then movement, left before right.
+        const bi = ctx.backInputs;
+        if (bi) {
+            if (combatants.leftBack && bi.left) {
+                combatants.leftBack.lastMoveDir = bi.left.moveDir;
+                cancelCastOnMove(combatants.leftBack, bi.left.moveDir, ctx);
+                applyNetworkMovement(combatants.leftBack, bi.left.moveDir, dt, ctx);
+            }
+            if (combatants.rightBack && bi.right) {
+                combatants.rightBack.lastMoveDir = bi.right.moveDir;
+                cancelCastOnMove(combatants.rightBack, bi.right.moveDir, ctx);
+                applyNetworkMovement(combatants.rightBack, bi.right.moveDir, dt, ctx);
+            }
+        }
 
         // Overdrive channel (deterministic; both sides). left's opponent is right and vice-versa.
         tickOverdrive(combatants.left,  combatants.right, dt, ctx);
@@ -742,6 +768,19 @@
         if (rightInput.fireball && combatants.right) tryNetworkCast(combatants.right, 'fireball', ctx);
         if (rightInput.frostbolt && combatants.right) tryNetworkCast(combatants.right, 'frostbolt', ctx);
         if (rightInput.thunderstorm && combatants.right) tryNetworkCast(combatants.right, 'thunderstorm', ctx);
+        // Back wizards (doubles): same ability order, left before right. Juice ignored in M1.
+        if (bi) {
+            if (combatants.leftBack && bi.left) {
+                if (bi.left.fireball)     tryNetworkCast(combatants.leftBack, 'fireball', ctx);
+                if (bi.left.frostbolt)    tryNetworkCast(combatants.leftBack, 'frostbolt', ctx);
+                if (bi.left.thunderstorm) tryNetworkCast(combatants.leftBack, 'thunderstorm', ctx);
+            }
+            if (combatants.rightBack && bi.right) {
+                if (bi.right.fireball)     tryNetworkCast(combatants.rightBack, 'fireball', ctx);
+                if (bi.right.frostbolt)    tryNetworkCast(combatants.rightBack, 'frostbolt', ctx);
+                if (bi.right.thunderstorm) tryNetworkCast(combatants.rightBack, 'thunderstorm', ctx);
+            }
+        }
 
         // Update projectiles
         updateNetworkProjectiles(dt, ctx);

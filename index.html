@@ -649,7 +649,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=37-beam-cancel-fx"></script>
+    <script type="module" src="js/sim.js?v=38-doubles-sim-core"></script>
 
     <script>
         // Build identifier for bug reports (audit #6). Date-based: bump on every player-facing
@@ -2186,7 +2186,9 @@
                     onCast(ctx, combatant) {
                         const a = ctx.abilities.frostbolt;
                         const owner = combatant.side === 'left' ? 'player' : 'ai';
-                        combatant.mana -= a.manaCost;
+                        // Team mana: debit the FRONT carrier (doubles). Front/solo casters ARE the
+                        // carrier (getFrontCarrier(side) === combatant) — byte-identical singles.
+                        getFrontCarrier(combatant.side).mana -= a.manaCost;
                         combatant.cooldowns.frostbolt = a.cooldown;
                         const velX = combatant.side === 'left' ? a.baseSpeed : -a.baseSpeed;
                         const startX = combatant.side === 'left' ? combatant.paddleX + 1 : combatant.paddleX - 1;
@@ -2238,13 +2240,16 @@
                     onCast(ctx, combatant) {
                         const a = ctx.abilities.thunderstorm;
                         if (combatant.cooldowns.thunderstorm > 0) return;
-                        if (combatant.mana < a.manaCost) return;
+                        // Team mana: gate + debit the FRONT carrier (doubles). Front/solo casters ARE
+                        // the carrier (getFrontCarrier(side) === combatant) — byte-identical singles.
+                        const carrier = getFrontCarrier(combatant.side);
+                        if (carrier.mana < a.manaCost) return;
                         const owner = combatant.side === 'left' ? 'player' : 'ai';
                         // Deterministic zap of up to maxZaps incoming enemy projectiles, in stable id order.
                         // No target = no cast (matches single-player): only spend mana/cooldown if it zapped something.
                         const zapped = ctx.deps.thunderstormZap(owner, a.maxZaps, ctx);
                         if (zapped > 0) {
-                            combatant.mana -= a.manaCost;
+                            carrier.mana -= a.manaCost;
                             combatant.cooldowns.thunderstorm = a.cooldown;
                             // Juice charge only on a real cast (had a target), matching SP
                             // castThunderstorm ~17274. Pure state; not gated by isResimulating.
@@ -18636,7 +18641,7 @@
             // nextProjectileId is an inline-owned reassigned counter; the sim allocates ids through this.
             allocProjectileId: () => nextProjectileId++,
             // --- frame-level callbacks (render/flow; sim calls them but doesn't own them) ---
-            completeCasting: (side) => completeCasting(side),
+            completeCasting: (side, isBack) => completeCasting(side, isBack),
             updateThunderstormChannel: (c, dt) => updateThunderstormChannel(c, dt),
             syncLocalParryUI: () => syncLocalParryUI(),
             endRound: (winner) => endRound(winner),
@@ -19887,8 +19892,10 @@
         }
 
         // Execute Thunderstorm effect (called when cast completes)
-        function executeThunderstorm(caster) {
-            const c = getCombatantLegacy(caster);
+        // casterC (optional): the resolved casting combatant — completeCasting threads it so a
+        // doubles BACK wizard zaps/cools down as itself. Omitted => legacy front resolution.
+        function executeThunderstorm(caster, casterC) {
+            const c = casterC || getCombatantLegacy(caster);
             const isPlayer = caster === 'player';
 
             const casterOwner = isPlayer ? 'player' : 'ai';
@@ -20285,8 +20292,12 @@
         }
 
         // Complete casting and fire the spell
-        function completeCasting(caster) {
-            const c = getCombatantLegacy(caster);
+        function completeCasting(caster, isBack) {
+            // Back casters resolve to the doubles back slot; front/solo via the legacy front lookup.
+            // Mana is debited below through spendMana(caster), which resolves to the FRONT carrier —
+            // so a back's cast spends the team pool, and a front cast is byte-identical to singles.
+            const c = isBack ? (caster === 'player' ? combatants.leftBack : combatants.rightBack)
+                             : getCombatantLegacy(caster);
             if (!c || !c.casting) return;  // Safety check for doubles mode
 
             const abilityId = c.casting;
@@ -20320,12 +20331,13 @@
 
             triggerCastRelease(c);
 
-            // Fire the spell based on ability type
+            // Fire the spell based on ability type (thread the resolved caster — a back wizard
+            // must fire/zap as itself, not re-resolve to the front via getCombatantLegacy).
             if (abilityId === 'fireball') {
-                fireFireball(caster);
+                fireFireball(caster, c);
                 showSpellCastText(isPlayer, 'Fireball', 'fire');
             } else if (abilityId === 'thunderstorm') {
-                executeThunderstorm(caster);
+                executeThunderstorm(caster, c);
                 showSpellCastText(isPlayer, 'Thunderstorm', 'lightning');
             }
             // Add other cast-time abilities here
@@ -20368,19 +20380,22 @@
         }
 
         // Fire fireball (called when cast completes)
-        function fireFireball(caster) {
+        // casterC (optional): the resolved casting combatant — completeCasting threads it so a
+        // doubles BACK wizard fires from its own paddle. Omitted => legacy front resolution.
+        function fireFireball(caster, casterC) {
             if (!window.spawnFireball) return;
 
             const speed = abilities.fireball.baseSpeed;
 
             // Get combatant and use its paddle position
-            const c = getCombatantLegacy(caster);
+            const c = casterC || getCombatantLegacy(caster);
             if (!c || !c.paddle) return;  // Safety check for doubles mode
 
             // Per-match spell-cast counter + combat log — the cast-time path fires here
             // (legacy castFireball() covers the instant on-screen-button path).
-            if (c.matchStats) c.matchStats.spellsCast++; if (window.addJuice) window.addJuice(c, window.JUICE.CHARGE.cast);
-            if (window.logCombat) { const blue = (c === combatants.left); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('fireball'))); }
+            // Juice is team-owned: award the FRONT carrier (=== c for front/solo casters).
+            if (c.matchStats) c.matchStats.spellsCast++; if (window.addJuice) window.addJuice(getFrontCarrier(c.side), window.JUICE.CHARGE.cast);
+            if (window.logCombat) { const blue = (c.side === 'left'); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('fireball'))); }
 
             const paddle = c.paddle;
             const isLeft = c.side === 'left';
