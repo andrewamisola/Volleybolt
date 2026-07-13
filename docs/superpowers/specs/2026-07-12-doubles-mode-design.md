@@ -137,6 +137,19 @@ degenerate loops. Defense is structural asymmetry, never randomness:
    with a short manual checklist (mode entry, rails, arcs, shared pools, AI behavior,
    goldens via `?dev` console).
 
+## Playtest round 2 (Andrew, 2026-07-13) — REVERSALS + tuning
+
+- **Mana: REVERSED to per-wizard.** Shared team pool felt frustrating in play. Each wizard
+  owns a singles-sized pool (same `getMaxMana(side)` cap/regen). Juice STAYS team-shared.
+  Individual mana is displayed in the Status window grid (below), not new HUD chrome.
+- **Status window grid (doubles):** four player rows (P1-P4 / player name for the human),
+  colored by team. MP column per-player; HP and Juice are team values shown once per team
+  block. Same STATUS window, denser grid — no new window.
+- **Front rails nudged back:** ±3.5 → **±4.5** ("a little bit" back from the net position).
+- **Doubles projectile speed: ×0.75** (25% reduction, the round middle of Andrew's 20-30%)
+  applied at projectile spawn, doubles only — makes the bigger court read at game speed.
+- **Bushes:** must sit on the court edges in doubles (they don't follow the resize today).
+
 ## Resolved during M1 playtest (Andrew, 2026-07-13)
 
 - Front rail: tennis NET-PLAYER position — fronts at ±3.5 (~31% of the half-court from
