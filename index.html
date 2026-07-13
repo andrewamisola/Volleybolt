@@ -656,7 +656,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=42-doubles-combat-text"></script>
+    <script type="module" src="js/sim.js?v=43-parry-fix"></script>
 
     <script>
         // Build identifier for bug reports (audit #6). Date-based: bump on every player-facing
@@ -13297,11 +13297,22 @@
                 }
 
                 // ---- Parry (every frame): press when an in-range threat has been SEEN
-                // long enough. Late/narrow perception at low skill → natural whiffs. ----
+                // long enough AND is about to arrive. Late/narrow perception at low skill →
+                // natural whiffs. ----
                 const PARRY_RANGE = 2.5;
+                // PARRY_LEAD_TIME (tunable, seconds): press only when the ball will reach us within
+                // this window. The active parry lasts 0.5s (consts.parryWindow) and whiffing burns a
+                // 3s fail-cooldown, so pressing early (ball still ~18-20u out) expired the window and
+                // the cooldown then blanketed the real arrival — the AI could never reactive-parry.
+                // 0.35 keeps the press inside the 0.5s window with margin for the reaction lag. The
+                // view is mirrored so incoming threats always have velX>0 with self on +X (matches
+                // the s.casting timeToImpact above), so tti = (paddleX - x)/velX holds for every slot.
+                const PARRY_LEAD_TIME = 0.35;
+                const tti = (threat && threat.velX !== 0) ? (s.paddleX - threat.x) / threat.velX : Infinity;
                 const parry = !!(threat
                     && Math.abs(threat.z - s.paddleZ) < PARRY_RANGE
-                    && (threat.sightFrames || 0) >= profile.parrySight);
+                    && (threat.sightFrames || 0) >= profile.parrySight
+                    && tti > 0 && tti < PARRY_LEAD_TIME);
 
                 // ---- Opening urgency: collapse cast cadence when the opponent is off the lane.
                 // openingSize = gap between opponent paddle and AI paddle beyond the block tolerance.
@@ -18390,7 +18401,12 @@
         // ---- AI determinism oracle (Phase 2.1) ----
         // Folds decideAI outputs over a scripted synthetic view sequence into a 32-bit hex hash.
         // No mesh reads, no game loop — pure function exercise only.
-        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "549f5f05"  (re-pinned 2026-07-06 #2:
+        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "549f5f05" — STALE, parry fix 2026-07-13
+        // (OWNER RE-PINS). decideAI now gates the parry press on time-to-impact (tti < 0.35s), so
+        // the synthetic oracle exercises the new branch and the fold moves. Node-extracted candidate:
+        // 549f5f05 -> e6fdfae9 (OLD source reproduces 549f5f05; NEW reproducible ×2, seed-sensitive).
+        // Owner confirms in-browser and replaces "549f5f05" above with the pinned value.
+        //  (prior re-pin 2026-07-06 #2:
         // BEAM-BLOCK — a channeling opponent outranks all movement targets; the synthetic view
         // now cycles opp.juiceActive (seed%4==0) to cover the branch. Prior: 398443e4:
         // turtle offense-suppression REMOVED + opening-reactive cast urgency added — the AI never

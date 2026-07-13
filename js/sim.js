@@ -19,10 +19,14 @@
 //
 // Determinism law (see docs/SHARED_CORE.md): same (state, inputs) -> same state.
 // No Math.random / Date.now / performance.now here. Verify any change against the
-// dbg.determinism golden-hash oracle in index.html (seed 12345 -> 6c6801a3, seed
-// 99999 -> 574d9f9c, both stable; run from a FRESH SINGLE-PLAYER match — a mid-PvP
-// run reads pvp-mode deps and folds differently, that is oracle-environment
-// sensitivity, not a sim change).
+// dbg.determinism golden-hash oracle in index.html; run from a FRESH SINGLE-PLAYER
+// match — a mid-PvP run reads pvp-mode deps and folds differently, that is
+// oracle-environment sensitivity, not a sim change.
+//   STALE — parry fix 2026-07-13, owner re-pins. The parry-reach mirror
+//   (checkPvPParryHitsForSide) is the FIRST deliberate golden-moving change: right-seat
+//   AI now reactive-parries in-sim, so the singles STATE fold legitimately moves. Old
+//   (pre-parry-fix) values preserved: seed 12345 -> 6c6801a3, seed 99999 -> 574d9f9c.
+//   New pins: seed 12345 -> <OWNER-PIN fold: xxxxxxxx>, seed 99999 -> <OWNER-PIN fold: xxxxxxxx>.
 //
 // ============================================================================
 // DOUBLES goldens (M1 — 2v2). The singles pins above are UNCHANGED by M1: the
@@ -37,11 +41,25 @@
 //     function (Node-extracted candidate, reproducible ×2 & seed-sensitive) — the
 //     OWNER confirms it in-browser and replaces the placeholder.
 // OWNER PIN (checkpoint C — run each ×2 from a FRESH doubles match, both must match):
+//   STALE — parry fix 2026-07-13, owner re-pins. The parry-reach mirror moves the doubles
+//   RED-team (right-seat) parry, so BOTH the doubles state fold and the aiDeterminismDoubles
+//   fold (decideAI now carries the time-to-impact parry gate) move. Old aiDeterminismDoubles
+//   candidate preserved: d394d3ed.
 //   dbg.determinismDoubles(180, 12345) -> <OWNER-PIN fold: xxxxxxxx>
 //   dbg.determinismDoubles(180, 99999) -> <OWNER-PIN fold: xxxxxxxx>
-//   dbg.aiDeterminismDoubles(50, 42)   -> <OWNER-PIN candidate: d394d3ed>
+//   dbg.aiDeterminismDoubles(50, 42)   -> <OWNER-PIN candidate: xxxxxxxx>
 // ============================================================================
 //
+// (6c6801a3 -> STALE, parry fix 2026-07-13 (OWNER RE-PINS): FIRST deliberate golden-moving
+//  change. Fix A — checkPvPParryHitsForSide's X-reach was unmirrored since the parry step was
+//  lifted into this shared sim: dir=1 for left (reproduces the old math byte-for-byte) but the
+//  right/back seats reached BEHIND the paddle, so the passive block arc (face ~1.0u field-ward of the paddle) always
+//  shadowed the active parry — AI, PvP guests, and the doubles red team could never reactive-parry.
+//  Now `distFromPaddle = (proj.x - px) * dir`. Fix B — decideAI (index.html) gains a time-to-impact
+//  parry gate (tti < PARRY_LEAD_TIME 0.35s) so the AI presses inside the 0.5s window instead of
+//  ~18-20u early. Both the singles STATE folds (12345/99999) AND the AI fold (549f5f05) move;
+//  Node-extracted AI fold candidate 549f5f05 -> e6fdfae9 (OLD reproduces 549f5f05, NEW reproducible
+//  ×2). Owner runs and pins all folds in-browser; placeholders above/below are the re-pin targets.)
 // (3ba3b864 -> 6c6801a3, re-pinned 2026-07-06: OWNER TUNING #3 — DURATION 6->4
 //  (0.6 windup + 3.4s beam; full-connect ceiling ~57% of a 20HP bar) and the AI now
 //  BEAM-BLOCKS: decideAI chases a channeling opponent's paddleZ off its reaction-lagged
@@ -688,6 +706,10 @@
         // Team side from the key prefix: 'left'/'leftBack' -> left team, 'right'/'rightBack' ->
         // right team. Owner and velocity gates are team-scoped, so front and back share them.
         const side = key.startsWith('left') ? 'left' : 'right';
+        // Field direction for this side (matches hitsBlockArc's `dir`): left team's field is +X,
+        // right team's is -X. The reach window and the incoming-velocity gate are BOTH measured
+        // along this axis so the active parry hitbox extends toward the field on either side.
+        const dir = side === 'left' ? 1 : -1;
         const incomingVelCheck = side === 'left' ? (proj) => proj.velX < 0 : (proj) => proj.velX > 0;
         const ownerKey = side === 'left' ? 'player' : 'ai';
 
@@ -699,7 +721,16 @@
             if (!incomingVelCheck(proj)) continue;
             if (proj.owner === ownerKey && !proj.isParried) continue;
 
-            const distFromPaddle = proj.x - px;
+            // PARRY FIX (2026-07-13): mirror the reach by side. This X-test was written as the
+            // raw `proj.x - px` with window [-0.5, +parryHitboxExtend] and was NEVER mirrored when
+            // the parry step was lifted out of the inline SP loop into this shared sim. For the
+            // LEFT paddle (field = +X) dir=1 reproduces the original math byte-for-byte. For the
+            // RIGHT paddle (field = -X) the un-mirrored window reached ~2.5u BEHIND the paddle
+            // (+X, away from the field), so a right-side active parry could never catch a field-side
+            // ball — the passive block arc (face ~1.0u field-ward of the paddle) always shadowed it. This silently broke
+            // reactive parries for the AI, every PvP GUEST (right seat), and the doubles red team;
+            // all peers compute this identically, so mirroring is sim-internal with no desync surface.
+            const distFromPaddle = (proj.x - px) * dir;
             if (distFromPaddle > consts.parryHitboxExtend || distFromPaddle < -0.5) continue;
 
             if (proj.z < pz - paddleHalfDepth || proj.z > pz + paddleHalfDepth) continue;
@@ -712,6 +743,10 @@
 
         if (bestProj) {
             const parryer = side === 'left' ? 'player' : 'ai';
+            // aimDir is Z-only: parryProjectile sets velZ = aimDir·speed·0.6 identically for both
+            // sides and picks the field-ward velX from `parryer` (player→+X, ai→-X), so aimDir
+            // encodes NO X direction. Z is never mirrored, so moveDir carries the same Z-semantic on
+            // both seats — no `dir` factor here (verified against parryProjectile, index.html ~12680).
             const aimDir = inputState ? inputState.moveDir : 0;
             // `combatant` (additive 4th arg, owner rule 2026-07-13, playtest round 3): the
             // RESOLVED wizard that parried (front or back — already looked up above via
