@@ -1,7 +1,7 @@
 # Doubles Mode — Design
 
 **Date:** 2026-07-12
-**Status:** M1 approved for planning. M2/M3 sketched only — each gets its own spec later.
+**Status:** M1 implemented — pending owner playtest + golden pins. M2/M3 sketched only — each gets its own spec later.
 **Owner:** Andrew
 
 ## Goal

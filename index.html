@@ -665,7 +665,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=39b-back-rail-bounce"></script>
+    <script type="module" src="js/sim.js?v=40-doubles-goldens"></script>
 
     <script>
         // Build identifier for bug reports (audit #6). Date-based: bump on every player-facing
@@ -17899,6 +17899,20 @@
                 mix(p.volleyCount | 0); mix(p.isParried ? 1 : 0); mix(p.bounceCount | 0);
             }
             mix(q(s.playerScore)); mix(q(s.aiScore)); mix(s.rngSeed | 0); mix(s.nextProjId | 0);
+            // Doubles: back-slot state mixes AFTER the entire singles field sequence, and only
+            // when present — singles hashes remain bit-identical (golden-protected). The fold mixes
+            // NAMED fields, not object-key iteration, so the two `null` leftBack/rightBack snapshot
+            // fields a singles capture carries cannot perturb anything above: this loop `continue`s
+            // past them and no earlier mix reads them. Same per-slot field order as the front loop.
+            for (const key of ['leftBack', 'rightBack']) {
+                const b = s[key];
+                if (!b) continue;
+                const bd = b.cooldowns || {};
+                mix(q(b.paddleZ)); mix(q(b.prevPaddleZ)); mix(q(b.moveAccum)); mix(q(b.mana)); mix(q(b.manaRegen));
+                mix(q(b.freezeTime)); mix(q(b.towerHealth)); mix(q(b.castProgress)); mix(q(b.castTime));
+                mix(q(bd.fireball)); mix(q(bd.frostbolt)); mix(q(bd.thunderstorm));
+                mix(q(b.juice)); mix(b.juiceActive ? 1 : 0); mix(q(b.juiceTimer)); mix(q(b.juiceRamp));
+            }
             return h >>> 0;
         }
         window.hashGameState = hashGameState;
@@ -17939,11 +17953,16 @@
             }
             let hr = newH(); hr = mix(hr, s.rngSeed | 0); hr = mix(hr, s.nextProjId | 0);
             let hm = newH(); hm = mix(hm, s.frame | 0); hm = mix(hm, q(s.playerScore)); hm = mix(hm, q(s.aiScore));
-            return {
+            const groups = {
                 leftPaddle: sidePaddle(s.left), rightPaddle: sidePaddle(s.right),
                 leftCore: sideCore(s.left), rightCore: sideCore(s.right),
                 projectiles: hp >>> 0, rng: hr >>> 0, misc: hm >>> 0
             };
+            // Doubles: add back-rail groups ONLY when present, so singles output keeps the exact same
+            // keys AND values (each group is an independent accumulator — extra keys can't shift them).
+            if (s.leftBack)  { groups.leftBackPaddle  = sidePaddle(s.leftBack);  groups.leftBackCore  = sideCore(s.leftBack); }
+            if (s.rightBack) { groups.rightBackPaddle = sidePaddle(s.rightBack); groups.rightBackCore = sideCore(s.rightBack); }
+            return groups;
         }
 
         // Send our per-group sub-hashes for a desynced frame to the peer (once per frame). The peer
@@ -18232,6 +18251,76 @@
                 const foldHex = (fold >>> 0).toString(16);
                 console.log('%c[dbg.determinism] frames=' + frames + ' seed=' + seed + ' fold=' + foldHex, 'color:#2f8f6f');
                 return { frames, seed, fold: foldHex, last: hashes.slice(-3).map(x => (x >>> 0).toString(16)) };
+            },
+
+            // DOUBLES determinism oracle — clone of determinism() for the 4-wizard sim. Requires a
+            // LIVE doubles match (all four back/front combatants). Resets every combatant onto its own
+            // rail (fronts ∓8.0 on the advanced rail, backs ∓11.5 on the classic rail), scripts inputs
+            // for all four (fronts reuse inp(f,side); backs get a phase-shifted inp(f+37,side) so back
+            // behavior differs deterministically), and folds hashGameState() — which now covers the
+            // back slots — per frame with the same FNV mix. Snapshots/restores via the rollback
+            // machinery (restoreGameState restores back slots too), so it's safe to run mid-match.
+            determinismDoubles(frames, seed) {
+                frames = frames || 180;
+                seed = (seed == null) ? 12345 : (seed >>> 0);
+                if (teamSize !== 2 || !combatants.leftBack || !combatants.rightBack) return 'start a DOUBLES match first';
+                const inp = (f, side) => {
+                    const o = { moveDir: 0, parry: false, fireball: false, frostbolt: false, thunderstorm: false, juice: false };
+                    const ph = side === 'left' ? 0 : 17;
+                    o.moveDir = (((f + ph) >> 3) % 3) - 1;
+                    if (side === 'left') {
+                        if (f % 37 === 5)  o.fireball = true;
+                        if (f % 71 === 40) o.frostbolt = true;
+                        if (f % 53 === 50) o.parry = true;
+                        if (f === 30)      o.juice = true;   // fronts fire Overdrive (left front's bar preloaded)
+                    } else {
+                        if (f % 37 === 22) o.fireball = true;
+                        if (f % 71 === 12) o.frostbolt = true;
+                        if (f % 53 === 26) o.parry = true;
+                    }
+                    return o;
+                };
+                const snap = captureGameState();
+                const savedResim = isResimulating;
+                const savedSeed = netRngSeed;
+                const hashes = [];
+                let fold = 2166136261 >>> 0;
+                try {
+                    isResimulating = true;
+                    netRngSeed = seed;
+                    for (const c of getAllCombatants()) {
+                        c.mana = getMaxMana(c.side); c.manaRegen = 0; c.freezeTime = 0;
+                        c.casting = null; c.castProgress = 0; c.castTime = 0;
+                        c.cooldowns = { fireball: 0, frostbolt: 0, gravity: 0, thunderstorm: 0 };
+                        c.towerHealth = 9999;
+                        c.moveAccum = 0; c.paddleZ = 0; c.prevPaddleZ = 0;
+                        // Per-rail paddleX: fronts on the advanced rail (∓8.0), backs on the classic rail (∓11.5).
+                        c.paddleX = (c.side === 'left' ? -1 : 1) * (c.position === 'back' ? 11.5 : 8.0);
+                        c.juice = 0; c.juiceActive = false; c.juiceTimer = 0; c.juiceRamp = 0;
+                    }
+                    combatants.left.juice = (window.JUICE && JUICE.MAX) || 350;   // preload for the frame-30 Overdrive
+                    if (playerPaddle) playerPaddle.position.z = 0;
+                    if (aiPaddle) aiPaddle.position.z = 0;
+                    if (playerBackPaddle) playerBackPaddle.position.z = 0;
+                    if (aiBackPaddle) aiBackPaddle.position.z = 0;
+                    for (const p of projectiles.slice()) window.destroyProjectile(p);
+                    nextProjectileId = 0;
+                    for (let f = 0; f < frames; f++) {
+                        const ctx = buildSimCtx();
+                        ctx.backInputs = { left: inp(f + 37, 'left'), right: inp(f + 37, 'right') };
+                        window.VolleyboltSim.simulateNetworkFrame(inp(f, 'left'), inp(f, 'right'), 1 / 60, ctx);
+                        const h = hashGameState() >>> 0;
+                        hashes.push(h);
+                        for (let b = 0; b < 4; b++) { fold = (fold ^ ((h >>> (b * 8)) & 0xff)) >>> 0; fold = Math.imul(fold, 16777619) >>> 0; }
+                    }
+                } finally {
+                    netRngSeed = savedSeed;
+                    restoreGameState(snap);
+                    isResimulating = savedResim;
+                }
+                const foldHex = (fold >>> 0).toString(16);
+                console.log('%c[dbg.determinismDoubles] frames=' + frames + ' seed=' + seed + ' fold=' + foldHex, 'color:#2f8f6f');
+                return { frames, seed, fold: foldHex, last: hashes.slice(-3).map(x => (x >>> 0).toString(16)) };
             }
         };
 
@@ -18322,6 +18411,84 @@
                 const fold  = _foldAI(steps, seed);
                 const fold2 = _foldAI(steps, seed);  // second run — must match
                 console.log('%c[dbg.aiDeterminism] steps=' + steps + ' seed=' + seed + ' fold=' + fold + ' reproducible=' + (fold === fold2), 'color:#6f9f2f');
+                return { steps, seed, fold, reproducible: fold === fold2 };
+            };
+
+            // ---- DOUBLES AI determinism oracle (M1) ----
+            // Parallel clone of _syntheticView/_foldAI that folds BOTH a front-profile (castK 7) and a
+            // back-profile (castK 11) decideAI decision per step into one hash. Pure-function exercise
+            // only — no game loop, no mesh. Role profiles layer castK/role onto skillToProfile(0.45),
+            // exactly as the live doubles driver builds them (DOUBLES_AI.front/back over a skill base).
+            //
+            // The synthetic view is constructed DIRECTLY in decideAI's canonical, ALREADY-X-MIRRORED
+            // right-facing frame (velX>0 = incoming, self on +X) — identical to _syntheticView — so it
+            // bypasses buildAIViewForSlot's live X-mirror consistently rather than re-deriving it. It
+            // adds the doubles-only reads decideAI consults: `teammate` (front fire-discipline),
+            // `oppCasting` + opp.casting (back counter-frostbolt), self.mana cycling (back manaHold),
+            // and role-gated movement (back gate-guard). In-fold this captures role-differentiated
+            // MOVEMENT (back gate-guard vs front open-lane) + per-role castK timing + parry; the deep
+            // cast-coordination FLIPS (front suppression, back counter-frostbolt, manaHold) are behavior-
+            // locked by direct decideAI probes, the SAME cadence-masking limitation the singles AI
+            // golden documents above. Verified reproducible ×2 and seed-sensitive (Node-extracted).
+            // Profiles built lazily at CALL time (like the singles oracle) so window.skillToProfile is
+            // guaranteed assigned. skillToProfile(0.45) is the fixed oracle skill; castK/role layer on top.
+            function _dblProfiles() {
+                const base = window.skillToProfile(0.45);
+                return {
+                    front: { ...base, castK: 7,  role: 'front' },
+                    back:  { ...base, castK: 11, role: 'back'  },
+                };
+            }
+            function _syntheticViewDoubles(seed, role) {
+                const v1 = (seed % 3 === 0) ? -8 : 8;   // +X toward AI = threat; -X outgoing (clean lane)
+                const v2 = (seed % 2 === 0) ?  6 : -6;
+                return {
+                    projectiles: [
+                        { id: 1, x: 3.0, z: (seed % 5) * 0.4 - 1.0, velX: v1, velZ: 0.5,  owner: 'player', volleyCount: 1, type: 'fireball',  sightFrames: (seed % 13) },
+                        { id: 2, x: 5.0, z: (seed % 3) * 0.3,        velX: v2, velZ: -0.3, owner: 'player', volleyCount: 0, type: 'frostbolt', sightFrames: (seed % 7)  },
+                    ],
+                    self: {
+                        paddleX: 7, paddleZ: (seed % 7) * 0.2 - 0.6,
+                        mana: (seed % 8),                     // 0..7 cycles the back manaHold (mana<2) + cast mana gates
+                        cooldowns: { fireball: 0, frostbolt: 0, thunderstorm: 0 },
+                        freezeTime: 0, casting: null, castProgress: 0, castTime: 1.0,
+                        juice: (seed % 10 === 0) ? 350 : 0,
+                        juiceActive: false, shieldCharges: 0,
+                        towerHealth: (seed % 20) + 1,
+                    },
+                    opp:  { paddleZ: (seed % 9) * 1.0 - 4.0, towerHealth: 20 - (seed % 7), juiceActive: (seed % 4 === 0), freezeTime: (seed % 6 === 0) ? 1 : 0, casting: (seed % 5 === 0) ? 'fireball' : null },
+                    oppCasting:   (seed % 5 === 0) ? 'fireball' : null,   // back counter-cast trigger
+                    teammate:     { paddleZ: (seed % 6) * 0.4 - 1.0, casting: (seed % 3 === 0) ? 'fireball' : null, cooldowns: { fireball: 0, frostbolt: 0, thunderstorm: 0 } },
+                    selfPosition: role,
+                    geom: { tableWidth: 16, halfDepth: 4, paddleBoundary: 3.8 },
+                    maxHealth: 20,
+                    roundActive: true,
+                };
+            }
+            function _foldAIDoubles(steps, seed) {
+                const prof = _dblProfiles();
+                let hash = 0;
+                const step = (result) => {
+                    hash = ((hash << 5) - hash + result.moveDir + 1)                 | 0;
+                    hash = ((hash << 5) - hash + (result.parry        ? 7  : 0))     | 0;
+                    hash = ((hash << 5) - hash + (result.fireball     ? 13 : 0))     | 0;
+                    hash = ((hash << 5) - hash + (result.frostbolt    ? 17 : 0))     | 0;
+                    hash = ((hash << 5) - hash + (result.thunderstorm ? 19 : 0))     | 0;
+                    hash = ((hash << 5) - hash + (result.juice        ? 23 : 0))     | 0;
+                }
+                for (let i = 0; i < steps; i++) {
+                    const rng = window.makeAIRng((seed + i) ^ window.AI_RNG_SEED);
+                    step(window.decideAI(_syntheticViewDoubles(seed + i, 'front'), i, rng, prof.front));
+                    step(window.decideAI(_syntheticViewDoubles(seed + i, 'back'),  i, rng, prof.back));
+                }
+                return ((hash >>> 0).toString(16)).padStart(8, '0');
+            }
+            window.dbg.aiDeterminismDoubles = function aiDeterminismDoubles(steps, seed) {
+                steps = steps || 50;
+                seed  = (seed == null) ? 42 : (seed >>> 0);
+                const fold  = _foldAIDoubles(steps, seed);
+                const fold2 = _foldAIDoubles(steps, seed);  // second run — must match
+                console.log('%c[dbg.aiDeterminismDoubles] steps=' + steps + ' seed=' + seed + ' fold=' + fold + ' reproducible=' + (fold === fold2), 'color:#6f9f2f');
                 return { steps, seed, fold, reproducible: fold === fold2 };
             };
         })();
@@ -18680,6 +18847,45 @@
                     juiceRamp: combatants.right ? (combatants.right.juiceRamp || 0) : 0
                 },
 
+                // Doubles back-rail combatants (ADDITIVE — null outside a doubles match). Same field
+                // list as the fronts above. These null fields never reach hashGameState in singles
+                // (the hash's back-slot block is gated on `if (!b) continue`), so singles goldens are
+                // untouched; captured/restored symmetrically so back state survives rollback.
+                leftBack: combatants.leftBack ? {
+                    paddleZ: combatants.leftBack.paddleZ || 0,
+                    prevPaddleZ: combatants.leftBack.prevPaddleZ || 0,
+                    moveAccum: combatants.leftBack.moveAccum || 0,
+                    mana: combatants.leftBack.mana,
+                    manaRegen: combatants.leftBack.manaRegen,
+                    freezeTime: combatants.leftBack.freezeTime,
+                    towerHealth: combatants.leftBack.towerHealth,
+                    casting: combatants.leftBack.casting,
+                    castProgress: combatants.leftBack.castProgress,
+                    castTime: combatants.leftBack.castTime,
+                    cooldowns: { ...combatants.leftBack.cooldowns },
+                    juice: combatants.leftBack.juice || 0,
+                    juiceActive: combatants.leftBack.juiceActive || false,
+                    juiceTimer: combatants.leftBack.juiceTimer || 0,
+                    juiceRamp: combatants.leftBack.juiceRamp || 0
+                } : null,
+                rightBack: combatants.rightBack ? {
+                    paddleZ: combatants.rightBack.paddleZ || 0,
+                    prevPaddleZ: combatants.rightBack.prevPaddleZ || 0,
+                    moveAccum: combatants.rightBack.moveAccum || 0,
+                    mana: combatants.rightBack.mana,
+                    manaRegen: combatants.rightBack.manaRegen,
+                    freezeTime: combatants.rightBack.freezeTime,
+                    towerHealth: combatants.rightBack.towerHealth,
+                    casting: combatants.rightBack.casting,
+                    castProgress: combatants.rightBack.castProgress,
+                    castTime: combatants.rightBack.castTime,
+                    cooldowns: { ...combatants.rightBack.cooldowns },
+                    juice: combatants.rightBack.juice || 0,
+                    juiceActive: combatants.rightBack.juiceActive || false,
+                    juiceTimer: combatants.rightBack.juiceTimer || 0,
+                    juiceRamp: combatants.rightBack.juiceRamp || 0
+                } : null,
+
                 // Parry state
                 parry: {
                     canParry: canParry,
@@ -18689,7 +18895,11 @@
                 },
                 pvpParry: {
                     left: { ...pvpParryState.left },
-                    right: { ...pvpParryState.right }
+                    right: { ...pvpParryState.right },
+                    // Doubles back-rail parry state (ADDITIVE, null-safe). Restored symmetrically so a
+                    // back wizard's parry window/cooldown survives a rollback (Task 3 review finding).
+                    leftBack: pvpParryState.leftBack ? { ...pvpParryState.leftBack } : null,
+                    rightBack: pvpParryState.rightBack ? { ...pvpParryState.rightBack } : null
                 },
 
                 // Projectiles (minimal data for recreation)
@@ -18781,6 +18991,45 @@
                 combatants.right.juiceRamp = state.right.juiceRamp || 0;
             }
 
+            // Restore doubles back-rail combatants (only when BOTH the snapshot has them AND the
+            // combatants exist — singles snapshots carry null back slots and are skipped entirely).
+            if (combatants.leftBack && state.leftBack) {
+                combatants.leftBack.paddleZ = state.leftBack.paddleZ;
+                combatants.leftBack.prevPaddleZ = state.leftBack.prevPaddleZ || 0;
+                combatants.leftBack.moveAccum = state.leftBack.moveAccum || 0;
+                combatants.leftBack.mana = state.leftBack.mana;
+                combatants.leftBack.manaRegen = state.leftBack.manaRegen;
+                combatants.leftBack.freezeTime = state.leftBack.freezeTime;
+                combatants.leftBack.towerHealth = state.leftBack.towerHealth;
+                combatants.leftBack.casting = state.leftBack.casting;
+                combatants.leftBack.castProgress = state.leftBack.castProgress;
+                combatants.leftBack.castTime = state.leftBack.castTime;
+                combatants.leftBack.cooldowns = { ...state.leftBack.cooldowns };
+                combatants.leftBack.juice = state.leftBack.juice || 0;
+                combatants.leftBack.juiceActive = state.leftBack.juiceActive || false;
+                combatants.leftBack.juiceTimer = state.leftBack.juiceTimer || 0;
+                combatants.leftBack.juiceRamp = state.leftBack.juiceRamp || 0;
+                if (typeof playerBackPaddle !== 'undefined' && playerBackPaddle) playerBackPaddle.position.z = state.leftBack.paddleZ;
+            }
+            if (combatants.rightBack && state.rightBack) {
+                combatants.rightBack.paddleZ = state.rightBack.paddleZ;
+                combatants.rightBack.prevPaddleZ = state.rightBack.prevPaddleZ || 0;
+                combatants.rightBack.moveAccum = state.rightBack.moveAccum || 0;
+                combatants.rightBack.mana = state.rightBack.mana;
+                combatants.rightBack.manaRegen = state.rightBack.manaRegen;
+                combatants.rightBack.freezeTime = state.rightBack.freezeTime;
+                combatants.rightBack.towerHealth = state.rightBack.towerHealth;
+                combatants.rightBack.casting = state.rightBack.casting;
+                combatants.rightBack.castProgress = state.rightBack.castProgress;
+                combatants.rightBack.castTime = state.rightBack.castTime;
+                combatants.rightBack.cooldowns = { ...state.rightBack.cooldowns };
+                combatants.rightBack.juice = state.rightBack.juice || 0;
+                combatants.rightBack.juiceActive = state.rightBack.juiceActive || false;
+                combatants.rightBack.juiceTimer = state.rightBack.juiceTimer || 0;
+                combatants.rightBack.juiceRamp = state.rightBack.juiceRamp || 0;
+                if (typeof aiBackPaddle !== 'undefined' && aiBackPaddle) aiBackPaddle.position.z = state.rightBack.paddleZ;
+            }
+
             // Restore parry state
             canParry = state.parry.canParry;
             parryActive = state.parry.parryActive;
@@ -18789,6 +19038,9 @@
             if (state.pvpParry) {
                 pvpParryState.left = { ...state.pvpParry.left };
                 pvpParryState.right = { ...state.pvpParry.right };
+                // Doubles back-rail parry state (null-safe: singles snapshots omit these).
+                if (state.pvpParry.leftBack) pvpParryState.leftBack = { ...state.pvpParry.leftBack };
+                if (state.pvpParry.rightBack) pvpParryState.rightBack = { ...state.pvpParry.rightBack };
             }
 
             // Restore scores

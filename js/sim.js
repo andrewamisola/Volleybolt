@@ -23,6 +23,25 @@
 // 99999 -> 574d9f9c, both stable; run from a FRESH SINGLE-PLAYER match — a mid-PvP
 // run reads pvp-mode deps and folds differently, that is oracle-environment
 // sensitivity, not a sim change).
+//
+// ============================================================================
+// DOUBLES goldens (M1 — 2v2). The singles pins above are UNCHANGED by M1: the
+// hashGameState back-slot mix is ADDITIVE and gated on non-null back slots, so a
+// snapshot with no back combatants folds bit-identically (statically verified).
+// The doubles oracles cover the 4-wizard sim + the role-parameterized AI:
+//   • dbg.determinismDoubles(frames, seed) — 4-combatant state fold (needs a LIVE
+//     doubles match; resets fronts to paddleX ∓8.0, backs ∓11.5, scripts backs on a
+//     phase-shifted inp(f+37,side), folds the back-slot-covering hashGameState()).
+//   • dbg.aiDeterminismDoubles(steps, seed) — pure decideAI fold over front(castK 7)
+//     + back(castK 11) role profiles; the aiDeterminismDoubles fold below is a pure
+//     function (Node-extracted candidate, reproducible ×2 & seed-sensitive) — the
+//     OWNER confirms it in-browser and replaces the placeholder.
+// OWNER PIN (checkpoint C — run each ×2 from a FRESH doubles match, both must match):
+//   dbg.determinismDoubles(180, 12345) -> <OWNER-PIN fold: xxxxxxxx>
+//   dbg.determinismDoubles(180, 99999) -> <OWNER-PIN fold: xxxxxxxx>
+//   dbg.aiDeterminismDoubles(50, 42)   -> <OWNER-PIN candidate: d394d3ed>
+// ============================================================================
+//
 // (3ba3b864 -> 6c6801a3, re-pinned 2026-07-06: OWNER TUNING #3 — DURATION 6->4
 //  (0.6 windup + 3.4s beam; full-connect ceiling ~57% of a 20HP bar) and the AI now
 //  BEAM-BLOCKS: decideAI chases a channeling opponent's paddleZ off its reaction-lagged
