@@ -713,7 +713,13 @@
         if (bestProj) {
             const parryer = side === 'left' ? 'player' : 'ai';
             const aimDir = inputState ? inputState.moveDir : 0;
-            D.parryProjectile(bestProj, parryer, aimDir);
+            // `combatant` (additive 4th arg, owner rule 2026-07-13, playtest round 3): the
+            // RESOLVED wizard that parried (front or back — already looked up above via
+            // combatants[key]), threaded through purely for combat-log attribution in the dep.
+            // FX-only input, not sim state: proj/state mutations below are unchanged, and for
+            // teamSize 1 `key` is always 'left'/'right' so `combatant` === the same front object
+            // the dep already defaulted to — byte-identical singles/PvP, no golden movement.
+            D.parryProjectile(bestProj, parryer, aimDir, combatant);
 
             state.active = false;
             state.timer = 0;

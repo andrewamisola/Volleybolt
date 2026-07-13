@@ -656,7 +656,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=41-doubles-tuning"></script>
+    <script type="module" src="js/sim.js?v=42-doubles-combat-text"></script>
 
     <script>
         // Build identifier for bug reports (audit #6). Date-based: bump on every player-facing
@@ -2244,7 +2244,9 @@
                             ctx.deps.playSound('frostboltCast', startX, 0.7);
                             // Floating "Frostbolt" cast text — frostbolt is an instant cast so it never
                             // hits completeCasting (where fireball/thunderstorm show theirs), so do it here.
-                            if (ctx.deps.showSpellCastText) ctx.deps.showSpellCastText(owner === 'player', 'Frostbolt', 'frost');
+                            // `combatant` (additive 4th arg, owner rule 2026-07-13): true caster, for
+                            // doubles per-wizard anchoring/alpha (see showSpellCastText's own comment).
+                            if (ctx.deps.showSpellCastText) ctx.deps.showSpellCastText(owner === 'player', 'Frostbolt', 'frost', combatant);
                         }
                         ctx.deps.spawnFrostbolt(owner, startX, combatant.paddleZ, velX, 0); // factory assigns id
                         // Juice charge on cast (matches SP castFrostbolt ~13778). Instant cast: this
@@ -2309,7 +2311,10 @@
                         const owner = combatant.side === 'left' ? 'player' : 'ai';
                         // Deterministic zap of up to maxZaps incoming enemy projectiles, in stable id order.
                         // No target = no cast (matches single-player): only spend mana/cooldown if it zapped something.
-                        const zapped = ctx.deps.thunderstormZap(owner, a.maxZaps, ctx);
+                        // `combatant` (additive 4th arg, owner rule 2026-07-13): the true caster,
+                        // for doubles per-wizard cast-text anchoring/alpha. Pure presentation input
+                        // to the dep — doesn't touch the deterministic zap-selection logic above.
+                        const zapped = ctx.deps.thunderstormZap(owner, a.maxZaps, ctx, combatant);
                         if (zapped > 0) {
                             combatant.mana -= a.manaCost;
                             combatant.cooldowns.thunderstorm = a.cooldown;
@@ -2584,6 +2589,16 @@
             return 'P' + slotIndex;
         }
         window.doublesSlotLabel = doublesSlotLabel;
+        // Doubles-only (owner rule 2026-07-13, playtest round 3): the true actor's canonical
+        // P1-P4 combat-log label. Returns null outside doubles (or without a combatant), so
+        // every call site can pass it unconditionally as an optional override — singles/PvP
+        // combatLine/fitLogName calls fall through to today's Blue/Red name, byte-identical.
+        // Slot math mirrors createDoublesNameTags: left=1, leftBack=2, right=3, rightBack=4.
+        window.doublesLogLabel = function (c) {
+            if (teamSize !== 2 || !c) return null;
+            const slotIndex = (c.side === 'left' ? 1 : 3) + (c.position === 'back' ? 1 : 0);
+            return doublesSlotLabel(slotIndex, !!c.isLocalPlayer);
+        };
         // Combat-log name: truncate to a short form so the ACTION stays readable
         // ("xXDrago… parries!"). maxChars is the only knob — lower it for tighter lines.
         window.shortPlayerName = function (maxChars) {
@@ -2640,18 +2655,21 @@
         // Combat-log line: compose "{name}{suffix}" but truncate the NAME (ellipsis) so the whole
         // line fits the log box — the ACTION at the end (" casts Frostbolt") is always preserved.
         window._combatLogWidth = 9999;   // overwritten with the real box content width when the log GUI builds
-        window.fitLogName = function (isBlue, reservedW) {
+        // labelOverride (optional, additive — doubles per-wizard attribution, owner rule
+        // 2026-07-13): when non-null, used verbatim instead of getPlayerName()/'Red'. Omitted
+        // (undefined/null) by every singles/PvP caller, so those lines are byte-identical.
+        window.fitLogName = function (isBlue, reservedW, labelOverride) {
             const ctx = window._nameMeasCtx; ctx.font = "600 16px 'FF9UI', sans-serif";
             const avail = (window._combatLogWidth - 6) - (reservedW || 0);   // 6px safety margin
-            const base = isBlue ? window.getPlayerName() : 'Red';
+            const base = (labelOverride != null) ? labelOverride : (isBlue ? window.getPlayerName() : 'Red');
             if (ctx.measureText(base).width <= avail) return base;
             let s = base;
             while (s.length > 1 && ctx.measureText(s + '…').width > avail) s = s.slice(0, -1);
             return s + '…';
         };
-        window.combatLine = function (isBlue, suffix) {
+        window.combatLine = function (isBlue, suffix, labelOverride) {
             const ctx = window._nameMeasCtx; ctx.font = "600 16px 'FF9UI', sans-serif";
-            return window.fitLogName(isBlue, ctx.measureText(suffix).width) + suffix;
+            return window.fitLogName(isBlue, ctx.measureText(suffix).width, labelOverride) + suffix;
         };
 
         // Load a sound file into a buffer
@@ -12677,7 +12695,14 @@
             };
 
             // Parry a specific projectile
-            const parryProjectile = (proj, parryer, aimDir = null) => {
+            // casterC (optional, additive — owner rule 2026-07-13): the RESOLVED wizard that
+            // actually parried (front or back), threaded from checkPvPParryHitsForSide via the
+            // sim so a doubles back's parry log attributes to itself, not the team front. Used
+            // ONLY for the log-line label below; matchStats/addJuice/juiceActive-gate stay on
+            // `pc` (the front carrier) exactly as before — Juice/party-stat ownership rules are
+            // unrelated to this feedback pass. Old 3-arg callers (dead legacy singles path) fall
+            // back to null -> doublesLogLabel returns null outside doubles -> byte-identical.
+            const parryProjectile = (proj, parryer, aimDir = null, casterC = null) => {
                 proj.isParried = true;
                 proj.parriedBy = parryer;
                 proj.owner = parryer;
@@ -12698,7 +12723,11 @@
                 { const pc = (parryer === 'player') ? combatants.left : combatants.right; if (pc && pc.matchStats) pc.matchStats.parries++; if (pc && window.addJuice) window.addJuice(pc, window.JUICE.CHARGE.parry);
                   // Skip the log line during a Juice burst — the combatant auto-parries every
                   // incoming projectile, which would otherwise flood the log with " parries!".
-                  if (window.logCombat && !(pc && pc.juiceActive)) { const blue = (parryer === 'player'); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' parries!')); } }
+                  if (window.logCombat && !(pc && pc.juiceActive)) {
+                      const blue = (parryer === 'player');
+                      const label = window.doublesLogLabel ? window.doublesLogLabel(casterC || pc) : null;
+                      window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' parries!', label));
+                  } }
 
                 // Track parry stats (only for local player)
                 if (parryer === 'player') {
@@ -19793,7 +19822,11 @@
             dealDamageToTower: (isPlayerTower, dmg, z) => dealDamageToTower(isPlayerTower, dmg, z),
             destroyProjectile: (p) => window.destroyProjectile(p),
             useShieldCharge: (c) => useShieldCharge(c),
-            parryProjectile: (p, who, aimDir) => { if (window.parryProjectile) window.parryProjectile(p, who, aimDir); },
+            // casterC (additive 4th arg, owner rule 2026-07-13): the resolved wizard that
+            // parried, forwarded from sim.js's checkPvPParryHitsForSide for combat-log
+            // attribution only (see parryProjectile's own comment). Old 3-arg call sites (the
+            // shield/juice auto-parry paths) pass undefined -> null -> byte-identical.
+            parryProjectile: (p, who, aimDir, casterC) => { if (window.parryProjectile) window.parryProjectile(p, who, aimDir, casterC); },
             updateFireballScale: (p) => { if (window.updateFireballScale) window.updateFireballScale(p); },
             onShieldBlock: (side) => { if (window.flashShieldOnBlock) window.flashShieldOnBlock(side); },  // presentation-only hit-flash
             // Cast pushback on a paddle block during a cast (deterministic sim state: decrements
@@ -19825,14 +19858,27 @@
             // anchors at the team's FRONT paddle, which mislabels a BACK freeze — when the frozen
             // wizard is a back, drop the text at ITS paddle instead. Front/legacy calls (no c, or a
             // front c) take the original path unchanged.
+            // Doubles alpha (owner rule 2026-07-13, playtest round 3): name-tag rule — self 1.0,
+            // others 0.5. A back ALWAYS bypasses to showCombatTextAt (branch above); a doubles
+            // FRONT that is non-local (P3, the right-team front) now also bypasses so it can carry
+            // the 0.5 alpha — singles/PvP never reach this second branch (gated on teamSize === 2),
+            // so the untouched showFrozenText(isLocal) call below still owns 100% of singles/PvP
+            // Frozen! text, at its original full opacity, byte-for-byte.
             showFrozenText: (isLocal, c) => {
                 if (c && c.position === 'back' && c.paddle && window.showCombatTextAt) {
-                    showCombatTextAt(new BABYLON.Vector3(c.paddle.position.x, 0.6, c.paddle.position.z), 'Frozen!', 'frozen');
+                    showCombatTextAt(new BABYLON.Vector3(c.paddle.position.x, 0.6, c.paddle.position.z), 'Frozen!', 'frozen', c.isLocalPlayer ? 1.0 : 0.5);
+                    return;
+                }
+                if (teamSize === 2 && c && !c.isLocalPlayer && c.paddle && window.showCombatTextAt) {
+                    showCombatTextAt(new BABYLON.Vector3(c.paddle.position.x, 0.6, c.paddle.position.z), 'Frozen!', 'frozen', 0.5);
                     return;
                 }
                 showFrozenText(isLocal);
             },
-            showSpellCastText: (isPlayer, name, element) => showSpellCastText(isPlayer, name, element),
+            // casterC (additive 4th arg, owner rule 2026-07-13): the true casting combatant, for
+            // doubles per-wizard anchoring + name-tag alpha. See showSpellCastText's own header
+            // comment for the full front/back split. Front/legacy calls omitting it are unaffected.
+            showSpellCastText: (isPlayer, name, element, casterC) => showSpellCastText(isPlayer, name, element, casterC),
             // proj-vs-proj FX (gated by !isResimulating at the sim call sites).
             // createImpactFlash/showCombatTextAt need a Babylon Vector3 (copyFrom/clone);
             // createImpactDecal accepts a plain {x, z}.
@@ -19902,7 +19948,11 @@
             // Deterministic thunderstorm zap: selects incoming ENEMY projectiles by pure state
             // (proj.x, proj.velX, proj.owner — NO mesh reads), destroys up to maxZaps in stable
             // ascending proj.id order. FX are gated by !ctx.isResimulating.
-            thunderstormZap: (owner, maxZaps, ctx) => {
+            // casterC (additive 5th arg, owner rule 2026-07-13): the true casting combatant
+            // (front or back), threaded through so the cast-name/NO-TARGET text lands on the
+            // actual caster in doubles. Omitted by no caller today (single call site, updated
+            // alongside this dep) — kept optional/undefined-safe regardless.
+            thunderstormZap: (owner, maxZaps, ctx, casterC) => {
                 const incomingVelDir = owner === 'player' ? -1 : 1;
                 const targets = ctx.projectiles
                     .filter(p => p.owner !== owner && Math.sign(p.velX) === incomingVelDir)
@@ -19929,10 +19979,20 @@
                 if (!ctx.isResimulating) {
                     if (zapsToPerform === 0) {
                         const isPlayer = owner === 'player';
-                        if (window.showCombatText) showCombatText(isPlayer, 'NO TARGET', 'lightning');
+                        // Doubles (owner rule 2026-07-13): a whiffed cast is per-wizard subject
+                        // text too — bypass to the position-anchored primitive (same pattern as
+                        // Frozen!) so it lands on the true caster at name-tag alpha. Singles/PvP
+                        // (teamSize !== 2) always take the unchanged showCombatText call below.
+                        if (teamSize === 2 && casterC && casterC.paddle && window.showCombatTextAt) {
+                            const alpha = casterC.isLocalPlayer ? 1.0 : 0.5;
+                            const pos = new BABYLON.Vector3(casterC.paddle.position.x, 2.2, casterC.paddle.position.z);
+                            showCombatTextAt(pos, 'NO TARGET', 'lightning', alpha);
+                        } else if (window.showCombatText) {
+                            showCombatText(isPlayer, 'NO TARGET', 'lightning');
+                        }
                     } else {
                         const isPlayer = owner === 'player';
-                        if (window.showSpellCastText) showSpellCastText(isPlayer, 'Thunderstorm x' + zapsToPerform, 'lightning');
+                        if (window.showSpellCastText) showSpellCastText(isPlayer, 'Thunderstorm x' + zapsToPerform, 'lightning', casterC);
                         if (window.ToneSFX && window.ToneSFX.lightning) window.ToneSFX.lightning();
                         if (window.StatTracker) {
                             StatTracker.increment('thunderstorm_casts');
@@ -21529,10 +21589,12 @@
             // must fire/zap as itself, not re-resolve to the front via getCombatantLegacy).
             if (abilityId === 'fireball') {
                 fireFireball(caster, c);
-                showSpellCastText(isPlayer, 'Fireball', 'fire');
+                // `c` (additive 4th arg, owner rule 2026-07-13): the resolved caster (front or
+                // back), for doubles per-wizard cast-text anchoring/alpha.
+                showSpellCastText(isPlayer, 'Fireball', 'fire', c);
             } else if (abilityId === 'thunderstorm') {
                 executeThunderstorm(caster, c);
-                showSpellCastText(isPlayer, 'Thunderstorm', 'lightning');
+                showSpellCastText(isPlayer, 'Thunderstorm', 'lightning', c);
             }
             // Add other cast-time abilities here
 
@@ -21589,7 +21651,11 @@
             // (legacy castFireball() covers the instant on-screen-button path).
             // Juice is team-owned: award the FRONT carrier (=== c for front/solo casters).
             if (c.matchStats) c.matchStats.spellsCast++; if (window.addJuice) window.addJuice(getFrontCarrier(c.side), window.JUICE.CHARGE.cast);
-            if (window.logCombat) { const blue = (c.side === 'left'); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('fireball'))); }
+            if (window.logCombat) {
+                const blue = (c.side === 'left');
+                const label = window.doublesLogLabel ? window.doublesLogLabel(c) : null;
+                window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('fireball'), label));
+            }
 
             const paddle = c.paddle;
             const isLeft = c.side === 'left';
@@ -21815,14 +21881,18 @@
         };
 
         // Create an HTML combat text element (NES style - crisp and readable)
-        function createHTMLCombatText(text, type = '') {
+        // alpha (optional, additive — owner rule 2026-07-13): base opacity, name-tag rule (self
+        // 1.0 / others 0.5) for doubles per-wizard text. Defaults to 1 for every existing caller
+        // (singles/PvP, neutral/positional texts) — identical to the old literal '1' (CSSOM
+        // normalizes a numeric 1 the same as the string '1').
+        function createHTMLCombatText(text, type = '', alpha = 1) {
             // No new floating text during Ready/Go or stage transitions — it would
             // float over the black overlay (DOM layer renders above the canvas).
             if (roundTransitioning) return null;
             const el = document.createElement('div');
             el.className = 'combat-text' + (type ? ' ' + type : '');
             el.textContent = text;   /* FF9: keep natural casing, no all-caps */
-            el.style.opacity = '1';
+            el.style.opacity = alpha;
             // Append to the HUD scale layer so the text scales with the game (1920x1080 ref),
             // not the browser. Positioning below is in layer-reference coords.
             (document.getElementById('hudScaleLayer') || document.getElementById('gameContainer')).appendChild(el);
@@ -21854,16 +21924,20 @@
         };
 
         // Show combat text at a specific 3D world position (for collisions, etc)
+        // alpha (optional, additive — owner rule 2026-07-13): base opacity for doubles per-wizard
+        // text (name-tag rule: self 1.0 / others 0.5). Defaults to 1 -> byte-identical fade curve
+        // for every existing caller (Cancel!/Overpowered!/Zap!/singles Frozen!).
         const floatingTexts = [];
-        window.showCombatTextAt = (worldPos, text, type = '') => {
+        window.showCombatTextAt = (worldPos, text, type = '', alpha = 1) => {
             if (!scene) return;
-            const el = createHTMLCombatText(text, type);
+            const el = createHTMLCombatText(text, type, alpha);
             if (!el) return;
 
             floatingTexts.push({
                 el: el,
                 worldPos: worldPos.clone(),
-                age: 0
+                age: 0,
+                baseAlpha: alpha
             });
         };
 
@@ -21895,7 +21969,9 @@
                     // Step fade after 0.4s
                     const fadeProgress = (item.age - 0.4) / 0.4;
                     const steppedAlpha = fadeProgress < 0.33 ? 0.66 : fadeProgress < 0.66 ? 0.33 : 0;
-                    if (item.el) item.el.style.opacity = steppedAlpha;
+                    // Scale the fade curve by baseAlpha (owner rule 2026-07-13: doubles non-local
+                    // wizards sit at 0.5 the whole time). Defaults to 1 for every pre-existing item.
+                    if (item.el) item.el.style.opacity = steppedAlpha * (item.baseAlpha != null ? item.baseAlpha : 1);
                 }
 
                 // No Y movement - stay in place
@@ -22090,7 +22166,9 @@
                     if (item.age > 2.0 && doStep) {
                         const fp = (item.age - 2.0) / 0.5;
                         const alpha = fp < 0.33 ? 1 : fp < 0.66 ? 0.66 : fp < 1 ? 0.33 : 0;
-                        if (item.el) item.el.style.opacity = alpha;
+                        // Scale by baseAlpha (owner rule 2026-07-13: doubles non-local wizards
+                        // sit at 0.5 throughout). Defaults to 1 for every pre-existing item.
+                        if (item.el) item.el.style.opacity = alpha * (item.baseAlpha != null ? item.baseAlpha : 1);
                     }
 
                     // Vertical slot: 0 = newest at bottom, higher = older stacked up.
@@ -22113,14 +22191,30 @@
         // Show floating spell cast text above caster.
         // Pushes into the dedicated spellCastQueue (not the general combatTextQueue)
         // so anchoring and stacking are handled independently by updateSpellCastText.
-        function showSpellCastText(isPlayer, spellName, element) {
+        // casterC (optional, additive — owner rule 2026-07-13, playtest round 3): the true
+        // casting combatant. spellCastQueue is anchored per TEAM SIDE only (player/ai, i.e. the
+        // FRONT paddle) — correct for a front/solo caster, but a doubles BACK (P2/P4) would float
+        // its cast name over the wrong wizard's head. A back bypasses the queue entirely and pops
+        // a transient popup at its own paddle instead, reusing the exact primitive/pattern the
+        // showFrozenText fix already established (showCombatTextAt + alpha). A front still goes
+        // through the normal stacked bubble, but now carries the name-tag alpha (self 1.0, others
+        // 0.5) in doubles. Singles/PvP: casterC is always null/front and teamSize !== 2, so the
+        // bypass never triggers and baseAlpha is always 1 — byte-identical to today.
+        function showSpellCastText(isPlayer, spellName, element, casterC) {
             if (!scene) return;
+            if (teamSize === 2 && casterC && casterC.position === 'back' && casterC.paddle && window.showCombatTextAt) {
+                const anchor = new BABYLON.Vector3(casterC.paddle.position.x, 2.2, casterC.paddle.position.z);
+                showCombatTextAt(anchor, spellName, element || 'fire', casterC.isLocalPlayer ? 1.0 : 0.5);
+                return;
+            }
             const side = isPlayer ? 'player' : 'ai';
-            const el = createHTMLCombatText(spellName, element || 'fire');
+            const frontC = casterC || (isPlayer ? combatants.left : combatants.right);
+            const baseAlpha = (teamSize === 2 && frontC && !frontC.isLocalPlayer) ? 0.5 : 1.0;
+            const el = createHTMLCombatText(spellName, element || 'fire', baseAlpha);
             if (!el) return;
             el.classList.add('cast-bubble', isPlayer ? 'team-blue' : 'team-red');
 
-            spellCastQueue[side].push({ el: el, age: 0 });
+            spellCastQueue[side].push({ el: el, age: 0, baseAlpha: baseAlpha });
 
             // Cap queue at 4 entries per side; discard oldest if exceeded.
             if (spellCastQueue[side].length > 4) {
