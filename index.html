@@ -14598,7 +14598,9 @@
                     for (const [_sk, _c] of [['left', leftC], ['right', rightC]]) {
                         if (!_c) continue;
                         const _st  = _odAS[_sk];
-                        const _active  = !!_c.juiceActive && !_odTransSuppress;   // round transition = channel dead to the audio machine
+                        // match-over resets roundTransitioning in the same tick, so a stale juiceActive
+                        // would re-arm the roar on the final presentation frame — gate on gameOver too
+                        const _active  = !!_c.juiceActive && !_odTransSuppress && !gameOver;   // round transition = channel dead to the audio machine
                         const _winding = _active && (_ODA.DURATION - (_c.juiceTimer || 0)) < _ODA.WINDUP;
                         const _beaming = _active && !_winding;
 
@@ -16189,6 +16191,10 @@
                 if (this.state !== 'match') return;
                 ensurePauseOverlay();
                 this.state = 'pause';
+                // pause freezes every loop that could stop these native audio loops; kill
+                // presentation audio, keep sim state so resume re-arms it.
+                if (window.ToneSFX) ToneSFX.castingStop();
+                if (window.resetOverdrivePresentation) window.resetOverdrivePresentation();
                 if (gameMode !== 'pvp') paused = true;   // freeze sim (can't pause a P2P peer)
                 const quitBtn = document.getElementById('pauseQuitBtn');
                 if (quitBtn) quitBtn.textContent = (gameMode === 'pvp') ? 'Leave Match' : 'Quit to Menu';
@@ -22045,6 +22051,12 @@
                     roundTransitioning = false;  // match over: no round reset runs, so clear the
                                                  // "block actions" flag here or the game-over continue
                                                  // handler (gated on !roundTransitioning) stays dead
+                    // match-over resets roundTransitioning in the same tick, so a stale juiceActive
+                    // would re-arm the roar on the final presentation frame
+                    for (const _c of [combatants.left, combatants.right]) {
+                        if (!_c) continue;
+                        _c.juiceActive = false; _c.juiceTimer = 0; _c.juice = 0; _c.juiceRamp = 0;
+                    }
                     // Track match win and commit stats
                     StatTracker.increment('matches_won');
                     StatTracker.commitMatch();
@@ -22080,6 +22092,12 @@
                     roundTransitioning = false;  // match over: no round reset runs, so clear the
                                                  // "block actions" flag here or the game-over continue
                                                  // handler (gated on !roundTransitioning) stays dead
+                    // match-over resets roundTransitioning in the same tick, so a stale juiceActive
+                    // would re-arm the roar on the final presentation frame
+                    for (const _c of [combatants.left, combatants.right]) {
+                        if (!_c) continue;
+                        _c.juiceActive = false; _c.juiceTimer = 0; _c.juice = 0; _c.juiceRamp = 0;
+                    }
                     // Track match loss and commit stats
                     StatTracker.increment('matches_lost');
                     StatTracker.commitMatch();
