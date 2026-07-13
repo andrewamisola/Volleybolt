@@ -126,6 +126,11 @@
                     <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
                     <span class="menu-btn-label">1v1 Duel</span>
                 </button>
+                <button class="game-btn menu-btn" id="domBtnDoubles">
+                    <span class="menu-btn-accent" aria-hidden="true"></span>
+                    <span class="menu-btn-glyph" aria-hidden="true">&#9877;</span>
+                    <span class="menu-btn-label">2v2 Doubles</span>
+                </button>
                 <button class="game-btn menu-btn menu-btn-ghost" id="domBtnModeBack">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
                     <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
@@ -599,6 +604,17 @@
             </div>
         </div>
     </div><!-- /abilityBar -->
+
+    <!-- Teammate status chip (doubles-only): TEAMMATE's (leftBack) ready-state pips + frozen
+         indicator. Hidden by default; shown via body.doubles (see injectDoublesHudCSS). Small
+         status readout, not a second ability bar — driven by updateTeammateChip(). -->
+    <div id="teammateChip" class="teammate-chip">
+        <span class="teammate-chip-label">TEAMMATE</span>
+        <span class="teammate-pip" id="teammatePipFireball" title="Fireball"></span>
+        <span class="teammate-pip" id="teammatePipFrostbolt" title="Frostbolt"></span>
+        <span class="teammate-pip" id="teammatePipThunderstorm" title="Thunderstorm"></span>
+        <span class="teammate-frozen" id="teammateFrozenIndicator">FROZEN</span>
+    </div>
 
     <!-- Upgrade Points HUD + Talent Selection Panel REMOVED (2026-06-29) with the talent system. -->
     </div><!-- /hudScaleLayer -->
@@ -4195,6 +4211,7 @@
 
         // Screen root id -> its Back/Cancel button id.
         const NAV_BACK_TARGETS = {
+            domModeSelect: 'domBtnModeBack',
             settingsScreen: 'settingsBack',
             howToPlayScreen: 'howToBack',
             creditsScreen: 'creditsBack',
@@ -4514,6 +4531,63 @@
             .ability-key .pgl.nt  { width:17px; height:17px; border-radius:50%; font-size:11px; background:#2b2b2b; color:#fff; border:1px solid #666; }
             .ability-key .pgl.sh  { min-width:22px; height:15px; padding:0 5px; border-radius:5px; font-size:10px; background:#3a2f22; color:#f2e9d8; border:1px solid #8a6d3b; }
             .ability-key .pgl.gen { font-size:15px; color:#f2e9d8; }
+            `;
+            const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
+        })();
+
+        // Doubles-only HUD additions (Task 7): TEAM pool labels on the DOM mana bars + the
+        // teammate cooldown chip. index.html-only per this pass's scope — injected as a <style>
+        // element (same idiom as injectPadGlyphCSS above) rather than touching styles.css.
+        // Gated entirely on body.doubles (toggled in startSinglesMatch/startDoublesMatch), so
+        // singles is untouched: no class, no label, chip stays display:none.
+        (function injectDoublesHudCSS() {
+            const css = `
+            /* TEAM pool label above each mana bar — the bars already read the front carrier's
+               shared team mana (getMaxMana/updateCombatantManaUI), this is labeling only.
+               #manaBar/#aiManaBar are already position:absolute (styles.css), which is what
+               makes this ::before position itself relative to the bar's own box. */
+            body.doubles #manaBar::before,
+            body.doubles #aiManaBar::before {
+                content: 'TEAM';
+                position: absolute;
+                left: 0; right: 0; top: -15px;
+                text-align: center;
+                font-family: 'FF9UI', sans-serif;
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 1.5px;
+                color: #f2e9d8;
+                text-shadow: 0 1px 2px rgba(0,0,0,0.85);
+                pointer-events: none;
+            }
+
+            /* Teammate status chip — small, always-off in singles. */
+            .teammate-chip {
+                display: none;
+                position: absolute;
+                left: 40px;
+                bottom: 245px;
+                align-items: center;
+                gap: 6px;
+                padding: 4px 10px;
+                background: linear-gradient(180deg, rgba(50,42,35,0.9) 0%, rgba(30,25,22,0.95) 100%);
+                border: 2px solid #4a3c2a;
+                border-radius: 3px;
+                font-family: 'FF9UI', sans-serif;
+                font-size: 11px;
+                color: #f2e9d8;
+                z-index: 20;
+                white-space: nowrap;
+            }
+            body.doubles .teammate-chip { display: flex; }
+            .teammate-chip-label { letter-spacing: 1px; opacity: 0.75; margin-right: 2px; }
+            .teammate-pip {
+                width: 10px; height: 10px; border-radius: 50%;
+                background: #3a2f22; border: 1px solid #6a5a42;
+            }
+            .teammate-pip.ready { background: #6fd0ff; border-color: #bfe8ff; box-shadow: 0 0 4px #6fd0ff; }
+            .teammate-frozen { display: none; margin-left: 4px; color: #7fd3ff; font-weight: 700; letter-spacing: 1px; }
+            .teammate-frozen.active { display: inline; }
             `;
             const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
         })();
@@ -6774,6 +6848,11 @@
                 // (CAS/PAR/DMG) now live on the end-of-game leaderboard (see victory screen).
                 // Column geometry: [ Name | HP | MP ] per combatant row. Each HP/MP cell is a
                 // vertical stack — label on top, "#/#" below, a very thin bar underlining it.
+                // Doubles (Task 7): stays exactly 2 rows (blue/red), no change needed — setStatus
+                // below already reads off combatants.left/right, and team mana/juice already LIVE
+                // on those front carriers (Task 1-2), so this HP/MP/Juice readout is already the
+                // correct team-level view in 2v2. The back-row wizards' own cooldown/freeze state
+                // is what the new teammate chip (updateTeammateChip, near updateCooldownUI) covers.
                 const NAME_X = 16, HP_X = 96, MP_X = 180, JUICE_X = 264, STAT_BAR_W = 58;  // Name | HP | MP | Juice columns in the 360px box
                 // Left-aligned label/number TextBlock.
                 function statusText(txt, color, leftPx, topPx, size, weight) {
@@ -14832,6 +14911,7 @@
                     updateCooldownUI();
                     if (combatants.left)  updateCombatantManaUI(combatants.left);
                     if (combatants.right) updateCombatantManaUI(combatants.right);
+                    if (teamSize === 2 && combatants.leftBack) updateTeammateChip();
                 }
 
                 // ---- 6. PER-PROJECTILE PRESENTATION (old ~12437-12507) ----
@@ -15976,6 +16056,14 @@
             if (window.clearAllProjectiles) clearAllProjectiles();
             if (window.clearAllLightningFX) clearAllLightningFX();
 
+            // Leaving-doubles teardown (body.doubles class, back combatants/paddles, front rail
+            // X) — covers EVERY route back to the menu (quit, disconnect, victory Continue,
+            // boot), so a doubles match can never leak its artifacts into a later PvP or
+            // singles match that doesn't pass through startSinglesMatch. Runs BEFORE the
+            // combatant reset loop below so the discarded backs aren't pointlessly iterated.
+            // No-op on fresh boot and after singles (idempotent, all-guarded).
+            exitDoublesState();
+
             // Reset client perspective in case we're returning from a flipped PvP match
             if (window.applyClientPerspective) window.applyClientPerspective(false);
             // Hide any leftover multiplayer overlays
@@ -16948,6 +17036,43 @@
         }
         window.ensureDoublesPaddles = ensureDoublesPaddles;
 
+        // Leaving-doubles teardown: clears EVERY doubles-only presentation/state artifact, so
+        // no exit path can leak them into the next context. Called from every path that leaves
+        // a match context — startSinglesMatch (doubles->singles), showMainMenu (quit-to-menu,
+        // disconnect fallback, victory Continue, boot), startMultiplayerMatch (menu->PvP; belt
+        // and braces beside its own teamSize=1) — the ONE teardown, so the copies can't drift.
+        // Idempotent and boot-safe: on a fresh boot / repeat call every line is a no-op
+        // (class absent, backs already null, paddles already on the singles rail or not yet
+        // created — all guarded).
+        // NOT torn down here (deliberately): the back BARRIERS stay in the per-frame `barriers`
+        // array — their loop already hides them outside doubles via the `B.isBack &&
+        // teamSize !== 2` early-return (before any paddle.position read), so stale entries cost
+        // two boolean checks per frame and need no parallel cleanup.
+        function exitDoublesState() {
+            document.body.classList.remove('doubles');     // TEAM labels + teammate chip off
+            combatants.leftBack = null;
+            combatants.rightBack = null;
+            if (combatants.left)  combatants.left.position  = 'solo';
+            if (combatants.right) combatants.right.position = 'solo';
+            // Front paddles/rails back to the singles X. paddleX is the authoritative position
+            // the sim/AI/cast code reads (mesh position is presentation-only) — must be
+            // re-pinned too, or the next context inherits the stale ∓8.0 front-rail X: a
+            // post-doubles singles match would spawn spells/aim from it, and a post-doubles PvP
+            // match would DESYNC on it (resetGame only resets paddleZ; the rollback sim reads
+            // combatants.*.paddleX for rail collisions, and the opponent's fresh client has
+            // ∓11.5) — which is why this lives in the shared teardown, not in startSinglesMatch.
+            if (window.tableWidth && playerPaddle && aiPaddle) {
+                const railX = window.tableWidth / 2 - 1.5;   // 11.5 — the singles rail
+                playerPaddle.position.x = -railX;
+                aiPaddle.position.x     =  railX;
+                if (combatants.left)  combatants.left.paddleX  = -railX;
+                if (combatants.right) combatants.right.paddleX =  railX;
+            }
+            if (playerBackPaddle) playerBackPaddle.setEnabled(false);
+            if (aiBackPaddle) aiBackPaddle.setEnabled(false);
+        }
+        window.exitDoublesState = exitDoublesState;
+
         // Launch a 1v1 singles match (the core mode). Shared by the main-menu
         // "Start Battle" button and the (currently dormant) mode-select "1v1 Duel".
         function startSinglesMatch() {
@@ -16959,25 +17084,9 @@
             aiTowerHealth = maxTowerHealth;
             if (combatants.left) combatants.left.towerHealth = maxTowerHealth;
             if (combatants.right) combatants.right.towerHealth = maxTowerHealth;
-            // Doubles teardown: drop the back-row combatants and restore the front paddles/rails
-            // to their singles X BEFORE resizeStageForMode() runs, so a doubles->singles
-            // transition lands on exactly the state a fresh boot would have (where all of this
-            // is a no-op: leftBack/rightBack already null, paddle X already at the singles rail).
-            combatants.leftBack = null;
-            combatants.rightBack = null;
-            if (combatants.left)  combatants.left.position  = 'solo';
-            if (combatants.right) combatants.right.position = 'solo';
-            if (window.tableWidth) {
-                const railX = window.tableWidth / 2 - 1.5;   // 11.5 — the singles rail
-                playerPaddle.position.x = -railX;
-                aiPaddle.position.x     =  railX;
-                // paddleX is the authoritative position sim/AI/cast code reads (mesh position is
-                // presentation-only) — must be re-pinned too or a post-doubles singles match would
-                // spawn spells/aim from the stale ∓8.0 front-rail X.
-                if (combatants.left)  combatants.left.paddleX  = -railX;
-                if (combatants.right) combatants.right.paddleX =  railX;
-            }
-            if (playerBackPaddle) { playerBackPaddle.setEnabled(false); aiBackPaddle.setEnabled(false); }
+            // Doubles teardown BEFORE resizeStageForMode() runs, so a doubles->singles
+            // transition lands on exactly the state a fresh boot would have.
+            exitDoublesState();
             if (window.resizeStageForMode) window.resizeStageForMode();
             startGame();
         }
@@ -17002,6 +17111,7 @@
         function startDoublesMatch() {
             setDOMModeSelectVisible(false);
             teamSize = 2;
+            document.body.classList.toggle('doubles', true);
             gameMode = 'single';                 // doubles M1 is a singles-driver variant
             maxTowerHealth = SINGLES_MAX_HEALTH;
             playerTowerHealth = maxTowerHealth;
@@ -17062,10 +17172,8 @@
             domMenuWired = true;
 
             btnStart.addEventListener('click', () => {
-                // 2v2 disabled for now — Start Battle drops straight into a 1v1 duel,
-                // skipping the mode-select screen (which only offered 1v1 vs 2v2).
                 setDOMMenuVisible(false);
-                startSinglesMatch();
+                setDOMModeSelectVisible(true);
             });
 
             btnMP.addEventListener('click', () => {
@@ -17123,13 +17231,19 @@
         function wireDOMModeSelect() {
             if (domModeSelectWired) return;
             const btnDuel = document.getElementById('domBtnDuel');
+            const btnDoubles = document.getElementById('domBtnDoubles');
             const btnBack = document.getElementById('domBtnModeBack');
-            if (!btnDuel || !btnBack) return;
+            if (!btnDuel || !btnDoubles || !btnBack) return;
             domModeSelectWired = true;
 
-            // 1v1 Duel — the core mode (mode select is dormant; Start Battle launches this directly).
+            // 1v1 Duel — the core mode.
             btnDuel.addEventListener('click', () => {
                 startSinglesMatch();
+            });
+
+            // 2v2 Doubles — M1: local-only, both back-row wizards are AI.
+            btnDoubles.addEventListener('click', () => {
+                startDoublesMatch();
             });
 
             // Back — return to the main menu.
@@ -17147,6 +17261,9 @@
             if (show) {
                 el.style.opacity = '';
                 el.classList.add('visible');
+                // Mirrors the main menu's prompt bar (setDOMMenuVisible) plus Back, since this
+                // screen (unlike the main menu) has somewhere to back out to.
+                if (window.setGamepadPrompts) setGamepadPrompts([{ action: 'navigate' }, { action: 'confirm' }, { action: 'back' }]);
             } else {
                 // Fade out (revealing the black transition overlay) instead of an instant cut
                 el.style.opacity = '0';
@@ -17215,6 +17332,11 @@
                 }
                 return lobby;   // fallback: lobby visible but no sub-view matched (shouldn't happen)
             }
+
+            // Mode select (Start Battle -> 1v1 Duel / 2v2 Doubles): its own show/hide function
+            // (setDOMModeSelectVisible), not a MENU_SCREENS entry — same reasoning as domMenu below.
+            const modeSelect = document.getElementById('domModeSelect');
+            if (modeSelect && modeSelect.classList.contains('visible')) return modeSelect;
 
             const menu = document.getElementById('domMenu');
             if (menu && menu.classList.contains('visible')) return menu;
@@ -18299,6 +18421,19 @@
 
             // Set game mode to PvP (multiplayer is always 1v1 for now)
             teamSize = 1;
+            // Belt and braces beside teamSize=1: if the player came from a local doubles match,
+            // clear its leftovers (body.doubles HUD class, back combatants, front rail X — the
+            // last one matters most here: a stale ∓8.0 paddleX would desync the rollback sim
+            // against the opponent's fresh ∓11.5). Normally already done by showMainMenu on the
+            // way to the lobby; idempotent no-op then.
+            exitDoublesState();
+            // Restore the singles-depth arena visuals (floor/walls/bases/center dashes) —
+            // teamSize is already 1 above, so getEffectiveTableDepth() reads 14 here, matching
+            // the sim's Z bounds. Without this, a doubles->quit->PvP flow keeps the 4/3-deepened
+            // stage while the ball bounces at the singles bounds (~2.5 units short of the
+            // visible walls). Mirrors startSinglesMatch's teardown->resize order; pure function
+            // of the current depth, so it's an idempotent no-op when nothing changed.
+            if (window.resizeStageForMode) window.resizeStageForMode();
             gameMode = 'pvp';
             gameState = 'playing';
 
@@ -19959,6 +20094,26 @@
                 });
             });
         }
+
+        // Doubles-only teammate status chip: TEAMMATE's (leftBack) three ability-ready pips +
+        // a frozen indicator. Called alongside updateCooldownUI, guarded on
+        // `teamSize === 2 && combatants.leftBack` at the call site. A status readout, not a
+        // second ability bar — no mana/cast-progress, just ready/on-cooldown per pip.
+        function updateTeammateChip() {
+            const mate = combatants.leftBack;
+            if (!mate) return;
+            const cds = mate.cooldowns || {};
+            const setPip = (id, cdVal) => {
+                const el = document.getElementById(id);
+                if (el) el.classList.toggle('ready', !(cdVal > 0));
+            };
+            setPip('teammatePipFireball', cds.fireball);
+            setPip('teammatePipFrostbolt', cds.frostbolt);
+            setPip('teammatePipThunderstorm', cds.thunderstorm);
+            const frozenEl = document.getElementById('teammateFrozenIndicator');
+            if (frozenEl) frozenEl.classList.toggle('active', (mate.freezeTime || 0) > 0);
+        }
+        window.updateTeammateChip = updateTeammateChip;
 
         function updateCooldownUI() {
             // Get cooldowns and mana from local player combatant
