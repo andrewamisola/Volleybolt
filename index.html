@@ -12662,6 +12662,35 @@
             let spFrameCounter = 0;   // deterministic fixed-step counter for the singles-AI think cadence (Phase 2.1)
             let aiViewHistory = [];   // ring of recent AI views for the reactionFrames input-lag (Phase 2.3 tune)
             const aiThreatSight = {};   // projectile id → frames continuously incoming (driver-owned; keeps decideAI pure)
+
+            // ---- Doubles AI (M1): role-parameterized profiles + per-slot lag rings ----
+            // The SINGLES right-AI keeps the globals above UNTOUCHED (golden/behavior safety). Doubles
+            // drives THREE AI slots (right front, both backs) — each needs its own reaction-lag ring and
+            // threat-sight map so their independent perception depths don't cross-contaminate.
+            //   castK 7/11 are COPRIME with each other and the singles base 8, so the three think
+            //   cadences never phase-lock (no synchronized cast beats). reactionDelta shifts the shared
+            //   skill-derived lag (front sharper, back slower), clamped ≥1. slotSalt de-correlates the
+            //   (unused-but-reserved) per-frame RNG per slot. teammateSkill fixes the human's AI partner
+            //   at a competent-but-not-perfect level (difficulty scalar governs OPPONENTS only).
+            const DOUBLES_AI = {
+                front: { castK: 7,  reactionDelta: -1, role: 'front' },
+                back:  { castK: 11, reactionDelta: +2, role: 'back'  },
+                teammateSkill: 0.6,
+                slotSalt: { right: 0, leftBack: 0x5EED1, rightBack: 0x5EED2 },
+            };
+            // Per-slot reaction rings + threat-sight (replaces the singles globals for doubles slots).
+            const aiSlotState = {
+                right:     { views: [], threatSight: {} },
+                leftBack:  { views: [], threatSight: {} },
+                rightBack: { views: [], threatSight: {} },
+            };
+            function resetAISlotState() {
+                for (const k of ['right', 'leftBack', 'rightBack']) {
+                    aiSlotState[k].views.length = 0;
+                    for (const id in aiSlotState[k].threatSight) delete aiSlotState[k].threatSight[id];
+                }
+            }
+            window.resetAISlotState = resetAISlotState;   // outer-scope startDoublesMatch reaches it via window
             const paddleHalfDepth = 1.25;
             const paddleHalfWidth = 0.2;
             // Perspective correction: expand hitbox based on character height and camera angle
@@ -12921,6 +12950,12 @@
                             if (second) targetZ = second.z;
                         }
                     }
+                } else if (profile.role === 'back') {
+                    // Back-role gate-guard station (doubles): with no incoming threat, cover the likely
+                    // lane by shadowing a third of the opposing front's Z instead of drifting to an open
+                    // lane — the back stays central/deep to counter, not to open its own offense.
+                    // (Golden-dead: singles/oracle profiles carry no `role`, so control never reaches here.)
+                    targetZ = view.opp ? view.opp.paddleZ * 0.3 : 0;
                 } else {
                     // Idle: only reposition toward the open lane if meaningfully out of place.
                     const open = _aiFindOpenTarget(view);
@@ -12976,7 +13011,9 @@
                 // ---- Casting: gated to a fixed cast-decision cadence, with offensive
                 // casts further phase-gated by effectiveCadence (low skill = sparse;
                 // urgency on clear opening pulls it toward instant). ----
-                const K = 8;                                  // cast-decision base period (~0.13s @60Hz)
+                const K = profile.castK || 8;                 // cast-decision base period (~0.13s @60Hz).
+                                                              // Doubles overrides per role (7 front / 11 back,
+                                                              // coprime); absent (singles/oracle) ⇒ 8 ⇒ golden-identical.
                 const isCastFrame = (frame % K === 0);
                 let fireball = false, frostbolt = false, thunderstorm = false;
                 if (isCastFrame) {
@@ -12984,23 +13021,35 @@
                     const offenseOpen = (cycle % effectiveCadence) === 0;
                     const safe = _aiSafeToStartCast(view);
                     const cd   = s.cooldowns;
+                    // Back-role coordination (doubles): counter an opposing FRONT channel with a
+                    // frostbolt (pressure/interrupt), and hold the SHARED team pool when it's nearly
+                    // dry (mana<2) unless actively countering. Golden-dead in singles/oracle: no
+                    // `role`, no `oppCasting` ⇒ countering/manaHold stay false.
+                    const countering = profile.role === 'back' && !!view.oppCasting;
+                    const manaHold   = profile.role === 'back' && !countering && s.mana < 2;
                     const canFireball  = offenseOpen && safe && cd.fireball  <= 0 && s.mana >= 1
                         && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
                     // Frostbolt is a LANE shot: only worth casting when the opponent is directly
                     // in front (its payoff is freezing them). No alignment → no cast, so it stops
-                    // firing frostbolt into an empty lane.
+                    // firing frostbolt into an empty lane. A countering back lifts the alignment gate
+                    // (pressure the channeling opponent even slightly off-lane).
                     const FROST_ALIGN  = 1.2;
                     const oppInFront   = Math.abs(s.paddleZ - view.opp.paddleZ) < FROST_ALIGN;
                     const canFrostbolt = offenseOpen && safe && cd.frostbolt <= 0 && s.mana >= 1
-                        && oppInFront && view.projectiles.length < 10 && !s.casting;
+                        && (oppInFront || countering) && view.projectiles.length < 10 && !s.casting;
                     // Thunderstorm is a DEFENSIVE panic-clear: a skilled AI recognizes the
                     // multi-projectile crunch and fires regardless of cadence.
                     const canThunderstorm = cd.thunderstorm <= 0 && s.mana >= 2
                         && incomingCount >= 2
                         && profile.thunderstormSkill >= 0.6;
-                    frostbolt    = canFrostbolt;
-                    fireball     = canFireball && !frostbolt;
+                    frostbolt    = canFrostbolt && !manaHold;
+                    fireball     = canFireball && !frostbolt && !manaHold;
                     thunderstorm = canThunderstorm;
+                    // Front-role fire discipline (doubles): don't double-commit the shared pool when
+                    // the teammate is already casting this beat. Golden-dead: no `role`/`teammate`.
+                    if (profile.role === 'front' && view.teammate && view.teammate.casting) {
+                        fireball = false;
+                    }
                 }
 
                 // ---- Juice (Overdrive) : fire the ult at an EFFECTIVE moment, not just on full ----
@@ -13086,6 +13135,101 @@
                 };
             }
 
+            // ---- Doubles per-slot AI view (M1) ----
+            // Generalizes buildAISingleView for ANY AI slot ('right' | 'leftBack' | 'rightBack').
+            // decideAI is a pure right-facing function (threats arrive with velX>0, owned by !=='ai',
+            // self on the +X side). LEFT-side slots (leftBack) live in the mirror image, so we present
+            // their world in decideAI's canonical frame: mirror the X axis (velX/x/paddleX) and remap
+            // ownership so "enemy" always reads as owner!=='ai'. The Z axis is side-agnostic already
+            // (both rails share Z semantics and moveDir), so paddleZ / opp.paddleZ / threat.z pass
+            // through untouched — keeping moveDir correct for the sim (which applies it identically per
+            // side). Team mana/juice/tower read from the FRONT CARRIER (backs hold no team resources).
+            // NEVER mutates buildAISingleView ⇒ singles LIVE path + aiDeterminism oracle stay byte-safe.
+            function buildAIViewForSlot(slotKey) {
+                const self     = combatants[slotKey];
+                const side     = self.side;                                  // 'left' | 'right'
+                const ownerKey = side === 'left' ? 'player' : 'ai';          // this side's own-projectile owner tag
+                const mir      = side === 'left' ? -1 : 1;                   // X mirror into decideAI's right-facing frame
+                const carrier  = getFrontCarrier(side);                      // team mana/juice/tower pool holder
+                const oppFront = side === 'left' ? combatants.right : combatants.left;  // opposing FRONT
+                const mateKey  = slotKey === 'right' ? 'rightBack'
+                               : slotKey === 'rightBack' ? 'right'
+                               : 'left';                                     // leftBack's teammate = the (human) left front
+                const mate     = combatants[mateKey];
+                const sight    = aiSlotState[slotKey].threatSight;
+                const projSnaps = projectiles.map(p => ({
+                    id:          p.id,
+                    x:           p.x * mir,
+                    z:           p.z,
+                    velX:        p.velX * mir,
+                    velZ:        p.velZ,
+                    // own→'ai', enemy→'player' (any non-'ai'): decideAI's `owner !== 'ai'` incoming test
+                    // then reads correctly on BOTH sides. Combined with the velX mirror above, an enemy
+                    // ball is (velX>0, owner!=='ai') in the slot's canonical frame.
+                    owner:       (p.owner === ownerKey) ? 'ai' : 'player',
+                    volleyCount: p.volleyCount,
+                    type:        p.type,
+                    sightFrames: sight[p.id] || 0,
+                }));
+                return {
+                    projectiles: projSnaps,
+                    self: {
+                        paddleX:      self.paddleX * mir,
+                        paddleZ:      self.paddleZ,
+                        mana:         carrier.mana,                          // SHARED team pool (carrier)
+                        cooldowns: {
+                            fireball:     self.cooldowns.fireball     || 0,
+                            frostbolt:    self.cooldowns.frostbolt    || 0,
+                            thunderstorm: self.cooldowns.thunderstorm || 0,
+                        },
+                        freezeTime:   self.freezeTime  || 0,
+                        casting:      self.casting     || null,
+                        castProgress: self.castProgress || 0,
+                        castTime:     self.castTime    || 0,
+                        juice:        carrier.juice       || 0,
+                        juiceActive:  carrier.juiceActive || false,
+                        shieldCharges: (self.lightningShield && self.lightningShield.charges) || 0,
+                        towerHealth:  (carrier.towerHealth != null) ? carrier.towerHealth : maxTowerHealth,
+                    },
+                    opp: {
+                        paddleZ:     oppFront.paddleZ,
+                        towerHealth: (oppFront.towerHealth != null) ? oppFront.towerHealth : maxTowerHealth,
+                        juiceActive: oppFront.juiceActive || false,         // beam-block read
+                        freezeTime:  oppFront.freezeTime  || 0,             // ult-timing read
+                        casting:     oppFront.casting     || null,          // adjacent to juiceActive for beam-block consistency
+                    },
+                    oppCasting: oppFront.casting || null,                   // back counter-cast trigger
+                    teammate:   mate ? { paddleZ: mate.paddleZ, casting: mate.casting || null, cooldowns: mate.cooldowns } : null,
+                    selfPosition: self.position,                            // 'front' | 'back'
+                    geom: {
+                        tableWidth:     tableWidth,
+                        halfDepth:      window.getEffectiveTableDepth() / 2,
+                        paddleBoundary: getPaddleBoundary(),
+                    },
+                    maxHealth:   maxTowerHealth,
+                    roundActive: !!roundActive,
+                };
+            }
+
+            // Per-slot threat-sight tick (doubles). Mirrors the singles sight-count block but with a
+            // SIDE-DERIVED incoming filter (velX toward this side AND owner is the OTHER team) instead
+            // of the singles magic `velX>0 && owner!=='ai'`. Keyed by projectile id, so it lines up
+            // with buildAIViewForSlot's mirrored snapshots (mirror flips velX/owner, not id).
+            function updateSlotThreatSight(st, slotKey) {
+                const side = combatants[slotKey].side;
+                const ownerKey = side === 'left' ? 'player' : 'ai';         // this side's own-projectile owner
+                const towardMe = side === 'left' ? (v) => v < 0 : (v) => v > 0;
+                const sight = st.threatSight;
+                const live = new Set();
+                for (const p of projectiles) {
+                    if (towardMe(p.velX) && p.owner !== ownerKey) {
+                        live.add(p.id);
+                        sight[p.id] = (sight[p.id] || 0) + 1;
+                    }
+                }
+                for (const k in sight) { if (!live.has(+k)) delete sight[k]; }
+            }
+
             // Canonical player-input struct for the singles sim path. Movement is read live from
             // keys[] (Z-axis: W/Up = +1, S/Down = -1 — the same keys the old SP loop used). One-shot
             // action flags come from pendingNetInput (set by keydown / parryCallback / GUI buttons)
@@ -13124,6 +13268,34 @@
                     combatants.left.juice = (window.JUICE && JUICE.MAX) || 350;
                 }
                 spFrameCounter++;
+                // ---- Doubles branch (M1): three role-parameterized AI slots on independent lag rings.
+                // Early return keeps the teamSize===1 path below BYTE-IDENTICAL (singles globals + calls
+                // untouched). The human is combatants.left (Blue Front); the sim gets its right-front
+                // input as `rightInput` and the two backs via ctx.backInputs. Slot decisions are ordered
+                // deterministically: right, leftBack, rightBack.
+                if (teamSize === 2) {
+                    const leftInput = buildPlayerInput();
+                    const mkInput = (slotKey, roleKey) => {
+                        const st   = aiSlotState[slotKey];
+                        // Opponents scale with the difficulty ELO; the human's AI partner (leftBack) is
+                        // fixed at a competent level. Role overrides layer castK/role on top; the
+                        // reaction ring depth is the shared skill lag shifted by the role's delta (≥1).
+                        const base = skillToProfile(slotKey === 'leftBack' ? DOUBLES_AI.teammateSkill : getAISkill());
+                        const prof = { ...base, ...DOUBLES_AI[roleKey],
+                            reactionFrames: Math.max(1, base.reactionFrames + DOUBLES_AI[roleKey].reactionDelta) };
+                        updateSlotThreatSight(st, slotKey);            // side-derived incoming sight tick
+                        st.views.push(buildAIViewForSlot(slotKey));
+                        while (st.views.length > prof.reactionFrames + 1) st.views.shift();
+                        return decideAI(st.views[0], spFrameCounter,
+                            makeAIRng(spFrameCounter ^ AI_RNG_SEED ^ DOUBLES_AI.slotSalt[slotKey]), prof);
+                    };
+                    const rightInput = mkInput('right', 'front');
+                    const ctx = buildSimCtx();
+                    ctx.backInputs = { left: mkInput('leftBack', 'back'), right: mkInput('rightBack', 'back') };
+                    window.VolleyboltSim.simulateNetworkFrame(leftInput, rightInput, dt, ctx);
+                    updateMatchPresentation(dt);
+                    return;
+                }
                 // Update the driver-owned sight counter BEFORE snapshotting the view, so the
                 // snapshot (and thus the AI's lagged perception) carries correct sightFrames.
                 const _incoming = new Set();
@@ -16594,6 +16766,7 @@
                 c.paddleX = c.paddle.position.x; c.paddleZ = c.paddle.position.z; c.prevPaddleZ = c.paddle.position.z;
             }
             if (window.resizeStageForMode) window.resizeStageForMode();
+            if (window.resetAISlotState) window.resetAISlotState();   // clear per-slot lag rings + threat-sight
             startGame();
         }
         window.startDoublesMatch = startDoublesMatch;
