@@ -893,6 +893,7 @@
         // P2P MULTIPLAYER - Rollback Netcode
         // ============================================================
         let gameMode = 'single';      // 'single' | 'pvp'
+        let teamSize = 1;             // 1 = singles/1v1 PvP, 2 = doubles (M1: local only)
         let isHost = false;           // Host handles tie-breaking, starts left side
 
         let peer = null;              // PeerJS instance
@@ -1778,7 +1779,7 @@
         }
 
         // Global combatant references
-        let combatants = { left: null, right: null };
+        let combatants = { left: null, right: null, leftBack: null, rightBack: null };
         window.combatants = combatants;  // Expose for loadout system
 
         // Get combatant by side
@@ -2048,11 +2049,33 @@
             combatants.right.isLocalPlayer = false;
             combatants.right.baseRotY = -Math.PI / 2;    // Face left
             combatants.right.targetRotY = -Math.PI / 2;
+
+            // Doubles: back-row wizards are REAL combatants (own rail/kit/parry). Team-shared
+            // mana/juice/towerHealth stay on the FRONT combatants (left/right) — backs never
+            // regen mana or carry tower HP. Null outside a doubles match.
+            combatants.leftBack = null;
+            combatants.rightBack = null;
+            if (teamSize === 2) {
+                combatants.leftBack  = createCombatant('left',  'back');
+                combatants.rightBack = createCombatant('right', 'back');
+                combatants.left.position  = 'front';
+                combatants.right.position = 'front';
+                combatants.leftBack.inputSource  = 'ai';
+                combatants.rightBack.inputSource = 'ai';
+            }
         }
 
         // Get all combatants as array (for iteration). 1v1: just the two combatants.
+        // Doubles: fixed order left, right, leftBack, rightBack (back slots null outside doubles).
         function getAllCombatants() {
-            return [combatants.left, combatants.right].filter(c => c !== null);
+            return [combatants.left, combatants.right, combatants.leftBack, combatants.rightBack].filter(c => c !== null);
+        }
+
+        // The team-resource carrier for a side (mana/juice/towerHealth live here even in
+        // doubles — back wizards never carry team resources). Trivial in singles/1v1; the
+        // name is load-bearing for readability once doubles routes juice/mana through it.
+        function getFrontCarrier(side) {
+            return side === 'left' ? combatants.left : combatants.right;
         }
 
         // Reset combatant state for round start/reset
@@ -14377,7 +14400,7 @@
                 // The sim ticks freezeTime; we read it here and drive the ice mesh/light.
                 // The else-if guard (iceBlock.isEnabled()) ensures shatter fires exactly once
                 // on the frame the freeze expires — stateless across frames.
-                for (const c of [combatants.left, combatants.right]) {
+                for (const c of getAllCombatants()) {
                     if (!c) continue;
                     const isPlayer = c.side === 'left';
                     const iceBlock    = isPlayer ? window.playerIceBlock    : window.aiIceBlock;
@@ -15548,7 +15571,7 @@
             }
 
             // Reset combatant state and set dancing for menu
-            for (const c of [combatants.left, combatants.right]) {
+            for (const c of getAllCombatants()) {
                 if (c) {
                     c.casting = null;
                     c.castProgress = 0;
@@ -16228,7 +16251,7 @@
             if (window.resetOverdrivePresentation) window.resetOverdrivePresentation();
 
             // Cancel any active casts for both combatants
-            for (const c of [combatants.left, combatants.right]) {
+            for (const c of getAllCombatants()) {
                 if (c) {
                     c.casting = null;
                     c.castProgress = 0;
@@ -16431,6 +16454,7 @@
         // Launch a 1v1 singles match (the core mode). Shared by the main-menu
         // "Start Battle" button and the (currently dormant) mode-select "1v1 Duel".
         function startSinglesMatch() {
+            teamSize = 1;
             setDOMModeSelectVisible(false);
             gameMode = 'single';
             maxTowerHealth = SINGLES_MAX_HEALTH;
@@ -17704,6 +17728,7 @@
             if (window.GameSM) { GameSM.state = 'match'; GameSM.show3D(true); }
 
             // Set game mode to PvP (multiplayer is always 1v1 for now)
+            teamSize = 1;
             gameMode = 'pvp';
             gameState = 'playing';
 
@@ -18560,8 +18585,9 @@
         function buildSimCtx() {
             return {
                 projectiles, combatants, abilities, pvpParryState, isResimulating,
-                consts: { parryWindow, parryFailCooldown, parrySuccessCooldown, parryHitboxExtend, manaRegenTime, juice: window.JUICE, overdrive: window.OVERDRIVE, arc: BLOCK_ARC, maxTowerHealth: maxTowerHealth },
+                consts: { parryWindow, parryFailCooldown, parrySuccessCooldown, parryHitboxExtend, manaRegenTime, juice: window.JUICE, overdrive: window.OVERDRIVE, arc: BLOCK_ARC, maxTowerHealth: maxTowerHealth, teamSize: teamSize },
                 deps: SIM_DEPS,
+                backInputs: null,  // Task 5's doubles input driver fills this in; sim treats null as "no back wizards act"
             };
         }
 
@@ -18752,7 +18778,7 @@
             if (window.ToneSFX) ToneSFX.gameplayStart();
 
             // Reset combatant state with isStart=true (starts with 1 mana)
-            const combatantsToReset = [combatants.left, combatants.right];
+            const combatantsToReset = getAllCombatants();
             for (const c of combatantsToReset) {
                 if (!c) continue;
                 combatantReset(c, true);
@@ -18769,6 +18795,14 @@
             }
             if (combatants.right) {
                 combatants.right.cooldowns = { fireball: 2, frostbolt: 3, thunderstorm: 0 };  // AI waits before first casts
+            }
+            // Doubles: back-row cooldowns seeded BY SIDE, matching their front (AI startup
+            // delay is a side-role rule, tunable later). No-op outside doubles (back slots null).
+            if (combatants.leftBack) {
+                combatants.leftBack.cooldowns = { fireball: 0, frostbolt: 0, thunderstorm: 0 };
+            }
+            if (combatants.rightBack) {
+                combatants.rightBack.cooldowns = { fireball: 2, frostbolt: 3, thunderstorm: 0 };
             }
 
             // LEGACY - sync variables for backwards compatibility
@@ -19104,7 +19138,7 @@
             if (window.updateManaBarVisibility) updateManaBarVisibility();
             updateScore();
             // Reset per-match stat counters (Party Stats window) for all combatants.
-            for (const c of [combatants.left, combatants.right]) {
+            for (const c of getAllCombatants()) {
                 if (!c) continue;
                 if (c.matchStats) c.matchStats = { spellsCast: 0, parries: 0, damageDealt: 0 };
                 // Juice does not carry across matches — clear the bar and end any live burst.
@@ -19161,7 +19195,7 @@
             }
 
             // Reset combatant state and cooldowns
-            for (const c of [combatants.left, combatants.right]) {
+            for (const c of getAllCombatants()) {
                 if (!c) continue;
                 combatantReset(c, false);
                 c.cooldowns = { fireball: 0, frostbolt: 0, thunderstorm: 0 };
@@ -19189,6 +19223,7 @@
             if (aiPaddle) aiPaddle.position.z = 0;
             if (combatants.left) { combatants.left.paddleZ = 0; combatants.left.prevPaddleZ = 0; combatants.left.moveAccum = 0; }
             if (combatants.right) { combatants.right.paddleZ = 0; combatants.right.prevPaddleZ = 0; combatants.right.moveAccum = 0; }
+            for (const c of [combatants.leftBack, combatants.rightBack]) if (c) { c.paddleZ = 0; c.prevPaddleZ = 0; c.moveAccum = 0; }
 
             // LEGACY - sync variables for backwards compatibility
             playerTowerHealth = playerGateHealth;
@@ -20978,7 +21013,7 @@
             roundTransitioning = true;  // Block actions until reset
 
             // Set victory/defeat animations for combatants
-            const allCombatants = [combatants.left, combatants.right];
+            const allCombatants = getAllCombatants();
             allCombatants.forEach(c => {
                 if (!c) return;
                 c.roundResult = (c.side === winnerSide) ? 'victory' : 'defeat';
