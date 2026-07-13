@@ -705,6 +705,12 @@
         const GATE_REGEN_PER_ROUND = 0.25;  // 25% of max health per round away
 
         let ball, playerPaddle, aiPaddle;
+        // Doubles (M1): back-row paddle meshes, created lazily by ensureDoublesPaddles() on the
+        // first doubles match and reused/re-enabled thereafter. null outside doubles.
+        let playerBackPaddle = null, aiBackPaddle = null;
+        // Front-rail advance toward midfield in doubles (world X). Front rail X becomes
+        // ∓(tableWidth/2 - 1.5 - FRONT_ADV) = ∓8.0 (today's ∓11.5 rail advanced by 3.5).
+        const FRONT_ADV = 3.5;
         // Towers replaced by brick gates
 
         // Game state machine: "menu" | "playing" | "paused"
@@ -4777,6 +4783,9 @@
             const WORLD_HALF_WIDTH = WORLD_HALF_HEIGHT * GAME_ASPECT;  // 21.333... -> 16:9
             const MENU_ORTHO = { left: -7.3333, right: 3.3333, top: 4, bottom: -2 };  // 16:9, player framed right
             const GAME_ORTHO = { left: -WORLD_HALF_WIDTH, right: WORLD_HALF_WIDTH, top: WORLD_HALF_HEIGHT, bottom: -WORLD_HALF_HEIGHT };
+            // Doubles (M1): uniform 4/3 zoom-out re-frames the deeper (4/3×) court while keeping
+            // the 16:9 lock; X headroom exists because tableWidth is unchanged.
+            const GAME_ORTHO_DOUBLES = { left: -WORLD_HALF_WIDTH * 4 / 3, right: WORLD_HALF_WIDTH * 4 / 3, top: WORLD_HALF_HEIGHT * 4 / 3, bottom: -WORLD_HALF_HEIGHT * 4 / 3 };
 
             // Start with menu ortho bounds
             camera.orthoLeft = MENU_ORTHO.left;
@@ -4792,10 +4801,11 @@
                 camera.orthoBottom = MENU_ORTHO.bottom;
             };
             window.setOrthoForGame = () => {
-                camera.orthoLeft = GAME_ORTHO.left;
-                camera.orthoRight = GAME_ORTHO.right;
-                camera.orthoTop = GAME_ORTHO.top;
-                camera.orthoBottom = GAME_ORTHO.bottom;
+                const ortho = teamSize === 2 ? GAME_ORTHO_DOUBLES : GAME_ORTHO;
+                camera.orthoLeft = ortho.left;
+                camera.orthoRight = ortho.right;
+                camera.orthoTop = ortho.top;
+                camera.orthoBottom = ortho.bottom;
             };
 
             // Store camera globally for multiplayer camera flip
@@ -8123,17 +8133,23 @@
             // ============================================================
             // LANE DIMENSIONS
             // ============================================================
-            const tableWidth = 26;  // X axis (left-right) - lane length
+            const tableWidth = 26;  // X axis (left-right) - lane length, fixed for singles AND doubles
             const SINGLES_DEPTH = 14;
             const tableDepth = SINGLES_DEPTH;  // Build arena at singles size (walls stay fixed)
 
-            // Effective play depth (kept as a helper so callers don't change).
+            // Effective play depth (kept as a helper so callers don't change). Doubles (M1)
+            // deepens the court 4/3 — the tennis singles(27ft)->doubles(36ft) ratio — so the
+            // extra back rail has room; tableWidth (X) is unchanged. This one function drives
+            // the visual resize (resizeStageForMode), paddle Z bounds (getPaddleBoundary), AND
+            // the sim's Z bounds (sim.js reads it through the same-named dep).
             window.getEffectiveTableDepth = function() {
-                return SINGLES_DEPTH;
+                return SINGLES_DEPTH * (teamSize === 2 ? 4 / 3 : 1);
             };
 
             // Expose constants for other systems
             window.SINGLES_DEPTH = SINGLES_DEPTH;
+            window.tableWidth = tableWidth;  // fixed X extent; doubles rail math (ensureDoublesPaddles,
+                                              // startSinglesMatch teardown) lives outside initGame's scope.
 
             // ============================================================
             // CLASSIC LOW-POLY STYLE (WoW/HL1/Abiotic Factor)
@@ -8588,6 +8604,12 @@
                 if (window.redBase) {
                     window.redBase.scaling.z = baseScaleZ;
                 }
+
+                // Rebuild the center-line dashes at the new depth. Function-hoisted below (defined
+                // later in this same scope) — safe to call here since this whole function only ever
+                // runs later, after the rest of initGame's synchronous body (incl. the dash builder)
+                // has executed.
+                if (window.rebuildCenterDashes) window.rebuildCenterDashes();
 
                 console.log('Stage resized for depth:', depth);
             };
@@ -12602,16 +12624,30 @@
             };
 
 
-            // Center line (dashed effect with multiple boxes)
+            // Center line (dashed effect with multiple boxes). Built once at singles depth here;
+            // rebuildCenterDashes() (below) disposes + rebuilds at the CURRENT effective depth,
+            // called from resizeStageForMode() on every singles<->doubles transition. The rebuild
+            // uses the exact same formula (tableDepth swapped for `depth`), so at singles depth
+            // (14) it reproduces the identical dash count/positions as this initial static build.
             const lineMat = new BABYLON.StandardMaterial("lineMat", scene);
             lineMat.diffuseColor = new BABYLON.Color3(0.3, 0.3, 0.35);
             lineMat.emissiveColor = new BABYLON.Color3(0.12, 0.12, 0.15);
 
-            for (let z = -tableDepth/2 + 0.5; z < tableDepth/2; z += 1.2) {
-                const dash = BABYLON.MeshBuilder.CreateBox("dash", { width: 0.15, height: 0.02, depth: 0.6 }, scene);
-                dash.position.set(0, 0.01, z);
-                dash.material = lineMat;
+            let centerDashes = [];
+            function buildCenterDashes(depth) {
+                centerDashes.forEach(d => d.dispose());
+                centerDashes = [];
+                for (let z = -depth/2 + 0.5; z < depth/2; z += 1.2) {
+                    const dash = BABYLON.MeshBuilder.CreateBox("dash", { width: 0.15, height: 0.02, depth: 0.6 }, scene);
+                    dash.position.set(0, 0.01, z);
+                    dash.material = lineMat;
+                    centerDashes.push(dash);
+                }
             }
+            buildCenterDashes(tableDepth);
+            window.rebuildCenterDashes = function() {
+                buildCenterDashes(window.getEffectiveTableDepth ? window.getEffectiveTableDepth() : tableDepth);
+            };
 
             // Game constants
             const paddleSpeed = 20;
@@ -16462,6 +16498,29 @@
         // -------------------------------------------------------
         // DOM Main Menu — replaces the Babylon GUI menu (title + buttons)
         // -------------------------------------------------------
+        // Doubles (M1): create/enable the back-row paddle meshes and advance the front paddles
+        // toward midfield. Lazy + idempotent — the meshes are built once and reused/repositioned
+        // on every subsequent doubles match start. Lives at top level (like startSinglesMatch/
+        // startDoublesMatch) so it can be called from a UI handler; it reaches into initGame's
+        // local `tableWidth` via the window.tableWidth alias exposed there (this scope has no
+        // closure access to initGame's locals).
+        function ensureDoublesPaddles() {
+            if (!playerBackPaddle) {
+                playerBackPaddle = BABYLON.MeshBuilder.CreateBox("playerBack", { width: 0.4, height: 0.5, depth: 2.5 }, scene);
+                playerBackPaddle.material = playerPaddle.material;
+                aiBackPaddle = BABYLON.MeshBuilder.CreateBox("aiBack", { width: 0.4, height: 0.5, depth: 2.5 }, scene);
+                aiBackPaddle.material = aiPaddle.material;
+            }
+            // Rails: BACK stands on today's rail (∓11.5); FRONT advances toward midfield by FRONT_ADV.
+            const railX = (window.tableWidth || 26) / 2 - 1.5;   // 11.5
+            playerBackPaddle.position.set(-railX, 0, 0);
+            aiBackPaddle.position.set(railX, 0, 0);
+            playerPaddle.position.x = -railX + FRONT_ADV;   // -8.0
+            aiPaddle.position.x     =  railX - FRONT_ADV;   //  8.0
+            playerBackPaddle.setEnabled(true); aiBackPaddle.setEnabled(true);
+        }
+        window.ensureDoublesPaddles = ensureDoublesPaddles;
+
         // Launch a 1v1 singles match (the core mode). Shared by the main-menu
         // "Start Battle" button and the (currently dormant) mode-select "1v1 Duel".
         function startSinglesMatch() {
@@ -16473,10 +16532,71 @@
             aiTowerHealth = maxTowerHealth;
             if (combatants.left) combatants.left.towerHealth = maxTowerHealth;
             if (combatants.right) combatants.right.towerHealth = maxTowerHealth;
+            // Doubles teardown: drop the back-row combatants and restore the front paddles/rails
+            // to their singles X BEFORE resizeStageForMode() runs, so a doubles->singles
+            // transition lands on exactly the state a fresh boot would have (where all of this
+            // is a no-op: leftBack/rightBack already null, paddle X already at the singles rail).
+            combatants.leftBack = null;
+            combatants.rightBack = null;
+            if (combatants.left)  combatants.left.position  = 'solo';
+            if (combatants.right) combatants.right.position = 'solo';
+            if (window.tableWidth) {
+                const railX = window.tableWidth / 2 - 1.5;   // 11.5 — the singles rail
+                playerPaddle.position.x = -railX;
+                aiPaddle.position.x     =  railX;
+                // paddleX is the authoritative position sim/AI/cast code reads (mesh position is
+                // presentation-only) — must be re-pinned too or a post-doubles singles match would
+                // spawn spells/aim from the stale ∓8.0 front-rail X.
+                if (combatants.left)  combatants.left.paddleX  = -railX;
+                if (combatants.right) combatants.right.paddleX =  railX;
+            }
+            if (playerBackPaddle) { playerBackPaddle.setEnabled(false); aiBackPaddle.setEnabled(false); }
             if (window.resizeStageForMode) window.resizeStageForMode();
             startGame();
         }
         window.startSinglesMatch = startSinglesMatch;
+
+        // Launch a 2v2 doubles match (M1: local only — both back-row wizards are AI). Mirrors
+        // startSinglesMatch but sets teamSize=2 and creates the back-row combatants.
+        //
+        // Deliberately does NOT call initCombatants() to recreate the FRONT combatants (even
+        // though initCombatants() already contains teamSize-aware backs logic from Task 1).
+        // Evidence: loadPickleWizard's loadOne() does
+        //     const combatant = isPlayer ? combatants.left : combatants.right;
+        // ONCE, when initCombatants() is called at scene init (initGame, single call site) — that
+        // closure variable is a REFERENCE to the combatant object live at that moment, and
+        // subsequent model-load callbacks assign modelRoot/skeleton/animations onto THAT captured
+        // object (combatant.modelRoot = modelRoot; etc.), not onto whatever combatants.left
+        // currently points to. If we called initCombatants() again here, it would reassign
+        // combatants.left/right to brand-new objects — orphaning the already-loaded model from the
+        // object the render/animation loop actually reads via combatants.left, breaking the
+        // player/AI wizard models and animations for the rest of the session. So: fronts are left
+        // completely untouched; only the (model-less until Task 6) backs are created fresh here.
+        function startDoublesMatch() {
+            setDOMModeSelectVisible(false);
+            teamSize = 2;
+            gameMode = 'single';                 // doubles M1 is a singles-driver variant
+            maxTowerHealth = SINGLES_MAX_HEALTH;
+            playerTowerHealth = maxTowerHealth;
+            aiTowerHealth = maxTowerHealth;
+            if (combatants.left)  combatants.left.towerHealth  = maxTowerHealth;
+            if (combatants.right) combatants.right.towerHealth = maxTowerHealth;
+            ensureDoublesPaddles();
+            combatants.leftBack  = createCombatant('left',  'back');
+            combatants.rightBack = createCombatant('right', 'back');
+            combatants.left.position  = 'front';
+            combatants.right.position = 'front';
+            combatants.leftBack.inputSource  = 'ai';
+            combatants.rightBack.inputSource = 'ai';
+            combatants.leftBack.paddle  = playerBackPaddle;
+            combatants.rightBack.paddle = aiBackPaddle;
+            for (const c of getAllCombatants()) {
+                c.paddleX = c.paddle.position.x; c.paddleZ = c.paddle.position.z; c.prevPaddleZ = c.paddle.position.z;
+            }
+            if (window.resizeStageForMode) window.resizeStageForMode();
+            startGame();
+        }
+        window.startDoublesMatch = startDoublesMatch;
 
         // Render the persisted career stats into #careerList (label : value rows).
         function populateCareer() {
