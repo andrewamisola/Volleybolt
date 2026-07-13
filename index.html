@@ -3062,7 +3062,8 @@
                 }
             }).connect(musicBitCrusher);
             synths.music.volume.value = -12;  // Lower volume
-            synths.music.mute = true;  // Music OFF for now (flip to false / remove to re-enable)
+            // Music re-enabled 2026-07-13 (owner request) — was muted 7b4a9ef "for now".
+            // Volume is player-controlled via the Settings Music slider (musicBus).
             synths.musicLoaded = false;
 
             // Wait for all samples to actually load (with timeout)
