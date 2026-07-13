@@ -1310,7 +1310,9 @@
                     manaCost: 1,
                     cooldown: 4,
                     castTime: 1.0,
-                    castFn: 'castFireball',
+                    // castFn REMOVED 2026-07-13: it named the legacy castFireball/castFrostbolt/
+                    // castThunderstorm functions deleted in the click-cast desync sweep; its only
+                    // readers (isImplemented/getCastFunction) were themselves dead and are gone too.
                     unlocked: true,
                     stats: {
                         damage: '2-5',
@@ -1330,7 +1332,7 @@
                     shortDesc: 'Freeze for 1s',
                     manaCost: 2,
                     cooldown: 14,
-                    castFn: 'castFrostbolt',
+                    // castFn removed (see fireball entry above)
                     unlocked: true,
                     stats: {
                         damage: '0',
@@ -1351,7 +1353,7 @@
                     manaCost: 0,
                     cooldown: 20,
                     castTime: 0.4,
-                    castFn: 'castThunderstorm',
+                    // castFn removed (see fireball entry above)
                     unlocked: true,
                     stats: {
                         damage: '0',
@@ -1386,11 +1388,8 @@
                 return Object.values(spells).filter(s => s.type === type);
             }
 
-            // Check if a spell is implemented
-            function isImplemented(spellId) {
-                const spell = spells[spellId];
-                return spell && spell.unlocked && typeof window[spell.castFn] === 'function';
-            }
+            // isImplemented DELETED 2026-07-13 (click-cast desync sweep): it was zero-caller and
+            // keyed off the removed castFn field (whose named functions no longer exist).
 
             return {
                 SPELL_TYPES,
@@ -1399,8 +1398,7 @@
                 getAll,
                 getUnlocked,
                 getByElement,
-                getByType,
-                isImplemented
+                getByType
             };
         })();
 
@@ -1519,12 +1517,9 @@
                 listeners.forEach(cb => cb(loadout));
             }
 
-            // Get the cast function for a slot
-            function getCastFunction(slotIndex) {
-                const spell = getSlot(slotIndex);
-                if (!spell || !spell.castFn) return null;
-                return window[spell.castFn] || null;
-            }
+            // getCastFunction DELETED 2026-07-13 (click-cast desync sweep): it was zero-caller
+            // and keyed off the removed SpellRegistry castFn field (whose named functions no
+            // longer exist — all casting routes through pendingNetInput/tryNetworkCast now).
 
             // Loadout is fixed to DEFAULT_LOADOUT (Spellbook UI removed).
             // Skip load() so stale localStorage entries don't override defaults.
@@ -1537,7 +1532,6 @@
                 swapSlots,
                 reset,
                 onChange,
-                getCastFunction,
                 save,
                 load
             };
@@ -1548,72 +1542,19 @@
         // ============================================================
         // LOADOUT CASTING HELPER
         // ============================================================
-        // Maps loadout slots to spell casting. Called by key handlers.
-        // Each spell has different mechanics (cast time, instant, etc.)
+        // castFromLoadoutSlot (+ its spellCastMap and window exposure) DELETED 2026-07-13
+        // (owner rule: click-cast desync fix). It was the ability-bar CLICK dispatcher — an
+        // immediate-cast layer that ran its own mana/cooldown checks and then mutated combatant
+        // state (startCasting) or spawned projectiles (castFrostbolt/castThunderstorm) OUTSIDE
+        // pendingNetInput, invisible to the network peer. All three slot clicks now call
+        // gamepadFireSlot (pendingNetInput → tryNetworkCast, the same sim input channel as
+        // keyboard/gamepad), which made this dispatcher zero-caller.
         // ============================================================
 
         // Move the FF9 command-menu pointer to a slot on INPUT (not on successful cast).
         window.pointCmdSlot = (id) => {
             if (window.commandMenu && window.commandMenu.setLastCast) window.commandMenu.setLastCast(id);
         };
-
-        function castFromLoadoutSlot(slotIndex, caster = 'player') {
-            const spell = PlayerLoadout.getSlot(slotIndex);
-            if (!spell) return false;
-
-            // Pointer follows the player's input the instant a key/button is pressed,
-            // even if the cast then fails on mana/cooldown.
-            if (caster === 'player') window.pointCmdSlot(spell.id);
-
-            // Get combatant
-            const c = caster === 'player' ? (window.combatants ? window.combatants.left : null) : null;
-            if (!c) return false;
-            if (c.juiceActive) return false;  // Overdrive is a full commitment — no casting while channeling
-
-            // Map spell IDs to their casting logic
-            // Each spell needs: cooldown check, mana check, cast function
-            const spellCastMap = {
-                fireball: {
-                    cooldownKey: 'fireball',
-                    getManaCost: () => window.abilities ? window.abilities.fireball.manaCost : 1,
-                    canCast: () => !c.casting,
-                    cast: () => window.startCasting ? window.startCasting(caster, 'fireball') : false
-                },
-                frostbolt: {
-                    cooldownKey: 'frostbolt',
-                    getManaCost: () => window.abilities ? window.abilities.frostbolt.manaCost : 2,
-                    canCast: () => true,
-                    cast: () => window.castFrostbolt ? window.castFrostbolt(caster) : false
-                },
-                thunderstorm: {
-                    cooldownKey: 'thunderstorm',
-                    getManaCost: () => 0,  // Chain lightning doesn't cost mana
-                    canCast: () => !c.casting,
-                    cast: () => window.castThunderstorm ? window.castThunderstorm(caster) : false
-                }
-            };
-
-            const castInfo = spellCastMap[spell.id];
-            if (!castInfo) {
-                console.log('Spell not implemented:', spell.id);
-                return false;
-            }
-
-            // Check cooldown
-            if (c.cooldowns && c.cooldowns[castInfo.cooldownKey] > 0) return false;
-
-            // Check mana
-            const manaCost = castInfo.getManaCost();
-            if (c.mana < manaCost) return false;
-
-            // Check spell-specific conditions
-            if (!castInfo.canCast()) return false;
-
-            // Cast the spell
-            return castInfo.cast();
-        }
-
-        window.castFromLoadoutSlot = castFromLoadoutSlot;
 
         // ============================================================
         // ABILITY BAR UI UPDATE
@@ -2005,59 +1946,11 @@
             }
         }
 
-        // Update cast bar UI for a combatant (unified for both sides)
-        function updateCombatantCastBarUI(combatant, name, element, progress) {
-            // Guard non-finite progress (instant casts have castTime 0 -> 0/0 = NaN, which throws
-            // when assigned to a <progress> element's value).
-            progress = (typeof progress === 'number' && isFinite(progress)) ? Math.max(0, Math.min(1, progress)) : 0;
-            const ui = getCombatantUIElements(combatant);
-            const label = document.getElementById(ui.castBarLabel);
-            const progressBar = document.getElementById(ui.castBarProgress);
-
-            if (label) label.textContent = name;
-            if (progressBar) {
-                progressBar.value = progress * 100;
-            }
-
-            // Update ability icon overlay (local player only)
-            if (combatant.isLocalPlayer && combatant.casting) {
-                const overlay = document.getElementById(combatant.casting + 'CastProgress');
-                if (overlay) {
-                    const angle = 360 - (progress * 360);
-                    overlay.style.setProperty('--cast-progress', angle + 'deg');
-                }
-            }
-
-            // Update Babylon.js GUI cast bars (CRT-affected)
-            if (window.guiElements) {
-                const isPlayer = combatant.isLocalPlayer;
-                const container = isPlayer ? window.guiElements.playerCastContainer : window.guiElements.aiCastContainer;
-                const labelEl = isPlayer ? window.guiElements.playerCastLabel : window.guiElements.aiCastLabel;
-                const fill = isPlayer ? window.guiElements.playerCastFill : window.guiElements.aiCastFill;
-
-                if (container) {
-                    container.isVisible = (progress > 0 && progress < 1);
-                }
-                if (labelEl) {
-                    labelEl.text = name;
-                }
-                if (fill) {
-                    fill.width = (progress * 100) + "%";
-                }
-
-                // Update HTML overlay cast labels (crisp text)
-                const htmlLabelId = isPlayer ? 'playerCastLabelHtml' : 'aiCastLabelHtml';
-                const htmlLabel = document.getElementById(htmlLabelId);
-                if (htmlLabel) {
-                    htmlLabel.textContent = name;
-                    if (progress > 0 && progress < 1) {
-                        htmlLabel.classList.add('visible');
-                    } else {
-                        htmlLabel.classList.remove('visible');
-                    }
-                }
-            }
-        }
+        // updateCombatantCastBarUI DELETED 2026-07-13 (click-cast desync sweep): its only
+        // callers were inside the deleted startCasting (cast-start UI seeding). The live cast
+        // bar / radial ring / HTML label are all driven per-frame by updateMatchPresentation
+        // (~13900s), which reads combatant.casting/castProgress directly.
+        // getCombatantUIElements (above) keeps its other live caller and stays.
 
         // Check if combatant is rooted (casting a rooting spell)
         function combatantIsRooted(combatant) {
@@ -2247,6 +2140,26 @@
                             // `combatant` (additive 4th arg, owner rule 2026-07-13): true caster, for
                             // doubles per-wizard anchoring/alpha (see showSpellCastText's own comment).
                             if (ctx.deps.showSpellCastText) ctx.deps.showSpellCastText(owner === 'player', 'Frostbolt', 'frost', combatant);
+                            // Combat log line (owner rule 2026-07-13, playtest round 4): frostbolt's
+                            // live sim path never logged before — mirrors fireFireball's line shape
+                            // exactly (same combatLine/spellDisplayName + doublesLogLabel attribution).
+                            // Shares this same !ctx.isResimulating gate so it can't double-fire when a
+                            // rollback resimulates the frame this cast landed on.
+                            if (window.logCombat) {
+                                const blue = combatant.side === 'left';
+                                const label = window.doublesLogLabel ? window.doublesLogLabel(combatant) : null;
+                                window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('frostbolt'), label));
+                            }
+                            // Battle-Report + career counters (review fix 2026-07-13): the deleted
+                            // legacy castFrostbolt held the only live increments, so the Career
+                            // screen's "Frostbolts Cast" (and this spell's share of spellsCast)
+                            // had gone frozen. Counted here, LIVE pass only — matchStats and
+                            // StatTracker are neither hashed nor snapshot-restored, so this
+                            // !ctx.isResimulating block is exactly the "count once" gate (see
+                            // fireFireball's storage-class note). Career stat is LOCAL-scoped,
+                            // matching every legacy cast increment.
+                            if (combatant.matchStats) combatant.matchStats.spellsCast++;
+                            if (combatant.isLocalPlayer && window.StatTracker) StatTracker.increment('frostbolt_casts');
                         }
                         ctx.deps.spawnFrostbolt(owner, startX, combatant.paddleZ, velX, 0); // factory assigns id
                         // Juice charge on cast (matches SP castFrostbolt ~13778). Instant cast: this
@@ -2294,7 +2207,7 @@
                 },
             },
             thunderstorm: {
-                gameplay: { cooldown: 30, castTime: 0, manaCost: 2, maxZaps: 3 },  // instant: cast via castThunderstorm(), not startCasting() — no windup
+                gameplay: { cooldown: 30, castTime: 0, manaCost: 2, maxZaps: 3 },  // instant: cast via this behavior's own onCast (below) — no windup
                 ui: {
                     name: 'Thunderstorm', key: '3', iconClass: 'chainlightning-icon', /* CSS class unchanged — styles.css + textures/chainlightning.png */ manaCostLabel: '2',
                     castLabel: 'Instant', cooldownLabel: '30s CD',
@@ -2338,15 +2251,15 @@
 
         // Canonical ability accessor — single lookup point for stats + behavior.
         // Named getAbilityDef to avoid colliding with getAbility() (below) which is a
-        // legacy stub kept for single-player startCasting/combatantIsRooted/applyCastPushback.
+        // legacy stub kept for combatantIsRooted/applyCastPushback/cast-bar presentation.
         function getAbilityDef(id) { return ABILITY_REGISTRY[id]; }
         window.getAbilityDef = getAbilityDef;
 
         // ============================================================
         // LEGACY ABILITY REGISTRY STUB
         // ============================================================
-        // Only fireball remains: single-player startCasting/combatantIsRooted/
-        // applyCastPushback still call getAbility('fireball') and read .name/.element/
+        // Only fireball remains: combatantIsRooted/applyCastPushback and the cast-bar
+        // presentation still call getAbility('fireball') and read .name/.element/
         // .manaCost/.castTime/.rootWhileCasting/.pushbackOnHit.
         // frostbolt and thunderstorm are instant; their stats come from ABILITY_REGISTRY.
         // All dead fields (projectile, visuals, sounds, effects, tooltip, castType,
@@ -12127,9 +12040,10 @@
                 const pan = startX / 10;  // Convert X position to -1 to 1 pan
                 proj.loopSound = createFireRoarSound(pan);
 
-                // (Overdrive note: while channeling, spell casting is blocked entirely — both
-                // tryNetworkCast and castFromLoadoutSlot gate on juiceActive — so no fireball
-                // can spawn during the beam. The old rapid-fire juice burst is gone.)
+                // (Overdrive note: while channeling, spell casting is blocked entirely —
+                // tryNetworkCast gates on juiceActive, and every cast path routes through it
+                // — so no fireball can spawn during the beam. The old rapid-fire juice burst
+                // is gone.)
 
                 setupProjectileSceneFx(proj);
                 projectiles.push(proj);
@@ -12720,7 +12634,12 @@
                 gainMana(parryer, 1);
 
                 // Per-match parry counter (Party Stats) — attribute to the parrying combatant.
-                { const pc = (parryer === 'player') ? combatants.left : combatants.right; if (pc && pc.matchStats) pc.matchStats.parries++; if (pc && window.addJuice) window.addJuice(pc, window.JUICE.CHARGE.parry);
+                // matchStats is neither hashed nor snapshot-restored (captureGameState carries no
+                // matchStats fields), so it must count on the LIVE pass only — this dep IS called
+                // during rollback resim (it mutates proj state), so without the !isResimulating
+                // gate a replayed parry frame double-counts. addJuice stays UNgated: juice is
+                // snapshot-restored sim state and must be recomputed on resim.
+                { const pc = (parryer === 'player') ? combatants.left : combatants.right; if (!isResimulating && pc && pc.matchStats) pc.matchStats.parries++; if (pc && window.addJuice) window.addJuice(pc, window.JUICE.CHARGE.parry);
                   // Skip the log line during a Juice burst — the combatant auto-parries every
                   // incoming projectile, which would otherwise flood the log with " parries!".
                   if (window.logCombat && !(pc && pc.juiceActive)) {
@@ -12729,8 +12648,9 @@
                       window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' parries!', label));
                   } }
 
-                // Track parry stats (only for local player)
-                if (parryer === 'player') {
+                // Track parry stats (only for local player). Career stats are not
+                // snapshot-restored either — same LIVE-pass-only gate as matchStats above.
+                if (!isResimulating && parryer === 'player') {
                     StatTracker.increment('parries_successful');
                 }
 
@@ -16034,24 +15954,29 @@
                 updateAbilityBarFromLoadout();
             }
 
-            // Ability button click handlers - use loadout system
+            // Ability button click handlers
+            // Desync fix (owner rule 2026-07-13): all three slot clicks route through the SAME
+            // sim input channel as the singleplayer keyboard/gamepad paths (pendingNetInput),
+            // not the legacy castFromLoadoutSlot immediate-cast paths (which mutated combatant
+            // state / spawned projectiles outside pendingNetInput and were invisible to the
+            // network peer). gamepadFireSlot is the same logic as the SINGLEPLAYER keyboard
+            // Digit1/2/3 branch (same guard, same PlayerLoadout resolution, same
+            // pendingNetInput[sp.id] = true write) — reused here rather than duplicated. Note:
+            // the PvP keyboard branch (~4041) is a SEPARATE hardcoded Digit1/2/3 →
+            // fireball/frostbolt/thunderstorm mapping with looser guards (no PlayerLoadout, no
+            // roundTransitioning check) — if loadouts ever become configurable these two
+            // keyboard branches must be reconciled; both end at pendingNetInput either way.
             // Slot 0 (key 1) - currently fireballSlot in HTML
             document.getElementById('fireballSlot').addEventListener('click', () => {
-                if (!gameOver && roundActive && !roundTransitioning) {
-                    castFromLoadoutSlot(0, 'player');
-                }
+                gamepadFireSlot(0);
             });
             // Slot 1 (key 2) - currently frostboltSlot in HTML
             document.getElementById('frostboltSlot').addEventListener('click', () => {
-                if (!gameOver && roundActive && !roundTransitioning) {
-                    castFromLoadoutSlot(1, 'player');
-                }
+                gamepadFireSlot(1);
             });
             // Slot 2 (key 3) - currently thunderstormSlot in HTML
             document.getElementById('thunderstormSlot').addEventListener('click', () => {
-                if (!gameOver && roundActive && !roundTransitioning) {
-                    castFromLoadoutSlot(2, 'player');
-                }
+                gamepadFireSlot(2);
             });
         }
 
@@ -16068,142 +15993,14 @@
             return 0;
         }
 
-        // Cast a fireball from a caster (player or ai)
-        function castFireball(caster) {
-            if (!window.spawnFireball) return;
-
-            // Check and spend mana
-            if (!spendMana(caster, abilities.fireball.manaCost)) return;
-
-            // Per-match spell-cast counter (Party Stats) — attribute to the casting combatant.
-            { const cc = getCombatantLegacy(caster); if (cc && cc.matchStats) cc.matchStats.spellsCast++; if (cc && window.addJuice) window.addJuice(cc, window.JUICE.CHARGE.cast);
-              if (cc && window.logCombat) { const blue = (cc === combatants.left); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('fireball'))); } }
-
-            // Track stat (only for local player in single/pvp)
-            if (caster === 'player' || (getCombatantLegacy(caster)?.isLocalPlayer)) {
-                StatTracker.increment('fireball_casts');
-            }
-
-            const speed = abilities.fireball.baseSpeed;
-
-            // Get combatant and use its paddle position
-            const c = getCombatantLegacy(caster);
-            if (!c || !c.paddle) return;  // Safety check for doubles mode
-            const paddle = c.paddle;
-            const isLeft = c.side === 'left';
-
-            // Spawn position based on combatant's side
-            const startX = isLeft ? paddle.position.x + 1 : paddle.position.x - 1;
-            // Doubles: scale initial launch speed at spawn (gated teamSize===2, x*1===x so
-            // singles/PvP byte-identical). Mirrors fireFireball for the legacy on-screen-button path.
-            const projScale = (teamSize === 2) ? DOUBLES_PROJ_SPEED : 1;
-            const velX = (isLeft ? speed : -speed) * projScale;
-            const startZ = paddle.position.z;
-
-            // Set cooldown using combatant system
-            c.cooldowns.fireball = abilities.fireball.cooldown;
-            // Sync legacy cooldowns
-            if (caster === 'player') {
-                playerFireballCooldown = abilities.fireball.cooldown;
-            } else {
-                aiFireballCooldown = abilities.fireball.cooldown;
-            }
-
-            // Aim based on deterministic input/movement
-            const aimDir = getCasterAimDir(caster, c);
-            const velZ = (aimDir !== 0 ? (aimDir * speed * 0.3) : 0) * projScale;
-
-            // Play cast sound panned to caster position
-            playSound('fireballCast', startX, 0.8);
-
-            // Note: spawnFireball still takes 'player'/'ai' as owner for projectile tracking
-            spawnFireball(caster, startX, startZ, velX, velZ);
-        }
-
-        // Cast a frostbolt from a caster (player or ai)
-        function castFrostbolt(caster) {
-            if (!window.spawnFrostbolt) return;
-
-            // Check and spend mana
-            if (!spendMana(caster, abilities.frostbolt.manaCost)) return;
-
-            // Per-match spell-cast counter (Party Stats) — attribute to the casting combatant.
-            { const cc = getCombatantLegacy(caster); if (cc && cc.matchStats) cc.matchStats.spellsCast++; if (cc && window.addJuice) window.addJuice(cc, window.JUICE.CHARGE.cast);
-              if (cc && window.logCombat) { const blue = (cc === combatants.left); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('frostbolt'))); } }
-
-            // Visual feedback for the local player only
-            const _fbC = getCombatantLegacy(caster);
-            if ((caster === 'player' || (_fbC && _fbC.isLocalPlayer)) && window.flashAbilitySlot) {
-                window.flashAbilitySlot('frostbolt');
-            }
-
-            // Track stat (only for local player)
-            if (caster === 'player' || (getCombatantLegacy(caster)?.isLocalPlayer)) {
-                StatTracker.increment('frostbolt_casts');
-            }
-
-            const speed = abilities.frostbolt.baseSpeed;
-
-            // Get combatant and use its paddle position
-            const c = getCombatantLegacy(caster);
-            if (!c || !c.paddle) return;  // Safety check for doubles mode
-            const paddle = c.paddle;
-            const isLeft = c.side === 'left';
-
-            // Spawn position based on combatant's side
-            const startX = isLeft ? paddle.position.x + 1 : paddle.position.x - 1;
-            // Doubles: scale initial launch speed at spawn (gated teamSize===2, x*1===x so
-            // singles/PvP byte-identical). Mirrors the sim frostbolt onCast for the legacy button path.
-            const projScale = (teamSize === 2) ? DOUBLES_PROJ_SPEED : 1;
-            const velX = (isLeft ? speed : -speed) * projScale;
-            const startZ = paddle.position.z;
-
-            // Set cooldown using combatant system
-            c.cooldowns.frostbolt = abilities.frostbolt.cooldown;
-            // Sync legacy cooldowns
-            if (caster === 'player') {
-                playerFrostboltCooldown = abilities.frostbolt.cooldown;
-            } else {
-                aiFrostboltCooldown = abilities.frostbolt.cooldown;
-            }
-
-            // Aim based on deterministic input/movement (smaller than fireball)
-            const aimDir = getCasterAimDir(caster, c);
-            const velZ = (aimDir !== 0 ? (aimDir * speed * 0.2) : 0) * projScale;
-
-            // Play frostbolt cast sound
-            playSound('frostboltCast', startX, 0.7);
-
-            // Play cast_release animation (instant cast)
-            const playAnim = caster === 'player' ? window.playPlayerAnim : window.playAIAnim;
-            const combatant = caster === 'player' ? combatants.left : combatants.right;
-            if (playAnim) {
-                // Clear any existing end observers BEFORE playing to prevent stale callbacks
-                const anim = combatant.animations['cast_release'];
-                if (anim) {
-                    anim.onAnimationGroupEndObservable.clear();
-                }
-
-                playAnim('cast_release', false, 0);
-
-                // Set up callback to return to idle after animation (with state check)
-                if (anim) {
-                    anim.onAnimationGroupEndObservable.addOnce(() => {
-                        // Only return to idle if still in cast_release and not casting
-                        if (combatant.currentAnim === 'cast_release' && !combatant.casting) {
-                            playAnim('idle', true);
-                        }
-                    });
-                }
-            }
-
-            // Note: spawnFrostbolt still takes 'player'/'ai' as owner for projectile tracking
-            spawnFrostbolt(caster, startX, startZ, velX, velZ);
-
-            // Show floating spell name
-            const isPlayer = caster === 'player';
-            showSpellCastText(isPlayer, 'Frostbolt', 'frost');
-        }
+        // castFireball/castFrostbolt (legacy on-screen-button casters, spawned OUTSIDE the
+        // deterministic sim) DELETED 2026-07-13 (owner rule: click-cast desync fix). castFireball
+        // was already zero-caller; castFrostbolt went zero-caller when castFromLoadoutSlot (the
+        // click dispatcher that called it, see ~1550) was deleted. All three ability-bar slot
+        // clicks now route through pendingNetInput (the same sim input channel as keyboard/
+        // gamepad), so these legacy immediate-spawn functions are unreachable.
+        // getCasterAimDir (above) still has a live caller (the modern fireFireball/frostbolt
+        // onCast paths), so it stays.
 
 
         // ==========================================
@@ -19998,6 +19795,23 @@
                             StatTracker.increment('thunderstorm_casts');
                             StatTracker.increment('projectiles_zapped', zapsToPerform);
                         }
+                        // Combat log line (owner rule 2026-07-13, playtest round 4): thunderstorm's
+                        // live sim path never logged before — mirrors fireFireball's line shape
+                        // exactly (same combatLine/spellDisplayName + doublesLogLabel attribution),
+                        // fired at the same "cast completion" moment as showSpellCastText above
+                        // (only on a real cast, i.e. it actually zapped something — matches SP). This
+                        // whole branch is already inside the enclosing `!ctx.isResimulating` gate
+                        // (see above), so it can't double-fire on a rollback resim.
+                        if (window.logCombat) {
+                            const label = window.doublesLogLabel ? window.doublesLogLabel(casterC) : null;
+                            window.logCombat(isPlayer ? 'blue' : 'red', window.combatLine(isPlayer, ' casts ' + window.spellDisplayName('thunderstorm'), label));
+                        }
+                        // Battle-Report counter (review fix 2026-07-13): the deleted legacy
+                        // castThunderstorm held this spell's only matchStats.spellsCast++.
+                        // Counted here, LIVE pass only — matchStats is neither hashed nor
+                        // snapshot-restored, and this branch is inside the enclosing
+                        // !ctx.isResimulating gate (see fireFireball's storage-class note).
+                        if (casterC && casterC.matchStats) casterC.matchStats.spellsCast++;
                     }
                 }
                 return zapsToPerform;
@@ -20876,73 +20690,13 @@
         // CASTING SYSTEM
         // ============================================================
 
-        // Start casting an ability
-        function startCasting(caster, abilityId) {
-            const ability = getAbility(abilityId);
-            if (!ability || !ability.castTime) return false;
-
-            // Get combatant
-            const c = getCombatantLegacy(caster);
-            if (!c) return false;  // Safety check for doubles mode
-
-            const effectiveManaCost = ability.manaCost;
-
-            // Check mana
-            if (c.mana < effectiveManaCost) return false;
-
-            // Already casting?
-            if (c.casting) return false;
-
-            // Store pending mana cost (will be spent when cast completes)
-            c.pendingManaCost = effectiveManaCost;
-
-            const displayName = ability.name;
-            const effectiveCastTime = ability.castTime;
-
-            // Set combatant casting state
-            c.casting = abilityId;
-            c.castProgress = 0;
-            c.castTime = effectiveCastTime;
-
-            // Stop any existing casting loop sound (isochronic generator)
-            if (window.ToneSFX) ToneSFX.castingStop();
-
-            const isPlayer = caster === 'player';
-
-            if (isPlayer) {
-                // Sync legacy variables
-                playerCasting = c.casting;
-                playerCastProgress = c.castProgress;
-                playerCastTime = c.castTime;
-
-                updateCombatantCastBarUI(c, displayName, ability.element, 0);
-                showCastBar(true);
-                // cast_loop animation handled by state machine
-
-                // Add casting class to ability slot and initialize cast progress overlay
-                const slot = document.getElementById(abilityId + 'Slot');
-                if (slot) slot.classList.add('casting');
-                const castProgressOverlay = document.getElementById(abilityId + 'CastProgress');
-                if (castProgressOverlay) castProgressOverlay.style.setProperty('--cast-progress', '360deg');
-
-                // Start casting sound (panned left for player)
-                if (window.ToneSFX) ToneSFX.castingStart('player');
-            } else {
-                // Sync legacy variables
-                aiCasting = c.casting;
-                aiCastProgress = c.castProgress;
-                aiCastTime = c.castTime;
-
-                updateCombatantCastBarUI(c, displayName, ability.element, 0);
-                showAICastBar(true);
-                // cast_loop animation handled by state machine
-
-                // Start casting sound (panned right for AI)
-                if (window.ToneSFX) ToneSFX.castingStart('ai');
-            }
-
-            return true;
-        }
+        // startCasting DELETED 2026-07-13 (owner rule: click-cast desync sweep) — it mutated
+        // combatant.casting directly (outside pendingNetInput) and its sole remaining caller was
+        // castFromLoadoutSlot's spellCastMap.fireball entry, deleted with the click reroute. The
+        // live cast-start path is ABILITY_REGISTRY.fireball.behavior.onCast (via tryNetworkCast);
+        // the cast bar/slot-overlay presentation startCasting used to set up is driven per-frame
+        // by updateMatchPresentation instead. cancelCasting/completeCasting below STAY (live sim
+        // deps).
 
         // Cancel casting (e.g., if stunned or interrupted)
         function cancelCasting(caster, refundMana = false) {
@@ -20960,6 +20714,10 @@
                 // Reset cast progress overlay (player only)
                 const castProgressOverlay = document.getElementById(c.casting + 'CastProgress');
                 if (castProgressOverlay) castProgressOverlay.style.setProperty('--cast-progress', '360deg');
+                // NOTE (2026-07-13): nothing ADDS the slot 'casting' class anymore — its only
+                // adder was the deleted startCasting, so this remove (and the slot cast-ring
+                // CSS it drove) is currently unreachable-but-harmless defensive cleanup.
+                // Reviving the ring on the sim path is a design follow-up, not done here.
                 const slot = document.getElementById(c.casting + 'Slot');
                 if (slot) slot.classList.remove('casting');
 
@@ -21089,54 +20847,13 @@
 
         const THUNDERSTORM_COOLDOWN = 30;  // 30 second cooldown
         const THUNDERSTORM_MAX_ZAPS = 3;  // Max 3 projectiles per cast
-        // True if there is at least one enemy projectile incoming for this caster to zap.
-        function thunderstormHasTarget(caster) {
-            const c = getCombatantLegacy(caster);
-            if (!c) return false;
-            const casterOwner = (caster === 'player') ? 'player' : 'ai';
-            const incomingVelDir = (caster === 'player') ? -1 : 1;
-            return projectiles.some(p => p.owner !== casterOwner && p.mesh && !p.mesh.isDisposed()
-                && Math.sign(p.velX) === incomingVelDir);
-        }
+        // thunderstormHasTarget DELETED 2026-07-13 (owner rule: click-cast desync sweep) — its
+        // sole caller was the legacy castThunderstorm, deleted alongside it below.
 
-        // Cast Thunderstorm (instant cast, costs 2 mana)
-        function castThunderstorm(caster) {
-            const c = getCombatantLegacy(caster);
-            if (!c) return false;  // Safety check for doubles mode
-            const isPlayer = caster === 'player';
-
-            // Check cooldown
-            if (c.cooldowns.thunderstorm > 0) return false;
-            // Can't cast while casting something else
-            if (c.casting) return false;
-            // Check mana
-            if (c.mana < abilities.thunderstorm.manaCost) return false;
-
-            // No target = no cast: don't spend mana or cooldown, just signal the whiff.
-            if (!thunderstormHasTarget(caster)) {
-                showCombatText(isPlayer, 'NO TARGET', 'lightning');
-                return false;
-            }
-
-            // Spend mana
-            c.mana -= abilities.thunderstorm.manaCost;
-            if (isPlayer) playerMana = c.mana;
-            else aiMana = c.mana;
-
-            // Per-match spell-cast counter (Party Stats) — attribute to the casting combatant.
-            if (c.matchStats) c.matchStats.spellsCast++; if (window.addJuice) window.addJuice(c, window.JUICE.CHARGE.cast);
-            if (window.logCombat) { const blue = (c === combatants.left); window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('thunderstorm'))); }
-
-            // Visual feedback for the local player only
-            if ((isPlayer || c.isLocalPlayer) && window.flashAbilitySlot) {
-                window.flashAbilitySlot('thunderstorm');
-            }
-
-            // Execute immediately (instant cast)
-            executeThunderstorm(caster);
-
-            return true;
-        }
+        // castThunderstorm (legacy on-screen-button wrapper, spawned OUTSIDE the deterministic
+        // sim) DELETED 2026-07-13 (owner rule: click-cast desync fix) — its sole caller was
+        // spellCastMap.thunderstorm.cast, now removed (see castFromLoadoutSlot). executeThunderstorm
+        // below STAYS — it's the real completion function, still called live from completeCasting.
 
         // Execute Thunderstorm effect (called when cast completes)
         // casterC (optional): the resolved casting combatant — completeCasting threads it so a
@@ -21353,9 +21070,10 @@
         };
 
         // Legacy function stubs for compatibility
-        function startThunderstormChannel(caster) {
-            return castThunderstorm(caster);
-        }
+        // startThunderstormChannel DELETED 2026-07-13 (click-cast desync sweep) — it was already
+        // zero-caller and its body called the now-deleted castThunderstorm; endThunderstormChannel/
+        // updateThunderstormChannel below STAY (still called live from the Digit3 keyup and
+        // gamepad-release handlers).
         function endThunderstormChannel(combatant) {
             // No-op - instant cast now
         }
@@ -21363,10 +21081,10 @@
             // No-op - instant cast now
         }
 
-        // Expose casting functions to window for loadout system
-        window.startCasting = startCasting;
-        window.castFrostbolt = castFrostbolt;
-        window.castThunderstorm = castThunderstorm;
+        // window.startCasting/window.castFrostbolt/window.castThunderstorm exposures REMOVED
+        // 2026-07-13 — all three functions (and their castFromLoadoutSlot click dispatcher)
+        // were deleted in the click-cast desync sweep; every cast now routes through
+        // pendingNetInput → tryNetworkCast.
 
         // ============================================================
         // LIGHTNING SHIELD SYSTEM
@@ -21608,6 +21326,9 @@
                 // Reset cast progress overlay
                 const castProgressOverlay = document.getElementById(c.casting + 'CastProgress');
                 if (castProgressOverlay) castProgressOverlay.style.setProperty('--cast-progress', '360deg');
+                // NOTE (2026-07-13): the slot 'casting' class has no adder anymore (only the
+                // deleted startCasting set it) — unreachable-but-harmless defensive cleanup;
+                // see the matching note in cancelCasting.
                 const slot = document.getElementById(c.casting + 'Slot');
                 if (slot) slot.classList.remove('casting');
 
@@ -21647,14 +21368,30 @@
             const c = casterC || getCombatantLegacy(caster);
             if (!c || !c.paddle) return;  // Safety check for doubles mode
 
-            // Per-match spell-cast counter + combat log — the cast-time path fires here
-            // (legacy castFireball() covers the instant on-screen-button path).
+            // Per-match spell-cast counter + combat log — the cast-time path fires here.
+            // (The legacy castFireball()/startCasting() click layer was deleted 2026-07-13 —
+            // every fireball cast now arrives here via the sim's completeCasting.)
             // Juice is team-owned: award the FRONT carrier (=== c for front/solo casters).
-            if (c.matchStats) c.matchStats.spellsCast++; if (window.addJuice) window.addJuice(getFrontCarrier(c.side), window.JUICE.CHARGE.cast);
-            if (window.logCombat) {
-                const blue = (c.side === 'left');
-                const label = window.doublesLogLabel ? window.doublesLogLabel(c) : null;
-                window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('fireball'), label));
+            // Rollback-resim treatment, by storage class:
+            //   - addJuice: snapshot-restored sim STATE (captureGameState carries juice/
+            //     juiceActive/juiceTimer/juiceRamp), so it stays UNgated — resim must recompute
+            //     it or the corrected timeline loses the charge.
+            //   - matchStats (Battle Report) + StatTracker (career): neither hashed nor
+            //     snapshot-restored, so they count on the LIVE pass only — the !isResimulating
+            //     gate keeps a rollback replay of this completion frame from double-counting.
+            //   - log line + cast sound (below): pure presentation, same gate.
+            if (window.addJuice) window.addJuice(getFrontCarrier(c.side), window.JUICE.CHARGE.cast);
+            if (!isResimulating) {
+                if (c.matchStats) c.matchStats.spellsCast++;
+                // Career stat is LOCAL-player-scoped, matching every legacy cast increment
+                // (the deleted castFireball/castFrostbolt and legacy executeThunderstorm all
+                // gated on the local caster).
+                if (c.isLocalPlayer && window.StatTracker) StatTracker.increment('fireball_casts');
+                if (window.logCombat) {
+                    const blue = (c.side === 'left');
+                    const label = window.doublesLogLabel ? window.doublesLogLabel(c) : null;
+                    window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' casts ' + window.spellDisplayName('fireball'), label));
+                }
             }
 
             const paddle = c.paddle;
@@ -21684,7 +21421,9 @@
             const aimDir = getCasterAimDir(caster, c);
             const velZ = (aimDir !== 0 ? (aimDir * speed * 0.3) : 0) * projScale;
 
-            playSound('fireballCast', startX, 0.8);
+            // Presentation (see state-vs-presentation note above): don't replay the cast sound
+            // when a rollback resimulates this completion frame.
+            if (!isResimulating) playSound('fireballCast', startX, 0.8);
             // Note: spawnFireball still takes 'player'/'ai' as owner for projectile tracking
             spawnFireball(caster, startX, startZ, velX, velZ);
         }
