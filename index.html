@@ -656,7 +656,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=40-doubles-goldens"></script>
+    <script type="module" src="js/sim.js?v=41-doubles-tuning"></script>
 
     <script>
         // Build identifier for bug reports (audit #6). Date-based: bump on every player-facing
@@ -716,11 +716,19 @@
         // first doubles match and reused/re-enabled thereafter. null outside doubles.
         let playerBackPaddle = null, aiBackPaddle = null;
         // Front-rail advance toward midfield in doubles (world X). Front rail X becomes
-        // ∓(tableWidth/2 - 1.5 - FRONT_ADV) = ∓3.5 (today's ∓11.5 rail advanced by 8.0) —
-        // tennis one-up-one-back: the front is the NET PLAYER, ~31% of the half-court from
-        // midfield (back rail 11.5 × 0.31 ≈ 3.5 from center), owner-tuned 2026-07-13 from
-        // the first playtest ("teammates too close").
-        const FRONT_ADV = 8.0;
+        // ∓(tableWidth/2 - 1.5 - FRONT_ADV) = ∓4.5 (today's ∓11.5 rail advanced by 7.0) —
+        // tennis one-up-one-back: the front is the NET PLAYER, ~39% of the half-court from
+        // midfield (back rail 11.5 → 4.5 from center). Owner nudge 2026-07-13: net-position
+        // 3.5 felt too far up, backed off a little bit (FRONT_ADV 8.0 → 7.0). SINGLE SOURCE —
+        // ensureDoublesPaddles + the doubles oracle both derive their front rail from this.
+        const FRONT_ADV = 7.0;
+        // Doubles projectile speed scale, applied at SPAWN only (initial velX/velZ), gated
+        // teamSize===2. Owner 2026-07-13 — 25% slower so the 4/3 court reads at game speed;
+        // tunable 0.7-0.8. Every downstream system (volley scaling, parry 1.5×, proj-vs-proj)
+        // composes on the scaled base; reflections/bounces multiply existing velocity so they
+        // inherit the scale automatically. NOT applied at rollback-restore spawns (velocities
+        // are already-scaled snapshots).
+        const DOUBLES_PROJ_SPEED = 0.75;
         // Towers replaced by brick gates
 
         // Game state machine: "menu" | "playing" | "paused"
@@ -2222,11 +2230,15 @@
                     onCast(ctx, combatant) {
                         const a = ctx.abilities.frostbolt;
                         const owner = combatant.side === 'left' ? 'player' : 'ai';
-                        // Team mana: debit the FRONT carrier (doubles). Front/solo casters ARE the
-                        // carrier (getFrontCarrier(side) === combatant) — byte-identical singles.
-                        getFrontCarrier(combatant.side).mana -= a.manaCost;
+                        // Per-wizard mana (playtest round 2 reversal): debit the CASTER's own pool.
+                        // For a front/solo caster combatant IS the pool holder — byte-identical singles.
+                        // (Juice below STAYS team-shared on the FRONT carrier.)
+                        combatant.mana -= a.manaCost;
                         combatant.cooldowns.frostbolt = a.cooldown;
-                        const velX = combatant.side === 'left' ? a.baseSpeed : -a.baseSpeed;
+                        // Doubles: scale initial launch speed at spawn (gated teamSize===2). x*1===x
+                        // in IEEE, so singles/PvP are byte-identical.
+                        const projScale = (ctx.consts.teamSize === 2) ? DOUBLES_PROJ_SPEED : 1;
+                        const velX = (combatant.side === 'left' ? a.baseSpeed : -a.baseSpeed) * projScale;
                         const startX = combatant.side === 'left' ? combatant.paddleX + 1 : combatant.paddleX - 1;
                         if (!ctx.isResimulating) {
                             ctx.deps.playSound('frostboltCast', startX, 0.7);
@@ -2291,21 +2303,21 @@
                     onCast(ctx, combatant) {
                         const a = ctx.abilities.thunderstorm;
                         if (combatant.cooldowns.thunderstorm > 0) return;
-                        // Team mana: gate + debit the FRONT carrier (doubles). Front/solo casters ARE
-                        // the carrier (getFrontCarrier(side) === combatant) — byte-identical singles.
-                        const carrier = getFrontCarrier(combatant.side);
-                        if (carrier.mana < a.manaCost) return;
+                        // Per-wizard mana (playtest round 2 reversal): gate + debit the CASTER's own
+                        // pool. Front/solo casters ARE their own pool holder — byte-identical singles.
+                        if (combatant.mana < a.manaCost) return;
                         const owner = combatant.side === 'left' ? 'player' : 'ai';
                         // Deterministic zap of up to maxZaps incoming enemy projectiles, in stable id order.
                         // No target = no cast (matches single-player): only spend mana/cooldown if it zapped something.
                         const zapped = ctx.deps.thunderstormZap(owner, a.maxZaps, ctx);
                         if (zapped > 0) {
-                            carrier.mana -= a.manaCost;
+                            combatant.mana -= a.manaCost;
                             combatant.cooldowns.thunderstorm = a.cooldown;
                             // Juice charge only on a real cast (had a target), matching SP
                             // castThunderstorm ~17274. Pure state; not gated by isResimulating.
-                            // Team juice lives on the FRONT carrier (a back's own juice field is dead — never spendable).
-                            if (window.addJuice) window.addJuice(carrier, window.JUICE.CHARGE.cast);
+                            // Juice STAYS team-shared on the FRONT carrier (=== combatant for front/solo;
+                            // a back's own juice field is dead — never spendable).
+                            if (window.addJuice) window.addJuice(getFrontCarrier(combatant.side), window.JUICE.CHARGE.cast);
                         }
                     },
                 },
@@ -4532,36 +4544,12 @@
             const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
         })();
 
-        // Doubles-only HUD additions (Task 7): TEAM pool labels on the DOM mana bars.
-        // (The teammate cooldown chip that used to live here was removed 2026-07-13 — owner
-        // feedback: the shared mana pool made a separate per-teammate readout noise; may return
-        // redesigned in M3 with human teammates.) index.html-only per this pass's scope —
-        // injected as a <style> element (same idiom as injectPadGlyphCSS above) rather than
-        // touching styles.css. Gated entirely on body.doubles (toggled in
-        // startSinglesMatch/startDoublesMatch), so singles is untouched: no class, no label.
-        (function injectDoublesHudCSS() {
-            const css = `
-            /* TEAM pool label above each mana bar — the bars already read the front carrier's
-               shared team mana (getMaxMana/updateCombatantManaUI), this is labeling only.
-               #manaBar/#aiManaBar are already position:absolute (styles.css), which is what
-               makes this ::before position itself relative to the bar's own box. */
-            body.doubles #manaBar::before,
-            body.doubles #aiManaBar::before {
-                content: 'TEAM';
-                position: absolute;
-                left: 0; right: 0; top: -15px;
-                text-align: center;
-                font-family: 'FF9UI', sans-serif;
-                font-size: 11px;
-                font-weight: 700;
-                letter-spacing: 1.5px;
-                color: #f2e9d8;
-                text-shadow: 0 1px 2px rgba(0,0,0,0.85);
-                pointer-events: none;
-            }
-            `;
-            const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
-        })();
+        // Doubles-only HUD additions: the 'TEAM' pool labels on the DOM mana bars were REMOVED
+        // 2026-07-13 (playtest round 2). Mana reverted to PER-WIZARD, so the front bars no longer
+        // represent a shared team pool — labeling them 'TEAM' would be wrong. The body.doubles class
+        // is still toggled (startDoublesMatch/teardown) but now drives no mana-bar CSS; kept as the
+        // hook for the forthcoming back-wizard Status grid. (The earlier teammate cooldown chip was
+        // already removed. No juice label lived here — team juice shows in Party Stats.)
 
         // ---- Controller-aware button labels for the How-to-Play screen ----
         // The bindings are by button INDEX (consistent across pads); only the printed LABELS differ by
@@ -13220,9 +13208,9 @@
                     const safe = _aiSafeToStartCast(view);
                     const cd   = s.cooldowns;
                     // Back-role coordination (doubles): counter an opposing FRONT channel with a
-                    // frostbolt (pressure/interrupt), and hold the SHARED team pool when it's nearly
-                    // dry (mana<2) unless actively countering. Golden-dead in singles/oracle: no
-                    // `role`, no `oppCasting` ⇒ countering/manaHold stay false.
+                    // frostbolt (pressure/interrupt), and hold its OWN pool (per-wizard mana,
+                    // playtest round 2) when it's nearly dry (mana<2) unless actively countering.
+                    // Golden-dead in singles/oracle: no `role`, no `oppCasting` ⇒ countering/manaHold stay false.
                     const countering = profile.role === 'back' && !!view.oppCasting;
                     const manaHold   = profile.role === 'back' && !countering && s.mana < 2;
                     const canFireball  = offenseOpen && safe && cd.fireball  <= 0 && s.mana >= 1
@@ -13348,7 +13336,7 @@
                 const side     = self.side;                                  // 'left' | 'right'
                 const ownerKey = side === 'left' ? 'player' : 'ai';          // this side's own-projectile owner tag
                 const mir      = side === 'left' ? -1 : 1;                   // X mirror into decideAI's right-facing frame
-                const carrier  = getFrontCarrier(side);                      // team mana/juice/tower pool holder
+                const carrier  = getFrontCarrier(side);                      // team juice/tower pool holder (mana is per-wizard now — read from self)
                 const oppFront = side === 'left' ? combatants.right : combatants.left;  // opposing FRONT
                 const mateKey  = slotKey === 'right' ? 'rightBack'
                                : slotKey === 'rightBack' ? 'right'
@@ -13374,7 +13362,7 @@
                     self: {
                         paddleX:      self.paddleX * mir,
                         paddleZ:      self.paddleZ,
-                        mana:         carrier.mana,                          // SHARED team pool (carrier)
+                        mana:         self.mana,                             // per-wizard pool (playtest round 2): each slot reads its OWN mana (front slot's self === carrier)
                         cooldowns: {
                             fireball:     self.cooldowns.fireball     || 0,
                             frostbolt:    self.cooldowns.frostbolt    || 0,
@@ -15905,7 +15893,10 @@
 
             // Spawn position based on combatant's side
             const startX = isLeft ? paddle.position.x + 1 : paddle.position.x - 1;
-            const velX = isLeft ? speed : -speed;
+            // Doubles: scale initial launch speed at spawn (gated teamSize===2, x*1===x so
+            // singles/PvP byte-identical). Mirrors fireFireball for the legacy on-screen-button path.
+            const projScale = (teamSize === 2) ? DOUBLES_PROJ_SPEED : 1;
+            const velX = (isLeft ? speed : -speed) * projScale;
             const startZ = paddle.position.z;
 
             // Set cooldown using combatant system
@@ -15919,7 +15910,7 @@
 
             // Aim based on deterministic input/movement
             const aimDir = getCasterAimDir(caster, c);
-            const velZ = aimDir !== 0 ? (aimDir * speed * 0.3) : 0;
+            const velZ = (aimDir !== 0 ? (aimDir * speed * 0.3) : 0) * projScale;
 
             // Play cast sound panned to caster position
             playSound('fireballCast', startX, 0.8);
@@ -15960,7 +15951,10 @@
 
             // Spawn position based on combatant's side
             const startX = isLeft ? paddle.position.x + 1 : paddle.position.x - 1;
-            const velX = isLeft ? speed : -speed;
+            // Doubles: scale initial launch speed at spawn (gated teamSize===2, x*1===x so
+            // singles/PvP byte-identical). Mirrors the sim frostbolt onCast for the legacy button path.
+            const projScale = (teamSize === 2) ? DOUBLES_PROJ_SPEED : 1;
+            const velX = (isLeft ? speed : -speed) * projScale;
             const startZ = paddle.position.z;
 
             // Set cooldown using combatant system
@@ -15974,7 +15968,7 @@
 
             // Aim based on deterministic input/movement (smaller than fireball)
             const aimDir = getCasterAimDir(caster, c);
-            const velZ = aimDir !== 0 ? (aimDir * speed * 0.2) : 0;
+            const velZ = (aimDir !== 0 ? (aimDir * speed * 0.2) : 0) * projScale;
 
             // Play frostbolt cast sound
             playSound('frostboltCast', startX, 0.7);
@@ -17007,8 +17001,8 @@
             const railX = (window.tableWidth || 26) / 2 - 1.5;   // 11.5
             playerBackPaddle.position.set(-railX, 0, 0);
             aiBackPaddle.position.set(railX, 0, 0);
-            playerPaddle.position.x = -railX + FRONT_ADV;   // -3.5
-            aiPaddle.position.x     =  railX - FRONT_ADV;   //  3.5
+            playerPaddle.position.x = -railX + FRONT_ADV;   // -4.5
+            aiPaddle.position.x     =  railX - FRONT_ADV;   //  4.5
             playerBackPaddle.setEnabled(true); aiBackPaddle.setEnabled(true);
         }
         window.ensureDoublesPaddles = ensureDoublesPaddles;
@@ -19729,7 +19723,10 @@
             for (const c of combatantsToReset) {
                 if (!c) continue;
                 combatantReset(c, true);
-                updateCombatantManaUI(c);
+                // Per-wizard mana (playtest round 2): backs own a real pool now, but the mana-bar DOM
+                // ('mana'/'aiMana' prefixes) belongs to the FRONTS — a back would clobber the front's
+                // segments (back mana renders in the Status grid, next wave). Fronts unchanged.
+                if (c.position !== 'back') updateCombatantManaUI(c);
                 // Clear round result so animation state machine returns to idle
                 c.roundResult = null;
                 c.playingCastRelease = false;
@@ -21236,8 +21233,6 @@
         // Complete casting and fire the spell
         function completeCasting(caster, isBack) {
             // Back casters resolve to the doubles back slot; front/solo via the legacy front lookup.
-            // Mana is debited below through spendMana(caster), which resolves to the FRONT carrier —
-            // so a back's cast spends the team pool, and a front cast is byte-identical to singles.
             const c = isBack ? (caster === 'player' ? combatants.leftBack : combatants.rightBack)
                              : getCombatantLegacy(caster);
             if (!c || !c.casting) return;  // Safety check for doubles mode
@@ -21245,9 +21240,18 @@
             const abilityId = c.casting;
             const isPlayer = caster === 'player';
 
-            // Spend mana now that cast is complete
+            // Spend mana now that cast is complete. Per-wizard mana (playtest round 2 reversal):
+            // a BACK debits its OWN pool directly (spendMana(caster) would resolve to the front
+            // carrier and also touch the front's mana HUD / legacy globals — wrong for a back).
+            // FRONT/solo path is the ELSE branch: same spendMana call, same order = byte-identical
+            // singles/PvP. Committed-cast semantics preserved: fires even if the pool drained
+            // mid-cast (mirrors spendMana, which only debits when mana >= cost).
             if (c.pendingManaCost && c.pendingManaCost > 0) {
-                spendMana(caster, c.pendingManaCost);
+                if (isBack) {
+                    if (c.mana >= c.pendingManaCost) c.mana -= c.pendingManaCost;
+                } else {
+                    spendMana(caster, c.pendingManaCost);
+                }
                 c.pendingManaCost = 0;
             }
 
@@ -21344,7 +21348,11 @@
 
             // Spawn position based on combatant's side
             const startX = isLeft ? paddle.position.x + 1 : paddle.position.x - 1;
-            const velX = isLeft ? speed : -speed;
+            // Doubles: scale initial launch speed at spawn (gated teamSize===2). x*1===x in IEEE,
+            // so singles/PvP are byte-identical. Downstream volley/parry/bounce math composes on
+            // this scaled base.
+            const projScale = (teamSize === 2) ? DOUBLES_PROJ_SPEED : 1;
+            const velX = (isLeft ? speed : -speed) * projScale;
             const startZ = paddle.position.z;
 
             const effectiveCooldown = abilities.fireball.cooldown;
@@ -21360,7 +21368,7 @@
 
             // Aim based on deterministic input/movement (no randomness)
             const aimDir = getCasterAimDir(caster, c);
-            const velZ = aimDir !== 0 ? (aimDir * speed * 0.3) : 0;
+            const velZ = (aimDir !== 0 ? (aimDir * speed * 0.3) : 0) * projScale;
 
             playSound('fireballCast', startX, 0.8);
             // Note: spawnFireball still takes 'player'/'ai' as owner for projectile tracking

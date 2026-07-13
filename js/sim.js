@@ -124,14 +124,6 @@
         return [combatants.left, combatants.right, combatants.leftBack, combatants.rightBack].filter(Boolean);
     }
 
-    // Team mana lives on the FRONT carrier. A back wizard gates/debits the front on its side;
-    // a front/solo wizard IS its own carrier (position !== 'back' -> returns c, byte-identical singles).
-    // Mirrors index.html's getFrontCarrier(side) — duplicated because the module boundary
-    // prevents sharing; keep the two in sync.
-    function manaCarrierOf(combatants, c) {
-        return c.position === 'back' ? (c.side === 'left' ? combatants.left : combatants.right) : c;
-    }
-
     // Pure: same guard + effect as SP activateJuice (index.html), minus the FX
     // (those go through ctx.deps.onJuiceActivate, gated by !isResimulating).
     // Spend a full bar -> start the Overdrive CHANNEL. The bar stays full and drains over the
@@ -307,7 +299,10 @@
                         // Mutual cancel
                         toDestroy.push(proj);
                         toDestroy.push(other);
-                        // Mana award: +0.5 to each combatant
+                        // Mana award: +0.5 to each side. This is a TEAM event (both sides earn) kept
+                        // on the FRONT carriers even under per-wizard mana (playtest round 2) — the
+                        // fronts are the team representatives. Code UNCHANGED = singles byte-identical.
+                        // TUNABLE: could split/route to the projectile owners' own pools if desired.
                         if (combatants.left)  combatants.left.mana  = Math.min(D.getMaxMana('left'),  (combatants.left.mana  || 0) + 0.5);
                         if (combatants.right) combatants.right.mana = Math.min(D.getMaxMana('right'), (combatants.right.mana || 0) + 0.5);
                         simAddJuice(combatants.left,  juiceConsts.CHARGE.minor, juiceConsts);
@@ -610,7 +605,9 @@
         const ability = abilities[abilityId];
         if (!ability) return;
 
-        if (manaCarrierOf(ctx.combatants, combatant).mana < ability.manaCost) return;
+        // Per-wizard mana (playtest round 2): gate against the caster's OWN pool. For a
+        // front/solo wizard this IS its own pool (byte-identical singles); a back now gates its own.
+        if (combatant.mana < ability.manaCost) return;
         if (combatant.cooldowns[abilityId] > 0) return;
 
         const beh = (ctx.deps.getAbilityDef ? ctx.deps.getAbilityDef(abilityId) : null)?.behavior;
@@ -783,9 +780,11 @@
             }
         }
 
-        // Mana regeneration (stops while frozen) - discrete 0.5 every 2 seconds
-        // Team mana pools live on the FRONT combatants; backs never regen (doubles design).
-        for (const c of [combatants.left, combatants.right]) {
+        // Mana regeneration (stops while frozen) - discrete 0.5 every 2 seconds.
+        // Per-wizard mana (playtest round 2 reversal): EVERY wizard owns its own singles-sized
+        // pool, so backs regen too. allCombatants degenerates to [left, right] at teamSize 1
+        // (backs null) → singles/solo byte-identical.
+        for (const c of allCombatants(combatants)) {
             if (!c) continue;
             if (c.freezeTime > 0) continue;
             const cMaxMana = D.getMaxMana(c.side);
