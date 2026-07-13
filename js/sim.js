@@ -26,8 +26,13 @@
 //   (checkPvPParryHitsForSide) is the FIRST deliberate golden-moving change: right-seat
 //   AI now reactive-parries in-sim, so the singles STATE fold legitimately moves. Old
 //   (pre-parry-fix) values preserved: seed 12345 -> 6c6801a3, seed 99999 -> 574d9f9c.
-//   New pins (2026-07-13, in-browser x2 each, owner-delegated ceremony): seed 12345 -> 5d4dfc6,
+//   Pins (2026-07-13, in-browser x2 each, owner-delegated ceremony): seed 12345 -> 5d4dfc6,
 //   seed 99999 -> 3aa202de. (Note: the state fold is NOT zero-padded; compare the exact string.)
+//   STALE — round 4 economy (2026-07-13, round4-economy branch), owner re-pins. The passive
+//   juice TRICKLE (JUICE.TRICKLE_PER_SEC applied to the two front carriers in this file's
+//   per-frame step) is new HASHED state, so the singles STATE fold legitimately moves. Old
+//   (round-3) values preserved: seed 12345 -> 5d4dfc6, seed 99999 -> 3aa202de. Also stale for
+//   the SAME reason: the ×0.6 event-charge rescale (JUICE.CHARGE) feeds the same juice field.
 //
 // ============================================================================
 // DOUBLES goldens (M1 — 2v2). The singles pins above are UNCHANGED by M1: the
@@ -50,6 +55,18 @@
 //   dbg.determinismDoubles(180, 12345) -> ba675e78
 //   dbg.determinismDoubles(180, 99999) -> 87632a94
 //   dbg.aiDeterminismDoubles(50, 42)   -> 86dc6cb5
+//   STALE — round 4 economy (2026-07-13, round4-economy branch), owner re-pins ALL of these:
+//     • Both doubles STATE folds move: the passive juice TRICKLE (front carriers, this file's
+//       per-frame step) + the ×0.6 CHARGE rescale are new hashed state. Old preserved:
+//       determinismDoubles(180,12345) -> ba675e78, determinismDoubles(180,99999) -> 87632a94.
+//     • aiDeterminismDoubles MOVES: the decideAI UNIFICATION (index.html round 4 — deleted the
+//       back gate-guard movement, manaRich cadence borrow, counter-cast, manaHold, and front
+//       fire-discipline; every slot now casts on the same policy, differing only by castK) is a
+//       real change to the doubles AI decision path. Node-extracted candidates (reproducible ×2,
+//       seed-sensitive): (50,42) 86dc6cb5 -> 0e029492; (50,99999) 25ae0b2f -> 7afee30f.
+//     • SINGLES AI fold does NOT move (Node-verified e6fdfae9 -> e6fdfae9): the singles profile
+//       carries no `role`, so the deleted branches were already inert on the singles path. Owner
+//       still re-confirms in-browser per house rule (decideAI source changed), but no movement expected.
 //   HEADER-ONLY NOTE (ai-parry-buckets branch, 2026-07-13, header-only edit — this file's
 //   sim code is untouched, decideAI lives in index.html): decideAI's parry gate now hashes
 //   each threat's id + profile.slotSalt into a stable early/perfect/late timing bucket
@@ -848,6 +865,17 @@
                     c.mana = Math.min(cMaxMana, c.mana + 0.5);
                 }
             }
+        }
+
+        // Passive juice trickle (owner round 4: "charges naturally over time"). Team juice lives on
+        // the FRONT carriers (combatants.left/right), so only the two fronts trickle — backs share via
+        // the carrier pool. Hashed per-frame state: it runs HERE in the sim step so both rollback peers
+        // compute the identical juice every frame (a render-path trickle would desync). simAddJuice
+        // already no-ops on a null carrier or one that is juiceActive (no charging mid-Overdrive).
+        const juiceConsts = consts.juice;
+        if (juiceConsts.TRICKLE_PER_SEC) {
+            simAddJuice(combatants.left,  juiceConsts.TRICKLE_PER_SEC * dt, juiceConsts);
+            simAddJuice(combatants.right, juiceConsts.TRICKLE_PER_SEC * dt, juiceConsts);
         }
 
         // Process casting

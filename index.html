@@ -656,7 +656,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=44-ai-parry-buckets"></script>
+    <script type="module" src="js/sim.js?v=45-round4-economy"></script>
 
     <script>
         // Build identifier for bug reports (audit #6). Date-based: bump on every player-facing
@@ -706,10 +706,13 @@
         let playerGateHealthByStage = [SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH];
         let aiGateHealthByStage = [SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH];
 
-        // Gate regeneration system - ALL gates regen 25% per round away from stage
+        // Gate regeneration system — 50% FLOOR rule (owner design, round 4)
         let totalRoundsPlayed = 0;
         let lastRoundAtStage = [0, 0, 0, 0, 0];  // When we last played at each stage
-        const GATE_REGEN_PER_ROUND = 0.25;  // 25% of max health per round away
+        // GATE_REGEN_FLOOR: a bout without one-shots; wounded towers stay wounded. On returning to a
+        // stage, a gate below this fraction of max is lifted UP TO the floor — never higher; a gate
+        // at/above the floor keeps its stored (wounded) health. Nothing ever regens above 50%.
+        const GATE_REGEN_FLOOR = 0.5;  // 50% of max health — the only floor gates ever regen to
 
         let ball, playerPaddle, aiPaddle;
         // Doubles (M1): back-row paddle meshes, created lazily by ensureDoublesPaddles() on the
@@ -1773,8 +1776,15 @@
         // ============================================================
         const JUICE = {
             MAX: 350,                                               // points to fill (status bar shows the %)
-            CHARGE: { damage: 12, cast: 8, parry: 10, minor: 4 },  // per action; damage is PER damage point
+            // Event charges scaled ×0.6 (owner round 4: "takes longer to get, charges naturally over
+            // time"). Originals: damage 12, cast 8, parry 10, minor 4. Rounded sensibly (7.2→7, 4.8→5,
+            // 6.0→6, 2.4→2). Combined with the passive TRICKLE below, active play is now SLOWER to full.
+            CHARGE: { damage: 7, cast: 5, parry: 6, minor: 2 },    // per action; damage is PER damage point
         };
+        // Passive juice trickle (owner round 4): the bar charges naturally over time — full in ~90s
+        // of pure idle. Applied in the SIM's per-frame step (js/sim.js) so both rollback peers compute
+        // the identical hashed juice every frame; keep it OUT of any render-only path.
+        JUICE.TRICKLE_PER_SEC = JUICE.MAX / 90;
         // Overdrive = the channeled beam ultimate (replaces the old buff burst).
         // All values TUNABLE in playtest. TUNED 2026-07-06 (owner, sandbox pass): FLAT damage —
         // every connecting ~0.6s beat lands 2 HP, no build-up (DMG_START == DMG_MAX; the ramp
@@ -5971,6 +5981,10 @@
 
             dcBtn.onPointerClickObservable.add(() => {
                 window.hideDisconnectOverlay();
+                // Belt-and-braces (round 4): if the peer disconnected while WE sat on the victory
+                // screen, hudHidden is still true and this path never runs hideVictoryScreen —
+                // clear it here immediately (showMainMenu below also clears it as the robust net).
+                if (window.setHudHidden) window.setHudHidden(false);
                 if (typeof resetGame === 'function') resetGame();
                 if (typeof showMainMenu === 'function') showMainMenu();
             });
@@ -12979,16 +12993,18 @@
             // The SINGLES right-AI keeps the globals above UNTOUCHED (golden/behavior safety). Doubles
             // drives THREE AI slots (right front, both backs) — each needs its own reaction-lag ring and
             // threat-sight map so their independent perception depths don't cross-contaminate.
-            //   castK 7/11 are COPRIME with each other and the singles base 8, so the three think
-            //   cadences never phase-lock (no synchronized cast beats). reactionDelta shifts the shared
+            //   UNIFIED AI (round 4): profiles carry TIMING DIVERSITY ONLY (no `role` — every slot
+            //   runs the same casting/movement policy). castK 7/11 are COPRIME with each other and the
+            //   singles base 8, so the three think cadences never phase-lock (no synchronized cast
+            //   beats — anti-mirror-lock insurance, not personality). reactionDelta shifts the shared
             //   skill-derived lag (front sharper, back slower), clamped ≥1. slotSalt de-correlates the
             //   per-frame RNG per slot (still otherwise unused) AND — since the 2026-07-13 AI parry
             //   humanization — decideAI's per-ball parry timing-bucket hash (profile.slotSalt), so the
             //   two backs don't whiff/land the same balls in lockstep. teammateSkill fixes the human's
             //   AI partner at a competent-but-not-perfect level (difficulty scalar governs OPPONENTS only).
             const DOUBLES_AI = {
-                front: { castK: 7,  reactionDelta: -1, role: 'front' },
-                back:  { castK: 11, reactionDelta: +2, role: 'back'  },
+                front: { castK: 7,  reactionDelta: -1 },
+                back:  { castK: 11, reactionDelta: +2 },
                 teammateSkill: 0.6,
                 slotSalt: { right: 0, leftBack: 0x5EED1, rightBack: 0x5EED2 },
             };
@@ -13264,12 +13280,6 @@
                             if (second) targetZ = second.z;
                         }
                     }
-                } else if (profile.role === 'back') {
-                    // Back-role gate-guard station (doubles): with no incoming threat, cover the likely
-                    // lane by shadowing a third of the opposing front's Z instead of drifting to an open
-                    // lane — the back stays central/deep to counter, not to open its own offense.
-                    // (Golden-dead: singles/oracle profiles carry no `role`, so control never reaches here.)
-                    targetZ = view.opp ? view.opp.paddleZ * 0.3 : 0;
                 } else {
                     // Idle: only reposition toward the open lane if meaningfully out of place.
                     const open = _aiFindOpenTarget(view);
@@ -13390,18 +13400,12 @@
                 // ---- Casting: gated to a fixed cast-decision cadence, with offensive
                 // casts further phase-gated by effectiveCadence (low skill = sparse;
                 // urgency on clear opening pulls it toward instant). ----
-                // Back-role mana-rich override (owner playtest round 3: "my teammate in the
-                // back is so ass" — too passive). Reads its OWN per-wizard pool (post-f288605
-                // per-wizard mana). Once rich (>=2), a back joins the normal offensive cadence
-                // by borrowing FRONT's faster think-period instead of its own slower one — it
-                // fights like a front does when it can afford to. Below the reserve, today's
-                // slower/conservative back cadence stands. Golden-dead in singles/PvP/oracle:
-                // no `role` there ⇒ manaRich always false ⇒ K stays profile.castK||8, unchanged.
-                const manaRich = profile.role === 'back' && s.mana >= 2;
-                const K = manaRich ? DOUBLES_AI.front.castK : (profile.castK || 8);   // cast-decision
-                                                              // base period (~0.13s @60Hz). Doubles
-                                                              // overrides per role (7 front / 11 back,
-                                                              // coprime); absent (singles/oracle) ⇒ 8 ⇒ golden-identical.
+                // Cast-decision base period (~0.13s @60Hz). UNIFIED AI (round 4, owner: no
+                // per-position behavior): every slot casts on its OWN castK — 7 front / 11 back
+                // (coprime with each other + the singles base 8 so cast beats never phase-lock).
+                // This is anti-mirror-lock TIMING diversity, not personality; all slots run the
+                // same casting policy below. Absent (singles/oracle) ⇒ 8 ⇒ golden-identical.
+                const K = profile.castK || 8;
                 const isCastFrame = (frame % K === 0);
                 let fireball = false, frostbolt = false, thunderstorm = false;
                 if (isCastFrame) {
@@ -13409,36 +13413,27 @@
                     const offenseOpen = (cycle % effectiveCadence) === 0;
                     const safe = _aiSafeToStartCast(view);
                     const cd   = s.cooldowns;
-                    // Back-role coordination (doubles): counter an opposing FRONT channel with a
-                    // frostbolt (pressure/interrupt), and hold its OWN pool (per-wizard mana,
-                    // playtest round 2) when it's nearly dry (mana<2, i.e. !manaRich) unless
-                    // actively countering. Golden-dead in singles/oracle: no `role`, no
-                    // `oppCasting` ⇒ countering/manaHold stay false (manaRich is also false there).
-                    const countering = profile.role === 'back' && !!view.oppCasting;
-                    const manaHold   = profile.role === 'back' && !countering && !manaRich;
+                    // UNIFIED casting policy (round 4, owner: no per-position behavior): every slot
+                    // — front, back, singles — casts on the SAME gates (offenseOpen cadence + safe
+                    // + cooldown + mana>=1). No more role-based mana-hold, counter-cast priority, or
+                    // teammate fire-discipline; only the per-slot castK cadence (above) differs.
                     const canFireball  = offenseOpen && safe && cd.fireball  <= 0 && s.mana >= 1
                         && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
                     // Frostbolt is a LANE shot: only worth casting when the opponent is directly
                     // in front (its payoff is freezing them). No alignment → no cast, so it stops
-                    // firing frostbolt into an empty lane. A countering back lifts the alignment gate
-                    // (pressure the channeling opponent even slightly off-lane).
+                    // firing frostbolt into an empty lane.
                     const FROST_ALIGN  = 1.2;
                     const oppInFront   = Math.abs(s.paddleZ - view.opp.paddleZ) < FROST_ALIGN;
                     const canFrostbolt = offenseOpen && safe && cd.frostbolt <= 0 && s.mana >= 1
-                        && (oppInFront || countering) && view.projectiles.length < 10 && !s.casting;
+                        && oppInFront && view.projectiles.length < 10 && !s.casting;
                     // Thunderstorm is a DEFENSIVE panic-clear: a skilled AI recognizes the
                     // multi-projectile crunch and fires regardless of cadence.
                     const canThunderstorm = cd.thunderstorm <= 0 && s.mana >= 2
                         && incomingCount >= 2
                         && profile.thunderstormSkill >= 0.6;
-                    frostbolt    = canFrostbolt && !manaHold;
-                    fireball     = canFireball && !frostbolt && !manaHold;
+                    frostbolt    = canFrostbolt;
+                    fireball     = canFireball && !frostbolt;
                     thunderstorm = canThunderstorm;
-                    // Front-role fire discipline (doubles): don't double-commit the shared pool when
-                    // the teammate is already casting this beat. Golden-dead: no `role`/`teammate`.
-                    if (profile.role === 'front' && view.teammate && view.teammate.casting) {
-                        fireball = false;
-                    }
                 }
 
                 // ---- Juice (Overdrive) : fire the ult at an EFFECTIVE moment, not just on full ----
@@ -13541,10 +13536,6 @@
                 const mir      = side === 'left' ? -1 : 1;                   // X mirror into decideAI's right-facing frame
                 const carrier  = getFrontCarrier(side);                      // team juice/tower pool holder (mana is per-wizard now — read from self)
                 const oppFront = side === 'left' ? combatants.right : combatants.left;  // opposing FRONT
-                const mateKey  = slotKey === 'right' ? 'rightBack'
-                               : slotKey === 'rightBack' ? 'right'
-                               : 'left';                                     // leftBack's teammate = the (human) left front
-                const mate     = combatants[mateKey];
                 const sight    = aiSlotState[slotKey].threatSight;
                 const projSnaps = projectiles.map(p => ({
                     id:          p.id,
@@ -13587,9 +13578,6 @@
                         freezeTime:  oppFront.freezeTime  || 0,             // ult-timing read
                         casting:     oppFront.casting     || null,          // adjacent to juiceActive for beam-block consistency
                     },
-                    oppCasting: oppFront.casting || null,                   // back counter-cast trigger
-                    teammate:   mate ? { paddleZ: mate.paddleZ, casting: mate.casting || null, cooldowns: mate.cooldowns } : null,
-                    selfPosition: self.position,                            // 'front' | 'back'
                     geom: {
                         tableWidth:     tableWidth,
                         halfDepth:      window.getEffectiveTableDepth() / 2,
@@ -13676,8 +13664,9 @@
                     const mkInput = (slotKey, roleKey) => {
                         const st   = aiSlotState[slotKey];
                         // Opponents scale with the difficulty ELO; the human's AI partner (leftBack) is
-                        // fixed at a competent level. Role overrides layer castK/role on top; the
-                        // reaction ring depth is the shared skill lag shifted by the role's delta (≥1).
+                        // fixed at a competent level. Per-slot overrides layer the castK cadence on top
+                        // (timing diversity only — unified AI, round 4); the reaction ring depth is the
+                        // shared skill lag shifted by the slot's reactionDelta (≥1).
                         const base = skillToProfile(slotKey === 'leftBack' ? DOUBLES_AI.teammateSkill : getAISkill());
                         const prof = { ...base, ...DOUBLES_AI[roleKey],
                             reactionFrames: Math.max(1, base.reactionFrames + DOUBLES_AI[roleKey].reactionDelta),
@@ -16140,6 +16129,12 @@
             }
             // Full Overdrive reset (dim/meshes/lights/jitter/audio) — supersedes the plain roar backstop
             if (window.resetOverdrivePresentation) window.resetOverdrivePresentation();
+            // Clear the round-4 victory HUD blackout on EVERY route back to the menu (like
+            // exitDoublesState above): showVictoryScreen sets hudHidden=true, and paths that
+            // bypass hideVictoryScreen (e.g. the disconnect-overlay dismiss while on the victory
+            // screen) would otherwise carry the stuck flag into the next match — HUD invisible
+            // until reload. Idempotent no-op when the flag is already clear.
+            if (window.setHudHidden) window.setHudHidden(false);
 
             // Clear all pressed keys to prevent stuck movement
             for (const key in keys) {
@@ -18579,40 +18574,29 @@
             // ---- DOUBLES AI determinism oracle (M1) ----
             // Parallel clone of _syntheticView/_foldAI that folds BOTH a front-profile (castK 7) and a
             // back-profile (castK 11) decideAI decision per step into one hash. Pure-function exercise
-            // only — no game loop, no mesh. Role profiles layer castK/role onto skillToProfile(0.45),
-            // exactly as the live doubles driver builds them (DOUBLES_AI.front/back over a skill base).
+            // only — no game loop, no mesh. Profiles layer castK ONLY onto skillToProfile(0.45), exactly
+            // as the live doubles driver builds them (DOUBLES_AI.front/back over a skill base).
             //
-            // The synthetic view is constructed DIRECTLY in decideAI's canonical, ALREADY-X-MIRRORED
-            // right-facing frame (velX>0 = incoming, self on +X) — identical to _syntheticView — so it
-            // bypasses buildAIViewForSlot's live X-mirror consistently rather than re-deriving it. It
-            // adds the doubles-only reads decideAI consults: `teammate` (front fire-discipline),
-            // `oppCasting` + opp.casting (back counter-frostbolt), self.mana cycling (back manaHold),
-            // and role-gated movement (back gate-guard). In-fold this captures role-differentiated
-            // MOVEMENT (back gate-guard vs front open-lane) + per-role castK timing + parry; the deep
-            // cast-coordination FLIPS (front suppression, back counter-frostbolt, manaHold) are behavior-
-            // locked by direct decideAI probes, the SAME cadence-masking limitation the singles AI
-            // golden documents above. Verified reproducible ×2 and seed-sensitive (Node-extracted).
+            // UNIFIED AI (round 4): decideAI has no per-position behavior anymore — front and back run
+            // the identical casting + movement policy, differing ONLY by castK cadence (7 vs 11). So
+            // this oracle now measures exactly one axis: per-slot cast-timing divergence + parry. The
+            // former role-gated reads (teammate fire-discipline, oppCasting counter-frostbolt, back
+            // gate-guard movement, manaHold) are DELETED, so their synthetic-view fields are gone too.
+            // The synthetic view is built DIRECTLY in decideAI's canonical, ALREADY-X-MIRRORED right-
+            // facing frame (velX>0 = incoming, self on +X) — identical to _syntheticView.
             // Profiles built lazily at CALL time (like the singles oracle) so window.skillToProfile is
-            // guaranteed assigned. skillToProfile(0.45) is the fixed oracle skill; castK/role layer on top.
-            //   STALE-CANDIDATE NOTE — AI parry humanization 2026-07-13 (ai-parry-buckets branch,
-            //   same change as the singles golden above): _dblProfiles' front/back profiles carry no
-            //   `slotSalt`, so decideAI's `profile.slotSalt || 0` default makes BOTH roles hash id=1
-            //   -> bucket EARLY and id=2 -> bucket LATE here (the oracle does not thread the live
-            //   driver's DOUBLES_AI.slotSalt — only mkInput in runSinglePlayerFrame does). Node-
-            //   extraction (verified ×2) found the fold does NOT move: still "86dc6cb5", for the same
-            //   reason as the singles oracle — id=2 is doubly dead (LATE = null never-press bucket,
-            //   AND its sightFrames (seed%7, max 6) never clears parrySight=9), and id=1's tti is
-            //   pinned at a fixed value outside its EARLY window [0.60,0.90) for both front and back
-            //   profiles across all 50 steps. Preserve 86dc6cb5 in the
-            //   chain; owner re-pin is a formality (decideAI's source changed) but not expected to
-            //   move the number. The LIVE driver still gets real per-slot bucket divergence via
-            //   DOUBLES_AI.slotSalt (right=0, leftBack=0x5EED1, rightBack=0x5EED2) — this oracle
-            //   just doesn't exercise that axis.
+            // guaranteed assigned. skillToProfile(0.45) is the fixed oracle skill; castK layers on top.
+            //   PARRY-BUCKET NOTE (unchanged from ai-parry-buckets): _dblProfiles' profiles carry no
+            //   `slotSalt`, so decideAI's `profile.slotSalt || 0` default makes BOTH slots hash id=1
+            //   -> EARLY, id=2 -> LATE here (the oracle does not thread DOUBLES_AI.slotSalt). id=2 is
+            //   doubly dead (LATE never-press AND sightFrames (seed%7, max 6) < parrySight=9); id=1's
+            //   tti sits outside its EARLY window across all 50 steps. The LIVE driver still gets real
+            //   per-slot bucket divergence via DOUBLES_AI.slotSalt — this oracle just doesn't exercise it.
             function _dblProfiles() {
                 const base = window.skillToProfile(0.45);
                 return {
-                    front: { ...base, castK: 7,  role: 'front' },
-                    back:  { ...base, castK: 11, role: 'back'  },
+                    front: { ...base, castK: 7  },
+                    back:  { ...base, castK: 11 },
                 };
             }
             function _syntheticViewDoubles(seed, role) {
@@ -18625,7 +18609,7 @@
                     ],
                     self: {
                         paddleX: 7, paddleZ: (seed % 7) * 0.2 - 0.6,
-                        mana: (seed % 8),                     // 0..7 cycles the back manaHold (mana<2) + cast mana gates
+                        mana: (seed % 8),                     // 0..7 cycles the cast mana gates (mana>=1)
                         cooldowns: { fireball: 0, frostbolt: 0, thunderstorm: 0 },
                         freezeTime: 0, casting: null, castProgress: 0, castTime: 1.0,
                         juice: (seed % 10 === 0) ? 350 : 0,
@@ -18633,9 +18617,6 @@
                         towerHealth: (seed % 20) + 1,
                     },
                     opp:  { paddleZ: (seed % 9) * 1.0 - 4.0, towerHealth: 20 - (seed % 7), juiceActive: (seed % 4 === 0), freezeTime: (seed % 6 === 0) ? 1 : 0, casting: (seed % 5 === 0) ? 'fireball' : null },
-                    oppCasting:   (seed % 5 === 0) ? 'fireball' : null,   // back counter-cast trigger
-                    teammate:     { paddleZ: (seed % 6) * 0.4 - 1.0, casting: (seed % 3 === 0) ? 'fireball' : null, cooldowns: { fireball: 0, frostbolt: 0, thunderstorm: 0 } },
-                    selfPosition: role,
                     geom: { tableWidth: 16, halfDepth: 4, paddleBoundary: 3.8 },
                     maxHealth: 20,
                     roundActive: true,
@@ -20096,6 +20077,16 @@
             // bars (and 2D/GUI cast bars) freeze visible because stepFixedSim early-returns
             // on gameOver, so updateMatchPresentation never runs its hide branch again.
             if (window.hideAllCastBars) hideAllCastBars();
+            // FULL HUD BLACKOUT at match end (owner decision, round 4): hide the ENTIRE HUD wholesale,
+            // not just the score/health/ability panels below. setHudHidden(true) is the one mechanism
+            // that also sweeps the command panel, STATUS window, and combat log (their per-frame
+            // observable gates on !window.hudHidden) plus every Babylon GUI HUD control (HUD_GUI_KEYS)
+            // — otherwise the command/STATUS/log windows hang visible over Victory/Defeat. The Battle
+            // Report leaderboard + the Play Again / Main Menu buttons are NOT in HUD_GUI_KEYS and live
+            // outside the hidden set, so they stay visible. Restored in hideVictoryScreen() on every
+            // exit path (Play Again SP/MP + Main Menu). The explicit panel hides below stay as belt-
+            // and-braces (they fire this frame; the observable-driven windows clear on the next).
+            if (window.setHudHidden) window.setHudHidden(true);
             if (!window.guiElements) return;
 
             const overlay = window.guiElements.victoryOverlay;
@@ -20303,6 +20294,15 @@
         }
 
         function hideVictoryScreen() {
+            // Restore the HUD blacked out by showVictoryScreen (round 4). Called by _startRematchSP
+            // (Play Again SP), _returnToConnectedLobby (Play Again MP), and returnToMenuTransition
+            // (Main Menu) — clearing window.hudHidden here un-suppresses the HUD on rematch start.
+            // NOT the only guarantee: paths that bypass this function (disconnect-overlay dismiss
+            // over a live victory screen) are covered by showMainMenu(), which also calls
+            // setHudHidden(false) — the robust net for every route back to the menu. On the menu
+            // path gameState is not in-game, so setHudHidden(false) only resets the flag/body class.
+            // Idempotent: a double restore (here + showMainMenu) is a harmless no-op.
+            if (window.setHudHidden) window.setHudHidden(false);
             if (window.guiElements) {
                 // Hide the overlay and all its children explicitly
                 if (window.guiElements.victoryOverlay) {
@@ -20363,8 +20363,12 @@
             }
         }
 
-        // Calculate gate health with regeneration - ALL gates heal 25% per round away
-        // roundsAway is precomputed so both gates regen using the same delta
+        // Gate health on returning to a stage — the 50% FLOOR rule (owner design, round 4:
+        // "a bout without one-shots; wounded towers stay wounded"). A gate below 50% of max is
+        // lifted UP TO the 50% floor; a gate already at/above 50% keeps its stored (wounded)
+        // health — NOTHING ever regens above 50%. No per-round scaling, no full heal. Deterministic
+        // (derived from shared state only). Applies on stage RETURN (roundsAway > 0); consecutive
+        // rounds at the same stage (roundsAway === 0) persist health unchanged.
         function getGateHealthWithRegen(healthArray, stage, roundsAway) {
             const storedHealth = healthArray[stage];
             const roundsSinceLastVisit = (typeof roundsAway === 'number')
@@ -20372,14 +20376,13 @@
                 : (totalRoundsPlayed - lastRoundAtStage[stage]);
 
             if (roundsSinceLastVisit > 0) {
-                // Both gates regen based on rounds away from this stage
-                const regenAmount = Math.floor(roundsSinceLastVisit * GATE_REGEN_PER_ROUND * maxTowerHealth);
-                const finalHealth = Math.min(maxTowerHealth, storedHealth + regenAmount);
+                const floor = Math.floor(GATE_REGEN_FLOOR * maxTowerHealth);   // 50% of max (integer HP)
+                const finalHealth = Math.max(storedHealth, floor);            // lift to floor, never above
                 healthArray[stage] = finalHealth;  // Update stored health
                 return finalHealth;
             }
 
-            // No time away - return persistent health
+            // Same stage, no time away — return persistent (wounded) health.
             return storedHealth;
         }
 
@@ -20413,8 +20416,9 @@
                 c.moveDir = 0;
             }
 
-            // MOBA-style: Restore gate health with regeneration
-            // ALL gates heal 25% per round away from this stage
+            // MOBA-style: restore gate health via the 50% FLOOR rule (round 4)
+            // On returning to this stage, sub-50% gates lift to the 50% floor; wounded gates
+            // at/above 50% stay wounded. Same rule for both gates and both modes.
             const roundsAway = totalRoundsPlayed - lastRoundAtStage[currentStage];
             const playerGateHealth = getGateHealthWithRegen(playerGateHealthByStage, currentStage, roundsAway);
             const aiGateHealth = getGateHealthWithRegen(aiGateHealthByStage, currentStage, roundsAway);
