@@ -9375,7 +9375,12 @@
                                 ]);
                                 loadingScreen.classList.add('hidden');
                                 setTimeout(() => loadingScreen.style.display = 'none', 500);
-                                showMainMenu();
+                                // This handler is async (the Tone.start await above can take seconds).
+                                // If a match somehow started while it was pending (automation, or any
+                                // future fast-path), showMainMenu() here would tear down live match
+                                // state (exitDoublesState nulls the back combatants under a stepping
+                                // doubles sim). Never stomp a live match from the boot path.
+                                if (GameSM.state !== 'match') showMainMenu();
                             }, { once: true });
 
                             // Gamepad support for this screen — it's a one-shot full-screen click
@@ -13591,6 +13596,15 @@
                 // untouched). The human is combatants.left (Blue Front); the sim gets its right-front
                 // input as `rightInput` and the two backs via ctx.backInputs. Slot decisions are ordered
                 // deterministically: right, leftBack, rightBack.
+                if (teamSize === 2) {
+                    // Crash guard: if doubles state was torn down under a live match (exitDoublesState
+                    // nulls the backs; teamSize only resets at the NEXT match start), don't drive null
+                    // slots — degrade to the singles path for this frame instead of throwing.
+                    if (!combatants.leftBack || !combatants.rightBack) {
+                        console.warn('[doubles] back slots missing with teamSize=2 — doubles state torn down mid-match; degrading to singles driver');
+                        teamSize = 1;
+                    }
+                }
                 if (teamSize === 2) {
                     const leftInput = buildPlayerInput();
                     const mkInput = (slotKey, roleKey) => {
