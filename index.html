@@ -656,7 +656,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=43-parry-fix"></script>
+    <script type="module" src="js/sim.js?v=44-ai-parry-buckets"></script>
 
     <script>
         // Build identifier for bug reports (audit #6). Date-based: bump on every player-facing
@@ -12982,8 +12982,10 @@
             //   castK 7/11 are COPRIME with each other and the singles base 8, so the three think
             //   cadences never phase-lock (no synchronized cast beats). reactionDelta shifts the shared
             //   skill-derived lag (front sharper, back slower), clamped ≥1. slotSalt de-correlates the
-            //   (unused-but-reserved) per-frame RNG per slot. teammateSkill fixes the human's AI partner
-            //   at a competent-but-not-perfect level (difficulty scalar governs OPPONENTS only).
+            //   per-frame RNG per slot (still otherwise unused) AND — since the 2026-07-13 AI parry
+            //   humanization — decideAI's per-ball parry timing-bucket hash (profile.slotSalt), so the
+            //   two backs don't whiff/land the same balls in lockstep. teammateSkill fixes the human's
+            //   AI partner at a competent-but-not-perfect level (difficulty scalar governs OPPONENTS only).
             const DOUBLES_AI = {
                 front: { castK: 7,  reactionDelta: -1, role: 'front' },
                 back:  { castK: 11, reactionDelta: +2, role: 'back'  },
@@ -13304,20 +13306,74 @@
                 // ---- Parry (every frame): press when an in-range threat has been SEEN
                 // long enough AND is about to arrive. Late/narrow perception at low skill →
                 // natural whiffs. ----
+                //
+                // PARRY HUMANIZATION (owner design 2026-07-13, verbatim intent): "Parrying should
+                // be a skill thing... there should be a margin of error. It's either he does it
+                // too early, too late, or the perfect amount of time... 33% chance he'll do it
+                // right, in combination with whether he even gets to the ball on time." Post-parry-
+                // fix the AI had become frame-perfect (success refreshes in 0.2s, so it parried
+                // nearly every laned shot). Fix: each THREAT gets a STABLE per-ball timing bucket
+                // (early/perfect/late, owner's thirds) via a pure integer hash of the ball's id +
+                // the deciding slot's salt — NO Math.random/Date.now (design law; also rollback-
+                // netcode-safe: both peers compute the identical decision from identical sim state).
+                // The hash is stable across frames for the same ball (same id -> same bucket every
+                // time) and differs per slot (front/back don't bucket identically in doubles) via
+                // profile.slotSalt. Applies uniformly to ALL threat types (owner declined judgment-
+                // based policies — a frostbolt bucket is exactly as fickle as a fireball's).
                 const PARRY_RANGE = 2.5;
-                // PARRY_LEAD_TIME (tunable, seconds): press only when the ball will reach us within
-                // this window. The active parry lasts 0.5s (consts.parryWindow) and whiffing burns a
-                // 3s fail-cooldown, so pressing early (ball still ~18-20u out) expired the window and
-                // the cooldown then blanketed the real arrival — the AI could never reactive-parry.
-                // 0.35 keeps the press inside the 0.5s window with margin for the reaction lag. The
-                // view is mirrored so incoming threats always have velX>0 with self on +X (matches
-                // the s.casting timeToImpact above), so tti = (paddleX - x)/velX holds for every slot.
+                // PARRY_LEAD_TIME (tunable, seconds): the PERFECT bucket's window — press only when
+                // the ball will reach us within this window. The active parry lasts 0.5s
+                // (consts.parryWindow) and whiffing burns a 3s fail-cooldown, so pressing early
+                // (ball still ~18-20u out) expired the window and the cooldown then blanketed the
+                // real arrival — the AI could never reactive-parry. 0.35 keeps the press inside the
+                // 0.5s window with margin for the reaction lag. The view is mirrored so incoming
+                // threats always have velX>0 with self on +X (matches the s.casting timeToImpact
+                // above), so tti = (paddleX - x)/velX holds for every slot.
                 const PARRY_LEAD_TIME = 0.35;
+                // PARRY_BUCKETS: [PERFECT, EARLY, LATE] press policies, indexed by the per-ball
+                // hash below. A non-null entry is a tti press window (seconds-to-impact); null
+                // means NEVER press for this ball. Named + tunable independently of PARRY_LEAD_TIME.
+                //   PERFECT (0): press at tti in (0, 0.35) — today's window, the "does it right"
+                //                third.
+                //   EARLY   (1): press at tti in [0.60, 0.90) — the 0.5s parry window expires
+                //                0.10-0.40s BEFORE the ball arrives -> the press whiffs early and
+                //                the AI eats its own 3s fail-cooldown, exactly like an early-
+                //                flinching human. (Frostbolt caveat at low/mid skill: sightFrames
+                //                can clear parrySight only AFTER tti has already fallen below the
+                //                0.60 floor — the EARLY press then silently never fires and the
+                //                ball resolves via the arc. Acceptable: reads as "never saw it
+                //                coming", and it only degrades EARLY toward LATE's non-press,
+                //                never toward MORE parries.)
+                //   LATE    (2): null — never press. A "pressed too late -> whiff" window is
+                //                structurally impossible in this engine: within a sim frame the
+                //                parry-hit check runs BEFORE projectile collision, so any press
+                //                with the ball still in flight and inside the 2.5u parry reach
+                //                CATCHES it (any ball >= ~17.25u/s covers 2.5u within a tti<0.08
+                //                window — i.e. all frostbolts and all volleyed fireballs would
+                //                LAND, not whiff). So "too late" is honestly modeled as no press
+                //                at all: the ball resolves via the normal passive arc block —
+                //                visually a wizard who didn't commit in time, which is exactly
+                //                the owner's "too late" intent.
+                const PARRY_BUCKETS = [
+                    { lo: 0,    hi: PARRY_LEAD_TIME },  // PERFECT
+                    { lo: 0.60, hi: 0.90 },              // EARLY
+                    null,                                 // LATE — never press (see block comment)
+                ];
                 const tti = (threat && threat.velX !== 0) ? (s.paddleX - threat.x) / threat.velX : Infinity;
+                let parryBucketOK = false;
+                if (threat) {
+                    // Pure hash of (ball id, deciding slot's salt) -> stable {0,1,2}. imul + the
+                    // Knuth multiplicative constant 2654435761 spread small sequential ids well;
+                    // >>> 0 keeps it unsigned before the modulo. No RNG, no wall-clock: same ball
+                    // seen by the same slot always lands in the same third.
+                    const bucket = (Math.imul((threat.id + 1) ^ (profile.slotSalt || 0), 2654435761) >>> 0) % 3;
+                    const win = PARRY_BUCKETS[bucket];
+                    parryBucketOK = !!win && tti > win.lo && tti < win.hi;
+                }
                 const parry = !!(threat
                     && Math.abs(threat.z - s.paddleZ) < PARRY_RANGE
                     && (threat.sightFrames || 0) >= profile.parrySight
-                    && tti > 0 && tti < PARRY_LEAD_TIME);
+                    && parryBucketOK);
 
                 // ---- Opening urgency: collapse cast cadence when the opponent is off the lane.
                 // openingSize = gap between opponent paddle and AI paddle beyond the block tolerance.
@@ -13614,7 +13670,11 @@
                         // reaction ring depth is the shared skill lag shifted by the role's delta (≥1).
                         const base = skillToProfile(slotKey === 'leftBack' ? DOUBLES_AI.teammateSkill : getAISkill());
                         const prof = { ...base, ...DOUBLES_AI[roleKey],
-                            reactionFrames: Math.max(1, base.reactionFrames + DOUBLES_AI[roleKey].reactionDelta) };
+                            reactionFrames: Math.max(1, base.reactionFrames + DOUBLES_AI[roleKey].reactionDelta),
+                            // slotSalt de-correlates the parry timing-bucket hash per slot (see decideAI's
+                            // PARRY_BUCKETS) so the two backs don't whiff/land on the same balls in lockstep.
+                            // Reuses the same slotSalt map the (unused) per-frame RNG seed already keyed off.
+                            slotSalt: DOUBLES_AI.slotSalt[slotKey] };
                         updateSlotThreatSight(st, slotKey);            // side-derived incoming sight tick
                         st.views.push(buildAIViewForSlot(slotKey));
                         while (st.views.length > prof.reactionFrames + 1) st.views.shift();
@@ -13640,7 +13700,10 @@
                 for (const k in aiThreatSight) { if (!_incoming.has(+k)) delete aiThreatSight[k]; }
 
                 const leftInput  = buildPlayerInput();
-                const aiProfile  = skillToProfile(getAISkill());
+                // slotSalt: 0 for the singles right-AI (only one slot; no de-correlation needed —
+                // see doubles' DOUBLES_AI.slotSalt for the multi-slot case). Feeds decideAI's parry
+                // timing-bucket hash; a stable 0 here reproduces the single-slot bucket assignment.
+                const aiProfile  = { ...skillToProfile(getAISkill()), slotSalt: 0 };
                 // Reaction delay: the AI decides on the world it saw `reactionFrames` ago.
                 aiViewHistory.push(buildAISingleView());
                 const lag = (aiProfile.reactionFrames | 0);
@@ -18420,6 +18483,21 @@
         // Re-pin chain: 549f5f05 -> e6fdfae9, parry fix 2026-07-13: decideAI gates the parry press
         // on time-to-impact (tti < 0.35s), so the synthetic oracle exercises the new branch and the
         // fold legitimately moves.
+        //   STALE-CANDIDATE NOTE — AI parry humanization 2026-07-13 (owner's early/perfect/late
+        //   timing-bucket design, ai-parry-buckets branch): decideAI's parry gate now hashes each
+        //   threat's id (+ profile.slotSalt) into a stable {PERFECT, EARLY, LATE} bucket (see
+        //   decideAI's PARRY_BUCKETS). decideAI's SOURCE changed, so this still needs the owner's
+        //   in-browser re-pin ceremony per house rule — BUT Node-extraction (verified ×2,
+        //   reproducible) found the fold does NOT move: still "e6fdfae9". Reason: in THIS synthetic
+        //   oracle, the parry branch was already golden-dead pre-bucket — id=2 (frostbolt) is doubly
+        //   dead (it hashes to the LATE = null never-press bucket at salt 0, AND its sightFrames
+        //   cycles seed%7 (max 6) against parrySight=9 at skill=0.45, never clearing the gate);
+        //   id=1's (fireball) tti is pinned at a fixed 0.5s (paddleX=7, x=3.0, velX=8), which lands
+        //   in NEITHER the old (0,0.35) window NOR its new
+        //   bucket-1/EARLY window [0.60,0.90). Confirmed via direct decideAI probes (not just the
+        //   fold) that result.parry is false on every one of the 50 steps, both before and after
+        //   this change — preserve e6fdfae9 in the chain; owner re-pin is a formality here, not
+        //   expected to move the number.
         //  (prior re-pin 2026-07-06 #2:
         // BEAM-BLOCK — a channeling opponent outranks all movement targets; the synthetic view
         // now cycles opp.juiceActive (seed%4==0) to cover the branch. Prior: 398443e4:
@@ -18510,6 +18588,20 @@
             // golden documents above. Verified reproducible ×2 and seed-sensitive (Node-extracted).
             // Profiles built lazily at CALL time (like the singles oracle) so window.skillToProfile is
             // guaranteed assigned. skillToProfile(0.45) is the fixed oracle skill; castK/role layer on top.
+            //   STALE-CANDIDATE NOTE — AI parry humanization 2026-07-13 (ai-parry-buckets branch,
+            //   same change as the singles golden above): _dblProfiles' front/back profiles carry no
+            //   `slotSalt`, so decideAI's `profile.slotSalt || 0` default makes BOTH roles hash id=1
+            //   -> bucket EARLY and id=2 -> bucket LATE here (the oracle does not thread the live
+            //   driver's DOUBLES_AI.slotSalt — only mkInput in runSinglePlayerFrame does). Node-
+            //   extraction (verified ×2) found the fold does NOT move: still "86dc6cb5", for the same
+            //   reason as the singles oracle — id=2 is doubly dead (LATE = null never-press bucket,
+            //   AND its sightFrames (seed%7, max 6) never clears parrySight=9), and id=1's tti is
+            //   pinned at a fixed value outside its EARLY window [0.60,0.90) for both front and back
+            //   profiles across all 50 steps. Preserve 86dc6cb5 in the
+            //   chain; owner re-pin is a formality (decideAI's source changed) but not expected to
+            //   move the number. The LIVE driver still gets real per-slot bucket divergence via
+            //   DOUBLES_AI.slotSalt (right=0, leftBack=0x5EED1, rightBack=0x5EED2) — this oracle
+            //   just doesn't exercise that axis.
             function _dblProfiles() {
                 const base = window.skillToProfile(0.45);
                 return {

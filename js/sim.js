@@ -50,6 +50,16 @@
 //   dbg.determinismDoubles(180, 12345) -> ba675e78
 //   dbg.determinismDoubles(180, 99999) -> 87632a94
 //   dbg.aiDeterminismDoubles(50, 42)   -> 86dc6cb5
+//   HEADER-ONLY NOTE (ai-parry-buckets branch, 2026-07-13, header-only edit — this file's
+//   sim code is untouched, decideAI lives in index.html): decideAI's parry gate now hashes
+//   each threat's id + profile.slotSalt into a stable early/perfect/late timing bucket
+//   (owner's "33% chance he'll do it right" thirds design). dbg.determinismDoubles/
+//   determinism (STATE folds, both lines above) are UNAFFECTED — they script inputs
+//   directly, decideAI is not in their path. dbg.aiDeterminismDoubles is Node-verified to
+//   NOT move (still 86dc6cb5): the synthetic oracle's fixed tti values + sightFrames gate
+//   already kept the parry branch golden-dead pre-bucket (see index.html's oracle comment
+//   for the full trace). Preserve 86dc6cb5 in the chain; owner still re-confirms in-browser
+//   per house rule since decideAI's source changed, but no fold movement is expected.
 // ============================================================================
 //
 // (6c6801a3 -> STALE, parry fix 2026-07-13 (OWNER RE-PINS): FIRST deliberate golden-moving
