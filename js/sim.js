@@ -447,7 +447,13 @@
 
                         const hitAbility = ctx.deps.getAbilityDef(proj.type);
                         if (hitAbility && hitAbility.behavior.onPaddleHit) {
-                            if (hitAbility.behavior.onPaddleHit(proj, 'left', ctx)) { toDestroy.push(proj); }
+                            // railKey (additive 4th arg): the SLOT whose arc actually blocked —
+                            // 'leftBack' when the back rail was hit, else 'left' (=== the side arg for
+                            // fronts, so front hits pass byte-identical arguments; golden-safe). Lets
+                            // presentation route FX (shield hit-flash) to the correct barrier; the
+                            // side arg stays because behavior reflection/state math is team-keyed.
+                            const railKey = c.position === 'back' ? 'leftBack' : 'left';
+                            if (hitAbility.behavior.onPaddleHit(proj, 'left', ctx, railKey)) { toDestroy.push(proj); }
                         }
                         break;
                     }
@@ -484,7 +490,10 @@
 
                         const hitAbility = ctx.deps.getAbilityDef(proj.type);
                         if (hitAbility && hitAbility.behavior.onPaddleHit) {
-                            if (hitAbility.behavior.onPaddleHit(proj, 'right', ctx)) { toDestroy.push(proj); }
+                            // railKey: mirror of the left rail's — 'rightBack' when the back rail was
+                            // hit, else 'right' (=== side for fronts; golden-safe, presentation-only).
+                            const railKey = c.position === 'back' ? 'rightBack' : 'right';
+                            if (hitAbility.behavior.onPaddleHit(proj, 'right', ctx, railKey)) { toDestroy.push(proj); }
                         }
                         break;
                     }

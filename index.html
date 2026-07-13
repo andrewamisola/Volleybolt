@@ -649,7 +649,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=39-doubles-collision-parry"></script>
+    <script type="module" src="js/sim.js?v=39b-back-rail-bounce"></script>
 
     <script>
         // Build identifier for bug reports (audit #6). Date-based: bump on every player-facing
@@ -2139,19 +2139,29 @@
                         combatant.pendingManaCost = a.manaCost;
                         if (!ctx.isResimulating) ctx.deps.castingStart();
                     },
-                    onPaddleHit(proj, side, ctx) {
-                        const c = ctx.combatants[side];
-                        const px = c.paddleX, pz = c.paddleZ;
+                    // railKey (optional 4th arg, Task 6 review fix): the SLOT whose arc actually
+                    // blocked ('leftBack'/'rightBack' for a back rail; === side for fronts, so
+                    // pre-doubles calls are byte-identical). The BOUNCE GEOMETRY (band-face
+                    // reposition, return angle, paddle momentum, sound pan) is keyed off the
+                    // `blocker` — the wizard whose arc was actually hit — while TEAM-scoped state
+                    // (parry-state clear, ownership, block-mana to the front carrier, cast
+                    // pushback via the side-keyed legacy dep) stays on `c`, the team front.
+                    onPaddleHit(proj, side, ctx, railKey) {
+                        const c = ctx.combatants[side];                              // team front carrier
+                        const blocker = ctx.combatants[railKey || side] || c;        // geometric blocker (=== c for fronts)
+                        const px = blocker.paddleX, pz = blocker.paddleZ;
                         const projRadius = proj.hitboxRadius || 0.25;
                         const paddleHalfDepth = 1.25;   // hitOffset divisor (SP value)
                         // Rest the ball's edge against the VISIBLE line's FIELD-FACING FACE (a straight
                         // plane at x = paddleX + dir·(FWD+R), matching the drawn band), NOT back at the
                         // player. Its Z is unchanged (it stays where it hit along the line); origZ drives
-                        // the return angle below.
+                        // the return angle below. Doubles: px is the BLOCKER's rail (both rails share
+                        // BLOCK_ARC), so a back-rail block rests the ball on the BACK band's face
+                        // (x ≈ ∓11.5 side) instead of teleporting it forward to the front's (∓8 side).
                         const arc = ctx.consts.arc;
                         const dir = side === 'left' ? 1 : -1;
                         const origZ = proj.z;
-                        const bandX = px + dir * (arc.FWD + arc.R);      // band centre X (== visual shieldX)
+                        const bandX = px + dir * (arc.FWD + arc.R);      // band centre X (== visual shieldX, blocker's rail)
                         proj.x = bandX + dir * (arc.BAND_W * 0.5 + projRadius);   // sit on the field-facing face
                         // Returning a ball the OPPONENT parried clears its parry state (SP resetProjParryState):
                         // left clears 'ai'-parried, right clears 'player'-parried.
@@ -2171,8 +2181,9 @@
                         proj.velX = tierSpeed * Math.cos(angleStrength) * inboundDir;
                         proj.velZ = tierSpeed * Math.sin(angleStrength) * Math.sign(hitOffset || 1);
                         // Paddle momentum: lateral paddle motion adds to ball Z velocity (SP momentumFactor 0.4).
+                        // Reads the BLOCKER's motion — it's the paddle that physically met the ball.
                         const dt = ctx.dt;
-                        const paddleVelZ = (c.paddleZ - c.prevPaddleZ) / dt;
+                        const paddleVelZ = (blocker.paddleZ - blocker.prevPaddleZ) / dt;
                         proj.velZ += paddleVelZ * 0.4;
                         proj.owner = side === 'left' ? 'player' : 'ai';
                         ctx.deps.updateFireballScale(proj);
@@ -2180,7 +2191,10 @@
                         if (c) c.mana = Math.min(ctx.deps.getMaxMana(side === 'left' ? 'left' : 'right'), c.mana + 0.5);
                         // A hit during a cast pushes the cast back (SP applyCastPushback).
                         if (c.casting !== null) ctx.deps.applyCastPushback(c);
-                        if (!ctx.isResimulating) { ctx.deps.playSound('block', px, 0.6); ctx.deps.onShieldBlock(side); }
+                        // Hit-flash routes by railKey so a BACK-rail block flashes the back barrier
+                        // (flashShieldOnBlock's barrierForSide handles all four keys); `|| side`
+                        // keeps legacy 3-arg callers (tests/oracles) working unchanged.
+                        if (!ctx.isResimulating) { ctx.deps.playSound('block', px, 0.6); ctx.deps.onShieldBlock(railKey || side); }
                         return false; // bounced, not consumed
                     },
                     onGateHit(proj, side, ctx) { return { damage: Math.min(2 + proj.volleyCount, 6) }; },
@@ -2216,9 +2230,17 @@
                         // bursting); deliberately NOT gated by isResimulating.
                         if (window.addJuice) window.addJuice(combatant, window.JUICE.CHARGE.cast);
                     },
-                    onPaddleHit(proj, side, ctx) {
-                        // side is the paddle being hit: 'left' or 'right'
-                        const c = ctx.combatants[side];
+                    // railKey (optional 4th arg, Task 6 review fix): the SLOT whose arc actually
+                    // blocked ('leftBack'/'rightBack' for a back rail; === side for fronts). The
+                    // freeze is PER-WIZARD — it must land on the wizard the frostbolt actually hit
+                    // (spec: "frostbolt freezes only the wizard it hits"), not the team front.
+                    onPaddleHit(proj, side, ctx, railKey) {
+                        // `c` = the BLOCKER. Parry/rail keys map 1:1 onto ctx.combatants keys; for
+                        // fronts railKey === side, so ctx.combatants[railKey || side] resolves the
+                        // exact same object as the old ctx.combatants[side] — identical ops,
+                        // golden-safe. (Trailing || ctx.combatants[side] = belt-and-braces for any
+                        // legacy 3-arg caller.)
+                        const c = ctx.combatants[railKey || side] || ctx.combatants[side];
                         c.freezeTime = ctx.abilities.frostbolt.freezeDuration;
                         // Frostbolt landing during the WINDUP (before the beam erupts) cancels the channel entirely.
                         // After eruption, the freeze lands but only PINS the beam's aim — the frozen paddle can't
@@ -2226,14 +2248,20 @@
                         // (Boundary note: tickOverdrive drains the timer BEFORE this projectile-loop code runs, so
                         // a frostbolt arriving on the exact eruption frame is judged post-drain = beaming ->
                         // freeze lands, channel continues. Deterministic, one frame, same on both peers.)
+                        // Doubles note: this check is freeze-ADJACENT (the cancel is caused by the
+                        // channeler being frozen), so it correctly follows the blocker — team juice
+                        // lives on the FRONT carrier, so a frozen BACK never cancels the channel
+                        // (backs always have juiceActive false).
                         if (c.juiceActive && (OVERDRIVE.DURATION - c.juiceTimer) < OVERDRIVE.WINDUP) {
                             c.juiceActive = false; c.juiceTimer = 0; c.juice = 0; c.juiceRamp = 0;
                             if (ctx.deps && !ctx.isResimulating && ctx.deps.onJuiceEnd) ctx.deps.onJuiceEnd(c);
                         }
                         if (!ctx.isResimulating) {
-                            const px = c.paddleX;
+                            const px = c.paddleX;   // frozen-wizard position (sound pan + text anchor)
                             ctx.deps.playSound('frozen', px, 0.7);
-                            ctx.deps.showFrozenText(!!(c && c.isLocalPlayer));
+                            // 2nd arg (the frozen combatant) lets the dep anchor "Frozen!" at a BACK
+                            // wizard's paddle; front calls take the legacy front-paddle path unchanged.
+                            ctx.deps.showFrozenText(!!(c && c.isLocalPlayer), c);
                         }
                         return true; // consumed (destroy)
                     },
@@ -2480,8 +2508,11 @@
             try {
                 if (window.barrierMaterials && window.barrierMaterials.ai)
                     window.barrierMaterials.ai.emissiveColor = new BABYLON.Color3(TR.r, TR.g, TR.b);
-                const ab = window.aiBlockBarrier;   // ground shield line
-                if (ab && ab.base) { ab.base.set(TR.r, TR.g, TR.b); if (ab.mat && ab.mat.emissiveColor) ab.mat.emissiveColor.copyFrom(ab.base); }
+                // Doubles (Task 6): also recolor the AI back-row shield, if it exists yet (null-safe —
+                // undefined in singles / before the first doubles match).
+                for (const ab of [window.aiBlockBarrier, window.aiBackBlockBarrier]) {
+                    if (ab && ab.base) { ab.base.set(TR.r, TR.g, TR.b); if (ab.mat && ab.mat.emissiveColor) ab.mat.emissiveColor.copyFrom(ab.base); }
+                }
             } catch (e) {}
         };
         // Apply saved prefs on boot. Reduce-motion defaults to the OS preference when the user hasn't chosen.
@@ -8886,6 +8917,11 @@
                 const playerBarrier = makeBarrier("playerBlockBarrier", playerPaddle, true);
                 const aiBarrier     = makeBarrier("aiBlockBarrier",     aiPaddle,     false);
                 const barriers = [playerBarrier, aiBarrier];
+                // Doubles (M1 Task 6): back-row shields, created lazily (the back paddle meshes
+                // don't exist at scene init — see ensureDoublesPaddles) by window.addDoublesBarriers,
+                // called from startDoublesMatch(). `let` (not `const`) so flashShieldOnBlock/OnParry
+                // below can read whichever value is live — null until the first doubles match.
+                let playerBackBarrier = null, aiBackBarrier = null;
 
                 // Per-frame: the FLOOR LINE plane tracks the paddle's Z with ZERO lag (this is the fix for
                 // "blocks unreliable while moving" — the line now sits exactly on the collision every frame);
@@ -8903,6 +8939,15 @@
                                                // not a solid sticker), while staying visible above the fog. No pulsing.
                     const FLASH_MS = 170;
                     barriers.forEach(B => {
+                        // Back-row shields only track/show while a doubles match is actually live —
+                        // otherwise a singles match played AFTER a doubles match would still show the
+                        // (disabled but still-positioned) back paddles' shields (Task 6).
+                        if (B.isBack && teamSize !== 2) {
+                            B.pad.isVisible = false;
+                            if (B.floor) B.floor.isVisible = false;
+                            if (B.ghosts) B.ghosts.forEach(G => { if (G.mesh.isVisible) G.mesh.isVisible = false; });
+                            return;
+                        }
                         const z = B.paddle.position.z + BLOCK_ARC.LINE_LIFT;   // lifted to centre on the wizard's body
                         // Recompute X live too (the working blob tracks x+z every frame). If the paddle's X
                         // isn't final when the barrier is first built, tracking it here keeps the line on the
@@ -8960,19 +9005,51 @@
                     });
                 });
 
+                // side -> barrier. Accepts 'left'/'player'/'right'/'ai' (front, unchanged) plus the
+                // doubles back-slot keys 'leftBack'/'rightBack' (Task 6) — this is what the sim's
+                // per-wizard parry (D.onParryActivated(combatant, key), key='leftBack'/'rightBack';
+                // see js/sim.js tryActivatePvPParry) actually passes through, so without this mapping
+                // a back-wizard parry would misroute to the FRONT shield's chromatic-shake FX.
+                // Block hit-flash arrives per-rail too: js/sim.js's rail-collision loop passes an
+                // additive railKey 4th arg to behavior.onPaddleHit ('leftBack'/'rightBack' when the
+                // back rail's arc was hit; === side for fronts), and fireball's onPaddleHit forwards
+                // it into D.onShieldBlock — so a back-rail block flashes the BACK barrier here.
+                const barrierForSide = (side) => {
+                    if (side === 'leftBack')  return playerBackBarrier;
+                    if (side === 'rightBack') return aiBackBarrier;
+                    return (side === 'left' || side === 'player') ? playerBarrier : aiBarrier;
+                };
                 // Trigger the shield hit-flash (accepts 'left'/'player' or 'right'/'ai').
                 window.flashShieldOnBlock = (side) => {
-                    const B = (side === 'left' || side === 'player') ? playerBarrier : aiBarrier;
+                    const B = barrierForSide(side);
                     if (B) B.flashUntil = performance.now() + 170;
                 };
                 // Parry tell: fire the shield-local RGB chromatic shake on just that side's shield.
                 window.flashShieldOnParry = (side) => {
-                    const B = (side === 'left' || side === 'player') ? playerBarrier : aiBarrier;
+                    const B = barrierForSide(side);
                     if (B) B.parryFlashUntil = performance.now() + 200;
                 };
 
                 window.playerBlockBarrier = playerBarrier;
                 window.aiBlockBarrier     = aiBarrier;
+
+                // Doubles (M1 Task 6): create the two back-row shields once the back paddle meshes
+                // exist (ensureDoublesPaddles runs first in startDoublesMatch) and splice them into
+                // the SAME per-frame `barriers` array the fronts use — the `inGame` check above hides
+                // them in menus automatically, and the `B.isBack && teamSize !== 2` guard hides them
+                // in a later singles match. Idempotent: a no-op after the first call.
+                window.addDoublesBarriers = () => {
+                    if (playerBackBarrier) return;
+                    playerBackBarrier = makeBarrier("playerBackBlockBarrier", playerBackPaddle, true);
+                    playerBackBarrier.combatantKey = 'leftBack';
+                    playerBackBarrier.isBack = true;
+                    aiBackBarrier = makeBarrier("aiBackBlockBarrier", aiBackPaddle, false);
+                    aiBackBarrier.combatantKey = 'rightBack';
+                    aiBackBarrier.isBack = true;
+                    barriers.push(playerBackBarrier, aiBackBarrier);
+                    window.playerBackBlockBarrier = playerBackBarrier;
+                    window.aiBackBlockBarrier     = aiBackBarrier;
+                };
             })();
 
             // Initialize combatant system and assign paddles
@@ -9411,6 +9488,13 @@
             // Track which animations we've warned about (to avoid spam)
             const warnedMissingAnims = new Set();
 
+            // Doubles (M1 Task 6): combatant.side is the TEAM ('left'/'right') — front and back share
+            // it, so any dedup/log-suppression keyed on just .side would have the back wizard's first
+            // anim/log silently swallow the front's (or vice versa). combatant.position ('front'/
+            // 'back'/'solo') disambiguates the slot; used by playAnim's lastPlayedAnim and
+            // updateCombatantAnimation's lastLoggedState below.
+            const animSlotKey = (c) => c.side + (c.position === 'back' ? 'B' : '');
+
             /**
              * Play an animation on a combatant - dead simple
              * @param {Object} combatant - The combatant (combatants.left or combatants.right)
@@ -9423,11 +9507,12 @@
 
                 const name = animName.toLowerCase();
                 const anim = combatant.animations[name];
+                const slotKey = animSlotKey(combatant);
 
                 if (!anim) {
-                    const key = `${combatant.side}_${name}`;
+                    const key = `${slotKey}_${name}`;
                     if (!warnedMissingAnims.has(key)) {
-                        console.warn(`Animation '${name}' not found for ${combatant.side}. Available:`, Object.keys(combatant.animations));
+                        console.warn(`Animation '${name}' not found for ${slotKey}. Available:`, Object.keys(combatant.animations));
                         warnedMissingAnims.add(key);
                     }
                     return;
@@ -9437,9 +9522,9 @@
                 if (combatant.currentAnim === name && anim.isPlaying) return;
 
                 // Log animation changes
-                if (lastPlayedAnim[combatant.side] !== name) {
-                    console.log(`[PLAY ${combatant.side}] Playing '${name}' (actual: ${anim.name})`);
-                    lastPlayedAnim[combatant.side] = name;
+                if (lastPlayedAnim[slotKey] !== name) {
+                    console.log(`[PLAY ${slotKey}] Playing '${name}' (actual: ${anim.name})`);
+                    lastPlayedAnim[slotKey] = name;
                 }
 
                 // Stop current animation
@@ -9474,10 +9559,11 @@
                 if (!combatant || !combatant.modelLoaded) return;
 
                 // Debug: log state changes
-                const stateKey = `${combatant.side}_${combatant.roundResult}_${combatant.moveDir}_${combatant.casting}`;
-                if (lastLoggedState[combatant.side] !== stateKey) {
-                    console.log(`[ANIM ${combatant.side}] roundResult=${combatant.roundResult}, moveDir=${combatant.moveDir}, casting=${combatant.casting}, currentAnim=${combatant.currentAnim}`);
-                    lastLoggedState[combatant.side] = stateKey;
+                const slotKey = animSlotKey(combatant);
+                const stateKey = `${slotKey}_${combatant.roundResult}_${combatant.moveDir}_${combatant.casting}`;
+                if (lastLoggedState[slotKey] !== stateKey) {
+                    console.log(`[ANIM ${slotKey}] roundResult=${combatant.roundResult}, moveDir=${combatant.moveDir}, casting=${combatant.casting}, currentAnim=${combatant.currentAnim}`);
+                    lastLoggedState[slotKey] = stateKey;
                 }
 
                 // Priority order (first match wins):
@@ -9530,8 +9616,11 @@
              * Update animations for all combatants - call from render loop
              */
             function updateAllAnimations() {
-                updateCombatantAnimation(combatants.left);
-                updateCombatantAnimation(combatants.right);
+                // Doubles (M1 Task 6): widened to all four slots — getAllCombatants() filters out the
+                // null back slots outside doubles, so this is byte-identical to the old two-call body
+                // in singles/pre-doubles. Backs are real sim combatants (Tasks 2-3) with real anim
+                // state, so they drive through the exact same state machine as the fronts.
+                for (const c of getAllCombatants()) updateCombatantAnimation(c);
             }
             window.updateAllAnimations = updateAllAnimations;
 
@@ -10647,11 +10736,22 @@
             // Loads the single rigged pickle GLB for both players at the same paddle transform
             // as the current characters. Reversible: set CHARACTER_MODE back to 'merged_glb'.
             const loadPickleWizard = () => {
+                // side is a SLOT key: 'left'/'right' (front, unchanged) or 'leftBack'/'rightBack'
+                // (Task 6 doubles backs). isPlayer = team (left side); isBack = back-row slot.
+                // For FRONT slots `target` IS the live combatants[side] object (mutated in place,
+                // exactly like before doubles existed). For BACK slots `target` is a throwaway local
+                // bag — back combatants are recreated fresh every startDoublesMatch() (Task 4) while
+                // these models load ONCE, so writing straight onto combatants[side] here would risk
+                // landing on an object nothing reads anymore if a match restarts mid-load. Instead the
+                // finished bag is cached (module-scope backModelCache) and attachBackModelCache()
+                // copies it onto whichever back combatant object is live AT THAT MOMENT — used both
+                // right here (first load) and by startDoublesMatch on every later match (cache hit).
                 const loadOne = (side, paddle, facingRotation, onComplete) => {
-                    const isPlayer = side === 'left';
-                    const prefix = isPlayer ? 'player' : 'ai';
-                    const combatant = isPlayer ? combatants.left : combatants.right;
-                    const animStore = isPlayer ? playerAnimations : aiAnimations;
+                    const isPlayer = side.startsWith('left');
+                    const isBack = side.endsWith('Back');
+                    const prefix = (isPlayer ? 'player' : 'ai') + (isBack ? 'Back' : '');
+                    const target = isBack ? { animations: {} } : combatants[side];
+                    const animStore = isBack ? null : (isPlayer ? playerAnimations : aiAnimations);
                     // Native pickle animation clips, generated on the pickle's OWN rig via
                     // Higgsfield 3d_rigging (so proportions stay correct, unlike retargeting the
                     // humanoid wizard clips). All clips share the same 24-bone rig from the same
@@ -10680,9 +10780,35 @@
                                 m.renderingGroupId = 1;  // Characters above bushes (group 0); fog/cast bars also group 1 (depth-tested)
                                 shadowGenerator.addShadowCaster(m);
                                 if (!m.material) return;
-                                // Tint the AI pickle red so the two sides read apart
-                                if (!isPlayer) {
-                                    const t = m.material.clone(`${m.material.name}_aiTint`);
+                                if (isBack) {
+                                    // Back-row tint (Task 6): a clone distinct from the front's, so
+                                    // all four wizards read apart. LEFT back = a dimmer, deeper blue
+                                    // shade-shift off the base pickle-green. RIGHT back = BAKED from
+                                    // window.TEAM_RIGHT at load time (colorblind-aware — the model has
+                                    // no live recolor hook, and initAccessibility() already applied the
+                                    // saved colorblind pref before any model load starts, so this reads
+                                    // the correct boot-time value; see explore-presentation.md §7).
+                                    const t = m.material.clone(`${m.material.name}_${prefix}Tint`);
+                                    m.material = t;
+                                    if (isPlayer) {
+                                        if (t.albedoColor) {
+                                            t.albedoColor = new BABYLON.Color3(
+                                                t.albedoColor.r * 0.85, t.albedoColor.g * 0.85, t.albedoColor.b * 0.8 + 0.1);
+                                        } else if (t.diffuseColor) {
+                                            t.diffuseColor = new BABYLON.Color3(
+                                                t.diffuseColor.r * 0.85, t.diffuseColor.g * 0.85, t.diffuseColor.b * 0.8 + 0.1);
+                                        }
+                                    } else {
+                                        const _TR = window.TEAM_RIGHT || { r: 1.0, g: 0.42, b: 0.33 };
+                                        if (t.albedoColor) {
+                                            t.albedoColor = new BABYLON.Color3(_TR.r * 0.85, _TR.g * 0.85, _TR.b * 0.85);
+                                        } else if (t.diffuseColor) {
+                                            t.diffuseColor = new BABYLON.Color3(_TR.r * 0.85, _TR.g * 0.85, _TR.b * 0.85);
+                                        }
+                                    }
+                                } else if (!isPlayer) {
+                                    // Tint the AI pickle red so the two sides read apart (front, unchanged).
+                                    const t = m.material.clone(`${m.material.name}_${prefix}Tint`);
                                     m.material = t;
                                     if (t.albedoColor) {
                                         t.albedoColor = new BABYLON.Color3(
@@ -10719,19 +10845,22 @@
                             modelRoot.rotation.y = facingRotation;
                             paddle.visibility = 0;
 
-                            combatant.modelRoot = modelRoot;
-                            combatant.skeleton = skeletons[0] || null;
-                            combatant.flashMeshes = meshes.filter(m => m.material);
-                            if (isPlayer) { playerModelRoot = modelRoot; playerFlashMeshes = combatant.flashMeshes; }
-                            else { aiModelRoot = modelRoot; aiFlashMeshes = combatant.flashMeshes; }
+                            target.modelRoot = modelRoot;
+                            target.skeleton = skeletons[0] || null;
+                            target.flashMeshes = meshes.filter(m => m.material);
+                            // Legacy front-only mirrors (never read for backs — see Task 6 notes).
+                            if (!isBack) {
+                                if (isPlayer) { playerModelRoot = modelRoot; playerFlashMeshes = target.flashMeshes; }
+                                else { aiModelRoot = modelRoot; aiFlashMeshes = target.flashMeshes; }
+                            }
 
                             // Idle ships inside the base GLB.
                             if (animationGroups.length > 0) {
                                 const idle = animationGroups[0];
                                 idle.name = `${prefix}_idle`;
                                 idle.stop();
-                                combatant.animations['idle'] = idle;
-                                animStore['idle'] = idle;
+                                target.animations['idle'] = idle;
+                                if (animStore) animStore['idle'] = idle;
                             }
 
                             // Map bone name -> its linked glTF TransformNode. The skinned mesh is
@@ -10739,7 +10868,7 @@
                             // MUST target the nodes; bone-bound clips get overridden and don't move
                             // the mesh (this caused "every action looks like defeat").
                             const nodeByName = {};
-                            (combatant.skeleton?.bones || []).forEach(b => {
+                            (target.skeleton?.bones || []).forEach(b => {
                                 const tn = b.getTransformNode && b.getTransformNode();
                                 if (tn) nodeByName[tn.name] = tn;
                             });
@@ -10750,25 +10879,31 @@
                             let ai = 0;
                             const loadNext = () => {
                                 if (ai >= otherAnims.length) {
-                                    const rel = combatant.animations['cast_release'];
+                                    const rel = target.animations['cast_release'];
                                     if (rel) {
                                         // Skip the wind-up "catch" (~first 22%) so the clip opens on
                                         // the forward push-off / spell release, not the gather.
                                         const skip = Math.round((rel.to - rel.from) * 0.22);
                                         rel.normalize(rel.from + skip, rel.to);
                                         rel.speedRatio = 2.2;   // snappy release
+                                        // Parry reuses the (distinct) release clip.
+                                        target.animations['parry'] = rel;
+                                        if (animStore) animStore['parry'] = rel;
                                     }
-                                    // Parry reuses the (distinct) release clip.
-                                    if (rel) {
-                                        combatant.animations['parry'] = rel;
-                                        animStore['parry'] = rel;
+                                    Object.values(target.animations).forEach(a => { if (a && a.stop) a.stop(); });
+                                    if (target.animations['idle']) {
+                                        target.animations['idle'].play(true);
+                                        target.currentAnim = 'idle';
                                     }
-                                    Object.values(combatant.animations).forEach(a => { if (a && a.stop) a.stop(); });
-                                    if (combatant.animations['idle']) {
-                                        combatant.animations['idle'].play(true);
-                                        combatant.currentAnim = 'idle';
+                                    console.log(`[pickle ${prefix}] anims:`, Object.keys(target.animations));
+                                    if (isBack) {
+                                        // Cache the finished bag + wire it onto whichever back
+                                        // combatant object is live right now (see the loadOne header
+                                        // comment — this same attach also runs on every LATER doubles
+                                        // match, straight from the cache, no re-load).
+                                        backModelCache[side] = target;
+                                        attachBackModelCache(side);
                                     }
-                                    console.log(`[pickle ${prefix}] anims:`, Object.keys(combatant.animations));
                                     onComplete();
                                     return;
                                 }
@@ -10790,8 +10925,8 @@
                                             });
                                             anim.name = `${prefix}_${action}`;
                                             anim.stop();
-                                            combatant.animations[action] = anim;
-                                            animStore[action] = anim;
+                                            target.animations[action] = anim;
+                                            if (animStore) animStore[action] = anim;
                                         }
                                         loadNext();
                                     },
@@ -10818,6 +10953,18 @@
                         combatants.right.modelLoaded = true; aiModelLoaded = true; checkAllLoaded();
                     });
                 });
+
+                // Doubles (M1 Task 6): lazy back-wizard load, extending the SAME serial chain (never
+                // run concurrently with the front chain above or with itself — concurrent
+                // ImportAnimations calls race on scene.animationGroups indexing, see the header
+                // comment). Invoked once by startDoublesMatch() via beginBackModels(); the two back
+                // paddle meshes must already exist (ensureDoublesPaddles() runs first there).
+                function loadBackWizards(onDone) {
+                    loadOne('leftBack', playerBackPaddle, Math.PI / 2, () => {
+                        loadOne('rightBack', aiBackPaddle, -Math.PI / 2, onDone);
+                    });
+                }
+                window.loadBackWizards = loadBackWizards;
             };
 
             // === LOAD CHARACTERS BASED ON MODE ===
@@ -13814,7 +13961,8 @@
                                     if (_T4c.orbLight)   _T4c.orbLight.setEnabled(false);
                                     if (_T4c.blobRoot)   _T4c.blobRoot.setEnabled(false);
                                     if (_T4c.pillarPool) for (let _pi = 0; _pi < _T4c.pillarPool.length; _pi++) { _T4c.pillarPool[_pi].age = -1; _T4c.pillarPool[_pi].mesh.setEnabled(false); }
-                                    // Clear blocker jitter
+                                    // Clear blocker jitter. FRONT-only by design (Task 6): the overdrive
+                                    // beam only ever interacts with the front rail's shield.
                                     const _bkB = sd.isLeft ? window.aiBlockBarrier : window.playerBlockBarrier;
                                     if (_bkB) { _bkB.beamJitX = 0; _bkB.beamJitZ = 0; }
                                     // Disable scatter stubs + clear blocker waver
@@ -14124,6 +14272,8 @@
                             //     SUPPRESSED during CLASH (_clashActive) — the clash orb IS the block visual.
                             //     The else branch below still runs to clear any leftover FX from before clash.
                             if (blocked && !_clashActive) {
+                                // FRONT-only by design (Task 6): the overdrive beam only ever interacts
+                                // with the front rail's shield.
                                 const _blocker = sd.isLeft ? window.aiBlockBarrier : window.playerBlockBarrier;
                                 if (_blocker) {
                                     if (!window._reduceMotion) {
@@ -14180,7 +14330,8 @@
                                 }
                                 T4.prevBlocked = true;
                             } else {
-                                // Clear jitter when not blocked this frame
+                                // Clear jitter when not blocked this frame. FRONT-only by design
+                                // (Task 6): the overdrive beam only ever interacts with the front rail.
                                 const _nbk = sd.isLeft ? window.aiBlockBarrier : window.playerBlockBarrier;
                                 if (_nbk) { _nbk.beamJitX = 0; _nbk.beamJitZ = 0; }
 
@@ -14498,7 +14649,8 @@
                             t.prevJuiceActive = false; t.prevWindingUp = true;
                             t.prevBlocked = false;
                         }
-                        // Blocker shield jitter cleared
+                        // Blocker shield jitter cleared. FRONT-only by design (Task 6): the overdrive
+                        // beam only ever interacts with the front rail's shield.
                         for (const bk of [window.playerBlockBarrier, window.aiBlockBarrier]) {
                             if (bk) { bk.beamJitX = 0; bk.beamJitZ = 0; }
                         }
@@ -14591,6 +14743,33 @@
                         aiTargetRotY = rightC.targetRotY;  // legacy sync
                     }
                 }
+                // Doubles (Task 6 review fix): back-row wizards lean/animate the same way as their
+                // side's front (same tilt sign — they share the front's facing). Runs AFTER the two
+                // front blocks so front behavior/order is untouched; null outside doubles. No legacy
+                // sync writes (playerTargetRotY/aiTargetRotY are front-only mirrors).
+                const leftBackC = combatants.leftBack, rightBackC = combatants.rightBack;
+                if (leftBackC) {
+                    const md = leftBackC.lastMoveDir || 0;
+                    if ((leftBackC.freezeTime || 0) > 0 || roundTransitioning) {
+                        leftBackC.moveDir = 0;
+                    } else {
+                        leftBackC.moveDir = md;
+                        if (md > 0)       leftBackC.targetRotY = leftBackC.baseRotY + 0.6;
+                        else if (md < 0)  leftBackC.targetRotY = leftBackC.baseRotY - 0.6;
+                        else              leftBackC.targetRotY = leftBackC.baseRotY;
+                    }
+                }
+                if (rightBackC) {
+                    const md = rightBackC.lastMoveDir || 0;
+                    if ((rightBackC.freezeTime || 0) > 0) {
+                        rightBackC.moveDir = 0;
+                    } else {
+                        rightBackC.moveDir = md;
+                        if (md > 0)       rightBackC.targetRotY = rightBackC.baseRotY - 0.6;
+                        else if (md < 0)  rightBackC.targetRotY = rightBackC.baseRotY + 0.6;
+                        else              rightBackC.targetRotY = rightBackC.baseRotY;
+                    }
+                }
 
                 // ---- 3. PLAYER FOOTSTEPS (old ~12336-12352) ----
                 if (leftC && (leftC.freezeTime || 0) <= 0 && !roundTransitioning) {
@@ -14621,6 +14800,14 @@
                 // on the frame the freeze expires — stateless across frames.
                 for (const c of getAllCombatants()) {
                     if (!c) continue;
+                    // FRONT-only (Task 6 review fix): only two ice meshes exist and they're keyed by
+                    // side — letting a frozen BACK reach this would enable the FRONT's ice block on
+                    // the wrong wizard, then the (unfrozen) front's else-branch would shatter+disable
+                    // it again NEXT frame → per-frame shatter spam. Back freezes still read clearly
+                    // via the "Frozen!" text (anchored at the back paddle), the fog clear-bubble
+                    // (already per-combatant below), and movement stopping. Per-back ice meshes are
+                    // a follow-up presentation nicety.
+                    if (c.position === 'back') continue;
                     const isPlayer = c.side === 'left';
                     const iceBlock    = isPlayer ? window.playerIceBlock    : window.aiIceBlock;
                     const iceLight    = isPlayer ? window.playerIceLight    : window.aiIceLight;
@@ -14725,7 +14912,10 @@
                 // Always update animations (menu dancing, etc.) - runs in all states
                 if (window.updateAllAnimations) updateAllAnimations();
                 // Scale the model up during casting so the cast crouch doesn't shrink the wizard.
-                if (window.applyCastScale) { applyCastScale(combatants.left); applyCastScale(combatants.right); }
+                // Doubles (Task 6 review fix): widened over getAllCombatants() — fixed order left,
+                // right, then backs (null backs filtered out), so singles is operation-identical to
+                // the old two explicit calls.
+                if (window.applyCastScale) { for (const c of getAllCombatants()) applyCastScale(c); }
 
                 // Skip game logic when in menu, game over, or paused (Esc pause menu)
                 if (gameState !== "playing" || gameOver || paused) return;
@@ -14767,6 +14957,16 @@
                 if (combatants.right && combatants.right.modelRoot) {
                     const lerpSpeed = 8 * renderDt;
                     combatants.right.modelRoot.rotation.y += (combatants.right.targetRotY - combatants.right.modelRoot.rotation.y) * lerpSpeed;
+                }
+                // Doubles (Task 6 review fix): same lerp for the back models; slots are null (and
+                // modelRoot unset until the lazy load lands) outside doubles — fronts first, unchanged.
+                if (combatants.leftBack && combatants.leftBack.modelRoot) {
+                    const lerpSpeed = 8 * renderDt;
+                    combatants.leftBack.modelRoot.rotation.y += (combatants.leftBack.targetRotY - combatants.leftBack.modelRoot.rotation.y) * lerpSpeed;
+                }
+                if (combatants.rightBack && combatants.rightBack.modelRoot) {
+                    const lerpSpeed = 8 * renderDt;
+                    combatants.rightBack.modelRoot.rotation.y += (combatants.rightBack.targetRotY - combatants.rightBack.modelRoot.rotation.y) * lerpSpeed;
                 }
 
                 // Persistent team-color silhouette outline (blue=left, red=right) — kept on always
@@ -14819,7 +15019,7 @@
                 uniform float fogOpacity;
                 uniform float fogCuts[600];  // x, z, strength (trail cuts)
                 uniform int cutCount;
-                uniform float projLights[48];  // x, z, intensity, type (up to 12 projectiles)
+                uniform float projLights[56];  // x, z, intensity, type (up to 14 lights — Task 6: 4 shields in doubles)
                 uniform int lightCount;
                 uniform float planeWidth;
                 uniform float planeHeight;
@@ -14892,7 +15092,7 @@
 
                     // Volumetric lighting from projectiles
                     vec3 lightAccum = vec3(0.0);
-                    for (int i = 0; i < 12; i++) {
+                    for (int i = 0; i < 14; i++) {
                         if (i >= lightCount) break;
                         int idx = i * 4;
                         vec2 lightPos = vec2(projLights[idx], projLights[idx + 1]);
@@ -15053,11 +15253,11 @@
                 fogMaterial.setInt("cutCount", count);
                 fogMaterial.setFloats("fogCuts", cutArray);
 
-                // Pass projectile + shield positions for volumetric fog lighting (12 lights max, 4 floats each).
+                // Pass projectile + shield positions for volumetric fog lighting (14 lights max, 4 floats each).
                 const lightArray = [];
                 let lightCount = 0;
                 const pushLight = (x, z, intensity, type) => {
-                    if (lightCount >= 12) return;
+                    if (lightCount >= 14) return;
                     lightArray.push(x, z, intensity, type);
                     lightCount++;
                 };
@@ -15066,15 +15266,21 @@
                     pushLight(proj.mesh.position.x, proj.mesh.position.z, 1.0, proj.type === 'frostbolt' ? 1.0 : 0.0);  // 0=fire 1=ice
                 }
                 // The shields are pure magic light: they glow into the fog in their team color,
-                // type 2 = blue (player), type 3 = red (AI). Only while visible (in a match).
-                const shieldLights = [[window.playerBlockBarrier, 2.0], [window.aiBlockBarrier, 3.0]];
+                // type 2 = blue (player), type 3 = red (AI). Only while visible (in a match). Task 6:
+                // the back-row shields (undefined in singles / before the first doubles match) share
+                // the same type as their front — null-safe, dropped by the loop below when absent.
+                const shieldLights = [
+                    [window.playerBlockBarrier, 2.0], [window.aiBlockBarrier, 3.0],
+                    [window.playerBackBlockBarrier, 2.0], [window.aiBackBlockBarrier, 3.0],
+                ];
                 for (const [B, type] of shieldLights) {
                     if (B && B.pad && B.pad.isVisible) pushLight(B.pad.position.x, B.pad.position.z, 0.7, type);
                 }
                 // Beam fog lights: 3 entries per live beam side, appended after projectiles+shields.
                 // type 1=ice for left/blue beam, 0=fire for right/red beam.
-                // Cap math: projectiles(≤4)+shields(2)+beams(≤6)=≤12 — fits exactly; over-cap
-                // entries are silently dropped by pushLight's lightCount>=12 guard (beams last).
+                // Cap math (Task 6, doubles): projectiles(≤4)+shields(≤4)+beams(≤6)=≤14 — fits
+                // exactly; over-cap entries are silently dropped by pushLight's lightCount>=14 guard
+                // (beams last). Singles/pre-doubles still only ever reaches ≤4+2+6=12, unchanged.
                 for (let _bsi = 0; _bsi < 2; _bsi++) {
                     const _bT4 = _bsi === 0 ? window._odT4_left : window._odT4_right;
                     if (!_bT4 || !_bT4.live) continue;
@@ -15084,7 +15290,7 @@
                     pushLight(_bT4.endX,    _bT4.beamZ, 4.5, _bFogType);
                 }
                 // Pad to full size
-                while (lightArray.length < 48) {
+                while (lightArray.length < 56) {
                     lightArray.push(0, 0, 0, 0);
                 }
                 fogMaterial.setInt("lightCount", lightCount);
@@ -16670,6 +16876,55 @@
         // -------------------------------------------------------
         // DOM Main Menu — replaces the Babylon GUI menu (title + buttons)
         // -------------------------------------------------------
+        // Doubles (M1 Task 6): back-wizard model cache + gate. Back combatants are recreated FRESH
+        // every startDoublesMatch() (Task 4's createCombatant() calls), but the GLB models/anims
+        // only need to load ONCE per session. backModelCache holds the finished load (populated by
+        // loadOne inside loadPickleWizard/loadBackWizards — see its header comment); every doubles
+        // match after the first re-attaches the cache onto that match's fresh combatant objects
+        // instead of re-fetching. backModelsState guards loadBackWizards from firing twice and lets
+        // a match start that arrives mid-load just wait for the in-flight one instead of racing it.
+        let backModelCache = { leftBack: null, rightBack: null };
+        let backModelsState = 'unloaded';   // 'unloaded' | 'loading' | 'loaded'
+        let _backModelsPending = [];        // onReady callbacks queued if a match starts mid-load
+
+        function attachBackModelCache(side) {
+            const artifacts = backModelCache[side];
+            const c = combatants[side];
+            if (!artifacts || !c) return;
+            c.modelRoot   = artifacts.modelRoot;
+            c.skeleton    = artifacts.skeleton;
+            c.flashMeshes = artifacts.flashMeshes;
+            c.animations  = artifacts.animations;
+            c.modelLoaded = true;
+            const idle = artifacts.animations && artifacts.animations['idle'];
+            if (idle) {
+                Object.values(c.animations).forEach(a => { if (a && a.stop) a.stop(); });
+                idle.play(true);
+                c.currentAnim = 'idle';
+            }
+        }
+
+        // Ensure the back-wizard models are ready, then call onReady(). First call kicks off the
+        // lazy serial load (window.loadBackWizards, exposed by loadPickleWizard); every later call
+        // just re-attaches the cache (see attachBackModelCache) and returns — no spinner needed,
+        // the "brief delay" only happens once per session, on the first doubles match.
+        function beginBackModels(onReady) {
+            if (backModelsState === 'loaded') {
+                attachBackModelCache('leftBack');
+                attachBackModelCache('rightBack');
+                onReady();
+                return;
+            }
+            if (backModelsState === 'loading') { _backModelsPending.push(onReady); return; }
+            backModelsState = 'loading';
+            if (!window.loadBackWizards) { backModelsState = 'loaded'; onReady(); return; }  // defensive: loader missing, don't hang the match
+            window.loadBackWizards(() => {
+                backModelsState = 'loaded';
+                onReady();
+                _backModelsPending.splice(0).forEach(cb => cb());
+            });
+        }
+
         // Doubles (M1): create/enable the back-row paddle meshes and advance the front paddles
         // toward midfield. Lazy + idempotent — the meshes are built once and reused/repositioned
         // on every subsequent doubles match start. Lives at top level (like startSinglesMatch/
@@ -16733,17 +16988,17 @@
         //
         // Deliberately does NOT call initCombatants() to recreate the FRONT combatants (even
         // though initCombatants() already contains teamSize-aware backs logic from Task 1).
-        // Evidence: loadPickleWizard's loadOne() does
-        //     const combatant = isPlayer ? combatants.left : combatants.right;
-        // ONCE, when initCombatants() is called at scene init (initGame, single call site) — that
-        // closure variable is a REFERENCE to the combatant object live at that moment, and
-        // subsequent model-load callbacks assign modelRoot/skeleton/animations onto THAT captured
-        // object (combatant.modelRoot = modelRoot; etc.), not onto whatever combatants.left
-        // currently points to. If we called initCombatants() again here, it would reassign
-        // combatants.left/right to brand-new objects — orphaning the already-loaded model from the
-        // object the render/animation loop actually reads via combatants.left, breaking the
-        // player/AI wizard models and animations for the rest of the session. So: fronts are left
-        // completely untouched; only the (model-less until Task 6) backs are created fresh here.
+        // Evidence: loadPickleWizard's loadOne() writes model/animation refs straight onto
+        // combatants[side] for the FRONT slots ('left'/'right'), captured ONCE when initCombatants()
+        // runs at scene init (initGame, single call site). If we called initCombatants() again here,
+        // it would reassign combatants.left/right to brand-new objects — orphaning the
+        // already-loaded model from the object the render/animation loop actually reads via
+        // combatants.left, breaking the player/AI wizard models and animations for the rest of the
+        // session. So: fronts are left completely untouched; only the backs are created fresh here.
+        // (Task 6: the BACK slots have exactly this same orphaning risk every match, since they ARE
+        // recreated here every time — solved by caching the loaded model/anim refs at module scope
+        // and re-attaching onto the fresh object each match; see beginBackModels/attachBackModelCache
+        // above and loadOne's header comment.)
         function startDoublesMatch() {
             setDOMModeSelectVisible(false);
             teamSize = 2;
@@ -16754,6 +17009,7 @@
             if (combatants.left)  combatants.left.towerHealth  = maxTowerHealth;
             if (combatants.right) combatants.right.towerHealth = maxTowerHealth;
             ensureDoublesPaddles();
+            if (window.addDoublesBarriers) window.addDoublesBarriers();   // idempotent — no-op after the first call
             combatants.leftBack  = createCombatant('left',  'back');
             combatants.rightBack = createCombatant('right', 'back');
             combatants.left.position  = 'front';
@@ -16762,12 +17018,22 @@
             combatants.rightBack.inputSource = 'ai';
             combatants.leftBack.paddle  = playerBackPaddle;
             combatants.rightBack.paddle = aiBackPaddle;
+            // Facing (Task 6 review fix): createCombatant defaults baseRotY/targetRotY to 0, and only
+            // the FRONTS get theirs set (initCombatants). Backs face the same way as their side's
+            // front. Set here — this block runs on EVERY doubles match start, before beginBackModels,
+            // so it covers both the first-load attach AND every cache re-attach path.
+            combatants.leftBack.baseRotY   = Math.PI / 2;    // face right, like combatants.left
+            combatants.leftBack.targetRotY = Math.PI / 2;
+            combatants.rightBack.baseRotY   = -Math.PI / 2;  // face left, like combatants.right
+            combatants.rightBack.targetRotY = -Math.PI / 2;
             for (const c of getAllCombatants()) {
                 c.paddleX = c.paddle.position.x; c.paddleZ = c.paddle.position.z; c.prevPaddleZ = c.paddle.position.z;
             }
             if (window.resizeStageForMode) window.resizeStageForMode();
             if (window.resetAISlotState) window.resetAISlotState();   // clear per-slot lag rings + threat-sight
-            startGame();
+            // Gate the actual match start on the back-wizard models being ready (lazy-loaded on the
+            // first doubles match; every later match re-attaches the cache — see beginBackModels).
+            beginBackModels(() => startGame());
         }
         window.startDoublesMatch = startDoublesMatch;
 
@@ -18946,7 +19212,17 @@
             endRound: (winner) => endRound(winner),
             // --- presentation effects (gated by !isResimulating at call sites) ---
             playSound: (name, x, vol, pitch) => playSound(name, x, vol, pitch),
-            showFrozenText: (isLocal) => showFrozenText(isLocal),
+            // Optional 2nd arg (Task 6 review fix): the frozen combatant. showFrozenText(isLocal)
+            // anchors at the team's FRONT paddle, which mislabels a BACK freeze — when the frozen
+            // wizard is a back, drop the text at ITS paddle instead. Front/legacy calls (no c, or a
+            // front c) take the original path unchanged.
+            showFrozenText: (isLocal, c) => {
+                if (c && c.position === 'back' && c.paddle && window.showCombatTextAt) {
+                    showCombatTextAt(new BABYLON.Vector3(c.paddle.position.x, 0.6, c.paddle.position.z), 'Frozen!', 'frozen');
+                    return;
+                }
+                showFrozenText(isLocal);
+            },
             showSpellCastText: (isPlayer, name, element) => showSpellCastText(isPlayer, name, element),
             // proj-vs-proj FX (gated by !isResimulating at the sim call sites).
             // createImpactFlash/showCombatTextAt need a Babylon Vector3 (copyFrom/clone);
