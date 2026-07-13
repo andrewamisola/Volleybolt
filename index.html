@@ -18415,11 +18415,11 @@
         // ---- AI determinism oracle (Phase 2.1) ----
         // Folds decideAI outputs over a scripted synthetic view sequence into a 32-bit hex hash.
         // No mesh reads, no game loop — pure function exercise only.
-        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "549f5f05" — STALE, parry fix 2026-07-13
-        // (OWNER RE-PINS). decideAI now gates the parry press on time-to-impact (tti < 0.35s), so
-        // the synthetic oracle exercises the new branch and the fold moves. Node-extracted candidate:
-        // 549f5f05 -> e6fdfae9 (OLD source reproduces 549f5f05; NEW reproducible ×2, seed-sensitive).
-        // Owner confirms in-browser and replaces "549f5f05" above with the pinned value.
+        // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "e6fdfae9" — PINNED 2026-07-13 (in-browser
+        // ×2, owner-delegated ceremony; matched the Node-extracted candidate exactly).
+        // Re-pin chain: 549f5f05 -> e6fdfae9, parry fix 2026-07-13: decideAI gates the parry press
+        // on time-to-impact (tti < 0.35s), so the synthetic oracle exercises the new branch and the
+        // fold legitimately moves.
         //  (prior re-pin 2026-07-06 #2:
         // BEAM-BLOCK — a channeling opponent outranks all movement targets; the synthetic view
         // now cycles opp.juiceActive (seed%4==0) to cover the branch. Prior: 398443e4:

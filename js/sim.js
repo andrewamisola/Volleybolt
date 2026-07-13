@@ -26,7 +26,8 @@
 //   (checkPvPParryHitsForSide) is the FIRST deliberate golden-moving change: right-seat
 //   AI now reactive-parries in-sim, so the singles STATE fold legitimately moves. Old
 //   (pre-parry-fix) values preserved: seed 12345 -> 6c6801a3, seed 99999 -> 574d9f9c.
-//   New pins: seed 12345 -> <OWNER-PIN fold: xxxxxxxx>, seed 99999 -> <OWNER-PIN fold: xxxxxxxx>.
+//   New pins (2026-07-13, in-browser x2 each, owner-delegated ceremony): seed 12345 -> 5d4dfc6,
+//   seed 99999 -> 3aa202de. (Note: the state fold is NOT zero-padded; compare the exact string.)
 //
 // ============================================================================
 // DOUBLES goldens (M1 — 2v2). The singles pins above are UNCHANGED by M1: the
@@ -34,7 +35,7 @@
 // snapshot with no back combatants folds bit-identically (statically verified).
 // The doubles oracles cover the 4-wizard sim + the role-parameterized AI:
 //   • dbg.determinismDoubles(frames, seed) — 4-combatant state fold (needs a LIVE
-//     doubles match; resets fronts to paddleX ∓8.0, backs ∓11.5, scripts backs on a
+//     doubles match; resets fronts to the FRONT_ADV-derived rail (∓4.5 as of the net-position tune), backs ∓11.5, scripts backs on a
 //     phase-shifted inp(f+37,side), folds the back-slot-covering hashGameState()).
 //   • dbg.aiDeterminismDoubles(steps, seed) — pure decideAI fold over front(castK 7)
 //     + back(castK 11) role profiles; the aiDeterminismDoubles fold below is a pure
@@ -45,9 +46,10 @@
 //   RED-team (right-seat) parry, so BOTH the doubles state fold and the aiDeterminismDoubles
 //   fold (decideAI now carries the time-to-impact parry gate) move. Old aiDeterminismDoubles
 //   candidate preserved: d394d3ed.
-//   dbg.determinismDoubles(180, 12345) -> <OWNER-PIN fold: xxxxxxxx>
-//   dbg.determinismDoubles(180, 99999) -> <OWNER-PIN fold: xxxxxxxx>
-//   dbg.aiDeterminismDoubles(50, 42)   -> <OWNER-PIN candidate: xxxxxxxx>
+//   PINNED 2026-07-13 (in-browser x2 each, owner-delegated ceremony):
+//   dbg.determinismDoubles(180, 12345) -> ba675e78
+//   dbg.determinismDoubles(180, 99999) -> 87632a94
+//   dbg.aiDeterminismDoubles(50, 42)   -> 86dc6cb5
 // ============================================================================
 //
 // (6c6801a3 -> STALE, parry fix 2026-07-13 (OWNER RE-PINS): FIRST deliberate golden-moving
