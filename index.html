@@ -649,7 +649,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=38-doubles-sim-core"></script>
+    <script type="module" src="js/sim.js?v=39-doubles-collision-parry"></script>
 
     <script>
         // Build identifier for bug reports (audit #6). Date-based: bump on every player-facing
@@ -957,12 +957,18 @@
         let pendingNetInput = { moveDir: 0, parry: false, fireball: false, frostbolt: false, thunderstorm: false, juice: false };
         const pvpParryState = {
             left: { canParry: true, active: false, timer: 0, cooldown: 0, cooldownMax: 0 },
-            right: { canParry: true, active: false, timer: 0, cooldown: 0, cooldownMax: 0 }
+            right: { canParry: true, active: false, timer: 0, cooldown: 0, cooldownMax: 0 },
+            // Doubles: per-wizard parry states for the back rail (null-combatant keys are skipped
+            // by the sim's parry loops, so these lie dormant in singles).
+            leftBack: { canParry: true, active: false, timer: 0, cooldown: 0, cooldownMax: 0 },
+            rightBack: { canParry: true, active: false, timer: 0, cooldown: 0, cooldownMax: 0 }
         };
 
         function resetPvPParryState() {
             pvpParryState.left = { canParry: true, active: false, timer: 0, cooldown: 0, cooldownMax: 0 };
             pvpParryState.right = { canParry: true, active: false, timer: 0, cooldown: 0, cooldownMax: 0 };
+            pvpParryState.leftBack = { canParry: true, active: false, timer: 0, cooldown: 0, cooldownMax: 0 };
+            pvpParryState.rightBack = { canParry: true, active: false, timer: 0, cooldown: 0, cooldownMax: 0 };
         }
 
         // Seeded RNG for determinism (kept for legacy, avoid use in gameplay)

@@ -216,6 +216,10 @@
             if (toDestroy.includes(proj)) continue;
             for (const other of projectiles) {
                 if (other === proj) continue;
+                // Doubles only: same-team projectiles never interact (friendly-fire exclusion).
+                // Gated on teamSize so rare same-owner geometry in singles keeps today's behavior
+                // (golden-protected).
+                if (consts.teamSize === 2 && proj.owner === other.owner) continue;
                 if (other.type === 'frostbolt') continue;        // frostbolts pass through each other
                 if (toDestroy.includes(other)) continue;
                 // Head-on: opposite X velocities
@@ -245,6 +249,10 @@
             if (grace > 0) continue;
             for (const other of projectiles) {
                 if (other === proj) continue;
+                // Doubles only: same-team projectiles never interact (friendly-fire exclusion).
+                // Gated on teamSize so rare same-owner geometry in singles keeps today's behavior
+                // (golden-protected).
+                if (consts.teamSize === 2 && proj.owner === other.owner) continue;
                 if (other.type === 'frostbolt') continue;
                 if (toDestroy.includes(other)) continue;
                 if ((other.collisionGraceTime || 0) > 0) continue;
@@ -306,7 +314,7 @@
         const effectiveFullDepth = D.getEffectiveTableDepth();
         const goalX = 14;  // tableWidth/2 + 1 = 13 + 1
 
-        for (const proj of projectiles) {
+        projLoop: for (const proj of projectiles) {
             // Clean up zombie projectiles (no mesh or disposed mesh)
             if (D.isProjectileMeshDead(proj)) {
                 toDestroy.push(proj);
@@ -372,6 +380,8 @@
             if (proj.type === 'fireball' || !proj.type) {
                 const OD = (ctx.consts && ctx.consts.overdrive) || { DURATION: 4, WINDUP: 0.6, BLOCK_TOL: 0.9 };
                 let vaporized = false;
+                // Doubles: only FRONT carriers channel Overdrive (provisional front-only rule), so
+                // the beam-vaporize sweep stays [left, right] — same 1v1 geometry.
                 for (const ch of [combatants.left, combatants.right]) {
                     if (ch && ch.juiceActive && ((OD.DURATION - ch.juiceTimer) >= (OD.WINDUP || 0)) && Math.abs(proj.z - (ch.paddleZ || 0)) <= OD.BLOCK_TOL) {
                         const dir = ch.side === 'left' ? 1 : -1;
@@ -401,62 +411,82 @@
             const arc = ctx.consts.arc;
             const maxHitHeight = 1.3;
 
-            // Left paddle (player) collision — arc bows toward +X (dir = +1)
-            if (proj.velX < 0 && proj.y < maxHitHeight && combatants.left && combatants.left.paddleX !== undefined) {
-                const px = combatants.left.paddleX;   // pure paddle position (mirrored to the mesh)
-                const pz = combatants.left.paddleZ;
-                if (hitsBlockArc(proj.x, proj.z, px, pz, 1, projRadius, arc)) {
+            // Left team block rail (player) — arc bows toward +X (dir = +1). Test the FRONT
+            // (combatants.left) first, then the BACK (combatants.leftBack); the first arc hit
+            // wins (break). With leftBack null the loop body runs exactly once for the front —
+            // byte-identical to the pre-doubles single block. Labeled `continue projLoop` on the
+            // shield/juice paths preserves the original outer-loop skip (past the right block,
+            // gate and mirror) — a plain `continue` here would only skip the sibling rail.
+            if (proj.velX < 0 && proj.y < maxHitHeight) {
+                for (const c of [combatants.left, combatants.leftBack]) {
+                    if (!c || c.paddleX === undefined) continue;
+                    const px = c.paddleX;   // pure paddle position (mirrored to the mesh)
+                    const pz = c.paddleZ;
+                    if (hitsBlockArc(proj.x, proj.z, px, pz, 1, projRadius, arc)) {
 
-                    // Lightning Shield auto-block check (left/player)
-                    if (combatants.left && combatants.left.lightningShield && combatants.left.lightningShield.charges > 0) {
-                        D.useShieldCharge(combatants.left);
-                        D.parryProjectile(proj, 'player');
-                        if (!isResimulating) D.playSound('parry', px, 0.5);
-                        continue;
-                    }
+                        // Lightning Shield auto-block check — per-wizard: the shield belongs to c
+                        // (the rail that was actually hit), not the team carrier.
+                        if (c.lightningShield && c.lightningShield.charges > 0) {
+                            D.useShieldCharge(c);
+                            D.parryProjectile(proj, 'player');
+                            if (!isResimulating) D.playSound('parry', px, 0.5);
+                            continue projLoop;
+                        }
 
-                    // Juice burst: the juiced combatant auto–perfect-parries every incoming
-                    // projectile, ignoring the parry cooldown/timing window (matches SP
-                    // updateGameLogic ~12632). parryProjectile REFLECTS (does not destroy) and
-                    // plays its own parry sound, so there is no toDestroy/extra-sound here.
-                    // aimDir is passed 0 (neutral) for determinism — SP reads keys[]/AI targeting
-                    // here, which is not sim-safe.
-                    if (combatants.left && combatants.left.juiceActive) {
-                        D.parryProjectile(proj, 'player', 0);
-                        continue;
-                    }
+                        // Juice burst: the juiced combatant auto–perfect-parries every incoming
+                        // projectile, ignoring the parry cooldown/timing window (matches SP
+                        // updateGameLogic ~12632). parryProjectile REFLECTS (does not destroy) and
+                        // plays its own parry sound, so there is no toDestroy/extra-sound here.
+                        // aimDir is passed 0 (neutral) for determinism — SP reads keys[]/AI targeting
+                        // here, which is not sim-safe. Team Overdrive lives on the FRONT carrier, so
+                        // this gate reads combatants.left regardless of which rail the arc hit.
+                        if (combatants.left && combatants.left.juiceActive) {
+                            D.parryProjectile(proj, 'player', 0);
+                            continue projLoop;
+                        }
 
-                    const hitAbility = ctx.deps.getAbilityDef(proj.type);
-                    if (hitAbility && hitAbility.behavior.onPaddleHit) {
-                        if (hitAbility.behavior.onPaddleHit(proj, 'left', ctx)) { toDestroy.push(proj); }
+                        const hitAbility = ctx.deps.getAbilityDef(proj.type);
+                        if (hitAbility && hitAbility.behavior.onPaddleHit) {
+                            if (hitAbility.behavior.onPaddleHit(proj, 'left', ctx)) { toDestroy.push(proj); }
+                        }
+                        break;
                     }
                 }
             }
 
-            // Right paddle (AI/guest) collision — arc bows toward -X (dir = -1)
-            if (proj.velX > 0 && proj.y < maxHitHeight && combatants.right && combatants.right.paddleX !== undefined) {
-                const px = combatants.right.paddleX;   // pure paddle position (mirrored to the mesh)
-                const pz = combatants.right.paddleZ;
-                if (hitsBlockArc(proj.x, proj.z, px, pz, -1, projRadius, arc)) {
+            // Right team block rail (AI/guest) — arc bows toward -X (dir = -1). FRONT
+            // (combatants.right) first, then BACK (combatants.rightBack); first arc hit wins.
+            // Mirror of the left rail; degenerates to today's single right block when rightBack
+            // is null. Labeled `continue projLoop` preserves the original outer-loop skip.
+            if (proj.velX > 0 && proj.y < maxHitHeight) {
+                for (const c of [combatants.right, combatants.rightBack]) {
+                    if (!c || c.paddleX === undefined) continue;
+                    const px = c.paddleX;   // pure paddle position (mirrored to the mesh)
+                    const pz = c.paddleZ;
+                    if (hitsBlockArc(proj.x, proj.z, px, pz, -1, projRadius, arc)) {
 
-                    // Lightning Shield auto-block check (right/AI)
-                    if (combatants.right && combatants.right.lightningShield && combatants.right.lightningShield.charges > 0) {
-                        D.useShieldCharge(combatants.right);
-                        D.parryProjectile(proj, 'ai');
-                        if (!isResimulating) D.playSound('parry', px, 0.5);
-                        continue;
-                    }
+                        // Lightning Shield auto-block check — per-wizard: the shield belongs to c.
+                        if (c.lightningShield && c.lightningShield.charges > 0) {
+                            D.useShieldCharge(c);
+                            D.parryProjectile(proj, 'ai');
+                            if (!isResimulating) D.playSound('parry', px, 0.5);
+                            continue projLoop;
+                        }
 
-                    // Juice burst: symmetric auto–perfect-parry while juiceActive (matches SP
-                    // updateGameLogic ~12712). Reflect, don't destroy; neutral aimDir for determinism.
-                    if (combatants.right && combatants.right.juiceActive) {
-                        D.parryProjectile(proj, 'ai', 0);
-                        continue;
-                    }
+                        // Juice burst: symmetric auto–perfect-parry while juiceActive (matches SP
+                        // updateGameLogic ~12712). Reflect, don't destroy; neutral aimDir for
+                        // determinism. Team Overdrive lives on the FRONT carrier — this gate reads
+                        // combatants.right regardless of which rail the arc hit.
+                        if (combatants.right && combatants.right.juiceActive) {
+                            D.parryProjectile(proj, 'ai', 0);
+                            continue projLoop;
+                        }
 
-                    const hitAbility = ctx.deps.getAbilityDef(proj.type);
-                    if (hitAbility && hitAbility.behavior.onPaddleHit) {
-                        if (hitAbility.behavior.onPaddleHit(proj, 'right', ctx)) { toDestroy.push(proj); }
+                        const hitAbility = ctx.deps.getAbilityDef(proj.type);
+                        if (hitAbility && hitAbility.behavior.onPaddleHit) {
+                            if (hitAbility.behavior.onPaddleHit(proj, 'right', ctx)) { toDestroy.push(proj); }
+                        }
+                        break;
                     }
                 }
             }
@@ -566,10 +596,16 @@
     // ctx adds: pvpParryState, projectiles, consts {parryWindow, parryFailCooldown,
     // parrySuccessCooldown, parryHitboxExtend}. Bubble FX go through ctx.deps.
 
+    // Parry is per-WIZARD, keyed by 'left'/'right'/'leftBack'/'rightBack'. Team side (and thus
+    // owner/velocity gating) is derived from the key prefix. Back keys are null outside doubles,
+    // so every parry loop below degenerates to exactly the ['left','right'] singles behavior; the
+    // new keys are always iterated AFTER left,right to preserve the original processing order.
     function updatePvPParryTimers(dt, ctx) {
         const { pvpParryState, combatants, consts, deps: D } = ctx;
-        for (const side of ['left', 'right']) {
-            const state = pvpParryState[side];
+        for (const key of ['left', 'right', 'leftBack', 'rightBack']) {
+            const c = combatants[key];
+            if (!c) continue;
+            const state = pvpParryState[key];
             if (state.active) {
                 state.timer -= dt;
                 if (state.timer <= 0) {
@@ -579,7 +615,7 @@
                     state.cooldownMax = consts.parryFailCooldown;
                     state.canParry = false;
 
-                    D.dissolveActiveParryBubble(combatants[side]);
+                    D.dissolveActiveParryBubble(c);
                 }
             }
 
@@ -594,10 +630,10 @@
         }
     }
 
-    function tryActivatePvPParry(side, ctx) {
+    function tryActivatePvPParry(key, ctx) {
         const { pvpParryState, combatants, isResimulating, consts, deps: D } = ctx;
-        const state = pvpParryState[side];
-        const combatant = combatants[side];
+        const state = pvpParryState[key];
+        const combatant = combatants[key];
         if (!combatant || combatant.freezeTime > 0) return;
         if (!state.canParry || state.active) return;
 
@@ -608,20 +644,25 @@
         state.cooldownMax = consts.parryFailCooldown;
 
         if (!isResimulating && combatant.isLocalPlayer) {
-            D.onParryActivated(combatant, side);
+            // Pass the KEY through as the FX tag — for the front keys this is byte-identical to the
+            // old 'left'/'right' arg the dep expects.
+            D.onParryActivated(combatant, key);
         }
     }
 
-    function checkPvPParryHitsForSide(side, inputState, ctx) {
+    function checkPvPParryHitsForSide(key, inputState, ctx) {
         const { pvpParryState, combatants, projectiles, consts, deps: D } = ctx;
-        const state = pvpParryState[side];
+        const state = pvpParryState[key];
         if (!state.active) return;
 
-        const combatant = combatants[side];
+        const combatant = combatants[key];
         if (!combatant || combatant.paddleX === undefined) return;
         const px = combatant.paddleX;   // pure paddle position (mirrored to the mesh)
         const pz = combatant.paddleZ;
 
+        // Team side from the key prefix: 'left'/'leftBack' -> left team, 'right'/'rightBack' ->
+        // right team. Owner and velocity gates are team-scoped, so front and back share them.
+        const side = key.startsWith('left') ? 'left' : 'right';
         const incomingVelCheck = side === 'left' ? (proj) => proj.velX < 0 : (proj) => proj.velX > 0;
         const ownerKey = side === 'left' ? 'player' : 'ai';
 
@@ -668,6 +709,10 @@
     // updateThunderstormChannel, getMaxMana, endRound).
     function simulateNetworkFrame(leftInput, rightInput, dt, ctx) {
         const { combatants, consts, deps: D } = ctx;
+        // Back-wizard inputs (doubles). Null outside doubles, so every `if (bi && …)` site below
+        // is dead at teamSize 1. Hoisted to the top so the parry step (which precedes movement)
+        // can fan out to the back rail too.
+        const bi = ctx.backInputs;
 
         // Update freeze timers
         for (const c of allCombatants(combatants)) {
@@ -687,6 +732,10 @@
         // Check parry hits for both sides
         checkPvPParryHitsForSide('left', leftInput, ctx);
         checkPvPParryHitsForSide('right', rightInput, ctx);
+        // Back rail (doubles): activate-then-check per back wizard, left before right, AFTER the
+        // fronts. Dead at teamSize 1 (bi null / back slots null).
+        if (bi && combatants.leftBack  && bi.left)  { if (bi.left.parry)  tryActivatePvPParry('leftBack', ctx);  checkPvPParryHitsForSide('leftBack',  bi.left,  ctx); }
+        if (bi && combatants.rightBack && bi.right) { if (bi.right.parry) tryActivatePvPParry('rightBack', ctx); checkPvPParryHitsForSide('rightBack', bi.right, ctx); }
         D.syncLocalParryUI();
 
         // Process juice activation inputs (full bar -> burst). Input-gated, deterministic.
@@ -743,7 +792,7 @@
         applyNetworkMovement(combatants.left, leftInput.moveDir, dt, ctx);
         applyNetworkMovement(combatants.right, rightInput.moveDir, dt, ctx);
         // Back wizards (doubles): same order — cancelCastOnMove then movement, left before right.
-        const bi = ctx.backInputs;
+        // (bi is hoisted to the top of simulateNetworkFrame.)
         if (bi) {
             if (combatants.leftBack && bi.left) {
                 combatants.leftBack.lastMoveDir = bi.left.moveDir;
@@ -758,6 +807,8 @@
         }
 
         // Overdrive channel (deterministic; both sides). left's opponent is right and vice-versa.
+        // Doubles: fronts are the only Overdrive casters/blockers (provisional front-only rule) —
+        // 1v1 pairing stands.
         tickOverdrive(combatants.left,  combatants.right, dt, ctx);
         tickOverdrive(combatants.right, combatants.left,  dt, ctx);
 
@@ -785,7 +836,8 @@
         // Update projectiles
         updateNetworkProjectiles(dt, ctx);
 
-        // Check win conditions
+        // Check win conditions. Doubles: tower HP lives on the FRONT carriers (team towers), so the
+        // 1v1 win test is unchanged — a back wizard has no tower of its own.
         if (combatants.left && combatants.left.towerHealth <= 0) {
             D.endRound('right');
         } else if (combatants.right && combatants.right.towerHealth <= 0) {
