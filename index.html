@@ -6807,12 +6807,13 @@
                 // (CAS/PAR/DMG) now live on the end-of-game leaderboard (see victory screen).
                 // Column geometry: [ Name | HP | MP ] per combatant row. Each HP/MP cell is a
                 // vertical stack — label on top, "#/#" below, a very thin bar underlining it.
-                // Doubles (Task 7): stays exactly 2 rows (blue/red), no change needed — setStatus
-                // below already reads off combatants.left/right, and team mana/juice already LIVE
-                // on those front carriers (Task 1-2), so this HP/MP/Juice readout is already the
-                // correct team-level view in 2v2. The back-row wizards' own cooldown/freeze state
-                // has no HUD readout (the teammate chip that used to cover it was removed
-                // 2026-07-13 — owner: shared mana pool made it noise; may return redesigned in M3).
+                // Doubles (playtest round 2): 4 PLAYER rows (blue front/back, red front/back).
+                // MP is per-wizard (each row reads its own combatant.mana — per-wizard mana landed
+                // f288605). HP/Juice are TEAM resources carried on the FRONT combatants only, so
+                // they show ONCE per team block (front row) and are blanked on the back row.
+                // Singles/PvP still renders EXACTLY as before: 2 rows, unchanged positions/sizes —
+                // see configureStatusRowsForMode() below, called from the body.doubles toggle sites
+                // (startDoublesMatch / exitDoublesState, the shared singles+PvP teardown).
                 const NAME_X = 16, HP_X = 96, MP_X = 180, JUICE_X = 264, STAT_BAR_W = 58;  // Name | HP | MP | Juice columns in the 360px box
                 // Left-aligned label/number TextBlock.
                 function statusText(txt, color, leftPx, topPx, size, weight) {
@@ -6829,7 +6830,8 @@
                     return tb;
                 }
                 // Very thin bar (underlines the number): dark track + left-anchored colored fill.
-                // Returns the fill (set .width % to show remaining).
+                // Returns { track, fill } — track.top repositions the whole bar (doubles row
+                // layout); fill.width shows remaining (set every frame by setStatus).
                 function statusBar(leftPx, topPx, widthPx, fillColor) {
                     const track = new G.Rectangle();
                     track.width = widthPx + "px"; track.height = "3px";
@@ -6843,7 +6845,7 @@
                     fill.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
                     fill.background = fillColor; fill.thickness = 0; fill.cornerRadius = 0;
                     track.addControl(fill);
-                    return fill;
+                    return { track, fill };
                 }
                 // Column-title header row (HP / MP shown once, like table headers).
                 // HP / MP column headers: white with a crisp black stroke (no drop shadow), matching
@@ -6853,22 +6855,94 @@
                 headerStroke(statusText("MP", "#ffffff", MP_X, 10, 14, "600"));
                 headerStroke(statusText("Juice", "#ffffff", JUICE_X, 10, 14, "600"));   // Juice (ultimate)
                 // One combatant ROW: Name (col 1) + "#/#" + thin underline bar per stat.
+                // Returns refs for both the text/fills (setStatus, per-frame values) AND the bar
+                // TRACKS + a reposition/blank helper (configureStatusRowsForMode, mode switches).
                 function statusRow(label, color, numTop) {
                     const barTop = numTop + 25;   // clear the number's full line box (no overlap)
                     const nameLabel = statusText(label, color, NAME_X, numTop, 16, "600");
                     const hp = statusText("--/--", "#ffffff", HP_X, numTop, 16);
-                    const hpFill = statusBar(HP_X, barTop, STAT_BAR_W, color);
+                    const hpBar = statusBar(HP_X, barTop, STAT_BAR_W, color);
                     const mp = statusText("-/-", "#ffffff", MP_X, numTop, 16);
-                    const mpFill = statusBar(MP_X, barTop, STAT_BAR_W, "#5ad0ff");
+                    const mpBar = statusBar(MP_X, barTop, STAT_BAR_W, "#5ad0ff");
                     const juice = statusText("0", "#ffffff", JUICE_X, numTop, 16);
-                    const juiceFill = statusBar(JUICE_X, barTop, STAT_BAR_W, "#f0c050");   // gold Juice bar
-                    return { hp, hpFill, mp, mpFill, juice, juiceFill, nameLabel };
+                    const juiceBar = statusBar(JUICE_X, barTop, STAT_BAR_W, "#f0c050");   // gold Juice bar
+                    const refs = {
+                        hp, hpFill: hpBar.fill, hpTrack: hpBar.track,
+                        mp, mpFill: mpBar.fill, mpTrack: mpBar.track,
+                        juice, juiceFill: juiceBar.fill, juiceTrack: juiceBar.track,
+                        nameLabel,
+                    };
+                    // Move this row (name/hp/mp/juice text + all 3 bar tracks) to a new numTop —
+                    // used when switching singles <-> doubles row layouts.
+                    refs.reposition = function(newNumTop) {
+                        const newBarTop = newNumTop + 25;
+                        refs.nameLabel.top = newNumTop + "px";
+                        refs.hp.top = newNumTop + "px"; refs.hpTrack.top = newBarTop + "px";
+                        refs.mp.top = newNumTop + "px"; refs.mpTrack.top = newBarTop + "px";
+                        refs.juice.top = newNumTop + "px"; refs.juiceTrack.top = newBarTop + "px";
+                    };
+                    // Show/hide the HP + Juice cells (team resources, shown once per team block on
+                    // the front row only — blank on the back row). MP is never blanked (per-wizard).
+                    refs.setTeamColsVisible = function(visible) {
+                        refs.hp.isVisible = visible; refs.hpTrack.isVisible = visible;
+                        refs.juice.isVisible = visible; refs.juiceTrack.isVisible = visible;
+                    };
+                    return refs;
                 }
                 const statusRefs = {
                     blue: statusRow(window.getPlayerName(), "#6fb0ff", 42),
                     red:  statusRow("Red",  "#e76e55", 86),
+                    // Doubles-only rows (playtest round 2): built hidden here so the window still
+                    // builds once at scene init; configureStatusRowsForMode() toggles them + repositions
+                    // all 4 rows. Dimmer team-color shades for the back row, matching the owner's mockup.
+                    // Red shades stay HARDCODED like the existing red row (#e76e55) rather than reading
+                    // window.TEAM_RIGHT — the colorblind toggle already doesn't recolor this GUI text
+                    // (refreshTeamColors only touches barrierMaterials.ai / aiBlockBarrier), so these
+                    // follow the same pre-existing convention instead of inventing new plumbing.
+                    leftBack:  statusRow("Player 2", "#3d6a94", 68),
+                    rightBack: statusRow("Player 4", "#a84f3c", 142),
                 };
                 window.registerPlayerNameLabel(statusRefs.blue.nameLabel, 72);  // ellipsis-fit the name column (HP starts at x96)
+
+                // ----- STATUS window mode switch (playtest round 2): singles/PvP 2-row layout <->
+                // doubles 4-row layout. Row-Y constants: singles values are the window's ORIGINAL
+                // numbers (unchanged -> pixel-identical singles/PvP). Doubles packs 4 rows into a
+                // taller box (+68px ≈ 2 extra rows of headroom, per the owner's mockup spacing). -----
+                const STATUS_ROWS_SINGLES = { blue: 42, red: 86 };
+                const STATUS_ROWS_DOUBLES = { blue: 34, leftBack: 68, red: 108, rightBack: 142 };
+                const STATUS_BOX_H_SINGLES = BOX_H;
+                const STATUS_BOX_H_DOUBLES = 190;   // fits 4 rows (last bar bottoms at ~170) + padding
+                // Current front-row Y (numTop), read by the juice-strip highlight further below —
+                // it needs the LOCAL player's row position, which moves between the two layouts.
+                const statusFrontRowTop = { blue: STATUS_ROWS_SINGLES.blue, red: STATUS_ROWS_SINGLES.red };
+
+                // Called from the existing body.doubles toggle sites (startDoublesMatch -> doubles;
+                // exitDoublesState, the shared singles+PvP teardown, -> singles). Idempotent: reads
+                // teamSize fresh each call, safe to call redundantly (boot, repeat matches).
+                window.configureStatusRowsForMode = function() {
+                    const doubles = (teamSize === 2);
+                    const rows = doubles ? STATUS_ROWS_DOUBLES : STATUS_ROWS_SINGLES;
+                    const boxH = doubles ? STATUS_BOX_H_DOUBLES : STATUS_BOX_H_SINGLES;
+                    statsBox.height = boxH + "px";
+                    statsTab.top = (-(BOTTOM_PAD + boxH - 4)) + "px";
+
+                    statusRefs.blue.reposition(rows.blue);
+                    statusRefs.red.reposition(rows.red);
+                    statusRefs.red.nameLabel.text = doubles ? "Player 3" : "Red";   // singles label unchanged
+                    statusFrontRowTop.blue = rows.blue;
+                    statusFrontRowTop.red = rows.red;
+
+                    for (const key of ['leftBack', 'rightBack']) {
+                        const r = statusRefs[key];
+                        if (doubles) r.reposition(rows[key]);
+                        r.nameLabel.isVisible = doubles;
+                        r.mp.isVisible = doubles; r.mpTrack.isVisible = doubles;
+                        // HP/Juice are TEAM resources carried on the fronts (see comment above
+                        // statusRefs) — a back row never shows them, blank/omitted per the mockup.
+                        r.setTeamColsVisible(false);
+                    }
+                };
+                window.configureStatusRowsForMode();   // establish the singles default at build time
 
                 const stripHtml = (h) => (h || "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
                 function spellInfo(id) {
@@ -7098,12 +7172,17 @@
                     if (statsBox.isVisible !== inGame) statsBox.isVisible = inGame;
                     if (statsTab.isVisible !== inGame) statsTab.isVisible = inGame;
                     const bl = window.combatants && window.combatants.left, rd = window.combatants && window.combatants.right;
+                    // Doubles-only back rows (playtest round 2). Null outside doubles / mid-load —
+                    // setStatus below already no-ops on !c, so these stay safely null-guarded.
+                    const lb = window.combatants && window.combatants.leftBack, rb = window.combatants && window.combatants.rightBack;
                     const setStatus = (refs, c) => {
                         if (!c) return;
                         const maxHp = maxTowerHealth || 20;
                         const hp = Math.max(0, Math.round(c.towerHealth || 0));
                         refs.hp.text = hp + '/' + maxHp;
                         refs.hpFill.width = (Math.max(0, Math.min(1, hp / maxHp)) * 100) + '%';
+                        // MP is per-wizard (playtest round 2 reversal, f288605): each row reads its
+                        // OWN combatant.mana, front or back — no more shared-team-pool reads here.
                         const maxMp = getMaxMana(c.side) || 3;
                         const mpNow = c.mana || 0;
                         refs.mp.text = Math.floor(mpNow) + '/' + maxMp;
@@ -7113,8 +7192,13 @@
                         refs.juice.text = juPct + '/100';      // #/# like HP/MP — % of the full bar
                         refs.juiceFill.width = juPct + '%';
                     };
+                    // HP/Juice text+width are still written for the back rows (harmless — those
+                    // cells are isVisible=false there; see configureStatusRowsForMode) so the row
+                    // doesn't need a separate no-team-cols code path.
                     setStatus(statusRefs.blue, bl);
                     setStatus(statusRefs.red, rd);
+                    setStatus(statusRefs.leftBack, lb);
+                    setStatus(statusRefs.rightBack, rb);
 
                     // Juice tells (driven off the LOCAL player's bar): READY flag + gold command border.
                     const localJ = (typeof localCombatant === 'function') ? localCombatant() : bl;
@@ -7134,7 +7218,10 @@
                             titleText.left = "0px";
                             box.color = goldPulse;                                     // pulsing gold command border
                             titleText.text = "JUICE";  titleText.color = goldPulse;  titleTab.color = goldPulse;
-                            juiceStrip.top = ((localJ === bl ? 42 : 86) - 4) + "px";   // the local player's status row
+                            // Row Y moves between singles (42/86) and doubles (34/108) layouts —
+                            // read the CURRENT front-row top from statusFrontRowTop (kept in sync by
+                            // configureStatusRowsForMode) instead of the old hardcoded 42/86.
+                            juiceStrip.top = ((localJ === bl ? statusFrontRowTop.blue : statusFrontRowTop.red) - 4) + "px";
                             juiceStrip.color = goldPulse;
                             if (!juiceStrip.isVisible) juiceStrip.isVisible = true;
                         } else if (ready) {
@@ -8474,6 +8561,14 @@
                 bushShadowSrc.renderingGroupId = 2;
                 bushShadowSrc.isVisible = false;   // hidden; instances render in its place
 
+                // Bushes are placed once at BUILD-TIME singles depth (tableDepth === SINGLES_DEPTH),
+                // but the arena floor/walls/bases stretch in Z for doubles (resizeStageForMode).
+                // Record each bush mesh's build-time Z here so resizeStageForMode can rescale them
+                // by the same depth/SINGLES_DEPTH ratio the floor uses (window.rebuildBushPositions
+                // below) — the bushes then track the court edges instead of sitting at the old
+                // singles-depth Z forever. Positions are RESTORED exactly at ratio 1 (singles).
+                const bushRepositionList = [];  // { mesh, baseZ }[]
+
                 // One bush clump = a few instanced blob spheres — no new geometry per blob
                 const makeBush = (x, z, scale) => {
                     const blobs = 2 + Math.floor(Math.random() * 3);
@@ -8489,15 +8584,18 @@
                         inst.scaling.set(r, r * 0.7, r);
                         inst.isPickable = false;
                         inst.receiveShadows = false;
+                        bushRepositionList.push({ mesh: inst, baseZ: inst.position.z });
                     }
                     // Painted ground shadow under this bush cluster — one instance per
                     // cluster, at the cluster centre (x,z).  Scaled to the cluster footprint.
-                    // Static: bushes are placed once and never move.
+                    // Static geometry-wise (never re-scaled/rebuilt); Z DOES track the cluster
+                    // via rebuildBushPositions so the shadow stays under its bush in doubles.
                     const bShadow = bushShadowSrc.createInstance("bushShadowInst");
                     bShadow.position.set(x, 0.08, z);
                     bShadow.scaling.set(scale * 1.8, 1, scale * 1.5);
                     bShadow.isPickable = false;
                     bShadow.receiveShadows = false;
+                    bushRepositionList.push({ mesh: bShadow, baseZ: bShadow.position.z });
                 };
 
                 const halfW = tableWidth / 2;      // 13
@@ -8516,6 +8614,19 @@
                 [[-halfW + 1, farZ], [halfW - 1, farZ]].forEach(([cx, cz]) => {
                     makeBush(cx, cz, 1.6 + Math.random() * 0.4);
                 });
+
+                // Rescale every bush (+ its ground shadow) by the depth/SINGLES_DEPTH ratio —
+                // same formula resizeStageForMode already uses for arenaFloor.scaling.z — so the
+                // clumps track the stretched court edges in doubles and snap back exactly
+                // (ratio 1) in singles. Called from resizeStageForMode.
+                window.rebuildBushPositions = function() {
+                    const depth = window.getEffectiveTableDepth ? window.getEffectiveTableDepth() : SINGLES_DEPTH;
+                    const ratio = depth / SINGLES_DEPTH;
+                    for (let i = 0; i < bushRepositionList.length; i++) {
+                        const entry = bushRepositionList[i];
+                        entry.mesh.position.z = entry.baseZ * ratio;
+                    }
+                };
 
                 // --- Wind wobble: gently oscillate ONLY the grass + bush leaf UV offsets with
                 // sine waves so the foliage looks alive (texture-space, so no geometry/other
@@ -8680,6 +8791,10 @@
                 // runs later, after the rest of initGame's synchronous body (incl. the dash builder)
                 // has executed.
                 if (window.rebuildCenterDashes) window.rebuildCenterDashes();
+
+                // Bushes were placed once at build time (singles depth) — rescale their Z by the
+                // same ratio the floor uses so they track the stretched court edges in doubles.
+                if (window.rebuildBushPositions) window.rebuildBushPositions();
 
                 console.log('Stage resized for depth:', depth);
             };
@@ -17021,6 +17136,10 @@
         // two boolean checks per frame and need no parallel cleanup.
         function exitDoublesState() {
             document.body.classList.remove('doubles');     // TEAM mana-pool labels off
+            // STATUS window: back to the 2-row singles/PvP layout (playtest round 2). Callers
+            // (startSinglesMatch, startMultiplayerMatch) already set teamSize=1 before reaching
+            // this shared teardown, so this reads the correct (post-transition) mode.
+            if (window.configureStatusRowsForMode) window.configureStatusRowsForMode();
             combatants.leftBack = null;
             combatants.rightBack = null;
             if (combatants.left)  combatants.left.position  = 'solo';
@@ -17083,6 +17202,10 @@
             setDOMModeSelectVisible(false);
             teamSize = 2;
             document.body.classList.toggle('doubles', true);
+            // STATUS window: switch to the 4-row doubles layout (playtest round 2) now that
+            // teamSize is 2 — the two extra rows read combatants.leftBack/rightBack, which this
+            // function creates a few lines below, but the layout switch itself only needs teamSize.
+            if (window.configureStatusRowsForMode) window.configureStatusRowsForMode();
             gameMode = 'single';                 // doubles M1 is a singles-driver variant
             maxTowerHealth = SINGLES_MAX_HEALTH;
             playerTowerHealth = maxTowerHealth;
