@@ -17462,7 +17462,18 @@
             // braces even if MATCH_OVER_D is lost). Gate on doublesSlotKinds[i]==='human' (the frozen
             // match snapshot) so an AI-seat departure — impossible here since AI slots hold no peer — and
             // a spectator loss (i<0, no seat, Task-8 silent) never trigger it.
-            if (doublesMatchLive && i >= 0 && doublesSlotKinds && doublesSlotKinds[i] === 'human') {
+            // !gameOver: only while the match is actually RUNNING. doublesMatchLive stays true through
+            // the victory screen (it's cleared in exitDoublesState, not at match end), but a NATURALLY
+            // finished match (endRound sets gameOver=true on every client, host included — the
+            // deterministic sim resolves the tower fall on the same frame everywhere) must NOT treat the
+            // first player's exit (Main Menu → LEAVE_D via returnToMenuTransition, or tab close) as a
+            // mid-match loss — that would slap the disconnect overlay over everyone else's Battle
+            // Report. Post-gameOver departures fall through to the silent bookkeeping below (its
+            // broadcastLobbyState is already suppressed by the C2(b) live gate). The hang protection is
+            // intact: the merge can only be waited on while the lockstep is stepping, i.e. gameOver
+            // is false. (gameState is NOT usable here — nothing sets it at match end; it stays
+            // 'playing' through the victory screen.)
+            if (doublesMatchLive && !gameOver && i >= 0 && doublesSlotKinds && doublesSlotKinds[i] === 'human') {
                 hostBroadcast({ type: 'MATCH_OVER_D', reason: 'Player left the match' });
                 handleDisconnect('Player left the match');
                 return;
