@@ -14,8 +14,12 @@
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&family=Press+Start+2P&family=Rajdhani:wght@400;500;600;700&family=Cabin:wght@500;600;700&family=Cormorant+Garamond:wght@500;600;700&display=swap" rel="stylesheet">
     <!-- NES.css - 8-bit style CSS framework -->
     <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
-    <!-- Custom styles extracted to external file -->
-    <link rel="stylesheet" href="styles.css?v=56">
+    <!-- Custom styles extracted to external file.
+         CACHE DISCIPLINE (same rule as js/sim.js's ?v=): BUMP the ?v= query on EVERY styles.css
+         edit, in the same commit. A returning player's browser serves the cached stylesheet for
+         the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
+         (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
+    <link rel="stylesheet" href="styles.css?v=57-dlobby-split">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -408,57 +412,70 @@
                     </button>
                 </div>
 
-                <!-- Doubles (2v2) lobby view — 4-slot host-authoritative room (Online Doubles Task 2).
-                     Separate .lobby-view sibling; the classic 1v1 views above are untouched. -->
-                <div class="lobby-view" id="lobbyDoublesView" style="display:none">
-                    <p class="lobby-prompt" id="dRoomPrompt" style="display:none">Share this code:</p>
-                    <div class="lobby-code" id="dRoomCode" style="display:none">------</div>
-                    <button class="game-btn menu-btn" id="btnCopyCodeD" style="display:none">
-                        <span class="menu-btn-accent" aria-hidden="true"></span>
-                        <span class="menu-btn-glyph" aria-hidden="true">&#9112;</span>
-                        <span class="menu-btn-label">Copy Code</span>
-                    </button>
-                    <p class="lobby-status" id="dLobbyStatus">Doubles &mdash; 2 vs 2</p>
-                    <!-- 2x2 grid: Blue column (slots 0/1), Red column (slots 2/3). DOM order is
-                         visual only (FRONT row, then BACK row); renderDoublesLobby() fills by id. -->
-                    <div class="dslot-grid">
-                        <div class="dslot" id="dslot0"><span class="dslot-pos">FRONT</span><span class="dslot-name">AI</span><span class="dslot-ready">CPU</span></div>
-                        <div class="dslot" id="dslot2"><span class="dslot-pos">FRONT</span><span class="dslot-name">AI</span><span class="dslot-ready">CPU</span></div>
-                        <div class="dslot" id="dslot1"><span class="dslot-pos">BACK</span><span class="dslot-name">AI</span><span class="dslot-ready">CPU</span></div>
-                        <div class="dslot" id="dslot3"><span class="dslot-pos">BACK</span><span class="dslot-name">AI</span><span class="dslot-ready">CPU</span></div>
-                    </div>
-                    <div class="dslot-actions">
-                        <button class="game-btn menu-btn" id="btnPickBlue">
-                            <span class="menu-btn-accent" aria-hidden="true"></span>
-                            <span class="menu-btn-label">Blue Side</span>
-                        </button>
-                        <button class="game-btn menu-btn" id="btnPickRed">
-                            <span class="menu-btn-accent" aria-hidden="true"></span>
-                            <span class="menu-btn-label">Red Side</span>
-                        </button>
-                        <button class="game-btn menu-btn" id="btnSwapPos">
-                            <span class="menu-btn-accent" aria-hidden="true"></span>
-                            <span class="menu-btn-label">Swap Pos</span>
-                        </button>
-                    </div>
-                    <button class="game-btn menu-btn is-primary" id="btnReadyD">
-                        <span class="menu-btn-accent" aria-hidden="true"></span>
-                        <span class="menu-btn-glyph" aria-hidden="true">&#10003;</span>
-                        <span class="menu-btn-label">Ready Up</span>
-                    </button>
-                    <button class="game-btn menu-btn" id="btnStartD" style="display:none" disabled>
-                        <span class="menu-btn-accent" aria-hidden="true"></span>
-                        <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
-                        <span class="menu-btn-label">Start Match</span>
-                    </button>
-                    <p class="lobby-status" id="dWaitingHost" style="display:none">Waiting for host to start...</p>
-                    <button class="game-btn menu-btn menu-btn-ghost" id="btnLeaveD">
-                        <span class="menu-btn-accent" aria-hidden="true"></span>
-                        <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
-                        <span class="menu-btn-label">Leave</span>
-                    </button>
-                </div>
             </div>
+        </div>
+
+        <!-- Doubles (2v2) lobby — full-screen BLUE/RED split (owner redesign, 2026-07-14; replaces
+             the slot-card grid above, protocol/data-source unchanged: netSlots/mySlot still drive
+             renderDoublesLobby()). Deliberately a SIBLING of .arcane-content (not nested inside
+             .arcane-buttons like the other lobby-views) — .arcane-content's own box is shrink-to-fit
+             around the title+button column, so an inset:0 descendant of IT can never reach full
+             screen. As a direct child of .arcane-overlay (#multiplayerLobby, which IS explicitly
+             inset:0) this view can be position:absolute;inset:0 and truly own the viewport, matching
+             the "court orientation" ask (blue=left half, red=right half). showLobbyView() still
+             toggles this element's display by id exactly like every other lobby-view (getElementById
+             doesn't care where in the DOM tree the element lives) and additionally toggles
+             #multiplayerLobby's .doubles-fullscreen class to hide the classic title/scrim while this
+             view is up — see styles.css. -->
+        <div class="lobby-view" id="lobbyDoublesView" style="display:none">
+            <div class="dlobby-top">
+                <p class="lobby-prompt" id="dRoomPrompt" style="display:none">Share this code:</p>
+                <div class="lobby-code" id="dRoomCode" style="display:none">------</div>
+                <button class="game-btn menu-btn game-btn-small" id="btnCopyCodeD" style="display:none">
+                    <span class="menu-btn-accent" aria-hidden="true"></span>
+                    <span class="menu-btn-glyph" aria-hidden="true">&#9112;</span>
+                    <span class="menu-btn-label">Copy Code</span>
+                </button>
+                <p class="lobby-status" id="dLobbyStatus">Doubles &mdash; 2 vs 2</p>
+            </div>
+
+            <!-- Court split: BLUE = left half, RED = right half. The zones themselves ARE the
+                 interface (owner: "the split should BE the interface") — click blue half to pick
+                 blue, click your OWN half to swap front/back (doublesZoneClick, wireDOMLobby).
+                 Name tags are a separate absolutely-positioned layer on top (#dtagLayer) so a
+                 pick/swap can SLIDE a tag across the split via a plain CSS transition on
+                 left/top — renderDoublesLobby only ever sets those two inline styles per frame
+                 of lobby state, never per animation frame. -->
+            <div class="dsplit" id="dsplit">
+                <div class="dzone dzone-blue" id="dzoneBlue" data-side="blue">
+                    <div class="dzone-label">BLUE</div>
+                </div>
+                <div class="dsplit-divider"><span class="dsplit-vs">VS</span></div>
+                <div class="dzone dzone-red" id="dzoneRed" data-side="red">
+                    <div class="dzone-label">RED</div>
+                </div>
+                <div class="dtag-layer" id="dtagLayer"></div>
+            </div>
+
+            <div class="dlobby-bottom">
+                <button class="game-btn menu-btn is-primary" id="btnReadyD">
+                    <span class="menu-btn-accent" aria-hidden="true"></span>
+                    <span class="menu-btn-glyph" aria-hidden="true">&#10003;</span>
+                    <span class="menu-btn-label">Ready Up</span>
+                </button>
+                <button class="game-btn menu-btn" id="btnStartD" style="display:none" disabled>
+                    <span class="menu-btn-accent" aria-hidden="true"></span>
+                    <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
+                    <span class="menu-btn-label">Start Match</span>
+                </button>
+                <p class="lobby-status" id="dWaitingHost" style="display:none">Waiting for host to start...</p>
+            </div>
+
+            <button class="game-btn menu-btn menu-btn-ghost game-btn-small dlobby-leave" id="btnLeaveD">
+                <span class="menu-btn-accent" aria-hidden="true"></span>
+                <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
+                <span class="menu-btn-label">Leave</span>
+            </button>
         </div>
     </div>
 
@@ -4304,6 +4321,7 @@
             lobbyHostView: 'btnCancelHost',
             lobbyJoinView: 'btnCancelJoin',
             lobbyConnectedView: 'btnDisconnect',
+            lobbyDoublesView: 'btnLeaveD',
             pauseOverlay: 'pauseResumeBtn',
         };
 
@@ -4376,7 +4394,16 @@
             // reference leftEdge/rightEdge (Task 6) before their `const` declarations run later in
             // this same function body (a ReferenceError — the temporal dead zone).
 
-            if (upEdge) {
+            // Online doubles lobby (full-screen split redesign, 2026-07-14): d-pad up/down swaps
+            // front/back instead of cycling focus (mirrors the keyboard ArrowUp/Down mapping —
+            // wireDOMLobby's keydown listener), and left/right (below) picks a side instead of
+            // adjusting a slider — the split IS the interface, same as mouse/keyboard.
+            if (root.id === 'lobbyDoublesView') {
+                if (upEdge || downEdge) {
+                    if (window.doublesLocalSwap) doublesLocalSwap();
+                    if (window.ToneSFX) ToneSFX.uiHover();
+                }
+            } else if (upEdge) {
                 const next = (window._navFocusedIndex - 1 + list.length) % list.length;
                 setNavFocus(list, next, root);
                 if (window.ToneSFX) ToneSFX.uiHover();
@@ -4386,9 +4413,10 @@
                 if (window.ToneSFX) ToneSFX.uiHover();
             }
 
-            // Left/Right: adjust whatever's focused, or page the How-to-Play carousel (which
-            // pages regardless of focus, matching its existing ArrowLeft/Right keyboard handler).
-            // Same hold-to-repeat as up/down (navDirEdge, defined in Task 4).
+            // Left/Right: adjust whatever's focused, page the How-to-Play carousel, or (doubles
+            // lobby) pick blue/red — all three page/adjust regardless of focus, matching each
+            // screen's own existing ArrowLeft/Right keyboard handler. Same hold-to-repeat as
+            // up/down (navDirEdge, defined in Task 4).
             const leftNow  = pressed(14);
             const rightNow = pressed(15);
             const leftEdge  = navDirEdge('left', leftNow);
@@ -4397,6 +4425,9 @@
             if (leftEdge || rightEdge) {
                 if (root.id === 'howToPlayScreen' && window.htpSetPage && typeof window.htpPage === 'number') {
                     htpSetPage(window.htpPage + (rightEdge ? 1 : -1));
+                    if (window.ToneSFX) ToneSFX.uiHover();
+                } else if (root.id === 'lobbyDoublesView') {
+                    if (window.doublesLocalPick) doublesLocalPick(rightEdge ? 'red' : 'blue');
                     if (window.ToneSFX) ToneSFX.uiHover();
                 } else {
                     const el = list[window._navFocusedIndex];
@@ -4416,11 +4447,22 @@
             // mouse click would do. No-op on sliders/the FPS cycler (they're adjusted, not
             // "confirmed" — see Task 6). Checkboxes (Fullscreen/Reduce Motion/Colorblind) DO get
             // clicked here — only range inputs are excluded, not every <input>.
+            // Doubles lobby exception: up/down is repurposed for swap (above), so focus never
+            // moves in this view — Confirm always toggles Ready (owner: "A-button = ready"),
+            // reusing the real button's .click() so it gets the identical SFX a mouse click would
+            // (the delegated .menu-btn click-sound listener, Task ~3948). Start Match stays
+            // mouse-only for gamepad-only hosts in this pass (owner's own spec: "mouse buttons
+            // remain for all three [pick/swap/ready]" — Start was never one of those three).
             const confirmNow = pressed(0);
             if (confirmNow && !_navPadPrev.confirm) {
-                const el = list[window._navFocusedIndex];
-                if (el && !(el.tagName === 'INPUT' && el.type === 'range') && !el.classList.contains('fps-cycler')) {
-                    el.click();
+                if (root.id === 'lobbyDoublesView') {
+                    const readyBtn = document.getElementById('btnReadyD');
+                    if (readyBtn) readyBtn.click();
+                } else {
+                    const el = list[window._navFocusedIndex];
+                    if (el && !(el.tagName === 'INPUT' && el.type === 'range') && !el.classList.contains('fps-cycler')) {
+                        el.click();
+                    }
                 }
             }
             _navPadPrev.confirm = confirmNow;
@@ -16962,6 +17004,11 @@
                 const el = document.getElementById(id);
                 if (el) el.style.display = (id === viewId) ? 'flex' : 'none';
             }
+            // Full-screen split redesign (2026-07-14): while the doubles view is up, hide the
+            // classic title/scrim it no longer lives inside (see styles.css) — every other view
+            // still renders the standard arcane title chrome.
+            const lobbyRoot = document.getElementById('multiplayerLobby');
+            if (lobbyRoot) lobbyRoot.classList.toggle('doubles-fullscreen', viewId === 'lobbyDoublesView');
             if (window.setGamepadPrompts) setGamepadPrompts([{ action: 'navigate' }, { action: 'confirm' }, { action: 'back' }]);
 
             const subtitle = document.getElementById('lobbySubtitle');
@@ -17126,10 +17173,11 @@
                 }
             });
 
-            // --- Online doubles lobby wiring (Task 2) ---
+            // --- Online doubles lobby wiring (Task 2; zone clicks + keyboard added in the
+            //     2026-07-14 full-screen redesign — the old Blue/Red/Swap buttons are gone, the
+            //     split itself is the interface now) ---
             const btnHostDoubles = $('btnHostDoubles');
             const btnCopyD = $('btnCopyCodeD');
-            const btnPickBlue = $('btnPickBlue'), btnPickRed = $('btnPickRed'), btnSwapPos = $('btnSwapPos');
             const btnReadyD = $('btnReadyD'), btnStartD = $('btnStartD'), btnLeaveD = $('btnLeaveD');
 
             if (btnHostDoubles) btnHostDoubles.addEventListener('click', () => {
@@ -17164,9 +17212,9 @@
                 }
             });
 
-            if (btnPickBlue) btnPickBlue.addEventListener('click', () => doublesLocalPick('blue'));
-            if (btnPickRed)  btnPickRed.addEventListener('click', () => doublesLocalPick('red'));
-            if (btnSwapPos)  btnSwapPos.addEventListener('click', () => doublesLocalSwap());
+            const dzoneBlue = $('dzoneBlue'), dzoneRed = $('dzoneRed');
+            if (dzoneBlue) dzoneBlue.addEventListener('click', () => doublesZoneClick('blue'));
+            if (dzoneRed)  dzoneRed.addEventListener('click', () => doublesZoneClick('red'));
             if (btnReadyD)   btnReadyD.addEventListener('click', () => doublesLocalReady());
             if (btnLeaveD)   btnLeaveD.addEventListener('click', () => doublesLocalLeave());
 
@@ -17177,6 +17225,37 @@
             });
         }
         window.wireDOMLobby = wireDOMLobby;
+
+        // ---- Online doubles lobby: keyboard nav (owner mapping, 2026-07-14 redesign) ----
+        // Mirrors the How-to-Play arrow-key pager's guard pattern (screen-visible check, then a
+        // narrow key switch, e.preventDefault so Enter doesn't ALSO fire a native click on
+        // whatever button happens to have focus — double-toggling Ready). Lobby-only: gated on
+        // #lobbyDoublesView actually being the displayed view, so this never fires mid-match (the
+        // view is hidden the instant a match starts) and never touches the global Escape handler
+        // or in-match WASD/arrow paddle input (both untouched, different listeners entirely).
+        document.addEventListener('keydown', (e) => {
+            const view = document.getElementById('lobbyDoublesView');
+            if (!view || view.style.display === 'none') return;
+            if (mySlot < 0 || !netSlots) return;
+            switch (e.code) {
+                case 'ArrowLeft': case 'KeyA':
+                    e.preventDefault(); doublesLocalPick('blue');
+                    if (window.ToneSFX) ToneSFX.uiHover();
+                    break;
+                case 'ArrowRight': case 'KeyD':
+                    e.preventDefault(); doublesLocalPick('red');
+                    if (window.ToneSFX) ToneSFX.uiHover();
+                    break;
+                case 'ArrowUp': case 'ArrowDown':
+                    e.preventDefault(); doublesLocalSwap();
+                    if (window.ToneSFX) ToneSFX.uiHover();
+                    break;
+                case 'Enter':
+                    e.preventDefault(); doublesLocalReady();
+                    break;
+                default: return;
+            }
+        });
 
         // ==============================================================================
         // Online Doubles lobby — host-authoritative 4-slot state machine (Task 2)
@@ -17192,10 +17271,19 @@
         // LOBBY_STATE_D case in handleNetworkMessage).
         // ==============================================================================
 
-        // Per-slot team-tint used for the card border, sourced the way the STATUS rows are
-        // (front = the bright team hex, back = the dimmer shade). 0/1 blue, 2/3 red.
+        // Per-slot team-tint, sourced the way the STATUS rows / 3D name tags are (front = the
+        // bright team hex, back = the dimmer shade — see createDoublesNameTags). 0/1 blue, 2/3 red.
         const DSLOT_COLORS = ['#6fb0ff', '#3d6a94', '#e76e55', '#a84f3c'];
         const DSLOT_POS = ['FRONT', 'BACK', 'FRONT', 'BACK'];
+        // Full-screen split redesign (owner, 2026-07-14): each slot index's floating-tag TARGET
+        // position within #dsplit (percentages of its box — 25%/75% = blue/red half centers;
+        // front sits above back, "the obvious front/back distinction" the design asks for).
+        const DSLOT_TARGET = [
+            { left: '25%', top: '38%' },   // 0 = Blue Front
+            { left: '25%', top: '68%' },   // 1 = Blue Back
+            { left: '75%', top: '38%' },   // 2 = Red Front
+            { left: '75%', top: '68%' },   // 3 = Red Back
+        ];
 
         function freshNetSlots() {
             return [0, 1, 2, 3].map(() => ({ kind: 'ai', peerId: null, name: 'AI', ready: false }));
@@ -17349,6 +17437,12 @@
                 cleanupPeer();
             }
             netSlots = null; mySlot = -1;
+            // Clear the identity-keyed name tags so a later room doesn't inherit stale DOM nodes
+            // (renderDoublesLobby would self-heal this on the next repaint anyway — dTagKey()
+            // wouldn't match any leftover peerId — but clearing here avoids relying on that).
+            const layer = document.getElementById('dtagLayer');
+            if (layer) layer.innerHTML = '';
+            dTagEls.clear();
             showLobbyView('lobbyModeView');
         }
 
@@ -17364,24 +17458,59 @@
             renderDoublesLobby();
         }
 
-        // Paint the 4 slot cards + gate the buttons from netSlots (host and guest share this).
+        // Identity-keyed name-tag DOM elements (owner redesign, 2026-07-14): humans key on peerId
+        // ('HOST' for the host) so the SAME element persists across a pick/swap — that's what lets
+        // the .dtag CSS transition (styles.css) actually slide it between slots. AI has no stable
+        // identity across a pick (hostPickSide always MINTS A FRESH `aiSlot()` object at the
+        // vacated index — see its own comment), so AI tags key on the current slot INDEX instead;
+        // they simply appear/disappear in place rather than sliding, which reads fine (an anonymous
+        // "CPU" ghost has nothing to visibly continue from).
+        const dTagEls = new Map();   // identity key -> DOM element, cleared in doublesLocalLeave
+        function dTagKey(slot, i) { return slot.kind === 'human' ? ('p:' + slot.peerId) : ('ai:' + i); }
+
+        // Paint the floating name tags + gate the buttons from netSlots (host and guest share
+        // this). Data source UNCHANGED from the old card-grid version (netSlots/mySlot); only the
+        // DOM it paints is new.
         function renderDoublesLobby() {
             if (!netSlots) return;
-            for (let i = 0; i < 4; i++) {
-                const card = document.getElementById('dslot' + i);
-                if (!card) continue;
-                const s = netSlots[i];
-                card.style.borderColor = DSLOT_COLORS[i];
-                const posEl = card.querySelector('.dslot-pos');
-                const nameEl = card.querySelector('.dslot-name');
-                const readyEl = card.querySelector('.dslot-ready');
-                if (posEl) posEl.textContent = DSLOT_POS[i];
-                // '?' fallback is defensive only — no index-derived label may ever render (the
-                // slot's name is always set at seat time to the join-order P#).
-                if (nameEl) nameEl.textContent = s.kind === 'ai' ? 'AI' : (s.name || '?');
-                if (readyEl) readyEl.textContent = s.kind === 'ai' ? 'CPU' : (s.ready ? '✓ Ready' : '…');
-                card.classList.toggle('is-you', i === mySlot);
+            const layer = document.getElementById('dtagLayer');
+            if (layer) {
+                const seen = new Set();
+                for (let i = 0; i < 4; i++) {
+                    const s = netSlots[i];
+                    const key = dTagKey(s, i);
+                    seen.add(key);
+                    let tag = dTagEls.get(key);
+                    if (!tag) {
+                        tag = document.createElement('div');
+                        tag.className = 'dtag';
+                        tag.innerHTML = '<span class="dtag-name"></span><span class="dtag-sub"></span>';
+                        layer.appendChild(tag);
+                        dTagEls.set(key, tag);
+                    }
+                    tag.dataset.role = (i % 2 === 0) ? 'front' : 'back';
+                    tag.style.left = DSLOT_TARGET[i].left;
+                    tag.style.top = DSLOT_TARGET[i].top;
+                    tag.style.borderColor = DSLOT_COLORS[i];
+                    tag.classList.toggle('is-you', i === mySlot);
+                    tag.classList.toggle('is-ready', s.kind === 'human' && !!s.ready);
+                    // '?' fallback is defensive only — no index-derived label may ever render (the
+                    // slot's name is always set at seat time to the join-order P#).
+                    tag.querySelector('.dtag-name').textContent = s.kind === 'ai' ? 'AI' : (s.name || '?');
+                    tag.querySelector('.dtag-sub').textContent =
+                        DSLOT_POS[i] + ' · ' + (s.kind === 'ai' ? 'CPU' : (s.ready ? '✓ Ready' : 'Not Ready'));
+                }
+                // Drop tags for identities no longer present this repaint (a guest left, or a
+                // slot flipped human<->ai — a fresh 'ai:<i>' tag is recreated if that index ever
+                // reverts to AI, so nothing is lost, just not animated across the gap).
+                for (const [key, tag] of dTagEls) {
+                    if (!seen.has(key)) { tag.remove(); dTagEls.delete(key); }
+                }
             }
+            const dzoneBlue = document.getElementById('dzoneBlue');
+            const dzoneRed = document.getElementById('dzoneRed');
+            if (dzoneBlue) dzoneBlue.classList.toggle('is-your-zone', mySlot === 0 || mySlot === 1);
+            if (dzoneRed)  dzoneRed.classList.toggle('is-your-zone', mySlot === 2 || mySlot === 3);
             const btnStartD = document.getElementById('btnStartD');
             const waiting = document.getElementById('dWaitingHost');
             if (btnStartD) {
@@ -17401,6 +17530,17 @@
             }
         }
         window.renderDoublesLobby = renderDoublesLobby;
+
+        // Mouse: the zones ARE the interface (owner). Clicking the side you're already on swaps
+        // front/back with your teammate; clicking the other side picks it (front seat first, then
+        // back, per hostPickSide — a no-op if that side is already full of other humans).
+        function doublesZoneClick(side) {
+            if (mySlot < 0 || !netSlots) return;
+            const mySide = mySlot < 2 ? 'blue' : 'red';
+            if (side === mySide) doublesLocalSwap(); else doublesLocalPick(side);
+            if (window.ToneSFX) ToneSFX.uiHover();
+        }
+        window.doublesZoneClick = doublesZoneClick;
 
         // -------------------------------------------------------
         // DOM Main Menu — replaces the Babylon GUI menu (title + buttons)
@@ -17990,7 +18130,7 @@
 
             const lobby = document.getElementById('multiplayerLobby');
             if (lobby && lobby.classList.contains('visible')) {
-                const views = ['lobbyModeView', 'lobbyHostView', 'lobbyJoinView', 'lobbyConnectedView'];
+                const views = ['lobbyModeView', 'lobbyHostView', 'lobbyJoinView', 'lobbyConnectedView', 'lobbyDoublesView'];
                 for (const vid of views) {
                     const vel = document.getElementById(vid);
                     if (vel && vel.style.display !== 'none') return vel;

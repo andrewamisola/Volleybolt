@@ -1926,48 +1926,209 @@ body.flipped-view #aiCastBarContainer {
     text-shadow: 1px 1px 0 #000;
 }
 
-/* Online doubles (2v2) lobby — 4-slot card grid (Task 2). Borders are tinted per team by JS
-   (renderDoublesLobby); .is-you rings the local player's own slot. */
-.dslot-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    margin: 6px 0;
+/* ============================================================
+   Online Doubles Lobby — full-screen BLUE/RED split (owner
+   redesign, 2026-07-14; replaces the old .dslot-grid card grid).
+   #lobbyDoublesView lives directly inside .arcane-overlay
+   (#multiplayerLobby), a SIBLING of .arcane-content — see its
+   header comment in index.html for why (that's the only way an
+   inset:0 layer reaches the full 16:9 viewport). Protocol/data
+   source is unchanged: renderDoublesLobby() still reads
+   netSlots/mySlot; only the DOM it paints is new.
+   ============================================================ */
+/* While the doubles view owns the screen, hide the classic title/scrim (the split IS the
+   screen now) — toggled by showLobbyView(). Scoped to #multiplayerLobby so the 1v1 lobby
+   views (still living inside .arcane-content) are completely unaffected. */
+#multiplayerLobby.doubles-fullscreen .arcane-content,
+#multiplayerLobby.doubles-fullscreen .arcane-scrim {
+    display: none;
 }
-.dslot {
+
+#lobbyDoublesView.lobby-view {
+    position: absolute;
+    inset: 0;
+    display: none;              /* showLobbyView() flips this to 'flex' */
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 0;
+    pointer-events: auto;       /* .arcane-overlay itself is pointer-events:none */
+    /* Bottom padding clears the shared copyright footer (.arcane-overlay::after — bottom:26px,
+       ~18px tall, so it occupies the 26-46px band): the Ready/Start stack must end above ~46px
+       from the bottom edge or the two collide (live-verified, 2026-07-14). */
+    padding: 22px 0 60px;
+    z-index: 3;
+}
+
+.dlobby-top {
+    flex: 0 0 auto;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 4px;
-    min-width: 150px;
-    padding: 10px 16px;
-    background: rgba(0,0,0,0.42);
-    border: 3px solid #444;
+}
+.dlobby-top .lobby-code { font-size: 42px; padding: 6px 20px; letter-spacing: 8px; margin: 2px 0; }
+.dlobby-top .lobby-prompt { font-size: 15px; }
+.dlobby-top .lobby-status { font-size: 14px; }
+
+/* The split itself — escapes .lobby-view's `align-items:center !important` (styles.css above)
+   via align-self so it can actually stretch to full width instead of shrinking to content. */
+.dsplit {
+    align-self: stretch;
+    position: relative;
+    flex: 1 1 auto;
+    display: flex;
+    min-height: 0;
+}
+.dzone {
+    flex: 1 1 50%;
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    cursor: pointer;
+    overflow: hidden;
+    transition: filter 0.15s ease;
+}
+.dzone-blue {
+    background: linear-gradient(160deg, rgba(32,64,116,0.4) 0%, rgba(10,16,28,0.55) 70%);
+    border-right: 1px solid rgba(150,190,255,0.15);
+}
+.dzone-red {
+    background: linear-gradient(200deg, rgba(122,46,36,0.4) 0%, rgba(28,10,8,0.55) 70%);
+    border-left: 1px solid rgba(255,160,140,0.15);
+}
+.dzone:hover { filter: brightness(1.2); }
+.dzone.is-your-zone { box-shadow: inset 0 0 0 2px rgba(255,220,120,0.35); }
+/* Zone headers are the anchor of the whole design — they must read instantly (opacity 0.4/26px
+   was near-invisible over the dark gradients, live-verified 2026-07-14). Big + bright, but still
+   BEHIND the tags: labels live inside .dzone (stacking under the .dtag-layer at z-index 7), and
+   the tag targets start at top:38% while the label band ends well above that. */
+.dzone-label {
+    margin-top: 30px;
     font-family: 'FF9UI', sans-serif;
+    font-size: 46px;
+    letter-spacing: 14px;
+    padding-left: 14px;   /* recenters: letter-spacing trails the last glyph by one full gap */
+    font-weight: 700;
+    opacity: 0.85;
+    text-shadow: 3px 3px 0 #000, 0 0 24px rgba(0,0,0,0.6);
 }
-.dslot.is-you {
-    box-shadow: 0 0 0 2px var(--gold-light), 0 0 14px rgba(255,220,120,0.5);
+.dzone-blue .dzone-label { color: #9fcaff; }
+.dzone-red  .dzone-label { color: #ffab9a; }
+
+.dsplit-divider {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    transform: translateX(-50%);
+    background: linear-gradient(180deg, transparent 0%, var(--gold-dark) 50%, transparent 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 6;
 }
-.dslot-pos {
-    font-size: 13px;
-    letter-spacing: 2px;
-    color: var(--parchment-dark);
-    text-shadow: 1px 1px 0 #000;
+.dsplit-vs {
+    background: #0c0805;
+    border: 2px solid var(--brown-light);
+    color: var(--gold-light);
+    font-family: 'FF9UI', sans-serif;
+    font-size: 14px;
+    letter-spacing: 3px;
+    padding: 5px 10px;
+    box-shadow: 0 0 14px rgba(0,0,0,0.7);
 }
-.dslot-name {
-    font-size: 20px;
+
+/* Floating name tags — an absolutely-positioned layer OVER the split (not nested inside either
+   .dzone) so a tag can slide from one zone to the other. renderDoublesLobby() creates/reuses one
+   .dtag element PER OCCUPANT IDENTITY (peerId, or 'ai:<slot>' for AI ghosts — see its header
+   comment) and simply sets its left/top inline style every LOBBY_STATE_D repaint; because the
+   SAME element persists across repaints, this transition is what makes a pick/swap visibly slide
+   the tag — pure CSS, no per-frame JS driving it. */
+.dtag-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;    /* clicks pass through to the .dzone underneath */
+    z-index: 7;
+}
+.dtag {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    transition: left 0.28s cubic-bezier(0.3, 0, 0.2, 1),
+                top 0.28s cubic-bezier(0.3, 0, 0.2, 1),
+                opacity 0.2s ease, box-shadow 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    min-width: 128px;
+    padding: 10px 18px;
+    background: linear-gradient(180deg, rgba(28,32,42,0.92) 0%, rgba(12,14,20,0.94) 100%);
+    border: 2px solid #666;
+    border-radius: 8px;
+    box-shadow: 4px 4px 0 rgba(0,0,0,0.5);
+    opacity: 0.5;             /* owner name-tag alpha rule: self 1.0, others/AI 0.5 */
+}
+/* Front seat reads as the "prominent" one (spec: obvious front/back distinction) — a touch
+   bigger and above its back partner (top-percentage targets in renderDoublesLobby handle the
+   vertical order; this just adds the size cue). */
+.dtag[data-role="front"] { transform: translate(-50%, -50%) scale(1.08); z-index: 2; }
+.dtag[data-role="back"]  { z-index: 1; }
+.dtag.is-you {
+    opacity: 1;
+    box-shadow: 0 0 0 2px var(--gold-light), 0 0 18px rgba(255,220,120,0.55), 4px 4px 0 rgba(0,0,0,0.5);
+}
+.dtag.is-ready {
+    box-shadow: 0 0 0 2px #7ee27e, 0 0 16px rgba(126,226,126,0.6), 4px 4px 0 rgba(0,0,0,0.5);
+}
+.dtag.is-you.is-ready {
+    box-shadow: 0 0 0 2px #7ee27e, 0 0 0 4px var(--gold-light), 0 0 18px rgba(255,220,120,0.5), 4px 4px 0 rgba(0,0,0,0.5);
+}
+.dtag-name {
+    font-family: 'FF9UI', sans-serif;
+    font-size: 19px;
     color: var(--parchment);
     text-shadow: 2px 2px 0 #000;
 }
-.dslot-ready {
-    font-size: 14px;
-    min-height: 1.1em;
-    color: #7ee27e;
+.dtag-sub {
+    font-family: 'FF9UI', sans-serif;
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--parchment-dark);
     text-shadow: 1px 1px 0 #000;
 }
-.dslot-actions {
+
+.dlobby-bottom {
+    flex: 0 0 auto;
     display: flex;
-    gap: 10px;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+/* Leave: small TOP-RIGHT corner button (spec: "leave button unobtrusive" / corner). Top-right is
+   the collision-free corner at 16:9: room code owns top-center, #gamepadPromptBar owns
+   bottom-right (right:24/bottom:24), the copyright footer owns bottom-center. ID-SCOPED selector
+   on purpose: the base `.menu-btn` rule (position:relative, min-width:340px, padding) sits LATER
+   in this file and would win a plain same-specificity `.dlobby-leave` on source order — which is
+   exactly what happened live (2026-07-14): the button fell back into flex flow as a full-width
+   slab at bottom-center, colliding with the footer. (1,1,0) beats (0,1,0) regardless of order. */
+#lobbyDoublesView .dlobby-leave {
+    position: absolute;
+    right: 18px;
+    top: 14px;
+    min-width: 0;
+    padding: 8px 18px;
+    font-size: 15px;
+    z-index: 8;
+}
+/* The ghost-button label span has its own later font-size rule (.menu-btn.menu-btn-ghost
+   .menu-btn-label, 18px) — same source-order trap as above, so pin it here too. */
+#lobbyDoublesView .dlobby-leave .menu-btn-label {
+    font-size: 15px;
 }
 
 .lobby-input {
