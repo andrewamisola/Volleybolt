@@ -2182,6 +2182,28 @@ body.flipped-view #aiCastBarContainer {
     font-size: 15px;
 }
 
+/* Copy Code: a utility affordance under the room code, NOT a primary action (owner playtest,
+   2026-07-14 round 3 — it rendered as a full ~340px-min-width slab, dominating the top of the
+   screen). Font/padding pinned near the "Share this code:" caption scale (.dlobby-top
+   .lobby-prompt/.lobby-status below, 14-15px) rather than Ready Up/Start Match's primary-action
+   scale — those two keep the plain `.menu-btn` sizing untouched; this gets its own modifier so
+   shrinking it can never touch them. ID-SCOPED for the same reason as .dlobby-leave just above:
+   `.menu-btn` sits LATER in this file and wins a same-specificity bare `.dlobby-copy` on source
+   order regardless of where this rule is placed. */
+#lobbyDoublesView .dlobby-copy {
+    min-width: 0;
+    width: fit-content;
+    padding: 6px 16px;
+    gap: 8px;
+    font-size: 14px;
+}
+#lobbyDoublesView .dlobby-copy .menu-btn-label {
+    font-size: 14px;
+}
+#lobbyDoublesView .dlobby-copy .menu-btn-glyph {
+    font-size: 15px;
+}
+
 .lobby-input {
     width: 280px;
     height: 56px;

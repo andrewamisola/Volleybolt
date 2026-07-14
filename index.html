@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=59-dlobby-spectator">
+    <link rel="stylesheet" href="styles.css?v=60-dlobby-rowfix">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -431,7 +431,7 @@
             <div class="dlobby-top">
                 <p class="lobby-prompt" id="dRoomPrompt" style="display:none">Share this code:</p>
                 <div class="lobby-code" id="dRoomCode" style="display:none">------</div>
-                <button class="game-btn menu-btn game-btn-small" id="btnCopyCodeD" style="display:none">
+                <button class="game-btn menu-btn dlobby-copy" id="btnCopyCodeD" style="display:none">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
                     <span class="menu-btn-glyph" aria-hidden="true">&#9112;</span>
                     <span class="menu-btn-label">Copy Code</span>
@@ -455,16 +455,16 @@
                          (left:50%) lands at the same pixel column as the overlay's dsplit-relative
                          25%/75% targets because each zone is exactly half of #dsplit's width. -->
                     <div class="dcmd-panel" aria-hidden="true">
-                        <div class="dcmd-row" data-pos="front"><span class="dcmd-row-label">FRONT</span></div>
-                        <div class="dcmd-row" data-pos="back"><span class="dcmd-row-label">BACK</span></div>
+                        <div class="dcmd-row" id="dcmdRowBlueFront" data-pos="front"><span class="dcmd-row-label">FRONT</span></div>
+                        <div class="dcmd-row" id="dcmdRowBlueBack" data-pos="back"><span class="dcmd-row-label">BACK</span></div>
                     </div>
                 </div>
                 <div class="dsplit-divider"><span class="dsplit-vs">VS</span></div>
                 <div class="dzone dzone-red" id="dzoneRed" data-side="red">
                     <div class="dzone-label">RED</div>
                     <div class="dcmd-panel" aria-hidden="true">
-                        <div class="dcmd-row" data-pos="front"><span class="dcmd-row-label">FRONT</span></div>
-                        <div class="dcmd-row" data-pos="back"><span class="dcmd-row-label">BACK</span></div>
+                        <div class="dcmd-row" id="dcmdRowRedFront" data-pos="front"><span class="dcmd-row-label">FRONT</span></div>
+                        <div class="dcmd-row" id="dcmdRowRedBack" data-pos="back"><span class="dcmd-row-label">BACK</span></div>
                     </div>
                 </div>
                 <div class="dtag-layer" id="dtagLayer"></div>
@@ -17374,14 +17374,56 @@
         // ==============================================================================
 
         // Full-screen split redesign (owner, 2026-07-14): each slot index's floating-tag TARGET
-        // position within #dsplit (percentages of its box — 25%/75% = blue/red half centers;
-        // front sits above back, "the obvious front/back distinction" the design asks for).
-        const DSLOT_TARGET = [
+        // position within #dsplit (percentages of its box). Lobby v2 round 3 (2026-07-14,
+        // playtest fix): these are no longer hand-guessed constants — a hardcoded 38%/68% only
+        // coincided with the .dcmd-panel's actual FRONT/BACK row pixels at one specific
+        // viewport aspect ratio (the panel is a fixed-pixel-height box centered at a % of the
+        // zone's height, while these targets are pure percentages of #dsplit — they diverge at
+        // any other height). Now DERIVED every repaint from the live geometry of the four
+        // static panel rows (id'd below) via computeDSlotTargets(): left = the row LABEL's
+        // right edge (so occupant text starts right where "FRONT"/"BACK" ends, reading as one
+        // line), top = the row's vertical center. Seeded here with the old constants purely as
+        // a first-paint fallback in case computeDSlotTargets ever runs before the rows exist.
+        let DSLOT_TARGET = [
             { left: '25%', top: '38%' },   // 0 = Blue Front
             { left: '25%', top: '68%' },   // 1 = Blue Back
             { left: '75%', top: '38%' },   // 2 = Red Front
             { left: '75%', top: '68%' },   // 3 = Red Back
         ];
+        // Stable ids for the four static FRONT/BACK panel rows (index.html #dzoneBlue/#dzoneRed
+        // .dcmd-panel) — the measurement targets for computeDSlotTargets(). Order matches the
+        // DSLOT_TARGET/netSlots index convention: 0=Blue Front, 1=Blue Back, 2=Red Front, 3=Red Back.
+        const DCMD_ROW_IDS = ['dcmdRowBlueFront', 'dcmdRowBlueBack', 'dcmdRowRedFront', 'dcmdRowRedBack'];
+
+        // Re-derive DSLOT_TARGET from the ACTUAL rendered geometry of the four panel rows.
+        // Coordinate space: #dtagLayer's positioned ancestor is #dsplit (position:relative), so
+        // every percentage here is relative to #dsplit's box — same space the old hardcoded
+        // constants used, just measured instead of guessed. getBoundingClientRect() forces a
+        // synchronous layout flush, so this always reflects the CURRENT layout (including a
+        // display:none -> 'flex' flip that happened earlier in the same call stack — see
+        // showLobbyView()+renderDoublesLobby() call sites). If #dsplit measures to zero (the
+        // doubles view itself is still display:none — shouldn't happen given the call sites,
+        // but defensive), this is a no-op and the previous/fallback DSLOT_TARGET values are
+        // left untouched rather than writing garbage percentages.
+        function computeDSlotTargets() {
+            const dsplit = document.getElementById('dsplit');
+            if (!dsplit) return;
+            const splitRect = dsplit.getBoundingClientRect();
+            if (!splitRect.width || !splitRect.height) return;
+            for (let i = 0; i < 4; i++) {
+                const row = document.getElementById(DCMD_ROW_IDS[i]);
+                if (!row) continue;
+                const rowRect = row.getBoundingClientRect();
+                const label = row.querySelector('.dcmd-row-label');
+                const labelRect = label ? label.getBoundingClientRect() : rowRect;
+                const xPx = labelRect.right - splitRect.left;
+                const yPx = (rowRect.top + rowRect.height / 2) - splitRect.top;
+                DSLOT_TARGET[i] = {
+                    left: (xPx / splitRect.width * 100) + '%',
+                    top:  (yPx / splitRect.height * 100) + '%',
+                };
+            }
+        }
         // Task 8: middle-lane spectator target positions (dsplit-relative %, same coordinate
         // space DSLOT_TARGET uses). Centered on the divider column (50%, matching
         // .dsplit-divider) and stacked vertically above the VS badge — horizontally clear of
@@ -17683,6 +17725,10 @@
         // DOM it paints is new.
         function renderDoublesLobby() {
             if (!netSlots) return;
+            // Re-measure the panel rows every repaint (Task 9) — cheap (4 elements) and keeps
+            // the sliding occupant lines pinned to the panel even if a resize/reflow happened
+            // between paints without going through the dedicated resize listener below.
+            computeDSlotTargets();
             const layer = document.getElementById('dtagLayer');
             if (layer) {
                 const seen = new Set();
@@ -17769,6 +17815,17 @@
             }
         }
         window.renderDoublesLobby = renderDoublesLobby;
+
+        // Window resize while the doubles lobby is up (Task 9): the panel rows' pixel geometry
+        // changes with viewport size, so the rect-derived DSLOT_TARGET must be recomputed and
+        // re-applied, or the sliding occupant lines drift off the panel rows after a resize.
+        // Guarded so this is inert for every other screen (classic 1v1 lobby, in-match, menus).
+        window.addEventListener('resize', () => {
+            if (netMode !== 'doubles' || !netSlots) return;
+            const view = document.getElementById('lobbyDoublesView');
+            if (!view || view.style.display === 'none') return;
+            renderDoublesLobby();
+        });
 
         // Mouse: the zones ARE the interface (owner). Clicking the side you're already on swaps
         // front/back with your teammate; clicking the other side picks it (front seat first, then
