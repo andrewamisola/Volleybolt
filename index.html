@@ -1149,6 +1149,21 @@
         // W3 GUEST: highest set-frame upTo already SET_ACK_D'd to the host, so we only send when it
         // actually advances (avoids re-sending the same ACK every INPUT_SET_D receive).
         let doublesSetAckSent = -1;
+        // ---- Online Doubles W3 Task 3: prediction + rollback over the 4-stream mesh ----
+        // predictedSets[frame] = the [4 inputs] actually USED for a SPECULATIVE step of `frame`
+        // (a throwaway guess the merge later corrects via rollback when the confirmed INPUT_SET_D
+        // lands). Only populated for SEATED clients (mySlot >= 0); spectators stay pure W2 lockstep.
+        let predictedSets = {};
+        // Highest frame f such that inputSets[0..f] are ALL present (the confirmed contiguous
+        // frontier, all clients). specDepth = currentFrame - (frontier + 1) bounds speculation.
+        let doublesConfirmedFrontier = -1;
+        // True ONLY while stepping/resimming a frame that has no confirmed set — the sole trigger
+        // for endRound's phantom gate. Cleared immediately after each speculative sim call.
+        let doublesSpeculativeStep = false;
+        // Set by endRound's phantom gate when a speculative step tried to end the round. The
+        // stepping/resim code sees it, un-steps the frame, and hard-stalls until the frame confirms
+        // (round ends are CONFIRMED-ONLY: resetRound is a wall-clock mutation rollback can't replay).
+        let doublesPhantomRoundEnd = false;
 
         function getLocalSide() {
             return isHost ? 'left' : 'right';
@@ -18300,6 +18315,11 @@
             doublesAckedSetFrame = new Map();
             doublesLastStallSend = 0;
             doublesSetAckSent = -1;
+            // W3 Task 3: prediction/rollback state — fresh per match (gameStateHistory reset above).
+            predictedSets = {};
+            doublesConfirmedFrontier = -1;
+            doublesSpeculativeStep = false;
+            doublesPhantomRoundEnd = false;
             doublesSlotKinds = slots.map(s => s.kind);   // ['human'|'ai' x4] — drives the host merge
             // INPUT-DELAY WARMUP: frames 0..INPUT_DELAY_DOUBLES-1 are never CAPTURED by anyone (each
             // client's first captured input targets frame 0+DELAY). So the host seeds those early
@@ -20494,6 +20514,8 @@
                     }
                 }
                 inputSets[f] = inputs;
+                // W3: advance the confirmed contiguous frontier as the host's own merge fills it.
+                while (inputSets[doublesConfirmedFrontier + 1]) doublesConfirmedFrontier++;
                 broadcastInputSet(f);
                 doublesMergeFrame++;
             }
@@ -20533,6 +20555,8 @@
         function storeInputSet(frame, inputs) {
             if (frame < 0 || !Array.isArray(inputs) || inputSets[frame]) return;
             inputSets[frame] = inputs;
+            // W3: advance the confirmed contiguous frontier (sets arrive out of order via history replay).
+            while (inputSets[doublesConfirmedFrontier + 1]) doublesConfirmedFrontier++;
         }
 
         // ============================================================
@@ -21024,6 +21048,121 @@
         }
 
         // ============================================================
+        // ONLINE DOUBLES W3 — prediction + rollback over the 4-stream mesh
+        // Parallel to the 1v1 rollback block above (predictInput / checkForRollback /
+        // performRollback). The 1v1 functions are NOT edited — these operate on the doubles
+        // 4-input `inputSets` / `predictedSets` instead of the flat left/right remote history.
+        // ============================================================
+
+        // Best-known input for every slot at `frame`, for a SPECULATIVE step. Authority note:
+        // the merge remains the only authority — these values are throwaway guesses that a
+        // confirmed INPUT_SET_D corrects via rollback. Per-slot sources, best first:
+        //   own slot        -> localInputHistory (exact — input delay means we always know it)
+        //   host+guest slot -> slotInputs[s][frame] if the INPUT_D already arrived (exact)
+        //   anything else   -> repeat-last-move from the newest confirmed set <= frame-1
+        //                      (NEVER run computeDoublesAIInput here — it mutates the host's
+        //                      aiSlotState rings; speculative calls would poison real AI fills)
+        function buildPredictedSetDoubles(frame) {
+            const set = [null, null, null, null];
+            for (let s = 0; s < 4; s++) {
+                if (s === mySlot && localInputHistory[frame]) { set[s] = localInputHistory[frame]; continue; }
+                if (isHost && slotInputs[s][frame]) { set[s] = slotInputs[s][frame]; continue; }
+                let last = null;
+                for (let f = Math.min(frame - 1, doublesConfirmedFrontier); f >= Math.max(0, frame - 10); f--) {
+                    if (inputSets[f]) { last = inputSets[f][s]; break; }
+                }
+                set[s] = last
+                    ? { moveDir: last.moveDir, parry: false, fireball: false, frostbolt: false, thunderstorm: false, juice: false }
+                    : defaultInput();
+            }
+            return set;
+        }
+
+        // Mirror of checkForRollback (1v1) against the doubles sets: return the EARLIEST confirmed
+        // frame whose stored prediction differs from the now-confirmed input, else -1. Matched
+        // records are reconciled (deleted) in-scan so the window stays O(MAX_ROLLBACK_FRAMES) — a
+        // frame stepped speculatively then confirmed IDENTICALLY needs no rollback and no record.
+        function checkForRollbackDoubles() {
+            const scanFrom = gameStateHistory.length ? gameStateHistory[0].frame : 0;
+            for (let f = scanFrom; f < currentFrame; f++) {
+                const conf = inputSets[f], pred = predictedSets[f];
+                if (!conf || !pred) continue;
+                let mismatch = false;
+                for (let s = 0; s < 4; s++) {
+                    const a = conf[s], b = pred[s];
+                    if (a.moveDir !== b.moveDir || a.parry !== b.parry || a.fireball !== b.fireball ||
+                        a.frostbolt !== b.frostbolt || a.thunderstorm !== b.thunderstorm || a.juice !== b.juice) {
+                        mismatch = true; break;
+                    }
+                }
+                if (mismatch) return f;             // earliest mispredicted confirmed frame
+                delete predictedSets[f];            // matched — reconciled; drop the record
+            }
+            return -1;
+        }
+
+        // Mirror of performRollback (1v1). Every invariant from that function applies here:
+        // snapshot-before-frame convention (snapshot{f} = state BEFORE frame f), slice-then-recapture
+        // of retained snapshots, represented-frame hash overwrite (mpStoreHash stamps snap.frame),
+        // isResimulating mute. Extra vs 1v1: a speculative resim frame that tries to end the round
+        // trips the phantom gate — we TRUNCATE the speculative tail (round ends are confirmed-only).
+        function performRollbackDoubles(toFrame) {
+            const stateIndex = gameStateHistory.findIndex(s => s.frame === toFrame);
+            if (stateIndex < 0) { console.warn('Cannot rollback to frame', toFrame, '- no saved state'); return; }
+            if (window.MP_LOG_ROLLBACKS) console.log('Rolling back from frame', currentFrame, 'to frame', toFrame);
+            mpSync.rollbacks++; mpSync.lastRollback = currentFrame - toFrame;
+            isResimulating = true;
+            restoreGameState(gameStateHistory[stateIndex]);
+            // Trim aged-out history and keep [toFrame ... currentFrame-1]; later retained snapshots are
+            // stale (they embed the old timeline) and are re-captured below after each frame resims.
+            gameStateHistory = gameStateHistory.slice(stateIndex);
+            for (let f = toFrame; f < currentFrame; f++) {
+                let set = inputSets[f];
+                if (set) {
+                    delete predictedSets[f];              // reconciled — confirmed input applied
+                } else {
+                    set = buildPredictedSetDoubles(f);    // still speculative — re-predict with newest knowledge
+                    predictedSets[f] = set;
+                    doublesSpeculativeStep = true;
+                }
+                const ctx = buildSimCtx();
+                ctx.backInputs = { left: set[1], right: set[3] };
+                window.VolleyboltSim.simulateNetworkFrame(set[0], set[2], 1 / TICK_RATE, ctx);
+                doublesSpeculativeStep = false;
+                if (doublesPhantomRoundEnd) {
+                    // A resim frame tried to end the round (endRound's phantom gate: any endRound
+                    // during resim, speculative OR confirmed — rollback must NEVER cross a round
+                    // boundary; resetRound is a wall-clock mutation rollback can't replay). Truncate
+                    // the tail: restore snapshot{f} (pre-frame-f state), pull currentFrame back to f,
+                    // drop every snapshot/prediction record >= f, and stall. The main loop then
+                    // re-steps f with isResimulating=false: if f is confirmed it ends the round
+                    // normally (→ f+1, pinned); if still speculative it phantom-stalls until it confirms.
+                    doublesPhantomRoundEnd = false;
+                    restoreGameState(gameStateHistory[gameStateHistory.length - 1].frame === f
+                        ? gameStateHistory[gameStateHistory.length - 1]
+                        : gameStateHistory.find(s => s.frame === f));
+                    gameStateHistory = gameStateHistory.filter(s => s.frame <= f);
+                    for (const k in predictedSets) if ((k | 0) >= f) delete predictedSets[k];
+                    currentFrame = f;
+                    isResimulating = false;
+                    return;
+                }
+                mpStoreHash(f);                           // overwrite this resimmed frame's hash (settled)
+                // After simulating frame f the live state is "before frame f+1" = snapshot{f+1}.
+                // Overwrite the stale snapshot for every RETAINED frame so a chained rollback lands
+                // on corrected state. captureGameState stamps .frame with live currentFrame, so override.
+                const nextFrame = f + 1;
+                if (nextFrame < currentFrame) {
+                    const snap = captureGameState();
+                    snap.frame = nextFrame;
+                    const idx = gameStateHistory.findIndex(s => s.frame === nextFrame);
+                    if (idx >= 0) gameStateHistory[idx] = snap; else gameStateHistory.push(snap);
+                }
+            }
+            isResimulating = false;
+        }
+
+        // ============================================================
         // PVP GAME LOOP - Fixed Timestep with Rollback
         // ============================================================
 
@@ -21180,27 +21319,67 @@
                     }
                 }
 
-                // Lockstep gate (also the start barrier at frame 0): step only when the confirmed set
-                // for currentFrame exists; otherwise wait (drop backlog so we resume at 1x on arrival).
-                const set = inputSets[currentFrame];
+                // W3 rollback trigger first (mirror runNetworkFrame order): a confirmed set that
+                // contradicts a prediction rewinds before we step further. Seated-only — spectators
+                // (mySlot < 0) never predict, so nothing to reconcile.
+                if (mySlot >= 0) {
+                    const rb = checkForRollbackDoubles();
+                    if (rb >= 0) performRollbackDoubles(rb);
+                }
+
+                // Lockstep gate (also the start barrier at frame 0). W3: step from the confirmed set
+                // when present; otherwise SEATED clients speculate within the rollback window, and
+                // spectators keep pure W2 lockstep (stall).
+                let set = inputSets[currentFrame];
+                let speculative = false;
                 if (!set) {
-                    // Stall keepalive: while frozen, inputFrame doesn't advance so nothing re-sends
-                    // (the W2 weak link). Re-send the newest packet at a wall-clock throttle —
-                    // transport-side only, never feeds the sim.
-                    const now = performance.now();
-                    if (now - doublesLastStallSend > STALL_RESEND_MS) {
-                        doublesLastStallSend = now;
-                        if (isHost) { if (inputSets[doublesMergeFrame - 1]) broadcastInputSet(doublesMergeFrame - 1); }
-                        else if (mySlot >= 0 && localInputHistory[lastDoublesInputFrame]) {
-                            sendDoublesInput(lastDoublesInputFrame, localInputHistory[lastDoublesInputFrame]);
+                    // Spectators stay pure lockstep; seated clients speculate up to the window minus
+                    // the input delay (specDepth headroom keeps the resim range < MAX_ROLLBACK_FRAMES).
+                    const specDepth = currentFrame - (doublesConfirmedFrontier + 1);
+                    if (mySlot < 0 || specDepth >= MAX_ROLLBACK_FRAMES - INPUT_DELAY_DOUBLES) {
+                        // Task 1 stall keepalive: while frozen, inputFrame doesn't advance so nothing
+                        // re-sends (the W2 weak link). Re-send the newest packet at a wall-clock
+                        // throttle — transport-side only, never feeds the sim.
+                        const now = performance.now();
+                        if (now - doublesLastStallSend > STALL_RESEND_MS) {
+                            doublesLastStallSend = now;
+                            if (isHost) { if (inputSets[doublesMergeFrame - 1]) broadcastInputSet(doublesMergeFrame - 1); }
+                            else if (mySlot >= 0 && localInputHistory[lastDoublesInputFrame]) {
+                                sendDoublesInput(lastDoublesInputFrame, localInputHistory[lastDoublesInputFrame]);
+                            }
                         }
+                        netAccumulator = 0; break;
                     }
-                    netAccumulator = 0; break;
+                    set = buildPredictedSetDoubles(currentFrame);
+                    predictedSets[currentFrame] = set;
+                    speculative = true;
+                }
+
+                // Snapshot BEFORE simulating (1v1 convention: snapshot{f} = state before frame f).
+                // Seated-only: spectators never roll back so they never snapshot.
+                if (mySlot >= 0) {
+                    if (gameStateHistory.length >= MAX_ROLLBACK_FRAMES) gameStateHistory.shift();
+                    gameStateHistory.push(captureGameState());
                 }
 
                 const ctx = buildSimCtx();
                 ctx.backInputs = { left: set[1], right: set[3] };
+                doublesSpeculativeStep = speculative;
                 window.VolleyboltSim.simulateNetworkFrame(set[0], set[2], 1 / TICK_RATE, ctx);
+                doublesSpeculativeStep = false;
+
+                if (doublesPhantomRoundEnd) {
+                    // A speculative step tried to end the round: un-step this frame (restore the
+                    // pre-step snapshot, pop it, drop the prediction record) and hard-stall until
+                    // the frame confirms. Round ends are confirmed-only (see endRound's phantom gate).
+                    doublesPhantomRoundEnd = false;
+                    restoreGameState(gameStateHistory[gameStateHistory.length - 1]);
+                    gameStateHistory.pop();
+                    delete predictedSets[currentFrame];
+                    netAccumulator = 0; break;
+                }
+
+                if (!speculative) delete predictedSets[currentFrame];   // confirmed step needs no record
 
                 // Hash bookkeeping (transport-agnostic: stores + compares local hashes). Task 5:
                 // mpMaybeSendHash's send site is forked by netMode (star topology — host broadcasts,
@@ -21212,11 +21391,12 @@
 
                 mpMaybeSendHash();
 
-                // Prune confirmed sets / per-slot queues older than 300 frames (>> the redundancy
-                // window; W3's rollback window is well under this). Cheap, done every 64 frames.
+                // Prune confirmed sets / per-slot queues / prediction records older than 300 frames
+                // (>> the redundancy + rollback windows). Cheap, done every 64 frames.
                 if (currentFrame % 64 === 0) {
                     const cutoff = currentFrame - 300;
                     for (const k in inputSets) if ((k | 0) < cutoff) delete inputSets[k];
+                    for (const k in predictedSets) if ((k | 0) < cutoff) delete predictedSets[k];
                     if (isHost) for (let s = 0; s < 4; s++) for (const k in slotInputs[s]) if ((k | 0) < cutoff) delete slotInputs[s][k];
                 }
                 cleanupOldHistory();   // trims localInputHistory (redundancy source) + the unused remote array
@@ -21648,6 +21828,13 @@
             roundActive = true;
             roundTransitioning = false;
             hideMessage();
+
+            // W3: no rollback may cross a round boundary (resetRound is wall-clock, not replayable).
+            // Everyone is pinned at the same stop frame (the !roundActive pin) and round ends are
+            // confirmed-only, so all stepped frames are settled — drop the old round's snapshots
+            // and prediction records; the new round starts a fresh window. (doublesConfirmedFrontier
+            // is monotonic over the whole match — inputSets isn't cleared here — so it is NOT reset.)
+            if (netMode === 'doubles') { gameStateHistory = []; predictedSets = {}; }
 
             // Show ability bar for the new round. Task 8: EXCEPT for an online-doubles spectator
             // (a round transition mid-match — e.g. after a score — calls startRound() again, so
@@ -23946,6 +24133,21 @@
         }
 
         function endRound(winnerSide) {
+            // W3 CONFIRMED-ONLY ROUND ENDS (online doubles): a round end must never fire on a
+            // PREDICTED input NOR while resimulating — its wall-clock cascade (transition timers,
+            // resetRound) is not rollback-replayable, and rollback must NEVER cross a round boundary
+            // (W2 shipped two desync classes on exactly this seam). Two triggers:
+            //   doublesSpeculativeStep — a speculative main-loop/resim step reached the round end.
+            //   isResimulating         — a CONFIRMED frame ends the round DURING resim: the round
+            //     end is a downstream consequence of an upstream misprediction we speculated past, so
+            //     resim would otherwise cross the boundary (the sim never reads roundActive) and leave
+            //     currentFrame ahead of the pinned mesh. Truncating here un-steps to that frame; the
+            //     main loop then re-steps it with isResimulating=false and the round ends normally
+            //     (at f+1, on a confirmed step), identical to every client that never speculated.
+            // Both branches are dead outside online doubles (netMode!=='doubles') — every golden and
+            // 1v1 run with netMode!=='doubles', so their endRound behavior is byte-identical.
+            if (netMode === 'doubles' && (doublesSpeculativeStep || isResimulating)) { doublesPhantomRoundEnd = true; return; }
+
             // Guard against double-calls (e.g., two projectiles hitting same frame)
             if (!roundActive) return;
 
