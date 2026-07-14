@@ -13244,16 +13244,26 @@
                 front: { castK: 7,  reactionDelta: -1 },
                 back:  { castK: 11, reactionDelta: +2 },
                 teammateSkill: 0.6,
-                slotSalt: { right: 0, leftBack: 0x5EED1, rightBack: 0x5EED2 },
+                // 'left' (front-blue) added W3: LOCAL doubles never AI-drives this slot (the sole
+                // local player always sits there), so it had no entry — online doubles has no such
+                // guarantee (any of the 4 seats can be AI from match start, or flip to AI mid-match
+                // on a guest drop). Salt 0, matching 'right' — the two FRONT slots share the
+                // unsalted default; only the two backs need de-correlating salt (see block comment).
+                slotSalt: { left: 0, right: 0, leftBack: 0x5EED1, rightBack: 0x5EED2 },
             };
             // Per-slot reaction rings + threat-sight (replaces the singles globals for doubles slots).
+            // 'left' added W3 (see DOUBLES_AI.slotSalt comment above) — computeDoublesAIInput /
+            // buildAIViewForSlot / updateSlotThreatSight all index this by slotKey with no fallback,
+            // so an online match with the front-blue seat AI-driven (from the lobby, or via a W3
+            // guest-drop AI takeover) would otherwise throw on the very first AI-filled frame.
             const aiSlotState = {
+                left:      { views: [], threatSight: {} },
                 right:     { views: [], threatSight: {} },
                 leftBack:  { views: [], threatSight: {} },
                 rightBack: { views: [], threatSight: {} },
             };
             function resetAISlotState() {
-                for (const k of ['right', 'leftBack', 'rightBack']) {
+                for (const k of ['left', 'right', 'leftBack', 'rightBack']) {
                     aiSlotState[k].views.length = 0;
                     for (const id in aiSlotState[k].threatSight) delete aiSlotState[k].threatSight[id];
                 }
@@ -17538,28 +17548,35 @@
             // C1: a SEATED human leaving/dying MID-MATCH (LEAVE_D, conn close, or PONG_D timeout — all
             // three funnel through dropGuest → here) would hang every client forever: hostTryMergeDoubles
             // blocks on slotInputs[i] for that human slot, which will never arrive, so no INPUT_SET_D is
-            // ever broadcast and all four clients stall at the same frame. W2's contract is a CLEAN exit,
-            // not AI-swap resilience (that's W3 — explicitly NOT built here). So end the match for
-            // everyone: fan MATCH_OVER_D out to the surviving guests, then run the local disconnect
-            // overlay flow (handleDisconnect also cleanupPeers, whose conn.close is the guests' belt-and-
-            // braces even if MATCH_OVER_D is lost). Gate on doublesSlotKinds[i]==='human' (the frozen
-            // match snapshot) so an AI-seat departure — impossible here since AI slots hold no peer — and
-            // a spectator loss (i<0, no seat, Task-8 silent) never trigger it.
+            // ever broadcast and all four clients stall at the same frame. W2 shipped a CLEAN-EXIT
+            // contract here (whole match over); W3 replaces it with AI-swap resilience — the co-op
+            // survives a friend dropping. Gate on doublesSlotKinds[i]==='human' (the frozen match
+            // snapshot) so an AI-seat departure — impossible here since AI slots hold no peer — and a
+            // spectator loss (i<0, no seat, Task-8 silent) never trigger it.
             // !gameOver: only while the match is actually RUNNING. doublesMatchLive stays true through
             // the victory screen (it's cleared in exitDoublesState, not at match end), but a NATURALLY
             // finished match (endRound sets gameOver=true on every client, host included — the
             // deterministic sim resolves the tower fall on the same frame everywhere) must NOT treat the
             // first player's exit (Main Menu → LEAVE_D via returnToMenuTransition, or tab close) as a
-            // mid-match loss — that would slap the disconnect overlay over everyone else's Battle
-            // Report. Post-gameOver departures fall through to the silent bookkeeping below (its
-            // broadcastLobbyState is already suppressed by the C2(b) live gate). The hang protection is
-            // intact: the merge can only be waited on while the lockstep is stepping, i.e. gameOver
-            // is false. (gameState is NOT usable here — nothing sets it at match end; it stays
-            // 'playing' through the victory screen.)
+            // mid-match loss — that would slap an AI-swap over everyone else's Battle Report. Post-
+            // gameOver departures fall through to the silent bookkeeping below (its broadcastLobbyState
+            // is already suppressed by the C2(b) live gate). The hang protection is intact: the merge
+            // can only be waited on while the lockstep is stepping, i.e. gameOver is false. (gameState is
+            // NOT usable here — nothing sets it at match end; it stays 'playing' through the victory
+            // screen.)
             if (doublesMatchLive && !gameOver && i >= 0 && doublesSlotKinds && doublesSlotKinds[i] === 'human') {
-                hostBroadcast({ type: 'MATCH_OVER_D', reason: 'Player left the match' });
-                handleDisconnect('Player left the match');
-                return;
+                // W3: the co-op survives a friend dropping — the vacated seat becomes a host-driven
+                // virtual player. Flipping the kind is sufficient to unblock the merge: the gate
+                // only waits on 'human' slots (hostTryMergeDoubles), and AI fill is computed at
+                // merge time on the host and broadcast like any other input. Inputs the departed
+                // guest already delivered for future frames stay valid (first-write-wins store) —
+                // the AI takes over exactly at the first frame with no stored human input.
+                doublesSlotKinds[i] = 'ai';
+                const vacatedName = netSlots[i].name || ('P' + (i + 1));
+                hostBroadcast({ type: 'SLOT_TO_AI_D', slot: i, name: vacatedName });
+                applySlotToAI(i, vacatedName);   // host applies the same presentation locally (2.3)
+                // Falls through to the seat->AI netSlots bookkeeping right below (same as any other
+                // AI-seat departure) so the lobby view stays consistent if the match later returns to it.
             }
             if (i >= 0) {
                 netSlots[i] = aiSlot();
@@ -18024,6 +18041,26 @@
             doublesNameTags = null;
         }
         window.destroyDoublesNameTags = destroyDoublesNameTags;
+
+        // W3 (guest-drop AI takeover, Task 2.3): shared presentation helper for a slot flipping to
+        // AI — called by the HOST right after broadcasting SLOT_TO_AI_D (netLobbyOnLeave) and by
+        // every GUEST on receiving it. Direct tag-text write, not a rebuild: createDoublesNameTags()
+        // is the only full-rebuild path (destroys+recreates all 4 anchors/TextBlocks), which would be
+        // wasteful for a text-only change this function only fires once per drop. netSlotNames is the
+        // single source doublesSlotLabel() reads, so writing it here also keeps any FUTURE label read
+        // (a fresh createDoublesNameTags() call, were one ever to run) correctly labeled.
+        function applySlotToAI(slot, name) {
+            const label = name + ' (CPU)';
+            if (netSlotNames) netSlotNames[slot] = label;
+            const key = SLOT_KEYS[slot];
+            if (doublesNameTags && doublesNameTags[key] && doublesNameTags[key].tb) {
+                doublesNameTags[key].tb.text = label;
+            }
+            // logNeutral is the existing gold/system-styled combat-log line (M1 LOG wave family:
+            // logCombat/logDamage/logZap/logJuice/logFrozen all funnel into the same pushLine()) —
+            // reused here instead of inventing a new log styling for this one-off announcement.
+            if (window.logNeutral) window.logNeutral(name + ' disconnected — CPU takes over');
+        }
 
         // Doubles (M1): create/enable the back-row paddle meshes and advance the front paddles
         // toward midfield. Lazy + idempotent — the meshes are built once and reused/repositioned
@@ -19274,17 +19311,27 @@
                     break;
 
                 case 'MATCH_OVER_D':
-                    // C1: the host ended a LIVE doubles match because a seated human left (see
-                    // netLobbyOnLeave). Exit via the SAME guarded pattern as DESYNC_ABORT_D above —
-                    // mpDesyncAborted mirrors its idempotence so a guest that already tore down (its own
-                    // desync abort, or the host's conn.close racing this) just ignores it. netMode-gated
-                    // so it can never touch a classic 1v1 session.
+                    // C1 is now AI-swap resilience (W3) — nothing on the current netLobbyOnLeave path
+                    // sends this anymore. Message type + handler KEPT: harmless (netMode-gated,
+                    // mpDesyncAborted-guarded like DESYNC_ABORT_D) and still the correct reaction if
+                    // anything else ever needs a hard whole-match abort.
                     if (netMode === 'doubles') {
                         console.warn('[Doubles] host ended match: ' + (data.reason || 'match over'));
                         if (mpDesyncAborted) break;
                         mpDesyncAborted = true;
                         handleDisconnect(data.reason || 'Player left the match');
                     }
+                    break;
+
+                case 'SLOT_TO_AI_D':
+                    // W3: the host flipped a departed guest's seat to AI (netLobbyOnLeave's C1
+                    // branch) — mirror the kind flip + presentation so every guest's own hostTryMerge-
+                    // independent view (name tag, combat log) matches. netMode-gated like every other
+                    // doubles-only case; doublesSlotKinds null-guarded defensively (should always exist
+                    // once a match is live — matches the read pattern hostTryMergeDoubles uses).
+                    if (netMode !== 'doubles') break;
+                    if (doublesSlotKinds) doublesSlotKinds[data.slot] = 'ai';
+                    applySlotToAI(data.slot, data.name);
                     break;
 
                 case 'REMATCH':
