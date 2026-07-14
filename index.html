@@ -1005,6 +1005,10 @@
         // Canonical position keys per slot index — Task 3 consumes this to map slots onto the
         // sim's left/leftBack/right/rightBack combatants.
         const SLOT_KEYS = ['left', 'leftBack', 'right', 'rightBack'];
+        // Online-doubles slot names [name x4], slot-indexed, for doublesSlotLabel's online override
+        // (name tags + STATUS labels). Non-null only during an online doubles match; set in
+        // startOnlineDoublesMatch from the START_MATCH_D slots, cleared in exitDoublesState.
+        let netSlotNames = null;
 
         // Sends msg to every OPEN guest conn except exceptPeerId. No-op when guestConns is empty (1v1).
         function hostBroadcast(msg, exceptPeerId) {
@@ -2593,6 +2597,10 @@
         // 'Blue' when unset — so that's the exact string this checks against to decide whether a
         // REAL custom name was set (an empty-string check would never fire).
         function doublesSlotLabel(slotIndex, isLocalHuman) {
+            // Online doubles: names arrive over the wire (each slot's real settings-name, incl. the
+            // local player's own — set at JOIN_HELLO). Slot-indexed (slotIndex is 1-based: left=1..
+            // rightBack=4), so index-1. Falls back to P# for an unnamed slot.
+            if (netSlotNames) return netSlotNames[slotIndex - 1] || ('P' + slotIndex);
             if (isLocalHuman) {
                 const n = window.getPlayerName ? window.getPlayerName() : '';
                 if (n && n !== 'Blue') return n;
@@ -16746,6 +16754,23 @@
             if (Date.now() < victoryContinueAt) return;
             if (_returningToMenu) return;   // ignore repeat triggers (button + DOM fallback)
             _returningToMenu = true;
+            // Online-doubles voluntary exit: notify the room, then tear down the net session.
+            // This function is the single choke point EVERY voluntary quit-to-menu crosses (pause
+            // "Leave Match", victory Main Menu button, Enter-on-gameOver, GameSM.endMatch), so the
+            // teardown lives here rather than in any one button handler. Mirrors doublesLocalLeave
+            // (the lobby Leave button): host broadcasts LEAVE_D (guests get the clean host-closed
+            // flow); a guest unicasts LEAVE_D (host's dropGuest -> netLobbyOnLeave frees the slot);
+            // cleanupPeer resets netMode/guestConns/heartbeats/readyState. Without this, nobody is
+            // notified and peer/guestConns leak until the next initializePeer. Placed AFTER the
+            // de-dup guard so a repeat trigger can't double-send. 1v1 ('duel') is untouched — its
+            // teardown stays at its existing seam (the victory Main Menu handler, which sends LEAVE
+            // + cleanupPeer immediately before calling this); SP/local doubles are netMode 'none'.
+            if (netMode === 'doubles') {
+                if (isHost) hostBroadcast({ type: 'LEAVE_D' });
+                else if (conn && conn.open) { try { conn.send({ type: 'LEAVE_D' }); } catch (e) {} }
+                cleanupPeer();
+                netSlots = null; mySlot = -1;
+            }
             // Clear any lingering match VFX so they don't bleed into the menu. Guarded so a stray
             // dispose error can't abort the whole return-to-menu and strand the player on the screen.
             try { if (window.clearAllProjectiles) clearAllProjectiles(); } catch (e) { console.warn('continue: clearAllProjectiles failed', e); }
@@ -17472,11 +17497,20 @@
         // GUI text either; see the statusRefs comment).
         function createDoublesNameTags() {
             destroyDoublesNameTags();   // idempotent guard against double-create (defensive; no known caller does this)
+            // Which tag gets the LOCAL-player highlight (alpha 1.0). M1 (local doubles) hardcoded
+            // `left` as the human; online, the local player can hold ANY slot, so key off each
+            // combatant's isLocalPlayer (set per-slot in startOnlineDoublesMatch). Fallback to the
+            // M1 behavior when not online. "Online" is discriminated by netSlotNames — the SAME
+            // match-scoped flag doublesSlotLabel keys on, set only by startOnlineDoublesMatch and
+            // cleared by exitDoublesState — NOT netMode, which is connection-scoped and could in
+            // principle outlive a match; tags and labels must always agree on which mode they're in.
+            const online = !!netSlotNames;
+            const mine = (c, m1Default) => online ? !!(c && c.isLocalPlayer) : m1Default;
             doublesNameTags = {
-                left:      createDoublesNameTag(combatants.left,      1, true,  "#6fb0ff"),
-                leftBack:  createDoublesNameTag(combatants.leftBack,  2, false, "#3d6a94"),
-                right:     createDoublesNameTag(combatants.right,     3, false, "#e76e55"),
-                rightBack: createDoublesNameTag(combatants.rightBack, 4, false, "#a84f3c"),
+                left:      createDoublesNameTag(combatants.left,      1, mine(combatants.left,      true),  "#6fb0ff"),
+                leftBack:  createDoublesNameTag(combatants.leftBack,  2, mine(combatants.leftBack,  false), "#3d6a94"),
+                right:     createDoublesNameTag(combatants.right,     3, mine(combatants.right,     false), "#e76e55"),
+                rightBack: createDoublesNameTag(combatants.rightBack, 4, mine(combatants.rightBack, false), "#a84f3c"),
             };
         }
         window.createDoublesNameTags = createDoublesNameTags;
@@ -17544,6 +17578,7 @@
             // this shared teardown, so this reads the correct (post-transition) mode.
             if (window.configureStatusRowsForMode) window.configureStatusRowsForMode();
             destroyDoublesNameTags();   // name tags are doubles-only presentation — see its own header comment
+            netSlotNames = null;        // online-doubles wire names are match-scoped; back to local doublesSlotLabel behavior
             combatants.leftBack = null;
             combatants.rightBack = null;
             if (combatants.left)  combatants.left.position  = 'solo';
@@ -17602,7 +17637,15 @@
         // recreated here every time — solved by caching the loaded model/anim refs at module scope
         // and re-attaching onto the fresh object each match; see beginBackModels/attachBackModelCache
         // above and loadOne's header comment.)
-        function startDoublesMatch() {
+        // Shared doubles setup — the identical body run by BOTH the LOCAL doubles starter
+        // (startDoublesMatch) and the ONLINE one (startOnlineDoublesMatch): teamSize=2, STATUS
+        // 4-row layout, back-combatant creation + paddles + facing + rails, arena resize, AI-slot
+        // reset. Deliberately STOPS before beginBackModels so each caller supplies its own tail
+        // (local: startGame under the AI driver; online: netcode resets + slot→combatant
+        // assignment, then startRound). Sets gameMode='single' and the backs' inputSource='ai' as
+        // the local defaults; the online caller overwrites both AFTER this returns. This is an
+        // identity factor-out of the former startDoublesMatch body — same calls, same order.
+        function setupDoublesMatchCommon() {
             setDOMModeSelectVisible(false);
             teamSize = 2;
             document.body.classList.toggle('doubles', true);
@@ -17610,7 +17653,7 @@
             // teamSize is 2 — the two extra rows read combatants.leftBack/rightBack, which this
             // function creates a few lines below, but the layout switch itself only needs teamSize.
             if (window.configureStatusRowsForMode) window.configureStatusRowsForMode();
-            gameMode = 'single';                 // doubles M1 is a singles-driver variant
+            gameMode = 'single';                 // doubles M1 is a singles-driver variant (online overrides to 'pvp')
             maxTowerHealth = SINGLES_MAX_HEALTH;
             playerTowerHealth = maxTowerHealth;
             aiTowerHealth = maxTowerHealth;
@@ -17622,7 +17665,7 @@
             combatants.rightBack = createCombatant('right', 'back');
             combatants.left.position  = 'front';
             combatants.right.position = 'front';
-            combatants.leftBack.inputSource  = 'ai';
+            combatants.leftBack.inputSource  = 'ai';     // online: reassigned per-slot below
             combatants.rightBack.inputSource = 'ai';
             combatants.leftBack.paddle  = playerBackPaddle;
             combatants.rightBack.paddle = aiBackPaddle;
@@ -17639,12 +17682,135 @@
             }
             if (window.resizeStageForMode) window.resizeStageForMode();
             if (window.resetAISlotState) window.resetAISlotState();   // clear per-slot lag rings + threat-sight
+        }
+
+        function startDoublesMatch() {
+            setupDoublesMatchCommon();
             // Gate the actual match start (AND the name tags, which need every modelRoot to exist)
             // on the back-wizard models being ready (lazy-loaded on the first doubles match; every
             // later match re-attaches the cache — see beginBackModels).
             beginBackModels(() => { createDoublesNameTags(); startGame(); });
         }
         window.startDoublesMatch = startDoublesMatch;
+
+        // ONLINE doubles starter — run by EVERY client (host builds `slots` from netSlots; guests
+        // receive it in START_MATCH_D). Shares the whole doubles scene/combatant build with local
+        // doubles (setupDoublesMatchCommon), then does the online tail: mark it a rollback PvP
+        // match, apply the shared seed + the 1v1-style frame/history resets so W2's lockstep loop
+        // lands on clean netcode state, publish the wire names, and assign each slot's combatant.
+        function startOnlineDoublesMatch(seed, slots) {
+            console.log('Starting online doubles match with seed:', seed);
+            hideMultiplayerLobby();
+            if (window.GameSM) { GameSM.state = 'match'; GameSM.show3D(true); }
+
+            // Shared doubles setup (teamSize=2, back combatants + paddles + facing, arena resize,
+            // STATUS 4-row layout) — the identical body local doubles runs.
+            setupDoublesMatchCommon();
+
+            // Online-specific: a rollback PvP match, not the AI-driven singles variant.
+            gameMode = 'pvp';
+            gameState = 'playing';
+            if (window.resetCameraToDefault) window.resetCameraToDefault();
+            if (window.applyClientPerspective) window.applyClientPerspective(false);   // canonical view, no flip (matches 1v1 PvP)
+            if (window.refreshNetStatus) window.refreshNetStatus();
+
+            // Shared RNG seed (agreed pre-match; NOT sim randomness) + frame/history resets — same
+            // list as startMultiplayerMatch (brief §2) so W2 lands on a clean slate.
+            netRngSeed = seed;
+            currentFrame = 0;
+            localInputHistory = [];
+            remoteInputHistory = [];
+            lastConfirmedRemoteFrame = -1;
+            highestRemoteInputFrame = -1;
+            remoteCurrentFrame = -1;
+            gameStateHistory = [];
+            nextProjectileId = 0;
+            netAccumulator = 0;
+            resetPvPParryState();
+
+            // Names over the wire feed doublesSlotLabel's online override (name tags + STATUS labels).
+            netSlotNames = slots.map(s => s.name);
+
+            // Slot -> combatant assignment. Every client fills all four; only inputSource differs by
+            // role: our own slot is 'local'; on the HOST, AI slots are 'ai' (host computes them) and
+            // other humans are 'network'; on GUESTS, every non-local slot is 'network' (the host
+            // merges and relays even the AI inputs — W2). isLocalPlayer drives the name-tag highlight.
+            SLOT_KEYS.forEach((key, i) => {
+                const c = combatants[key];
+                if (!c) return;
+                c.isLocalPlayer = (i === mySlot);
+                c.inputSource = (i === mySlot) ? 'local'
+                              : (isHost && slots[i].kind === 'ai') ? 'ai' : 'network';
+            });
+
+            selectedUpgrade = 'default';
+            updateAbilityUI();
+            resetGame();
+            startRound();
+
+            // Reset netcode test harness (mirror startMultiplayerMatch).
+            mpSync.local = {}; mpSync.remote = {}; mpSync.localGroups = {}; mpSync.detailSent = {}; mpSync.lastOkFrame = -1;
+            mpSync.desync = null; mpSync.mismatches = 0; mpSync.badStreak = 0; mpSync.rollbacks = 0; mpSync.lastRollback = 0;
+            mpDesyncAborted = false;
+            toggleMpOverlay(!!window.DEV_MODE);
+
+            // Reveal gameplay UI (same panels as startMultiplayerMatch).
+            if (window.guiElements) {
+                if (window.guiElements.scorePanel) window.guiElements.scorePanel.isVisible = true;
+                if (window.guiElements.scoreText) window.guiElements.scoreText.alpha = 1;
+                if (window.guiElements.playerHealthPanel) window.guiElements.playerHealthPanel.isVisible = true;
+                if (window.guiElements.aiHealthPanel) window.guiElements.aiHealthPanel.isVisible = true;
+                if (window.guiElements.playerManaContainer) window.guiElements.playerManaContainer.isVisible = true;
+                if (window.guiElements.aiManaContainer) window.guiElements.aiManaContainer.isVisible = true;
+                if (window.guiElements.stageNameText) window.guiElements.stageNameText.isVisible = true;
+                if (window.guiElements.stageGrid) window.guiElements.stageGrid.isVisible = true;
+                if (window.guiElements.menuContainer) window.guiElements.menuContainer.isVisible = false;
+                if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 0;
+                if (window.guiElements.menuLeftPanel) window.guiElements.menuLeftPanel.isVisible = false;
+                if (window.setDOMMenuVisible) window.setDOMMenuVisible(false);
+            }
+            const abilityBar = document.getElementById('abilityBar');
+            if (abilityBar) abilityBar.style.display = 'flex';
+            const parryButton = document.getElementById('parryButton');
+            if (parryButton) parryButton.style.display = 'block';
+            if (window.guiElements && window.guiElements.abilityBarBg) window.guiElements.abilityBarBg.isVisible = true;
+            if (window.updateStageIndicator) updateStageIndicator();
+            updateScore();
+            updateHealthBars();
+
+            // Name tags need every back-wizard modelRoot to exist (lazy-loaded on the first doubles
+            // match). Gate ONLY the tags on beginBackModels — the netcode state above is synchronous
+            // so W2's loop can start immediately; the tags read netSlotNames + the per-slot
+            // isLocalPlayer already assigned above.
+            beginBackModels(() => { createDoublesNameTags(); });
+        }
+        window.startOnlineDoublesMatch = startOnlineDoublesMatch;
+
+        // HOST entry — fired by #btnStartD (via window.startDoublesOnlineMatch). Build the wire
+        // slots (kind+name only — peerIds stripped; clients derive their own role from mySlot), pick
+        // the shared seed the SAME way 1v1's btnStart does (Date.now()%2147483647 — agreed pre-match
+        // shared state, not sim randomness), broadcast START_MATCH_D, then start locally. hash:null
+        // is a reserved placeholder — start-state hash validation arrives with W2's hash task.
+        window.startDoublesOnlineMatch = async function () {
+            if (!isHost || netMode !== 'doubles' || !netSlots) return;
+            await initToneJS();
+            // The host's slot is ALWAYS re-derived from the 'HOST' sentinel at the moment of
+            // consumption — not trusted from the event-driven bookkeeping (broadcastLobbyState's
+            // recompute). This pins correctness against every drift class at once: lobby mutations
+            // landing during the initToneJS await above, any future netSlots write that forgets to
+            // route through broadcastLobbyState, and plain staleness. NOTE the sentinel can
+            // legitimately sit at ANY index — a swap moves the HOST record like anyone else's
+            // (hostSwapPos swaps slot CONTENTS with the partner slot, human partners included), so
+            // "host at Blue Back ⇒ mySlot=1 ⇒ leftBack is the host's combatant" is CORRECT, not
+            // drift. The warn below fires only on genuine bookkeeping disagreement.
+            const derived = netSlots.findIndex(s => s.peerId === 'HOST');
+            if (derived !== mySlot) console.warn('[Doubles] mySlot drift at match start: cached', mySlot, '!= sentinel-derived', derived, '— using derived');
+            mySlot = derived;
+            const slots = netSlots.map(s => ({ kind: s.kind, name: s.name }));
+            const seed = Date.now() % 2147483647;
+            hostBroadcast({ type: 'START_MATCH_D', seed, slots, hash: null });
+            startOnlineDoublesMatch(seed, slots);
+        };
 
         // Render the persisted career stats into #careerList (label : value rows).
         function populateCareer() {
@@ -18417,6 +18583,16 @@
                                 showMessage('Sync warning: starting state mismatch');
                             }
                         }
+                    }
+                    break;
+
+                case 'START_MATCH_D':
+                    // Online doubles: host's authoritative start. Same seed + slots (kind+name x4)
+                    // for every client; we set up identically and derive our own role from mySlot
+                    // inside startOnlineDoublesMatch. (Start-hash validation lands with W2's hash
+                    // task — data.hash is a reserved placeholder for now.)
+                    if (!isHost && netMode === 'doubles' && Array.isArray(data.slots)) {
+                        startOnlineDoublesMatch(data.seed, data.slots);
                     }
                     break;
 
@@ -19964,6 +20140,15 @@
         // ============================================================
 
         function runPvPGameLoop(renderDt) {
+            // W1 stub: online doubles loads the match scene but does NOT advance the sim yet — the
+            // 1v1 lockstep loop below assumes exactly two peers (flat left/right input histories,
+            // binary isHost side selection). W2 wires runOnlineDoublesLockstep here (4-slot input
+            // merge). Until then, park on the loaded scene with a dev note so a multi-tab W1 test
+            // can confirm lobby -> match-scene loading on every client without sim movement.
+            if (netMode === 'doubles') {
+                showMessage('ONLINE DOUBLES — W2 pending');
+                return;
+            }
             // Visual effects always update with render dt
             if (window.updateLingeringTrails) updateLingeringTrails(renderDt);
             updateBarrierPulse(renderDt);
