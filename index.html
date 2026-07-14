@@ -13901,6 +13901,21 @@
                 // returnToMenuTransition; cleared to 'playing' once a match starts). In-match phases
                 // (Ready/Go, playing, round transitions) are unaffected.
                 if (gameState === 'menu') return;
+                // ONLINE-DOUBLES GUARD (round-2 free-run desync): during an online doubles match the
+                // ONLY sim driver is the lockstep loop. But between rounds the sim-driven endRound
+                // sets roundActive=false, so stepFixedSim's dispatch (gameMode==='pvp' && roundActive)
+                // falls through HERE for the ~5s wall-clock transition window — and the teamSize===2
+                // branch below would free-run the local doubles AI sim per client (per-client frame
+                // counts + inputs), diverging hashed state that the round reset does NOT fully clear
+                // (partial juice survives combatantReset(false); nextProjectileId is never reset) →
+                // guaranteed desync abort at the next round's first SYNC_HASH_D. So: step ZERO sim
+                // frames, keep ONLY the presentation tail running (cast bars, mana UI, paddle visuals
+                // — exactly what this window needs; same call shape as the doubles branch below).
+                // Placed before the sandbox juice pin and spFrameCounter++ so nothing hashed (or
+                // AI-visible) mutates. DEAD outside online doubles: netMode is 'doubles' only between
+                // startOnlineDoublesMatch/lobby-flip and cleanupPeer — classic 1v1 runs 'duel'/'none'
+                // and every local mode runs 'none', so those paths are byte-identical through this.
+                if (netMode === 'doubles') { updateMatchPresentation(dt); return; }
                 // Sandbox (dev debug menu / dbg.sandbox()): pin the player's Juice bar full so
                 // Overdrive is testable on demand. SP-only by construction (this driver never runs
                 // in MP), applied BEFORE the sim frame so activation this frame sees a full bar.
@@ -20343,6 +20358,18 @@
             // during the hold are still stored (storeDoublesSlotInput ran before this call); the
             // first post-GO capture re-enters here and drains them plus the warmup backlog.
             if (!doublesIntroDone) return;
+            // BETWEEN-ROUND HOLD (same reasoning, round boundary): while roundActive is false the
+            // lockstep loop isn't dispatched, but this merge is still reachable from the INPUT_D
+            // receive handler — late/redundant packets in flight when the window opened can arrive
+            // mid-transition and complete a pending set, making the AI-slot fill below read
+            // MID-TRANSITION combatant state (post-endRound / mid-resetRound, host-wall-clock
+            // dependent) instead of live in-round state. Not a cross-client desync (merged sets are
+            // broadcast data), but nondeterministic AI inputs by design standards. Defer: inputs
+            // stay buffered in slotInputs; the host's first post-startRound loop tick re-enters and
+            // drains them against fresh state. roundActive is true at the intro's first merge too
+            // (the GO callback runs startRound() before setting doublesIntroDone), so warmup
+            // draining is unaffected.
+            if (!roundActive) return;
             while (true) {
                 const f = doublesMergeFrame;
                 let ready = true;
