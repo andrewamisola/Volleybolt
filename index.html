@@ -21007,6 +21007,32 @@
 
             netAccumulator += renderDt * 1000;
             while (netAccumulator >= TICK_MS) {
+                // ROUND-BOUNDARY PIN (hitch-triggered desync, pre-existing W2 defect): without this,
+                // after stepping the round-ending frame F a client with ≥2 ticks banked (frame
+                // hitch) would step F+1, F+2… in the SAME render frame while others stop — those
+                // extra frames run PRE-reset on one client and POST-reset on another (resetRound
+                // lands at different frame positions) → manaRegen/juice divergence. Checked at the
+                // top of EVERY iteration (a function-top gate could not catch the banked-tick case,
+                // which is the whole defect): endRound fires inside the sim step of frame F
+                // (deps → roundActive=false), that iteration still completes (hash stored,
+                // currentFrame→F+1), and this catches the NEXT iteration — pinning every client's
+                // stop position to exactly F+1. Also inert during the intro (the doublesIntroDone
+                // gate above returns first) and open on the post-GO first tick (the GO callback
+                // runs startRound(), roundActive=true, BEFORE setting doublesIntroDone).
+                if (!roundActive) { netAccumulator = 0; break; }
+
+                // HOST MERGE LIVENESS (closes a stall opened by the between-round merge gate):
+                // the merge used to run only from the capture-once block below and INPUT_D arrival.
+                // Under sustained one-way latency ≳ INPUT_DELAY_DOUBLES frames, set F+1 can still be
+                // unmerged at endRound; the completing INPUT_Ds arrive mid-window (stored, merge
+                // gated on roundActive); and if every seated human had already captured F+1+DELAY
+                // before the window, then on resume inputFrame === lastDoublesInputFrame everywhere
+                // → no capture → no INPUT_D → the merge would never be re-invoked → permanent
+                // 4-client hang. Calling it unconditionally each iteration (idempotent; instant
+                // no-op on guests via its isHost guard, and when gated/not-ready) drains the
+                // buffered inputs on the first post-startRound tick regardless of capture state.
+                if (isHost) hostTryMergeDoubles();
+
                 // Capture our own input for currentFrame+DELAY EXACTLY ONCE per input frame. While
                 // stalled, currentFrame (and thus inputFrame) doesn't advance, so we skip re-capture —
                 // re-capturing would clear a pressed one-shot (captureLocalInput resets parry/casts).
