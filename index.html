@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=57-dlobby-split">
+    <link rel="stylesheet" href="styles.css?v=58-dlobby-cmdmenu">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -449,10 +449,23 @@
             <div class="dsplit" id="dsplit">
                 <div class="dzone dzone-blue" id="dzoneBlue" data-side="blue">
                     <div class="dzone-label">BLUE</div>
+                    <!-- Static FF9 command-menu panel chrome (lobby v2, 2026-07-14 round 2): the
+                         FRONT/BACK rows never move — only the occupant text (painted into
+                         #dtagLayer, see below) slides between them. Zone-relative positioning
+                         (left:50%) lands at the same pixel column as the overlay's dsplit-relative
+                         25%/75% targets because each zone is exactly half of #dsplit's width. -->
+                    <div class="dcmd-panel" aria-hidden="true">
+                        <div class="dcmd-row" data-pos="front"><span class="dcmd-row-label">FRONT</span></div>
+                        <div class="dcmd-row" data-pos="back"><span class="dcmd-row-label">BACK</span></div>
+                    </div>
                 </div>
                 <div class="dsplit-divider"><span class="dsplit-vs">VS</span></div>
                 <div class="dzone dzone-red" id="dzoneRed" data-side="red">
                     <div class="dzone-label">RED</div>
+                    <div class="dcmd-panel" aria-hidden="true">
+                        <div class="dcmd-row" data-pos="front"><span class="dcmd-row-label">FRONT</span></div>
+                        <div class="dcmd-row" data-pos="back"><span class="dcmd-row-label">BACK</span></div>
+                    </div>
                 </div>
                 <div class="dtag-layer" id="dtagLayer"></div>
             </div>
@@ -17315,10 +17328,6 @@
         // LOBBY_STATE_D case in handleNetworkMessage).
         // ==============================================================================
 
-        // Per-slot team-tint, sourced the way the STATUS rows / 3D name tags are (front = the
-        // bright team hex, back = the dimmer shade — see createDoublesNameTags). 0/1 blue, 2/3 red.
-        const DSLOT_COLORS = ['#6fb0ff', '#3d6a94', '#e76e55', '#a84f3c'];
-        const DSLOT_POS = ['FRONT', 'BACK', 'FRONT', 'BACK'];
         // Full-screen split redesign (owner, 2026-07-14): each slot index's floating-tag TARGET
         // position within #dsplit (percentages of its box — 25%/75% = blue/red half centers;
         // front sits above back, "the obvious front/back distinction" the design asks for).
@@ -17527,9 +17536,10 @@
             renderDoublesLobby();
         }
 
-        // Identity-keyed name-tag DOM elements (owner redesign, 2026-07-14): humans key on peerId
-        // ('HOST' for the host) so the SAME element persists across a pick/swap — that's what lets
-        // the .dtag CSS transition (styles.css) actually slide it between slots. AI has no stable
+        // Identity-keyed name-tag DOM elements (owner redesign, 2026-07-14; command-menu marker
+        // restyle 2026-07-14 round 2): humans key on peerId ('HOST' for the host) so the SAME
+        // element persists across a pick/swap — that's what lets the .dcmd-line CSS transition
+        // (styles.css) actually slide it between slots. AI has no stable
         // identity across a pick (hostPickSide always MINTS A FRESH `aiSlot()` object at the
         // vacated index — see its own comment), so AI tags key on the current slot INDEX instead;
         // they simply appear/disappear in place rather than sliding, which reads fine (an anonymous
@@ -17552,22 +17562,24 @@
                     let tag = dTagEls.get(key);
                     if (!tag) {
                         tag = document.createElement('div');
-                        tag.className = 'dtag';
-                        tag.innerHTML = '<span class="dtag-name"></span><span class="dtag-sub"></span>';
+                        // Lobby v2 (2026-07-14 round 2, owner): command-menu pixel-text marker,
+                        // not a chip — a ▶ pointer span (shown only for YOUR row, .is-you) plus
+                        // a plain FF9UI name span. Position/ready/CPU state are all class-driven
+                        // (styles.css .dcmd-line rules); no per-tag inline color/border.
+                        tag.className = 'dcmd-line';
+                        tag.innerHTML = '<span class="dcmd-hand">&#9654;</span><span class="dcmd-name"></span>';
                         layer.appendChild(tag);
                         dTagEls.set(key, tag);
                     }
                     tag.dataset.role = (i % 2 === 0) ? 'front' : 'back';
                     tag.style.left = DSLOT_TARGET[i].left;
                     tag.style.top = DSLOT_TARGET[i].top;
-                    tag.style.borderColor = DSLOT_COLORS[i];
                     tag.classList.toggle('is-you', i === mySlot);
                     tag.classList.toggle('is-ready', s.kind === 'human' && !!s.ready);
+                    tag.classList.toggle('is-cpu', s.kind === 'ai');
                     // '?' fallback is defensive only — no index-derived label may ever render (the
                     // slot's name is always set at seat time to the join-order P#).
-                    tag.querySelector('.dtag-name').textContent = s.kind === 'ai' ? 'AI' : (s.name || '?');
-                    tag.querySelector('.dtag-sub').textContent =
-                        DSLOT_POS[i] + ' · ' + (s.kind === 'ai' ? 'CPU' : (s.ready ? '✓ Ready' : 'Not Ready'));
+                    tag.querySelector('.dcmd-name').textContent = s.kind === 'ai' ? 'AI' : (s.name || '?');
                 }
                 // Drop tags for identities no longer present this repaint (a guest left, or a
                 // slot flipped human<->ai — a fresh 'ai:<i>' tag is recreated if that index ever

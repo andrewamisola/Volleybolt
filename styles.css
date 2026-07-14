@@ -2001,8 +2001,9 @@ body.flipped-view #aiCastBarContainer {
 .dzone.is-your-zone { box-shadow: inset 0 0 0 2px rgba(255,220,120,0.35); }
 /* Zone headers are the anchor of the whole design — they must read instantly (opacity 0.4/26px
    was near-invisible over the dark gradients, live-verified 2026-07-14). Big + bright, but still
-   BEHIND the tags: labels live inside .dzone (stacking under the .dtag-layer at z-index 7), and
-   the tag targets start at top:38% while the label band ends well above that. */
+   BEHIND the seat markers: labels live inside .dzone (stacking under .dcmd-panel at z-index 5
+   and #dtagLayer's sliding text at z-index 7), and the marker rows start around top:38% while
+   the label band ends well above that. */
 .dzone-label {
     margin-top: 30px;
     font-family: 'FF9UI', sans-serif;
@@ -2041,63 +2042,106 @@ body.flipped-view #aiCastBarContainer {
     box-shadow: 0 0 14px rgba(0,0,0,0.7);
 }
 
-/* Floating name tags — an absolutely-positioned layer OVER the split (not nested inside either
-   .dzone) so a tag can slide from one zone to the other. renderDoublesLobby() creates/reuses one
-   .dtag element PER OCCUPANT IDENTITY (peerId, or 'ai:<slot>' for AI ghosts — see its header
-   comment) and simply sets its left/top inline style every LOBBY_STATE_D repaint; because the
-   SAME element persists across repaints, this transition is what makes a pick/swap visibly slide
-   the tag — pure CSS, no per-frame JS driving it. */
+/* ------------------------------------------------------------------------------------------
+   Seat markers v2 (owner redesign round 2, 2026-07-14): "Markers become command-menu text, not
+   chips." Two pieces, both keyed to the SAME dsplit-relative coordinate space so they land in
+   the same screen pixels even though they're built two different ways:
+
+   1. .dcmd-panel — STATIC FF9 command-menu chrome, one per zone, laid out as normal children of
+      .dzone-blue/.dzone-red (zone-relative left:50%). Because each zone is exactly half of
+      #dsplit's width, zone-relative 50% == dsplit-relative 25%/75% (the same physical column the
+      sliding text below targets) — no JS/measurement needed to keep them aligned. Steel
+      background/rim border/corner-radius/drop-shadow directly mirror the in-game Babylon GUI
+      command menu's window styling (STEEL="rgba(46,56,76,0.94)", RIM="#dfe6f2", cornerRadius 8,
+      4px/4px black drop-shadow — see the "FF9 COMMAND MENU (Babylon GUI)" block in index.html).
+      Never moves; never keyed by occupant identity.
+   2. #dtagLayer / .dcmd-line — the SLIDING piece, unchanged mechanism from v1: an absolutely-
+      positioned layer OVER the split (not nested inside either .dzone) so a line can slide from
+      one zone to the other. renderDoublesLobby() creates/reuses one .dcmd-line element PER
+      OCCUPANT IDENTITY (peerId, or 'ai:<slot>' for AI) and sets its left/top inline style every
+      LOBBY_STATE_D repaint; the SAME element persisting across repaints is what makes a pick/
+      swap visibly slide — pure CSS transition, no per-frame JS driving it. Only its skin changed:
+      no more chip background/border — plain FF9UI text, a ▶ pointer for YOUR row (command
+      menu's exact selected-row glyph/color), gold "JUICE READY" text treatment for ready, and
+      the command menu's dimmed disabled-row treatment for CPU seats.
+   ------------------------------------------------------------------------------------------ */
+.dcmd-panel {
+    position: absolute;
+    left: 50%;
+    top: 53%;                 /* midpoint of the front(38%)/back(68%) sliding-text targets below */
+    transform: translate(-50%, -50%);
+    width: 190px;
+    background: rgba(46,56,76,0.94);          /* STEEL — matches the in-game command box */
+    border: 2px solid #dfe6f2;                /* RIM */
+    border-radius: 8px;
+    box-shadow: 4px 4px 0 rgba(0,0,0,0.6);
+    padding: 6px 0;
+    z-index: 5;                /* under #dtagLayer (7), over .dzone-label */
+    pointer-events: none;      /* the zone itself stays the click target (doublesZoneClick) */
+}
+.dzone-blue .dcmd-panel { box-shadow: 4px 4px 0 rgba(0,0,0,0.6), inset 0 0 0 1px rgba(159,202,255,0.25); }
+.dzone-red  .dcmd-panel { box-shadow: 4px 4px 0 rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,171,154,0.25); }
+.dcmd-row {
+    display: flex;
+    align-items: center;
+    height: 34px;
+    padding: 0 14px;
+}
+.dcmd-row-label {
+    font-family: 'FF9UI', sans-serif;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: rgba(223,230,242,0.55);
+    text-shadow: var(--ff9-shadow);
+    width: 48px;
+    flex: 0 0 auto;
+}
+
 .dtag-layer {
     position: absolute;
     inset: 0;
     pointer-events: none;    /* clicks pass through to the .dzone underneath */
     z-index: 7;
 }
-.dtag {
+.dcmd-line {
     position: absolute;
-    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    /* Anchored to the same (left%, top%) point .dcmd-panel's rows sit on, then nudged right past
+       the FRONT/BACK label instead of centering the box on that point (v1's chip behavior). */
+    transform: translate(4px, -50%);
     transition: left 0.28s cubic-bezier(0.3, 0, 0.2, 1),
                 top 0.28s cubic-bezier(0.3, 0, 0.2, 1),
-                opacity 0.2s ease, box-shadow 0.2s ease;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 3px;
-    min-width: 128px;
-    padding: 10px 18px;
-    background: linear-gradient(180deg, rgba(28,32,42,0.92) 0%, rgba(12,14,20,0.94) 100%);
-    border: 2px solid #666;
-    border-radius: 8px;
-    box-shadow: 4px 4px 0 rgba(0,0,0,0.5);
-    opacity: 0.5;             /* owner name-tag alpha rule: self 1.0, others/AI 0.5 */
-}
-/* Front seat reads as the "prominent" one (spec: obvious front/back distinction) — a touch
-   bigger and above its back partner (top-percentage targets in renderDoublesLobby handle the
-   vertical order; this just adds the size cue). */
-.dtag[data-role="front"] { transform: translate(-50%, -50%) scale(1.08); z-index: 2; }
-.dtag[data-role="back"]  { z-index: 1; }
-.dtag.is-you {
-    opacity: 1;
-    box-shadow: 0 0 0 2px var(--gold-light), 0 0 18px rgba(255,220,120,0.55), 4px 4px 0 rgba(0,0,0,0.5);
-}
-.dtag.is-ready {
-    box-shadow: 0 0 0 2px #7ee27e, 0 0 16px rgba(126,226,126,0.6), 4px 4px 0 rgba(0,0,0,0.5);
-}
-.dtag.is-you.is-ready {
-    box-shadow: 0 0 0 2px #7ee27e, 0 0 0 4px var(--gold-light), 0 0 18px rgba(255,220,120,0.5), 4px 4px 0 rgba(0,0,0,0.5);
-}
-.dtag-name {
+                opacity 0.2s ease;
+    white-space: nowrap;
     font-family: 'FF9UI', sans-serif;
-    font-size: 19px;
-    color: var(--parchment);
-    text-shadow: 2px 2px 0 #000;
+    font-size: 15px;
+    color: #f4f7ff;               /* command menu's default row text (TXT/READY_TXT) */
+    text-shadow: var(--ff9-shadow);
 }
-.dtag-sub {
-    font-family: 'FF9UI', sans-serif;
-    font-size: 11px;
-    letter-spacing: 1px;
-    color: var(--parchment-dark);
-    text-shadow: 1px 1px 0 #000;
+.dcmd-hand {
+    color: var(--ff9-gold);      /* command menu's exact ▶ pointer color */
+    font-size: 12px;
+    opacity: 0;                  /* only YOUR row shows the pointer */
+    transition: opacity 0.15s ease;
+}
+.dcmd-line.is-you .dcmd-hand { opacity: 1; }
+/* Ready = the gold "JUICE READY" text treatment (command menu's titleText/titleTab gold, which
+   itself pulses between #f0c050/#ffe89a — see the goldPulse sine toggle in index.html). */
+.dcmd-line.is-ready .dcmd-name {
+    color: var(--ff9-gold);
+    animation: dcmdGoldPulse 1.1s ease-in-out infinite;
+}
+@keyframes dcmdGoldPulse {
+    0%, 100% { color: #f0c050; }
+    50%      { color: #ffe89a; }
+}
+/* CPU/AI = the command menu's dimmed disabled-row treatment (its cooldown-row values:
+   DIM_TXT="#8b94a8" @ alpha 0.6 — see applyState()'s 'cooldown' branch in index.html). */
+.dcmd-line.is-cpu .dcmd-name {
+    color: #8b94a8;
+    opacity: 0.6;
 }
 
 .dlobby-bottom {
