@@ -6166,7 +6166,17 @@
             window.refreshNetStatus = () => {
                 const el = window.guiElements && window.guiElements.netStatusText;
                 if (!el) return;
-                if (gameMode === 'pvp' && typeof netPing === 'number') {
+                // W3: the doubles HOST never runs startPingMeasurement against itself, so global
+                // netPing stays 0 for a host — display the worst-guest RTT instead (the slowest
+                // seated link governs the shared feel; see min-peer pacing in runOnlineDoublesLockstep).
+                // Guests (and 1v1 of either role) keep the existing netPing path unchanged below.
+                if (gameMode === 'pvp' && netMode === 'doubles' && isHost) {
+                    let worst = 0;
+                    for (const [, g] of guestConns) { if (g.ping > worst) worst = g.ping; }
+                    el.text = worst + ' ms';
+                    el.color = window.pingColor(worst);
+                    el.isVisible = true;
+                } else if (gameMode === 'pvp' && typeof netPing === 'number') {
                     el.text = netPing + ' ms';
                     el.color = window.pingColor(netPing);
                     el.isVisible = true;
@@ -19723,7 +19733,13 @@
             el.textContent =
                 'NETCODE — ' + (isHost ? 'HOST (blue/left)' : 'JOINER (red/right)') + '\n' +
                 'frame ' + currentFrame + '  conf ' + lastConfirmedRemoteFrame + '  lag ' + (currentFrame - lastConfirmedRemoteFrame) + '\n' +
+                // Rollback line below is shared verbatim with 1v1 — mpSync is one global object
+                // mutated by both performRollback (1v1) and performRollbackDoubles (W3), and this
+                // function is called identically from both loop tails, so the doubles display comes
+                // for free with no branch needed here. The frontier/spec/acked line IS new (W3
+                // Task 5) and is additive: empty string outside doubles, so 1v1 output is unchanged.
                 'ping ' + (netPing | 0) + 'ms   rollbacks ' + mpSync.rollbacks + ' (last ' + mpSync.lastRollback + ')\n' +
+                (netMode === 'doubles' ? ('frontier ' + doublesConfirmedFrontier + '  spec ' + (currentFrame - (doublesConfirmedFrontier + 1)) + '  acked ' + doublesAckedInputFrame + '\n') : '') +
                 'sync ' + sync + '\n' +
                 'input  mv ' + (inp.moveDir | 0) + '  parry ' + (inp.parry ? 1 : 0) + '  fb ' + (inp.fireball ? 1 : 0) + '  frost ' + (inp.frostbolt ? 1 : 0) + '\n' +
                 'proj ' + (projectiles ? projectiles.length : 0) + '\n' +
@@ -19755,7 +19771,15 @@
             overlay() { return toggleMpOverlay(); },
             state() { return { mode: gameMode, isHost, localSide: (typeof getLocalSide === 'function' ? getLocalSide() : '?'), frame: currentFrame, confirmed: lastConfirmedRemoteFrame, lag: currentFrame - lastConfirmedRemoteFrame, ping: netPing, rollbacks: mpSync.rollbacks, lastOkFrame: mpSync.lastOkFrame, mismatches: mpSync.mismatches, desync: mpSync.desync, projectiles: projectiles ? projectiles.length : 0 }; },
             hash() { return (hashGameState() >>> 0).toString(16); },
-            sync() { return mpSync.desync ? ('DESYNC @frame ' + mpSync.desync.frame + ' (local ' + (mpSync.desync.local >>> 0).toString(16) + ' != remote ' + (mpSync.desync.remote >>> 0).toString(16) + '), ' + mpSync.mismatches + ' mismatch(es)') : ('in sync; last verified frame ' + mpSync.lastOkFrame); },
+            sync() {
+                const base = mpSync.desync
+                    ? ('DESYNC @frame ' + mpSync.desync.frame + ' (local ' + (mpSync.desync.local >>> 0).toString(16) + ' != remote ' + (mpSync.desync.remote >>> 0).toString(16) + '), ' + mpSync.mismatches + ' mismatch(es)')
+                    : ('in sync; last verified frame ' + mpSync.lastOkFrame);
+                // W3: rollback + doubles-frontier telemetry, tacked on regardless of mode — frontier/
+                // specDepth/ackedInput stay at their doubles-only defaults (-1/currentFrame+1/-1) in 1v1.
+                const specDepth = currentFrame - (doublesConfirmedFrontier + 1);
+                return base + ' | rollbacks ' + mpSync.rollbacks + ' (last ' + mpSync.lastRollback + ') frontier ' + doublesConfirmedFrontier + ' specDepth ' + specDepth + ' ackedInput ' + doublesAckedInputFrame;
+            },
             // One-paste bug report: everything needed to act on a stranger's Discord report.
             // Babylon objects (mesh/particles/paddle) are stripped — they're circular and huge.
             report() {
@@ -19766,10 +19790,15 @@
                     mode: gameMode, isHost, frame: currentFrame, ping: netPing,
                     sync: { lastOkFrame: mpSync.lastOkFrame, mismatches: mpSync.mismatches,
                             badStreak: mpSync.badStreak, aborted: mpDesyncAborted,
-                            desync: mpSync.desync, rollbacks: mpSync.rollbacks,
+                            desync: mpSync.desync, rollbacks: mpSync.rollbacks, lastRollback: mpSync.lastRollback,
                             // Online doubles (W2): star topology state. `guests` is host-only
                             // (null for a guest/1v1 client — distinct from "host with 0 guests" -> []).
                             netMode: netMode, mySlot: mySlot,
+                            // W3: rollback/prediction telemetry. frontier/specDepth/ackedInput are
+                            // doubles-only concepts (harmless -1/-1 defaults in 1v1/duel).
+                            frontier: doublesConfirmedFrontier,
+                            specDepth: currentFrame - (doublesConfirmedFrontier + 1),
+                            ackedInput: doublesAckedInputFrame,
                             guests: isHost ? Array.from(guestConns.values(), g => ({
                                 slot: g.slot, ping: g.ping,
                                 lastPongAge: g.lastPongTime ? Math.round(performance.now() - g.lastPongTime) : null
