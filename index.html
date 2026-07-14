@@ -1020,7 +1020,7 @@
         let netMode = 'none';         // 'none' | 'duel' (classic 1v1) | 'doubles'
         // Host keeps one DataConnection per guest, keyed by guest peerId. Empty (and inert)
         // in 1v1, so every helper below is a no-op on the classic path.
-        const guestConns = new Map(); // peerId -> { conn, slot, name, ready, lastPongTime, ping, ackedUpTo }
+        const guestConns = new Map(); // peerId -> { conn, slot, name, ready, lastPongTime, ping, ackedUpTo, remoteFrame }
 
         // --- Online doubles lobby state (Task 2) --------------------------------------
         // Host-authoritative 4-slot room. Canonical slot indices:
@@ -1149,6 +1149,12 @@
         // W3 GUEST: highest set-frame upTo already SET_ACK_D'd to the host, so we only send when it
         // actually advances (avoids re-sending the same ACK every INPUT_SET_D receive).
         let doublesSetAckSent = -1;
+        // W3 Task 4: frame-advantage pacing reference. GUEST: the host's live currentFrame
+        // (senderFrame piggyback on INPUT_SET_D). HOST: min currentFrame over seated HUMAN guests
+        // (senderFrame piggyback on INPUT_D, tracked per-guest as guestConns[pid].remoteFrame —
+        // see recomputeDoublesRemoteFrame). -1 until the first packet arrives, so the pacing gate
+        // stays inert at match start (mirrors the 1v1 start barrier — nothing to pace against yet).
+        let doublesRemoteFrame = -1;
         // ---- Online Doubles W3 Task 3: prediction + rollback over the 4-stream mesh ----
         // predictedSets[frame] = the [4 inputs] actually USED for a SPECULATIVE step of `frame`
         // (a throwaway guess the merge later corrects via rollback when the confirmed INPUT_SET_D
@@ -17699,10 +17705,16 @@
                         storeDoublesSlotInput(data.slot, data.frame, data.input);
                         if (Array.isArray(data.history)) for (const h of data.history) storeDoublesSlotInput(data.slot, h.frame, h);
                         hostTryMergeDoubles();
-                        // W3: ACK the highest CONTIGUOUS frame we hold for this slot (gaps = still lost).
-                        let upTo = Math.max(0, (guestConns.get(peerId)?.ackedUpTo ?? -1));
-                        while (slotInputs[data.slot][upTo + 1]) upTo++;
                         const g = guestConns.get(peerId);
+                        // W3 Task 4: track this guest's live sim frame (senderFrame piggyback) and
+                        // recompute the pacing floor (min over seated HUMAN guests).
+                        if (g && typeof data.senderFrame === 'number') {
+                            g.remoteFrame = Math.max(g.remoteFrame, data.senderFrame);
+                            recomputeDoublesRemoteFrame();
+                        }
+                        // W3: ACK the highest CONTIGUOUS frame we hold for this slot (gaps = still lost).
+                        let upTo = Math.max(0, (g?.ackedUpTo ?? -1));
+                        while (slotInputs[data.slot][upTo + 1]) upTo++;
                         if (g) { g.ackedUpTo = upTo; try { g.conn.send({ type: 'INPUT_ACK_D', slot: data.slot, upTo }); } catch (e) {} }
                     }
                     break;
@@ -18315,6 +18327,7 @@
             doublesAckedSetFrame = new Map();
             doublesLastStallSend = 0;
             doublesSetAckSent = -1;
+            doublesRemoteFrame = -1;   // W3 Task 4: fresh pacing floor per match (currentFrame resets to 0 too)
             // W3 Task 3: prediction/rollback state — fresh per match (gameStateHistory reset above).
             predictedSets = {};
             doublesConfirmedFrontier = -1;
@@ -19006,7 +19019,8 @@
                     ready: false,
                     lastPongTime: performance.now(),
                     ping: 0,
-                    ackedUpTo: -1              // W3: highest contiguous own-slot frame we've ACKed (INPUT_ACK_D)
+                    ackedUpTo: -1,             // W3: highest contiguous own-slot frame we've ACKed (INPUT_ACK_D)
+                    remoteFrame: -1            // W3 Task 4: this guest's live currentFrame (senderFrame piggyback on INPUT_D)
                 });
                 // Lazy-start the per-guest heartbeat once we have at least one guest. This is
                 // only ever reached in doubles+host (setupGuestConnection is only called from
@@ -19266,6 +19280,8 @@
                     if (!isHost && netMode === 'doubles' && Array.isArray(data.inputs)) {
                         storeInputSet(data.frame, data.inputs);
                         if (Array.isArray(data.history)) for (const h of data.history) storeInputSet(h.frame, h.inputs);
+                        // W3 Task 4: host's live sim frame piggyback -> our pacing reference (advantage gate).
+                        if (typeof data.senderFrame === 'number') doublesRemoteFrame = Math.max(doublesRemoteFrame, data.senderFrame);
                         let upTo = Math.max(0, doublesSetAckSent);
                         while (inputSets[upTo + 1]) upTo++;
                         if (upTo > doublesSetAckSent && conn && conn.open) {
@@ -20452,7 +20468,7 @@
                 conn.send({ type: 'INPUT_D', frame: inputFrame, slot: mySlot,
                     input: { moveDir: input.moveDir, parry: input.parry, fireball: input.fireball,
                              frostbolt: input.frostbolt, thunderstorm: input.thunderstorm || false, juice: input.juice || false },
-                    history });
+                    history, senderFrame: currentFrame });   // W3 Task 4: our live sim frame (pacing piggyback; mirrors INPUT_SET_D's)
             } catch (e) {}
         }
 
@@ -20519,6 +20535,24 @@
                 broadcastInputSet(f);
                 doublesMergeFrame++;
             }
+        }
+
+        // HOST: recompute the pacing floor (doublesRemoteFrame) = min live currentFrame over seated
+        // HUMAN guests. Walks guestConns (not doublesSlotKinds directly) so only guests with a LIVE
+        // connection count — an AI-swapped slot's guestConns entry was already deleted by dropGuest
+        // at the same moment doublesSlotKinds flipped to 'ai' (see netLobbyOnLeave), so the kind
+        // check here is belt-and-suspenders, not load-bearing. Spectators (g.slot === -1) are
+        // excluded by the same check: neither AI-swapped slots nor spectators may pace the host.
+        // No qualifying guest (solo host + AI fill, or only spectators connected) -> -1, matching
+        // the "never paces" contract (the advantage gate is inert when doublesRemoteFrame < 0).
+        function recomputeDoublesRemoteFrame() {
+            let min = Infinity;
+            for (const [, g] of guestConns) {
+                if (g.slot >= 0 && doublesSlotKinds && doublesSlotKinds[g.slot] === 'human') {
+                    min = Math.min(min, g.remoteFrame);
+                }
+            }
+            doublesRemoteFrame = (min === Infinity) ? -1 : min;
         }
 
         // HOST → ALL: broadcast a confirmed set, with prior sets replayed for loss-tolerance
@@ -21311,6 +21345,27 @@
                 // no-op on guests via its isHost guard, and when gated/not-ready) drains the
                 // buffered inputs on the first post-startRound tick regardless of capture state.
                 if (isHost) hostTryMergeDoubles();
+
+                // W3 Task 4 — Frame-advantage pacing (mirror 1v1 L20957-20958 / current L21237): if
+                // we're far ahead of the slowest peer we depend on, idle a beat instead of speculating
+                // deeper — keeps rollbacks short and the resim window comfortably under
+                // MAX_ROLLBACK_FRAMES. Seated-only (mySlot >= 0) — spectators don't speculate, so they
+                // have nothing to pace; per the brief they must neither pace nor be paced. Inert until
+                // doublesRemoteFrame >= 0 (first packet), mirroring the 1v1 start barrier.
+                //
+                // PLACEMENT: after the unconditional host merge, before capture-once. The merge must
+                // run every iteration regardless of pacing (it's what unblocks OTHER clients — see the
+                // "HOST MERGE LIVENESS" comment above), so the gate sits after it, never before.
+                // Deferring capture/rollback-check/step by placing the gate here (rather than at the
+                // very top, before the merge) only delays OUR OWN rollback resolution and hash
+                // settlement by a beat while pacing holds; that's harmless — hashes are sent for
+                // currentFrame - MP_SYNC_LAG (32), already outside the 30-frame rollback window, so a
+                // deferred correction here settles well before its hash goes out. Pacing means we're
+                // AHEAD, so a delayed rollback only pulls us back toward where pacing already wants us.
+                if (mySlot >= 0 && doublesRemoteFrame >= 0 &&
+                    currentFrame - doublesRemoteFrame > MAX_FRAME_ADVANTAGE) {
+                    netAccumulator = 0; break;
+                }
 
                 // Capture our own input for currentFrame+DELAY EXACTLY ONCE per input frame. While
                 // stalled, currentFrame (and thus inputFrame) doesn't advance, so we skip re-capture —
