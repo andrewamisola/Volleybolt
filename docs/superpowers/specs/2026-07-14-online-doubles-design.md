@@ -38,6 +38,22 @@ Then the client player will press LEFT or RIGHT to go on either side, moving the
 - AI seats render as ghosted tags at 50% opacity (name-tag opacity language).
 - Room code large top-center; host START bottom-center; leave button unobtrusive.
 
+## Lobby visual v2 + SPECTATORS (Andrew, 2026-07-14 round 2)
+
+- **Markers become command-menu text, not chips:** each zone holds a small FF9-style panel
+  with pixel-caps FRONT/BACK rows; occupants are plain FF9UI text (P1/custom name). YOUR row
+  carries the command-menu ▶ pointer; ready = the gold "JUICE READY" text treatment; CPU =
+  dimmed disabled-row style. Side changes slide the text line between panels.
+- **Middle lane = spectator.** A neutral strip between the zones. Players who stay in the
+  middle when the match starts SPECTATE: no seat, no input solicited, host merge never waits
+  on them, they run the identical sim as viewers (ability bar hidden, both STATUS teams
+  visible, all tags at 0.5 alpha, "SPECTATING" label). Spectators do NOT gate the ready
+  check. A spectator desync exits only the spectator — the match survives. Protocol:
+  LOBBY_STATE_D gains `spectators: [{peerId, name}]`; spectators receive START_MATCH_D with
+  `yourSlot: -1`. Room stays ≤ 4 connections in this milestone (spectators count).
+- Owner: "Hard to test, which is why we have to playtest" — spectator feel (camera/HUD) and
+  the join-undecided flow are explicitly playtest-gated; expect a tuning round.
+
 ## The lobby (M3 — fighting-game style, decisions locked in M1 spec)
 
 - Host creates a room → room code (existing PeerJS id flow) → up to 3 guests join.
