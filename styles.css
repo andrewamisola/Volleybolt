@@ -1926,6 +1926,50 @@ body.flipped-view #aiCastBarContainer {
     text-shadow: 1px 1px 0 #000;
 }
 
+/* Online doubles (2v2) lobby — 4-slot card grid (Task 2). Borders are tinted per team by JS
+   (renderDoublesLobby); .is-you rings the local player's own slot. */
+.dslot-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 6px 0;
+}
+.dslot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-width: 150px;
+    padding: 10px 16px;
+    background: rgba(0,0,0,0.42);
+    border: 3px solid #444;
+    font-family: 'FF9UI', sans-serif;
+}
+.dslot.is-you {
+    box-shadow: 0 0 0 2px var(--gold-light), 0 0 14px rgba(255,220,120,0.5);
+}
+.dslot-pos {
+    font-size: 13px;
+    letter-spacing: 2px;
+    color: var(--parchment-dark);
+    text-shadow: 1px 1px 0 #000;
+}
+.dslot-name {
+    font-size: 20px;
+    color: var(--parchment);
+    text-shadow: 2px 2px 0 #000;
+}
+.dslot-ready {
+    font-size: 14px;
+    min-height: 1.1em;
+    color: #7ee27e;
+    text-shadow: 1px 1px 0 #000;
+}
+.dslot-actions {
+    display: flex;
+    gap: 10px;
+}
+
 .lobby-input {
     width: 280px;
     height: 56px;

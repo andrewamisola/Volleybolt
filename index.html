@@ -328,6 +328,11 @@
                         <span class="menu-btn-glyph" aria-hidden="true">&#9889;</span>
                         <span class="menu-btn-label">Host Game</span>
                     </button>
+                    <button class="game-btn menu-btn" id="btnHostDoubles">
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#9733;</span>
+                        <span class="menu-btn-label">Host Doubles (2v2)</span>
+                    </button>
                     <button class="game-btn menu-btn" id="btnJoinGame">
                         <span class="menu-btn-accent" aria-hidden="true"></span>
                         <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
@@ -400,6 +405,57 @@
                         <span class="menu-btn-accent" aria-hidden="true"></span>
                         <span class="menu-btn-glyph" aria-hidden="true">&#10005;</span>
                         <span class="menu-btn-label">Disconnect</span>
+                    </button>
+                </div>
+
+                <!-- Doubles (2v2) lobby view — 4-slot host-authoritative room (Online Doubles Task 2).
+                     Separate .lobby-view sibling; the classic 1v1 views above are untouched. -->
+                <div class="lobby-view" id="lobbyDoublesView" style="display:none">
+                    <p class="lobby-prompt" id="dRoomPrompt" style="display:none">Share this code:</p>
+                    <div class="lobby-code" id="dRoomCode" style="display:none">------</div>
+                    <button class="game-btn menu-btn" id="btnCopyCodeD" style="display:none">
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#9112;</span>
+                        <span class="menu-btn-label">Copy Code</span>
+                    </button>
+                    <p class="lobby-status" id="dLobbyStatus">Doubles &mdash; 2 vs 2</p>
+                    <!-- 2x2 grid: Blue column (slots 0/1), Red column (slots 2/3). DOM order is
+                         visual only (FRONT row, then BACK row); renderDoublesLobby() fills by id. -->
+                    <div class="dslot-grid">
+                        <div class="dslot" id="dslot0"><span class="dslot-pos">FRONT</span><span class="dslot-name">AI</span><span class="dslot-ready">CPU</span></div>
+                        <div class="dslot" id="dslot2"><span class="dslot-pos">FRONT</span><span class="dslot-name">AI</span><span class="dslot-ready">CPU</span></div>
+                        <div class="dslot" id="dslot1"><span class="dslot-pos">BACK</span><span class="dslot-name">AI</span><span class="dslot-ready">CPU</span></div>
+                        <div class="dslot" id="dslot3"><span class="dslot-pos">BACK</span><span class="dslot-name">AI</span><span class="dslot-ready">CPU</span></div>
+                    </div>
+                    <div class="dslot-actions">
+                        <button class="game-btn menu-btn" id="btnPickBlue">
+                            <span class="menu-btn-accent" aria-hidden="true"></span>
+                            <span class="menu-btn-label">Blue Side</span>
+                        </button>
+                        <button class="game-btn menu-btn" id="btnPickRed">
+                            <span class="menu-btn-accent" aria-hidden="true"></span>
+                            <span class="menu-btn-label">Red Side</span>
+                        </button>
+                        <button class="game-btn menu-btn" id="btnSwapPos">
+                            <span class="menu-btn-accent" aria-hidden="true"></span>
+                            <span class="menu-btn-label">Swap Pos</span>
+                        </button>
+                    </div>
+                    <button class="game-btn menu-btn is-primary" id="btnReadyD">
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#10003;</span>
+                        <span class="menu-btn-label">Ready Up</span>
+                    </button>
+                    <button class="game-btn menu-btn" id="btnStartD" style="display:none" disabled>
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
+                        <span class="menu-btn-label">Start Match</span>
+                    </button>
+                    <p class="lobby-status" id="dWaitingHost" style="display:none">Waiting for host to start...</p>
+                    <button class="game-btn menu-btn menu-btn-ghost" id="btnLeaveD">
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
+                        <span class="menu-btn-label">Leave</span>
                     </button>
                 </div>
             </div>
@@ -935,6 +991,20 @@
         // Host keeps one DataConnection per guest, keyed by guest peerId. Empty (and inert)
         // in 1v1, so every helper below is a no-op on the classic path.
         const guestConns = new Map(); // peerId -> { conn, slot, name, ready, lastPongTime, ping }
+
+        // --- Online doubles lobby state (Task 2) --------------------------------------
+        // Host-authoritative 4-slot room. Canonical slot indices:
+        //   0=BlueFront  1=BlueBack  2=RedFront  3=RedBack
+        // netSlots is null outside a doubles lobby. On the host it is the source of truth;
+        // on a guest it MIRRORS the last LOBBY_STATE_D broadcast. Each slot:
+        //   { kind:'ai'|'human', peerId:null|string, name:string, ready:bool }
+        // The host's own slot uses the sentinel peerId 'HOST'; every guest slot carries the
+        // guest's real peer id (= that guest's myPeerId) so each client can locate itself.
+        let netSlots = null;
+        let mySlot = -1;              // this client's slot index (host too); -1 when not in a doubles lobby
+        // Canonical position keys per slot index — Task 3 consumes this to map slots onto the
+        // sim's left/leftBack/right/rightBack combatants.
+        const SLOT_KEYS = ['left', 'leftBack', 'right', 'rightBack'];
 
         // Sends msg to every OPEN guest conn except exceptPeerId. No-op when guestConns is empty (1v1).
         function hostBroadcast(msg, exceptPeerId) {
@@ -16862,7 +16932,7 @@
             // Accept legacy 'lobbyModeSelect' alias for the mode-select view
             if (viewId === 'lobbyModeSelect') viewId = 'lobbyModeView';
 
-            const views = ['lobbyModeView', 'lobbyHostView', 'lobbyJoinView', 'lobbyConnectedView'];
+            const views = ['lobbyModeView', 'lobbyHostView', 'lobbyJoinView', 'lobbyConnectedView', 'lobbyDoublesView'];
             for (const id of views) {
                 const el = document.getElementById(id);
                 if (el) el.style.display = (id === viewId) ? 'flex' : 'none';
@@ -16875,6 +16945,7 @@
                 else if (viewId === 'lobbyHostView') subtitle.textContent = 'Share your room code';
                 else if (viewId === 'lobbyJoinView') subtitle.textContent = 'Enter host code';
                 else if (viewId === 'lobbyConnectedView') subtitle.textContent = 'Connected';
+                else if (viewId === 'lobbyDoublesView') subtitle.textContent = 'Doubles — 2 vs 2';
             }
         }
 
@@ -17029,8 +17100,282 @@
                     conn.send({ type: 'START_MATCH', seed: sharedSeed, upgrade: upgradeToShare, hash: startHash });
                 }
             });
+
+            // --- Online doubles lobby wiring (Task 2) ---
+            const btnHostDoubles = $('btnHostDoubles');
+            const btnCopyD = $('btnCopyCodeD');
+            const btnPickBlue = $('btnPickBlue'), btnPickRed = $('btnPickRed'), btnSwapPos = $('btnSwapPos');
+            const btnReadyD = $('btnReadyD'), btnStartD = $('btnStartD'), btnLeaveD = $('btnLeaveD');
+
+            if (btnHostDoubles) btnHostDoubles.addEventListener('click', () => {
+                isHost = true;
+                const code = generateRoomCode();
+                // initializePeer() calls cleanupPeer() FIRST, which resets netMode='none' — so set
+                // 'doubles' AFTER it, else the async peer.on('connection') would take the 1v1 branch.
+                initializePeer(code.toLowerCase());
+                netMode = 'doubles';
+                netSlots = freshNetSlots();
+                mySlot = 0;
+                nextPlayerNumber = 2;   // fresh room: host is P1, guests number from P2 in join order
+                netSlots[0] = { kind: 'human', peerId: 'HOST', name: realLobbyName(window.getPlayerName ? getPlayerName() : '') || 'P1', ready: false };
+                showLobbyView('lobbyDoublesView');
+                const dCode = $('dRoomCode'), dPrompt = $('dRoomPrompt');
+                if (dCode) { dCode.textContent = code; dCode.style.display = ''; }
+                if (dPrompt) dPrompt.style.display = '';
+                if (btnCopyD) btnCopyD.style.display = '';
+                renderDoublesLobby();
+            });
+
+            if (btnCopyD) btnCopyD.addEventListener('click', () => {
+                const dCode = $('dRoomCode');
+                const code = dCode ? dCode.textContent : '';
+                if (!code || code === '------') return;
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(code).then(() => {
+                        const original = getMenuBtnLabel(btnCopyD);
+                        setMenuBtnLabel(btnCopyD, 'Copied!');
+                        setTimeout(() => { setMenuBtnLabel(btnCopyD, original); }, 1200);
+                    }).catch(() => {});
+                }
+            });
+
+            if (btnPickBlue) btnPickBlue.addEventListener('click', () => doublesLocalPick('blue'));
+            if (btnPickRed)  btnPickRed.addEventListener('click', () => doublesLocalPick('red'));
+            if (btnSwapPos)  btnSwapPos.addEventListener('click', () => doublesLocalSwap());
+            if (btnReadyD)   btnReadyD.addEventListener('click', () => doublesLocalReady());
+            if (btnLeaveD)   btnLeaveD.addEventListener('click', () => doublesLocalLeave());
+
+            if (btnStartD) btnStartD.addEventListener('click', () => {
+                // Task 3 owns START_MATCH_D + startDoublesMatch. Task 2's gate only proves the
+                // button enables correctly; starting the match is deliberately left unwired here.
+                if (window.startDoublesOnlineMatch) { try { window.startDoublesOnlineMatch(); } catch (e) {} }
+            });
         }
         window.wireDOMLobby = wireDOMLobby;
+
+        // ==============================================================================
+        // Online Doubles lobby — host-authoritative 4-slot state machine (Task 2)
+        // ------------------------------------------------------------------------------
+        // Roles:
+        //   HOST  — owns netSlots; mutates it on its own actions AND on guest messages
+        //           (handleDoublesNetMessage), then broadcastLobbyState() → LOBBY_STATE_D.
+        //   GUEST — never mutates netSlots locally; sends intent messages (PICK_SIDE_D /
+        //           SWAP_D / READY_D / LEAVE_D) and MIRRORS whatever LOBBY_STATE_D returns.
+        // A guest joins through the classic single-conn path (netMode='duel' at join time);
+        // it discovers the room is doubles when the FIRST LOBBY_STATE_D arrives, at which
+        // point it flips netMode='doubles' and swaps to #lobbyDoublesView (see the
+        // LOBBY_STATE_D case in handleNetworkMessage).
+        // ==============================================================================
+
+        // Per-slot team-tint used for the card border, sourced the way the STATUS rows are
+        // (front = the bright team hex, back = the dimmer shade). 0/1 blue, 2/3 red.
+        const DSLOT_COLORS = ['#6fb0ff', '#3d6a94', '#e76e55', '#a84f3c'];
+        const DSLOT_POS = ['FRONT', 'BACK', 'FRONT', 'BACK'];
+
+        function freshNetSlots() {
+            return [0, 1, 2, 3].map(() => ({ kind: 'ai', peerId: null, name: 'AI', ready: false }));
+        }
+        function aiSlot() { return { kind: 'ai', peerId: null, name: 'AI', ready: false }; }
+
+        // The player's REAL custom name, or null when unset. Mirrors doublesSlotLabel's unset test
+        // (getPlayerName() returns the literal 'Blue' when unset, so treat both '' and 'Blue' as
+        // "no custom name") — the lobby must never show the 'Blue' placeholder as a player's name.
+        function realLobbyName(rawName) {
+            const n = ((rawName || '') + '').trim();
+            return (n && n !== 'Blue') ? n : null;
+        }
+        // P-number = JOIN ORDER, assigned ONCE at seat time and stored on the slot object (it
+        // travels with swaps/picks since names move with slot contents). NEVER recomputed from a
+        // slot index — a freed low slot must not hand a later joiner a duplicate P#. Host is P1;
+        // the counter never decrements on leave (P3 leaving doesn't renumber P4 — join order is
+        // history). Reset to 2 when a room is created (#btnHostDoubles).
+        let nextPlayerNumber = 2;
+
+        // Keep guestConns[].slot in sync with netSlots (Task 3 reads it to route inputs).
+        function syncGuestSlotFields() {
+            for (const [pid, g] of guestConns) g.slot = netSlots ? netSlots.findIndex(s => s.peerId === pid) : -1;
+        }
+
+        // HOST: publish the authoritative state to every guest + repaint locally. Recomputes the
+        // host's own mySlot from the 'HOST' sentinel first, so a host self-swap lands correctly.
+        function broadcastLobbyState() {
+            if (!isHost || netMode !== 'doubles' || !netSlots) return;
+            mySlot = netSlots.findIndex(s => s.peerId === 'HOST');
+            syncGuestSlotFields();
+            // slots carries peerId per slot so each guest can recompute its own mySlot; peerIds are
+            // stripped only later in START_MATCH_D (Task 3).
+            hostBroadcast({ type: 'LOBBY_STATE_D', slots: netSlots, hostSlot: mySlot });
+            renderDoublesLobby();
+        }
+
+        // HOST hook (fired by setupGuestConnection on conn 'open', arg = the connection): assign
+        // the first open (AI) slot in index order. The default name is the join-order P# from
+        // nextPlayerNumber (NOT the slot index — a freed low slot must not mint a duplicate);
+        // the guest's real name arrives right after via JOIN_HELLO_D.
+        function netLobbyOnJoin(peerId, _connOrName) {
+            if (!isHost || netMode !== 'doubles' || !netSlots) return;
+            if (netSlots.some(s => s.peerId === peerId)) return;   // already seated (defensive)
+            const i = netSlots.findIndex(s => s.kind === 'ai');
+            if (i < 0) {                                            // no room (should not happen: capped at 3 guests)
+                const g = guestConns.get(peerId);
+                if (g && g.conn && g.conn.open) { try { g.conn.send({ type: 'ROOM_FULL_D' }); } catch (e) {} }
+                return;
+            }
+            netSlots[i] = { kind: 'human', peerId, name: 'P' + (nextPlayerNumber++), ready: false };
+            broadcastLobbyState();
+        }
+        window.netLobbyOnJoin = netLobbyOnJoin;
+
+        // HOST hook (fired by dropGuest on close/leave/timeout): free the slot back to AI.
+        function netLobbyOnLeave(peerId) {
+            if (!isHost || netMode !== 'doubles' || !netSlots) return;
+            const i = netSlots.findIndex(s => s.peerId === peerId);
+            if (i < 0) return;
+            netSlots[i] = aiSlot();
+            broadcastLobbyState();
+        }
+        window.netLobbyOnLeave = netLobbyOnLeave;
+
+        // HOST: move a player to the requested side's open-for-human slot, FRONT first. A slot is
+        // "open" if it is AI or already the mover's own. If both slots on that side hold OTHER
+        // humans, the side is full → ignore. AI count is preserved (vacated slot becomes AI).
+        function hostPickSide(peerId, side) {
+            if (!isHost || !netSlots) return;
+            const cur = netSlots.findIndex(s => s.peerId === peerId);
+            if (cur < 0) return;
+            const front = side === 'blue' ? 0 : 2;
+            const back = front + 1;
+            let target = -1;
+            if (netSlots[front].kind === 'ai' || front === cur) target = front;
+            else if (netSlots[back].kind === 'ai' || back === cur) target = back;
+            if (target < 0 || target === cur) return;   // side full, or already front-most on it
+            netSlots[target] = netSlots[cur];
+            netSlots[cur] = aiSlot();
+            broadcastLobbyState();
+        }
+
+        // HOST: swap a player's slot CONTENTS with their same-side partner (0<->1, 2<->3). Works
+        // whether the partner is human or AI.
+        function hostSwapPos(peerId) {
+            if (!isHost || !netSlots) return;
+            const cur = netSlots.findIndex(s => s.peerId === peerId);
+            if (cur < 0) return;
+            const other = cur ^ 1;
+            const tmp = netSlots[cur]; netSlots[cur] = netSlots[other]; netSlots[other] = tmp;
+            broadcastLobbyState();
+        }
+
+        // HOST message router — invoked by dispatchGuestData for every non-liveness guest packet.
+        window.handleDoublesNetMessage = function (peerId, data) {
+            if (!isHost || netMode !== 'doubles' || !netSlots || !data || !data.type) return;
+            switch (data.type) {
+                case 'JOIN_HELLO_D': {
+                    let i = netSlots.findIndex(s => s.peerId === peerId);
+                    if (i < 0) { netLobbyOnJoin(peerId); i = netSlots.findIndex(s => s.peerId === peerId); }
+                    if (i >= 0) {
+                        // Only a REAL custom name overwrites; an unnamed guest keeps the
+                        // join-order P# assigned at seat time (never recomputed from position).
+                        const rn = realLobbyName(data.name);
+                        if (rn) netSlots[i].name = rn;
+                        broadcastLobbyState();
+                    }
+                    break;
+                }
+                case 'PICK_SIDE_D': hostPickSide(peerId, data.side === 'red' ? 'red' : 'blue'); break;
+                case 'SWAP_D':      hostSwapPos(peerId); break;
+                case 'READY_D': {
+                    const i = netSlots.findIndex(s => s.peerId === peerId);
+                    if (i >= 0 && netSlots[i].kind === 'human') { netSlots[i].ready = !!data.ready; broadcastLobbyState(); }
+                    break;
+                }
+                case 'LEAVE_D': dropGuest(peerId, 'left'); break;  // dropGuest → netLobbyOnLeave frees the slot
+            }
+        };
+
+        // --- Local action helpers (branch on role) -----------------------------------
+        function doublesLocalPick(side) {
+            if (mySlot < 0) return;
+            if (isHost) hostPickSide('HOST', side);
+            else if (conn && conn.open) { try { conn.send({ type: 'PICK_SIDE_D', side }); } catch (e) {} }
+        }
+        function doublesLocalSwap() {
+            if (mySlot < 0) return;
+            if (isHost) hostSwapPos('HOST');
+            else if (conn && conn.open) { try { conn.send({ type: 'SWAP_D' }); } catch (e) {} }
+        }
+        function doublesLocalReady() {
+            if (mySlot < 0 || !netSlots || !netSlots[mySlot]) return;
+            const next = !netSlots[mySlot].ready;
+            if (isHost) { netSlots[mySlot].ready = next; broadcastLobbyState(); }
+            else if (conn && conn.open) {
+                try { conn.send({ type: 'READY_D', ready: next }); } catch (e) {}
+                // Optimistic local flip (mirrors the 1v1 btnReady idiom): the button/card update
+                // immediately; the host's LOBBY_STATE_D echo confirms (and would correct) it.
+                netSlots[mySlot].ready = next;
+                renderDoublesLobby();
+            }
+        }
+        function doublesLocalLeave() {
+            if (isHost) {
+                hostBroadcast({ type: 'LEAVE_D' });   // tell every guest the room is closing
+                cleanupPeer();
+            } else {
+                if (conn && conn.open) { try { conn.send({ type: 'LEAVE_D' }); } catch (e) {} }
+                cleanupPeer();
+            }
+            netSlots = null; mySlot = -1;
+            showLobbyView('lobbyModeView');
+        }
+
+        // GUEST: adopt a LOBBY_STATE_D broadcast — flip into doubles on first receipt, mirror the
+        // slots, and recompute OUR OWN mySlot by matching our peer id (guests know it via myPeerId,
+        // set in peer.on('open')). This is how a swapped guest's mySlot follows its moved slot.
+        function guestApplyLobbyState(data) {
+            const firstTime = (netMode !== 'doubles');
+            netMode = 'doubles';
+            netSlots = Array.isArray(data.slots) ? data.slots : null;
+            mySlot = netSlots ? netSlots.findIndex(s => s.peerId === myPeerId) : -1;
+            if (firstTime) showLobbyView('lobbyDoublesView');   // leave the flashed 1v1 connected view
+            renderDoublesLobby();
+        }
+
+        // Paint the 4 slot cards + gate the buttons from netSlots (host and guest share this).
+        function renderDoublesLobby() {
+            if (!netSlots) return;
+            for (let i = 0; i < 4; i++) {
+                const card = document.getElementById('dslot' + i);
+                if (!card) continue;
+                const s = netSlots[i];
+                card.style.borderColor = DSLOT_COLORS[i];
+                const posEl = card.querySelector('.dslot-pos');
+                const nameEl = card.querySelector('.dslot-name');
+                const readyEl = card.querySelector('.dslot-ready');
+                if (posEl) posEl.textContent = DSLOT_POS[i];
+                // '?' fallback is defensive only — no index-derived label may ever render (the
+                // slot's name is always set at seat time to the join-order P#).
+                if (nameEl) nameEl.textContent = s.kind === 'ai' ? 'AI' : (s.name || '?');
+                if (readyEl) readyEl.textContent = s.kind === 'ai' ? 'CPU' : (s.ready ? '✓ Ready' : '…');
+                card.classList.toggle('is-you', i === mySlot);
+            }
+            const btnStartD = document.getElementById('btnStartD');
+            const waiting = document.getElementById('dWaitingHost');
+            if (btnStartD) {
+                if (isHost) {
+                    btnStartD.style.display = '';
+                    const humans = netSlots.filter(s => s.kind === 'human').length;
+                    const allReady = netSlots.every(s => s.kind === 'ai' || s.ready);
+                    btnStartD.disabled = !(humans >= 1 && allReady);
+                } else {
+                    btnStartD.style.display = 'none';
+                }
+            }
+            if (waiting) waiting.style.display = isHost ? 'none' : '';
+            const btnReadyD = document.getElementById('btnReadyD');
+            if (btnReadyD && mySlot >= 0 && netSlots[mySlot]) {
+                setMenuBtnLabel(btnReadyD, netSlots[mySlot].ready ? 'Cancel Ready' : 'Ready Up');
+            }
+        }
+        window.renderDoublesLobby = renderDoublesLobby;
 
         // -------------------------------------------------------
         // DOM Main Menu — replaces the Babylon GUI menu (title + buttons)
@@ -17800,6 +18145,14 @@
 
                 // Start ping measurement
                 startPingMeasurement();
+
+                // Online doubles handshake: a joiner can't know the room type before connecting,
+                // so it always announces itself. A duel host has no default case in
+                // handleNetworkMessage and silently ignores JOIN_HELLO_D (inert); a doubles host
+                // seats the guest and replies with LOBBY_STATE_D, which flips us into doubles.
+                if (!isHost) {
+                    try { conn.send({ type: 'JOIN_HELLO_D', name: window.getPlayerName ? getPlayerName() : '' }); } catch (e) {}
+                }
             });
 
             conn.on('data', (data) => {
@@ -18032,6 +18385,24 @@
                     // Opponent intentionally left (clicked Disconnect or closed tab).
                     // Show clearer reason than the generic "Connection lost".
                     handleDisconnect(data.reason || 'Opponent left the match');
+                    break;
+
+                // --- Online doubles (guest side) ---
+                case 'LOBBY_STATE_D':
+                    // Host's authoritative snapshot. First one flips us into the doubles view;
+                    // every one refreshes the cards and re-derives our own mySlot.
+                    if (!isHost) guestApplyLobbyState(data);
+                    break;
+
+                case 'LEAVE_D':
+                    // Doubles host closed the room. Tear down and return to the mode menu with a note.
+                    if (!isHost) {
+                        netSlots = null; mySlot = -1;
+                        cleanupPeer();
+                        showLobbyView('lobbyModeView');
+                        const sub = document.getElementById('lobbySubtitle');
+                        if (sub) sub.textContent = 'Host closed the room';
+                    }
                     break;
 
                 case 'START_MATCH':
