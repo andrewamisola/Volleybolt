@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=58-dlobby-cmdmenu">
+    <link rel="stylesheet" href="styles.css?v=59-dlobby-spectator">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -1032,6 +1032,14 @@
         // guest's real peer id (= that guest's myPeerId) so each client can locate itself.
         let netSlots = null;
         let mySlot = -1;              // this client's slot index (host too); -1 when not in a doubles lobby
+        // Task 8 (middle-lane spectators): guests connected to a doubles room but holding no
+        // seat. Host-authoritative (mirrors netSlots' host/guest split): the host mutates this
+        // array directly and fans it out on every LOBBY_STATE_D broadcast; a guest never
+        // mutates it locally, only mirrors whatever the broadcast carries (guestApplyLobbyState).
+        // Shape per the owner spec verbatim: [{peerId, name}] — no 'ready' field (spectators
+        // cannot ready; see doublesLocalReady's mySlot<0 guard, unchanged). A peer is in EITHER
+        // netSlots OR spectators, never both.
+        let spectators = [];
         // Canonical position keys per slot index — Task 3 consumes this to map slots onto the
         // sim's left/leftBack/right/rightBack combatants.
         const SLOT_KEYS = ['left', 'leftBack', 'right', 'rightBack'];
@@ -6068,6 +6076,29 @@
             netStatusText.isVisible = false;  // Hidden until PvP starts
             guiTexture.addControl(netStatusText);
             window.guiElements.netStatusText = netStatusText;
+
+            // ============================================================
+            // ONLINE DOUBLES SPECTATOR LABEL (Task 8 — middle-lane viewers)
+            // Same corner-text pattern as netStatusText above. Toggled from
+            // startOnlineDoublesMatch (isVisible = mySlot < 0) and cleared by exitDoublesState —
+            // it never shows outside an online-doubles match where THIS client holds no seat.
+            // ============================================================
+            const spectatingText = new BABYLON.GUI.TextBlock();
+            spectatingText.text = "SPECTATING";
+            spectatingText.color = "#f0c050";
+            spectatingText.fontFamily = "'FF9UI', sans-serif";
+            spectatingText.fontSize = 20;
+            spectatingText.height = "30px";
+            spectatingText.width = "260px";
+            spectatingText.top = "10px";
+            spectatingText.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
+            spectatingText.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+            spectatingText.shadowColor = "#000";
+            spectatingText.shadowOffsetX = 2;
+            spectatingText.shadowOffsetY = 2;
+            spectatingText.isVisible = false;
+            guiTexture.addControl(spectatingText);
+            window.guiElements.spectatingText = spectatingText;
 
             // Helper: color-code a ping value (returns CSS color string)
             window.pingColor = (ms) => {
@@ -16868,7 +16899,7 @@
                 if (isHost) hostBroadcast({ type: 'LEAVE_D' });
                 else if (conn && conn.open) { try { conn.send({ type: 'LEAVE_D' }); } catch (e) {} }
                 cleanupPeer();
-                netSlots = null; mySlot = -1;
+                netSlots = null; mySlot = -1; spectators = [];
             }
             // Clear any lingering match VFX so they don't bleed into the menu. Guarded so a stray
             // dispose error can't abort the whole return-to-menu and strand the player on the screen.
@@ -17245,6 +17276,7 @@
                 initializePeer(code.toLowerCase());
                 netMode = 'doubles';
                 netSlots = freshNetSlots();
+                spectators = [];        // fresh room: no undecided guests yet
                 mySlot = 0;
                 nextPlayerNumber = 2;   // fresh room: host is P1, guests number from P2 in join order
                 netSlots[0] = { kind: 'human', peerId: 'HOST', name: realLobbyName(window.getPlayerName ? getPlayerName() : '') || 'P1', ready: false };
@@ -17293,7 +17325,11 @@
         document.addEventListener('keydown', (e) => {
             const view = document.getElementById('lobbyDoublesView');
             if (!view || view.style.display === 'none') return;
-            if (mySlot < 0 || !netSlots) return;
+            // Task 8: an undecided guest (mySlot===-1, the middle lane) must still be able to
+            // arrow-key a side — gate on being in the doubles lobby at all, not on already
+            // holding a seat (doublesLocalSwap's own mySlot<0 guard still no-ops ArrowUp/Down
+            // for a spectator, since there's no partner to swap with).
+            if (netMode !== 'doubles' || !netSlots) return;
             switch (e.code) {
                 case 'ArrowLeft': case 'KeyA':
                     e.preventDefault(); doublesLocalPick('blue');
@@ -17337,6 +17373,11 @@
             { left: '75%', top: '38%' },   // 2 = Red Front
             { left: '75%', top: '68%' },   // 3 = Red Back
         ];
+        // Task 8: middle-lane spectator target positions (dsplit-relative %, same coordinate
+        // space DSLOT_TARGET uses). Centered on the divider column (50%, matching
+        // .dsplit-divider) and stacked vertically above the VS badge — horizontally clear of
+        // both zones' seat panels (which sit at 25%/75%), so no vertical value can collide.
+        function dSpecTarget(i) { return { left: '50%', top: (12 + i * 8) + '%' }; }
 
         function freshNetSlots() {
             return [0, 1, 2, 3].map(() => ({ kind: 'ai', peerId: null, name: 'AI', ready: false }));
@@ -17369,48 +17410,74 @@
             mySlot = netSlots.findIndex(s => s.peerId === 'HOST');
             syncGuestSlotFields();
             // slots carries peerId per slot so each guest can recompute its own mySlot; peerIds are
-            // stripped only later in START_MATCH_D (Task 3).
-            hostBroadcast({ type: 'LOBBY_STATE_D', slots: netSlots, hostSlot: mySlot });
+            // stripped only later in START_MATCH_D (Task 3). Task 8: spectators travels alongside
+            // it (own array, {peerId,name} only — see its declaration) so every guest can also
+            // recompute whether IT is undecided (guestApplyLobbyState).
+            hostBroadcast({ type: 'LOBBY_STATE_D', slots: netSlots, hostSlot: mySlot, spectators: spectators });
             renderDoublesLobby();
         }
 
-        // HOST hook (fired by setupGuestConnection on conn 'open', arg = the connection): assign
-        // the first open (AI) slot in index order. The default name is the join-order P# from
-        // nextPlayerNumber (NOT the slot index — a freed low slot must not mint a duplicate);
+        // HOST hook (fired by setupGuestConnection on conn 'open', arg = the connection): Task 8 —
+        // a new guest enters the MIDDLE LANE as a spectator, not an auto-seated player. They must
+        // pick a side (hostPickSide) to take a seat; staying undecided at match start makes them
+        // a viewer (START_MATCH_D yourSlot:-1). The default name is the join-order P# from
+        // nextPlayerNumber (NOT slot/list index — a later departure must not mint a duplicate);
         // the guest's real name arrives right after via JOIN_HELLO_D.
         function netLobbyOnJoin(peerId, _connOrName) {
             if (!isHost || netMode !== 'doubles' || !netSlots) return;
-            if (netSlots.some(s => s.peerId === peerId)) return;   // already seated (defensive)
-            const i = netSlots.findIndex(s => s.kind === 'ai');
-            if (i < 0) {                                            // no room (should not happen: capped at 3 guests)
-                const g = guestConns.get(peerId);
-                if (g && g.conn && g.conn.open) { try { g.conn.send({ type: 'ROOM_FULL_D' }); } catch (e) {} }
-                return;
-            }
-            netSlots[i] = { kind: 'human', peerId, name: 'P' + (nextPlayerNumber++), ready: false };
+            if (netSlots.some(s => s.peerId === peerId)) return;      // already seated (defensive)
+            if (spectators.some(s => s.peerId === peerId)) return;    // already a spectator (defensive)
+            // No capacity check needed here: spectators aren't slot-limited (unlike netSlots' 4
+            // seats), and the room's total connection cap (host + 3 guests) is already enforced
+            // BEFORE this ever runs — see peer.on('connection')'s guestConns.size >= 3 gate.
+            spectators.push({ peerId, name: 'P' + (nextPlayerNumber++) });
             broadcastLobbyState();
         }
         window.netLobbyOnJoin = netLobbyOnJoin;
 
-        // HOST hook (fired by dropGuest on close/leave/timeout): free the slot back to AI.
+        // HOST hook (fired by dropGuest on close/leave/timeout): free a seated slot back to AI, or
+        // (Task 8) drop an undecided peer from the spectators list. Either way just bookkeeping —
+        // mid-match this has zero effect on the live sim (doublesSlotKinds/slotInputs are captured
+        // once at match start; a departing spectator never had a slot to begin with).
         function netLobbyOnLeave(peerId) {
             if (!isHost || netMode !== 'doubles' || !netSlots) return;
             const i = netSlots.findIndex(s => s.peerId === peerId);
-            if (i < 0) return;
-            netSlots[i] = aiSlot();
-            broadcastLobbyState();
+            if (i >= 0) {
+                netSlots[i] = aiSlot();
+                broadcastLobbyState();
+                return;
+            }
+            const si = spectators.findIndex(s => s.peerId === peerId);
+            if (si >= 0) {
+                spectators.splice(si, 1);
+                broadcastLobbyState();
+            }
         }
         window.netLobbyOnLeave = netLobbyOnLeave;
 
         // HOST: move a player to the requested side's open-for-human slot, FRONT first. A slot is
         // "open" if it is AI or already the mover's own. If both slots on that side hold OTHER
         // humans, the side is full → ignore. AI count is preserved (vacated slot becomes AI).
+        // Task 8: a peer not yet in netSlots is a SPECTATOR (middle lane) picking a side for the
+        // first time — promote it out of spectators[] into the target seat instead of swapping.
         function hostPickSide(peerId, side) {
             if (!isHost || !netSlots) return;
             const cur = netSlots.findIndex(s => s.peerId === peerId);
-            if (cur < 0) return;
             const front = side === 'blue' ? 0 : 2;
             const back = front + 1;
+            if (cur < 0) {
+                const si = spectators.findIndex(s => s.peerId === peerId);
+                if (si < 0) return;   // unknown peer (defensive)
+                let target = -1;
+                if (netSlots[front].kind === 'ai') target = front;
+                else if (netSlots[back].kind === 'ai') target = back;
+                if (target < 0) return;   // side already full of other humans — ignored, stay a spectator
+                const sp = spectators[si];
+                spectators.splice(si, 1);
+                netSlots[target] = { kind: 'human', peerId: sp.peerId, name: sp.name, ready: false };
+                broadcastLobbyState();
+                return;
+            }
             let target = -1;
             if (netSlots[front].kind === 'ai' || front === cur) target = front;
             else if (netSlots[back].kind === 'ai' || back === cur) target = back;
@@ -17436,14 +17503,25 @@
             if (!isHost || netMode !== 'doubles' || !netSlots || !data || !data.type) return;
             switch (data.type) {
                 case 'JOIN_HELLO_D': {
-                    let i = netSlots.findIndex(s => s.peerId === peerId);
-                    if (i < 0) { netLobbyOnJoin(peerId); i = netSlots.findIndex(s => s.peerId === peerId); }
+                    // Task 8: a fresh guest is a SPECTATOR (netLobbyOnJoin no longer auto-seats),
+                    // so the name update targets spectators[] first; only an ALREADY-seated peer
+                    // (one who picked a side before this handshake somehow landed, or a defensive
+                    // re-send) updates netSlots directly.
+                    const i = netSlots.findIndex(s => s.peerId === peerId);
                     if (i >= 0) {
                         // Only a REAL custom name overwrites; an unnamed guest keeps the
                         // join-order P# assigned at seat time (never recomputed from position).
                         const rn = realLobbyName(data.name);
                         if (rn) netSlots[i].name = rn;
                         broadcastLobbyState();
+                    } else {
+                        let sp = spectators.find(s => s.peerId === peerId);
+                        if (!sp) { netLobbyOnJoin(peerId); sp = spectators.find(s => s.peerId === peerId); }
+                        if (sp) {
+                            const rn = realLobbyName(data.name);
+                            if (rn) sp.name = rn;
+                            broadcastLobbyState();
+                        }
                     }
                     break;
                 }
@@ -17484,8 +17562,11 @@
         };
 
         // --- Local action helpers (branch on role) -----------------------------------
+        // Task 8: PICK_SIDE_D is exactly how a spectator (mySlot===-1) takes a seat, so this can
+        // no longer gate on mySlot>=0 — only on actually being in a doubles lobby at all. Guard
+        // moved to netMode; the seated-vs-spectator branch lives in hostPickSide.
         function doublesLocalPick(side) {
-            if (mySlot < 0) return;
+            if (netMode !== 'doubles' || !netSlots) return;
             if (isHost) hostPickSide('HOST', side);
             else if (conn && conn.open) { try { conn.send({ type: 'PICK_SIDE_D', side }); } catch (e) {} }
         }
@@ -17514,7 +17595,7 @@
                 if (conn && conn.open) { try { conn.send({ type: 'LEAVE_D' }); } catch (e) {} }
                 cleanupPeer();
             }
-            netSlots = null; mySlot = -1;
+            netSlots = null; mySlot = -1; spectators = [];
             // Clear the identity-keyed name tags so a later room doesn't inherit stale DOM nodes
             // (renderDoublesLobby would self-heal this on the next repaint anyway — dTagKey()
             // wouldn't match any leftover peerId — but clearing here avoids relying on that).
@@ -17531,6 +17612,7 @@
             const firstTime = (netMode !== 'doubles');
             netMode = 'doubles';
             netSlots = Array.isArray(data.slots) ? data.slots : null;
+            spectators = Array.isArray(data.spectators) ? data.spectators : [];   // Task 8
             mySlot = netSlots ? netSlots.findIndex(s => s.peerId === myPeerId) : -1;
             if (firstTime) showLobbyView('lobbyDoublesView');   // leave the flashed 1v1 connected view
             renderDoublesLobby();
@@ -17574,6 +17656,7 @@
                     tag.dataset.role = (i % 2 === 0) ? 'front' : 'back';
                     tag.style.left = DSLOT_TARGET[i].left;
                     tag.style.top = DSLOT_TARGET[i].top;
+                    tag.classList.remove('is-spectator');   // Task 8: a promoted spectator reuses this SAME element (same 'p:'+peerId key) — clear its former middle-lane styling
                     tag.classList.toggle('is-you', i === mySlot);
                     tag.classList.toggle('is-ready', s.kind === 'human' && !!s.ready);
                     tag.classList.toggle('is-cpu', s.kind === 'ai');
@@ -17581,6 +17664,32 @@
                     // slot's name is always set at seat time to the join-order P#).
                     tag.querySelector('.dcmd-name').textContent = s.kind === 'ai' ? 'AI' : (s.name || '?');
                 }
+                // Task 8: undecided guests render in the middle lane — the SAME sliding-line
+                // mechanism as seated tags (identity key 'p:'+peerId is shared with the seated
+                // loop above), so the moment hostPickSide promotes one into a seat, this exact
+                // DOM element just gets new left/top and the CSS transition slides it out of the
+                // middle. No front/back row, no ready/CPU styling — spectators hold no seat and
+                // cannot ready (doublesLocalReady's mySlot<0 guard, unchanged).
+                const specs = Array.isArray(spectators) ? spectators : [];
+                specs.forEach((sp, i) => {
+                    const key = 'p:' + sp.peerId;
+                    seen.add(key);
+                    let tag = dTagEls.get(key);
+                    if (!tag) {
+                        tag = document.createElement('div');
+                        tag.className = 'dcmd-line';
+                        tag.innerHTML = '<span class="dcmd-hand">&#9654;</span><span class="dcmd-name"></span>';
+                        layer.appendChild(tag);
+                        dTagEls.set(key, tag);
+                    }
+                    const pos = dSpecTarget(i);
+                    tag.style.left = pos.left;
+                    tag.style.top = pos.top;
+                    tag.classList.add('is-spectator');
+                    tag.classList.remove('is-ready', 'is-cpu');
+                    tag.classList.toggle('is-you', sp.peerId === myPeerId);
+                    tag.querySelector('.dcmd-name').textContent = sp.name || '?';
+                });
                 // Drop tags for identities no longer present this repaint (a guest left, or a
                 // slot flipped human<->ai — a fresh 'ai:<i>' tag is recreated if that index ever
                 // reverts to AI, so nothing is lost, just not animated across the gap).
@@ -17616,7 +17725,14 @@
         // front/back with your teammate; clicking the other side picks it (front seat first, then
         // back, per hostPickSide — a no-op if that side is already full of other humans).
         function doublesZoneClick(side) {
-            if (mySlot < 0 || !netSlots) return;
+            if (netMode !== 'doubles' || !netSlots) return;
+            // Task 8: a spectator (no seat yet) has no "own side" to swap within — any zone
+            // click is a PICK, same as the ArrowLeft/ArrowRight keys.
+            if (mySlot < 0) {
+                doublesLocalPick(side);
+                if (window.ToneSFX) ToneSFX.uiHover();
+                return;
+            }
             const mySide = mySlot < 2 ? 'blue' : 'red';
             if (side === mySide) doublesLocalSwap(); else doublesLocalPick(side);
             if (window.ToneSFX) ToneSFX.uiHover();
@@ -17800,6 +17916,9 @@
             if (window.configureStatusRowsForMode) window.configureStatusRowsForMode();
             destroyDoublesNameTags();   // name tags are doubles-only presentation — see its own header comment
             netSlotNames = null;        // online-doubles wire names are match-scoped; back to local doublesSlotLabel behavior
+            // Task 8: the "SPECTATING" label is online-doubles-viewer-only presentation, same
+            // lifetime as the name tags/wire names above — never leave it lit into another mode.
+            if (window.guiElements && window.guiElements.spectatingText) window.guiElements.spectatingText.isVisible = false;
             combatants.leftBack = null;
             combatants.rightBack = null;
             if (combatants.left)  combatants.left.position  = 'solo';
@@ -18011,11 +18130,18 @@
                 if (window.guiElements.menuLeftPanel) window.guiElements.menuLeftPanel.isVisible = false;
                 if (window.setDOMMenuVisible) window.setDOMMenuVisible(false);
             }
+            // Task 8: a spectator (mySlot===-1, only possible here since this whole function is
+            // online-doubles-only) is a VIEWER — no ability bar/parry button (nothing to cast or
+            // block for), plus the standing "SPECTATING" label. Overrides startRound()'s own
+            // (also spectator-gated) visibility set a few lines up, in case Task-8 wiring there
+            // ever falls out of step with this final word.
+            const isSpectator = (mySlot < 0);
             const abilityBar = document.getElementById('abilityBar');
-            if (abilityBar) abilityBar.style.display = 'flex';
+            if (abilityBar) abilityBar.style.display = isSpectator ? 'none' : 'flex';
             const parryButton = document.getElementById('parryButton');
-            if (parryButton) parryButton.style.display = 'block';
-            if (window.guiElements && window.guiElements.abilityBarBg) window.guiElements.abilityBarBg.isVisible = true;
+            if (parryButton) parryButton.style.display = isSpectator ? 'none' : 'block';
+            if (window.guiElements && window.guiElements.abilityBarBg) window.guiElements.abilityBarBg.isVisible = !isSpectator;
+            if (window.guiElements && window.guiElements.spectatingText) window.guiElements.spectatingText.isVisible = isSpectator;
             if (window.updateStageIndicator) updateStageIndicator();
             updateScore();
             updateHealthBars();
@@ -18812,7 +18938,7 @@
                 case 'LEAVE_D':
                     // Doubles host closed the room. Tear down and return to the mode menu with a note.
                     if (!isHost) {
-                        netSlots = null; mySlot = -1;
+                        netSlots = null; mySlot = -1; spectators = [];
                         cleanupPeer();
                         showLobbyView('lobbyModeView');
                         const sub = document.getElementById('lobbySubtitle');
@@ -19166,12 +19292,15 @@
                          (mpSync.desync ? mpSync.desync.frame : frame));
             if (netMode === 'doubles') {
                 // Star fan-out: the host is authoritative and broadcasts the abort to every guest
-                // (case 'DESYNC_ABORT_D'); a guest that detects its OWN sustained divergence first
-                // (against the host's SYNC_HASH_D) can't fan out itself, so it reports up to the
-                // host (case 'DESYNC_REPORT_D' -> host calls this same function, guarded, which
+                // (case 'DESYNC_ABORT_D'); a SEATED guest that detects its OWN sustained divergence
+                // first (against the host's SYNC_HASH_D) can't fan out itself, so it reports up to
+                // the host (case 'DESYNC_REPORT_D' -> host calls this same function, guarded, which
                 // then broadcasts). Either way we still tear down locally below, same as 1v1.
+                // Task 8: a SPECTATOR (mySlot===-1) never reports — its own divergence must exit
+                // only itself (the match survives for everyone else); the handleDisconnect() call
+                // below still runs unconditionally, so the spectator's own overlay/teardown fires.
                 if (isHost) hostBroadcast({ type: 'DESYNC_ABORT_D', frame: frame });
-                else if (conn && conn.open) { try { conn.send({ type: 'DESYNC_REPORT_D', frame: frame }); } catch (e) {} }
+                else if (mySlot >= 0 && conn && conn.open) { try { conn.send({ type: 'DESYNC_REPORT_D', frame: frame }); } catch (e) {} }
             } else if (conn && conn.open) {
                 try { conn.send({ type: 'DESYNC_ABORT', frame: frame }); } catch (e) {}
             }
@@ -20647,15 +20776,22 @@
                 // re-capturing would clear a pressed one-shot (captureLocalInput resets parry/casts).
                 const inputFrame = currentFrame + INPUT_DELAY_DOUBLES;
                 if (inputFrame > lastDoublesInputFrame) {
-                    const localInput = captureLocalInput();
-                    localInputHistory[inputFrame] = localInput;   // redundancy source for INPUT_D history walk
                     lastDoublesInputFrame = inputFrame;
-                    if (isHost) {
-                        // Host's own input enters its OWN slot (mySlot — may be ANY slot), then merge.
-                        if (mySlot >= 0) slotInputs[mySlot][inputFrame] = localInput;
-                        hostTryMergeDoubles();
-                    } else {
-                        sendDoublesInput(inputFrame, localInput);
+                    // Task 8: a spectator (mySlot===-1 — only possible for a non-host guest; the
+                    // host always holds a seat) has no input to capture or send. It just waits
+                    // for INPUT_SET_D broadcasts like every slot it doesn't own — "no input
+                    // solicited" from the spec. Skipping captureLocalInput() entirely also means
+                    // a spectator's keypresses never touch localInputHistory/one-shot state.
+                    if (mySlot >= 0) {
+                        const localInput = captureLocalInput();
+                        localInputHistory[inputFrame] = localInput;   // redundancy source for INPUT_D history walk
+                        if (isHost) {
+                            // Host's own input enters its OWN slot (mySlot — may be ANY slot), then merge.
+                            slotInputs[mySlot][inputFrame] = localInput;
+                            hostTryMergeDoubles();
+                        } else {
+                            sendDoublesInput(inputFrame, localInput);
+                        }
                     }
                 }
 
@@ -21115,13 +21251,19 @@
             roundTransitioning = false;
             hideMessage();
 
-            // Show ability bar for the new round
+            // Show ability bar for the new round. Task 8: EXCEPT for an online-doubles spectator
+            // (a round transition mid-match — e.g. after a score — calls startRound() again, so
+            // this must re-hide it every time, not just at match start). "Online" is discriminated
+            // by netSlotNames (set only by startOnlineDoublesMatch, cleared by exitDoublesState —
+            // see createDoublesNameTags' identical idiom), so this is always false, and this block
+            // behaves exactly as before, for singles/1v1/local-doubles.
+            const isOnlineSpectator = !!netSlotNames && mySlot < 0;
             const abilityBar = document.getElementById('abilityBar');
-            if (abilityBar) abilityBar.style.display = 'flex';
+            if (abilityBar) abilityBar.style.display = isOnlineSpectator ? 'none' : 'flex';
             const parryButton = document.getElementById('parryButton');
-            if (parryButton) parryButton.style.display = 'block';
+            if (parryButton) parryButton.style.display = isOnlineSpectator ? 'none' : 'block';
             if (window.guiElements && window.guiElements.abilityBarBg) {
-                window.guiElements.abilityBarBg.isVisible = true;
+                window.guiElements.abilityBarBg.isVisible = !isOnlineSpectator;
             }
 
             // Start beta brainwave entrainment for gameplay focus

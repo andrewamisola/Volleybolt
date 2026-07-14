@@ -2143,6 +2143,13 @@ body.flipped-view #aiCastBarContainer {
     color: #8b94a8;
     opacity: 0.6;
 }
+/* Task 8 (middle-lane spectators): an undecided guest's marker sits centered on the divider
+   column instead of nudged past a FRONT/BACK panel row — same element/transition as a seated
+   .dcmd-line (renderDoublesLobby reuses the identity-keyed DOM node), just re-centered so it
+   reads as "in the middle," not attached to either zone. */
+.dcmd-line.is-spectator {
+    transform: translate(-50%, -50%);
+}
 
 .dlobby-bottom {
     flex: 0 0 auto;
