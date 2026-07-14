@@ -924,9 +924,27 @@
         let isHost = false;           // Host handles tie-breaking, starts left side
 
         let peer = null;              // PeerJS instance
-        let conn = null;              // DataConnection to opponent
+        let conn = null;              // DataConnection to opponent (1v1) or to the host (doubles guest)
         let myPeerId = null;
         let netPing = 0;              // Current RTT in ms
+
+        // --- Online doubles: host multi-connection layer (host-only, doubles-only) ---
+        // netMode gates the connection lifecycle: the classic 1v1 paths set 'duel', the
+        // doubles host lobby (Task 2) sets 'doubles', and cleanupPeer resets 'none'.
+        let netMode = 'none';         // 'none' | 'duel' (classic 1v1) | 'doubles'
+        // Host keeps one DataConnection per guest, keyed by guest peerId. Empty (and inert)
+        // in 1v1, so every helper below is a no-op on the classic path.
+        const guestConns = new Map(); // peerId -> { conn, slot, name, ready, lastPongTime, ping }
+
+        // Sends msg to every OPEN guest conn except exceptPeerId. No-op when guestConns is empty (1v1).
+        function hostBroadcast(msg, exceptPeerId) {
+            for (const [pid, g] of guestConns) {
+                if (pid === exceptPeerId) continue;
+                if (g.conn && g.conn.open) { try { g.conn.send(msg); } catch (e) {} }
+            }
+        }
+        function guestConnFor(peerId) { return guestConns.get(peerId); }
+        function forEachGuest(fn) { for (const [pid, g] of guestConns) fn(pid, g); }
 
         // Rollback netcode state
         let currentFrame = 0;
@@ -16902,6 +16920,7 @@
 
             btnHost.addEventListener('click', () => {
                 isHost = true;
+                netMode = 'duel';                 // classic 1v1
                 const code = generateRoomCode();
                 initializePeer(code.toLowerCase());
                 showLobbyView('lobbyHostView');
@@ -16933,6 +16952,7 @@
                 const code = (joinInput ? joinInput.value : '').toUpperCase().trim();
                 if (code.length >= 4) {
                     isHost = false;
+                    netMode = 'duel';             // classic 1v1
                     if (joinStatus) joinStatus.textContent = 'Connecting...';
                     initializePeer(null, code.toLowerCase());
                     // Arm AFTER initializePeer: its first act is cleanupPeer(), which clears this
@@ -17705,10 +17725,29 @@
 
             peer.on('connection', (connection) => {
                 // Host receives incoming connection
-                if (isHost) {
-                    conn = connection;
-                    setupConnection();
+                if (!isHost) { try { connection.close(); } catch (e) {} return; }
+                if (netMode === 'doubles') {
+                    if (guestConns.size >= 3) {           // room full — reject the 4th guest
+                        connection.on('open', () => {
+                            try { connection.send({ type: 'ROOM_FULL_D' }); } catch (e) {}
+                            setTimeout(() => { try { connection.close(); } catch (e) {} }, 250);
+                        });
+                        return;
+                    }
+                    setupGuestConnection(connection);      // registers into guestConns on open
+                    return;
                 }
+                // Classic 1v1 ('duel'): FIX the pre-existing hijack — a second joiner used to
+                // silently overwrite `conn`, orphaning the real opponent. Reject extras instead.
+                // (Connection handling only — the accepted opponent's sim/goldens are untouched.)
+                if (conn && conn.open) {
+                    connection.on('open', () => {
+                        try { connection.send({ type: 'ROOM_FULL_D' }); } catch (e) {}
+                        setTimeout(() => { try { connection.close(); } catch (e) {} }, 250);
+                    });
+                    return;
+                }
+                conn = connection; setupConnection();
             });
 
             peer.on('error', (err) => {
@@ -17777,8 +17816,95 @@
             });
         }
 
+        // --- Online doubles: host-side per-guest connection wiring ---------------------
+        // Registers one guest DataConnection into guestConns on open, then routes its data
+        // through a thin dispatcher. Slot assignment / lobby state is Task 2's job (invoked
+        // via the guarded window.netLobbyOnJoin hook); this layer only owns the transport.
+        function setupGuestConnection(connection) {
+            const peerId = connection.peer;
+            connection.on('open', () => {
+                guestConns.set(peerId, {
+                    conn: connection,
+                    slot: -1,                 // assigned by Task 2's netLobbyOnJoin
+                    name: '',
+                    ready: false,
+                    lastPongTime: performance.now(),
+                    ping: 0
+                });
+                // Lazy-start the per-guest heartbeat once we have at least one guest. This is
+                // only ever reached in doubles+host (setupGuestConnection is only called from
+                // the 'doubles' branch of peer.on('connection')), so it never runs in 1v1.
+                if (!doublesPingInterval) startDoublesPingLoop();
+                if (window.netLobbyOnJoin) { try { window.netLobbyOnJoin(peerId, connection); } catch (e) {} }
+            });
+            connection.on('data', (data) => { dispatchGuestData(peerId, data); });
+            connection.on('close', () => { dropGuest(peerId, 'left'); });
+            connection.on('error', () => { dropGuest(peerId, 'left'); });
+        }
+
+        // Thin per-guest data dispatcher (host side, doubles). Answers the liveness messages
+        // itself so basic keep-alive works even BEFORE Task 2's lobby/game handler exists;
+        // forwards everything else to window.handleDoublesNetMessage when it's defined.
+        function dispatchGuestData(peerId, data) {
+            if (!data || !data.type) return;
+            const g = guestConns.get(peerId);
+            if (data.type === 'PING') {
+                // The guest reuses the classic 1v1 heartbeat (startPingMeasurement) over its
+                // single conn — which for a guest IS the host link. Answer with the same PONG
+                // shape it expects so its liveness check passes unchanged.
+                if (g && g.conn && g.conn.open) { try { g.conn.send({ type: 'PONG', time: data.time }); } catch (e) {} }
+                return;
+            }
+            if (data.type === 'PONG_D') {
+                // Reply to our per-guest PING_D — record this guest's liveness + RTT.
+                if (g) { g.lastPongTime = performance.now(); g.ping = Math.round(performance.now() - data.time); }
+                return;
+            }
+            if (window.handleDoublesNetMessage) {
+                try { window.handleDoublesNetMessage(peerId, data); } catch (e) {}
+            }
+        }
+
+        // Closes + forgets one guest and notifies the lobby state machine (Task 2's
+        // netLobbyOnLeave, called only if defined). Safe to call for an unknown peerId.
+        function dropGuest(peerId, reason) {
+            const g = guestConns.get(peerId);
+            if (!g) return;
+            try { if (g.conn) g.conn.close(); } catch (e) {}
+            guestConns.delete(peerId);
+            if (window.netLobbyOnLeave) { try { window.netLobbyOnLeave(peerId, reason); } catch (e) {} }
+        }
+
+        // Per-guest heartbeat (doubles+host only): every 1000ms PING_D each guest and drop
+        // any whose PONG_D has gone silent past the shared PONG_TIMEOUT_MS.
+        let doublesPingInterval = null;
+        function startDoublesPingLoop() {
+            stopDoublesPingLoop();
+            doublesPingInterval = setInterval(() => {
+                const now = performance.now();
+                // Deleting the current entry during Map iteration is safe (dropGuest below).
+                for (const [pid, g] of guestConns) {
+                    if (g.conn && g.conn.open) {
+                        try { g.conn.send({ type: 'PING_D', time: now }); } catch (e) {}
+                    }
+                    if (g.lastPongTime && (now - g.lastPongTime) > PONG_TIMEOUT_MS) {
+                        console.warn('[Doubles] guest PONG_D timeout — dropping ' + pid);
+                        dropGuest(pid, 'Connection lost');
+                    }
+                }
+            }, 1000);
+        }
+        function stopDoublesPingLoop() {
+            if (doublesPingInterval) { clearInterval(doublesPingInterval); doublesPingInterval = null; }
+        }
+
         function cleanupPeer() {
             if (window.clearJoinAttemptTimer) window.clearJoinAttemptTimer();
+            // Online doubles teardown (no-ops in 1v1: empty map, stopped loop, netMode reset).
+            for (const [pid, g] of guestConns) { try { if (g.conn) g.conn.close(); } catch (e) {} }
+            guestConns.clear();
+            stopDoublesPingLoop();
+            netMode = 'none';
             if (conn) {
                 conn.close();
                 conn = null;
@@ -17862,6 +17988,21 @@
                     // Respond immediately
                     conn.send({ type: 'PONG', time: data.time });
                     break;
+
+                case 'PING_D':
+                    // Doubles host per-guest heartbeat — echo back over our single host link.
+                    if (conn && conn.open) { try { conn.send({ type: 'PONG_D', time: data.time }); } catch (e) {} }
+                    break;
+
+                case 'ROOM_FULL_D': {
+                    // Host rejected us: the room is full (doubles) or already has an opponent
+                    // (1v1 second-joiner). Mirror the join-watchdog "Room not found" idiom.
+                    const joinStatusEl = document.getElementById('joinStatus');
+                    if (joinStatusEl) joinStatusEl.textContent = 'Room is full.';
+                    showLobbyView('lobbyJoinView');
+                    cleanupPeer();
+                    break;
+                }
 
                 case 'DESYNC_ABORT':
                     console.warn('[MP DESYNC] peer aborted (their frame ' + data.frame + ')');
