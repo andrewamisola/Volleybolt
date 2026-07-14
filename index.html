@@ -1122,13 +1122,15 @@
         // netSlots/mySlot under the running sim, and (c) rejects new connections mid-match.
         let doublesMatchLive = false;
         // Online-doubles match-intro hold (owner playtest). Every client plays the Ready/GO intro
-        // LOCALLY and holds the W2 lockstep loop (runOnlineDoublesLockstep returns early while this
-        // is false) until its own intro finishes — input capture, INPUT_D sends, host merge past
-        // warmup, stepping, and hash traffic are all inside that loop, so this one gate holds the
-        // whole mesh in one place. Pull-based lockstep shifts the mesh together (host can't merge a
-        // frame until every human's INPUT_D arrived; guests can't step past broadcast sets), so
-        // differing intro durations resolve as momentary lag. Reset false at every online-doubles
-        // match start; set true in the doReadyGoTransition GO callback.
+        // LOCALLY; the PRIMARY sim hold is gameState staying 'menu' until the GO callback (so
+        // stepFixedSim dispatches nothing — mirrors startGame). This flag additionally gates the
+        // two doubles-mesh entry points that could otherwise act early: runOnlineDoublesLockstep
+        // (defense-in-depth early return) and hostTryMergeDoubles (reachable from the INPUT_D
+        // receive handler when a guest's intro finishes first — must not run the AI-slot fill
+        // against pre-startRound state). Pull-based lockstep shifts the mesh together (host can't
+        // merge a frame until every human's INPUT_D arrived; guests can't step past broadcast
+        // sets), so differing intro durations resolve as momentary lag. Reset false at every
+        // online-doubles match start; set true in the doReadyGoTransition GO callback.
         let doublesIntroDone = false;
         let lastDoublesInputFrame = -1;    // guard: capture+send/store each inputFrame exactly ONCE
                                            //   (re-capturing while stalled would clear pressed one-shots).
@@ -18172,8 +18174,15 @@
             setupDoublesMatchCommon();
 
             // Online-specific: a rollback PvP match, not the AI-driven singles variant.
+            // NOTE gameState is NOT set to 'playing' here — it stays 'menu' (the lobby's value)
+            // until the GO callback below, EXACTLY like startGame (which flips it inside its own
+            // doReadyGoTransition callback). This is what actually holds the sim during the intro:
+            // stepFixedSim early-returns on gameState!=='playing', so NEITHER the pvp loop NOR the
+            // single-player fallthrough (runSinglePlayerFrame — which has no netMode guard and,
+            // with teamSize===2, would free-run the local doubles AI sim and diverge every client)
+            // can run a single frame while the intro plays. GameSM.state==='match' (set above)
+            // keeps the 3D scene rendering under the transition overlay regardless.
             gameMode = 'pvp';
-            gameState = 'playing';
             // The match is now LIVE — freeze the lobby machine (no more PICK/SWAP/READY/JOIN mutate
             // netSlots), reject late joiners, and arm the seated-guest-loss → clean-exit path. Reset in
             // exitDoublesState. Both roles reach here: the host right after broadcasting START_MATCH_D
@@ -18245,22 +18254,34 @@
             mpDesyncAborted = false;
             toggleMpOverlay(!!window.DEV_MODE);
 
-            // MATCH INTRO (owner playtest). Mirror startGame's ordering: resetGame() NOW (clears
-            // score/stage/juice + inner resetRound), then doReadyGoTransition runs the black lead-in /
-            // "Ready…" / "GO!" and, in its GO callback, does startRound() + the HUD reveal + sets
-            // doublesIntroDone so the held lockstep loop opens. Frame-0 sim state is IDENTICAL to
-            // today's inline order: resetGame→(transition's own resetRound)→startRound is exactly
-            // startGame's sequence, and the extra resetRound is idempotent here (roundsAway==0 both
-            // times ⇒ gate health == maxTowerHealth), while startRound re-establishes all combatant
+            // MATCH INTRO (owner playtest). Mirror startGame's ordering EXACTLY: resetGame() NOW
+            // (clears score/stage/juice + inner resetRound), then doReadyGoTransition runs the black
+            // lead-in / "Ready…" / "GO!" and its GO callback flips gameState to 'playing' (opening
+            // stepFixedSim — held closed at 'menu' through the whole intro), runs startRound(), sets
+            // doublesIntroDone, and reveals the HUD. Frame-0 sim state is IDENTICAL to today's
+            // inline order: resetGame→(transition's own resetRound)→startRound is exactly
+            // startGame's sequence, the extra resetRound is idempotent here (roundsAway==0 both
+            // times ⇒ gate health == maxTowerHealth), and startRound re-establishes all combatant
             // state via combatantReset(true)+explicit cooldowns/mana regardless — so the state the
-            // loop reads on release, and the host AI-fill reads at first merge, is unchanged and
-            // identical across clients (all run this same deterministic, RNG-free sequence; only the
-            // intro's wall-clock DURATION differs, which pull-based lockstep absorbs as lag).
+            // lockstep loop reads on release, and the host AI-fill reads at first merge (also
+            // intro-gated — see hostTryMergeDoubles), is unchanged and identical across clients
+            // (all run this same deterministic, RNG-free sequence; only the intro's wall-clock
+            // DURATION differs, which pull-based lockstep absorbs as lag).
             resetGame();
             doReadyGoTransition(() => {
-                // GO — release the mesh. startRound() settles frame-0 combatant state (mana=1,
-                // side-seeded cooldowns), THEN doublesIntroDone opens runOnlineDoublesLockstep, so
-                // the first merge/step reads fully-started state (same as today's inline order).
+                // ABORT GUARD: the rAF/setTimeout chain fires this seconds after match start — if
+                // the match died during the intro (disconnect/C1 → handleDisconnect → cleanupPeer
+                // sets netMode='none'; voluntary quit → exitDoublesState clears doublesMatchLive),
+                // bail before stomping the menu/disconnect overlay with the HUD reveal or
+                // resurrecting the sim (gameState='playing') over a dead match.
+                if (!doublesMatchLive || netMode !== 'doubles') return;
+
+                // GO — release everything in one place: gameState opens stepFixedSim's outer gate
+                // (roundActive from startRound() routes it to runPvPGameLoop, never the SP driver),
+                // and doublesIntroDone opens the lockstep loop + host merge. startRound() runs
+                // FIRST so the loop's/merge's first tick reads fully-started combatant state
+                // (mana=1, side-seeded cooldowns) — same as today's inline order.
+                gameState = 'playing';
                 startRound();
                 doublesIntroDone = true;
 
@@ -20313,6 +20334,15 @@
         // The host consumes inputSets like every client. Slot-general: no host===slot-0 assumption.
         function hostTryMergeDoubles() {
             if (!isHost || netMode !== 'doubles' || !doublesSlotKinds) return;
+            // MATCH-INTRO HOLD: never merge before this host's GO. This call site is also reached
+            // from the INPUT_D receive handler, so a guest whose intro finished FIRST could
+            // otherwise trigger the warmup-drain merge mid-intro — making the AI-slot fill
+            // (computeDoublesAIInput below reads live combatant state) run against PRE-startRound
+            // state and bake different AI inputs into the broadcast sets than today's ordering
+            // (merge on the lockstep loop's first tick, post-startRound). Guest inputs received
+            // during the hold are still stored (storeDoublesSlotInput ran before this call); the
+            // first post-GO capture re-enters here and drains them plus the warmup backlog.
+            if (!doublesIntroDone) return;
             while (true) {
                 const f = doublesMergeFrame;
                 let ready = true;
@@ -20937,13 +20967,15 @@
             if (window.updateLingeringTrails) updateLingeringTrails(renderDt);
             updateBarrierPulse(renderDt);
 
-            // MATCH-INTRO HOLD (owner playtest): until this client's Ready/GO intro finishes, hold the
-            // ENTIRE mesh — no input capture, no INPUT_D send, no host merge/step, no hash traffic
-            // (all live in the while loop below). Zero the accumulator like the frame-0 stall so we
-            // don't bank a backlog that would burst at 1x-plus on release. Ambient visuals (trails,
-            // barrier pulse) above still breathe under the fading-up arena. Pull-based lockstep makes
-            // a per-client hold safe: the whole mesh shifts together, so a slower client's longer
-            // intro just reads as lag, never a desync.
+            // MATCH-INTRO HOLD (owner playtest), defense-in-depth: the PRIMARY hold is upstream —
+            // gameState stays 'menu' until the GO callback, so stepFixedSim never dispatches here
+            // (nor to the SP driver) during the intro. This gate makes the loop itself safe even if
+            // some future path reaches it early: no input capture, no INPUT_D send, no step, no
+            // hash traffic (all in the while loop below; the host MERGE is gated separately inside
+            // hostTryMergeDoubles — it's also reachable from the INPUT_D receive handler). Zero the
+            // accumulator like the frame-0 stall so no backlog bursts on release. Pull-based
+            // lockstep makes a per-client hold safe: the whole mesh shifts together, so a slower
+            // client's longer intro just reads as lag, never a desync.
             if (!doublesIntroDone) { netAccumulator = 0; return; }
 
             netAccumulator += renderDt * 1000;
