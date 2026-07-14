@@ -21162,6 +21162,23 @@
             isResimulating = false;
         }
 
+        // Task 1 stall keepalive, factored (coordinator review of 5643b9d): while stalled,
+        // currentFrame/inputFrame don't advance so nothing re-sends (the W2 weak link) — re-send the
+        // newest packet at a wall-clock throttle. Transport-side only, never feeds the sim. Called
+        // from BOTH stall sites in runOnlineDoublesLockstep (the missing-set stall and the phantom
+        // round-end stall); the throttle state (doublesLastStallSend) is SHARED across the sites so
+        // they can't double-send within one STALL_RESEND_MS window.
+        function doublesStallKeepalive() {
+            const now = performance.now();
+            if (now - doublesLastStallSend > STALL_RESEND_MS) {
+                doublesLastStallSend = now;
+                if (isHost) { if (inputSets[doublesMergeFrame - 1]) broadcastInputSet(doublesMergeFrame - 1); }
+                else if (mySlot >= 0 && localInputHistory[lastDoublesInputFrame]) {
+                    sendDoublesInput(lastDoublesInputFrame, localInputHistory[lastDoublesInputFrame]);
+                }
+            }
+        }
+
         // ============================================================
         // PVP GAME LOOP - Fixed Timestep with Rollback
         // ============================================================
@@ -21337,17 +21354,7 @@
                     // the input delay (specDepth headroom keeps the resim range < MAX_ROLLBACK_FRAMES).
                     const specDepth = currentFrame - (doublesConfirmedFrontier + 1);
                     if (mySlot < 0 || specDepth >= MAX_ROLLBACK_FRAMES - INPUT_DELAY_DOUBLES) {
-                        // Task 1 stall keepalive: while frozen, inputFrame doesn't advance so nothing
-                        // re-sends (the W2 weak link). Re-send the newest packet at a wall-clock
-                        // throttle — transport-side only, never feeds the sim.
-                        const now = performance.now();
-                        if (now - doublesLastStallSend > STALL_RESEND_MS) {
-                            doublesLastStallSend = now;
-                            if (isHost) { if (inputSets[doublesMergeFrame - 1]) broadcastInputSet(doublesMergeFrame - 1); }
-                            else if (mySlot >= 0 && localInputHistory[lastDoublesInputFrame]) {
-                                sendDoublesInput(lastDoublesInputFrame, localInputHistory[lastDoublesInputFrame]);
-                            }
-                        }
+                        doublesStallKeepalive();   // Task 1 keepalive (factored — see its comment)
                         netAccumulator = 0; break;
                     }
                     set = buildPredictedSetDoubles(currentFrame);
@@ -21372,10 +21379,16 @@
                     // A speculative step tried to end the round: un-step this frame (restore the
                     // pre-step snapshot, pop it, drop the prediction record) and hard-stall until
                     // the frame confirms. Round ends are confirmed-only (see endRound's phantom gate).
+                    // KEEPALIVE REQUIRED (coordinator review): a round-ending frame is typically
+                    // predicted mesh-wide (deterministic in-flight projectile), so ALL clients can
+                    // phantom-stall here on the same frame with currentFrame/inputFrame frozen — the
+                    // exact W2 liveness hole Task 1 closed. Without a re-send, a burst loss of the
+                    // confirming packets would deadlock the mesh permanently.
                     doublesPhantomRoundEnd = false;
                     restoreGameState(gameStateHistory[gameStateHistory.length - 1]);
                     gameStateHistory.pop();
                     delete predictedSets[currentFrame];
+                    doublesStallKeepalive();
                     netAccumulator = 0; break;
                 }
 
