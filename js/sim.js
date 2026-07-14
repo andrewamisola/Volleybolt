@@ -33,6 +33,9 @@
 //   per-frame step) is new HASHED state, so the singles STATE fold legitimately moves. Old
 //   (round-3) values preserved: seed 12345 -> 5d4dfc6, seed 99999 -> 3aa202de. Also stale for
 //   the SAME reason: the ×0.6 event-charge rescale (JUICE.CHARGE) feeds the same juice field.
+//   PINNED 2026-07-14 (in-browser x2 each, owner-delegated ceremony): seed 12345 -> a90063b5,
+//   seed 99999 -> 5e5eca1b. AI golden e6fdfae9 CONFIRMED UNCHANGED by round 4 (role deletions
+//   were inert on the singles path — verified live).
 //
 // ============================================================================
 // DOUBLES goldens (M1 — 2v2). The singles pins above are UNCHANGED by M1: the
@@ -67,6 +70,12 @@
 //     • SINGLES AI fold does NOT move (Node-verified e6fdfae9 -> e6fdfae9): the singles profile
 //       carries no `role`, so the deleted branches were already inert on the singles path. Owner
 //       still re-confirms in-browser per house rule (decideAI source changed), but no movement expected.
+//   PINNED 2026-07-14 (in-browser x2 each, owner-delegated ceremony — every value matched its
+//   Node candidate where one existed):
+//     dbg.determinismDoubles(180, 12345) -> 47424ad5
+//     dbg.determinismDoubles(180, 99999) -> 6e043c14
+//     dbg.aiDeterminismDoubles(50, 42)   -> 0e029492
+//     dbg.aiDeterminism(50, 42)          -> e6fdfae9 (confirmed unchanged)
 //   HEADER-ONLY NOTE (ai-parry-buckets branch, 2026-07-13, header-only edit — this file's
 //   sim code is untouched, decideAI lives in index.html): decideAI's parry gate now hashes
 //   each threat's id + profile.slotSalt into a stable early/perfect/late timing bucket
