@@ -19059,6 +19059,9 @@
             if (data.type === 'PONG_D') {
                 // Reply to our per-guest PING_D — record this guest's liveness + RTT.
                 if (g) { g.lastPongTime = performance.now(); g.ping = Math.round(performance.now() - data.time); }
+                // W3 Task 5: refresh the in-game indicator live (mirrors the guest-side PONG
+                // handler) — without this the host's worst-guest readout froze at match start.
+                if (window.refreshNetStatus) window.refreshNetStatus();
                 return;
             }
             if (window.handleDoublesNetMessage) {
