@@ -1121,6 +1121,15 @@
         // forever), (b) freezes the lobby state machine so a late PICK/SWAP/READY can't flip
         // netSlots/mySlot under the running sim, and (c) rejects new connections mid-match.
         let doublesMatchLive = false;
+        // Online-doubles match-intro hold (owner playtest). Every client plays the Ready/GO intro
+        // LOCALLY and holds the W2 lockstep loop (runOnlineDoublesLockstep returns early while this
+        // is false) until its own intro finishes — input capture, INPUT_D sends, host merge past
+        // warmup, stepping, and hash traffic are all inside that loop, so this one gate holds the
+        // whole mesh in one place. Pull-based lockstep shifts the mesh together (host can't merge a
+        // frame until every human's INPUT_D arrived; guests can't step past broadcast sets), so
+        // differing intro durations resolve as momentary lag. Reset false at every online-doubles
+        // match start; set true in the doReadyGoTransition GO callback.
+        let doublesIntroDone = false;
         let lastDoublesInputFrame = -1;    // guard: capture+send/store each inputFrame exactly ONCE
                                            //   (re-capturing while stalled would clear pressed one-shots).
 
@@ -18148,6 +18157,14 @@
         function startOnlineDoublesMatch(seed, slots) {
             console.log('Starting online doubles match with seed:', seed);
             hideMultiplayerLobby();
+            // Cover the screen with black BEFORE the lobby->arena swap, so the scene reveal
+            // (show3D), the doubles arena rebuild (setupDoublesMatchCommon) and the camera snap all
+            // happen entirely under black — no lobby-angle / HUD flash. Mirrors startGame's
+            // "cover before the swap" step; doReadyGoTransition (run below) fades this back up.
+            if (window.guiElements && window.guiElements.transitionOverlay) {
+                window.guiElements.transitionOverlay.isVisible = true;
+                window.guiElements.transitionOverlay.alpha = 1;
+            }
             if (window.GameSM) { GameSM.state = 'match'; GameSM.show3D(true); }
 
             // Shared doubles setup (teamSize=2, back combatants + paddles + facing, arena resize,
@@ -18182,6 +18199,7 @@
             resetPvPParryState();
 
             // ---- W2 lockstep mesh state (fresh per match) ----
+            doublesIntroDone = false;    // hold the lockstep loop until this client's Ready/GO intro finishes
             inputSets = [];
             slotInputs = [[], [], [], []];
             doublesMergeFrame = 0;
@@ -18219,45 +18237,64 @@
 
             selectedUpgrade = 'default';
             updateAbilityUI();
-            resetGame();
-            startRound();
 
-            // Reset netcode test harness (mirror startMultiplayerMatch).
+            // Reset netcode test harness (mirror startMultiplayerMatch). Not sim state and the loop
+            // is held below, so ordering vs the intro is irrelevant — done up front as before.
             mpSync.local = {}; mpSync.remote = {}; mpSync.localGroups = {}; mpSync.detailSent = {}; mpSync.lastOkFrame = -1;
             mpSync.desync = null; mpSync.mismatches = 0; mpSync.badStreak = 0; mpSync.rollbacks = 0; mpSync.lastRollback = 0;
             mpDesyncAborted = false;
             toggleMpOverlay(!!window.DEV_MODE);
 
-            // Reveal gameplay UI (same panels as startMultiplayerMatch).
-            if (window.guiElements) {
-                if (window.guiElements.scorePanel) window.guiElements.scorePanel.isVisible = true;
-                if (window.guiElements.scoreText) window.guiElements.scoreText.alpha = 1;
-                if (window.guiElements.playerHealthPanel) window.guiElements.playerHealthPanel.isVisible = true;
-                if (window.guiElements.aiHealthPanel) window.guiElements.aiHealthPanel.isVisible = true;
-                if (window.guiElements.playerManaContainer) window.guiElements.playerManaContainer.isVisible = true;
-                if (window.guiElements.aiManaContainer) window.guiElements.aiManaContainer.isVisible = true;
-                if (window.guiElements.stageNameText) window.guiElements.stageNameText.isVisible = true;
-                if (window.guiElements.stageGrid) window.guiElements.stageGrid.isVisible = true;
-                if (window.guiElements.menuContainer) window.guiElements.menuContainer.isVisible = false;
-                if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 0;
-                if (window.guiElements.menuLeftPanel) window.guiElements.menuLeftPanel.isVisible = false;
-                if (window.setDOMMenuVisible) window.setDOMMenuVisible(false);
-            }
-            // Task 8: a spectator (mySlot===-1, only possible here since this whole function is
-            // online-doubles-only) is a VIEWER — no ability bar/parry button (nothing to cast or
-            // block for), plus the standing "SPECTATING" label. Overrides startRound()'s own
-            // (also spectator-gated) visibility set a few lines up, in case Task-8 wiring there
-            // ever falls out of step with this final word.
-            const isSpectator = (mySlot < 0);
-            const abilityBar = document.getElementById('abilityBar');
-            if (abilityBar) abilityBar.style.display = isSpectator ? 'none' : 'flex';
-            const parryButton = document.getElementById('parryButton');
-            if (parryButton) parryButton.style.display = isSpectator ? 'none' : 'block';
-            if (window.guiElements && window.guiElements.abilityBarBg) window.guiElements.abilityBarBg.isVisible = !isSpectator;
-            if (window.guiElements && window.guiElements.spectatingText) window.guiElements.spectatingText.isVisible = isSpectator;
-            if (window.updateStageIndicator) updateStageIndicator();
-            updateScore();
-            updateHealthBars();
+            // MATCH INTRO (owner playtest). Mirror startGame's ordering: resetGame() NOW (clears
+            // score/stage/juice + inner resetRound), then doReadyGoTransition runs the black lead-in /
+            // "Ready…" / "GO!" and, in its GO callback, does startRound() + the HUD reveal + sets
+            // doublesIntroDone so the held lockstep loop opens. Frame-0 sim state is IDENTICAL to
+            // today's inline order: resetGame→(transition's own resetRound)→startRound is exactly
+            // startGame's sequence, and the extra resetRound is idempotent here (roundsAway==0 both
+            // times ⇒ gate health == maxTowerHealth), while startRound re-establishes all combatant
+            // state via combatantReset(true)+explicit cooldowns/mana regardless — so the state the
+            // loop reads on release, and the host AI-fill reads at first merge, is unchanged and
+            // identical across clients (all run this same deterministic, RNG-free sequence; only the
+            // intro's wall-clock DURATION differs, which pull-based lockstep absorbs as lag).
+            resetGame();
+            doReadyGoTransition(() => {
+                // GO — release the mesh. startRound() settles frame-0 combatant state (mana=1,
+                // side-seeded cooldowns), THEN doublesIntroDone opens runOnlineDoublesLockstep, so
+                // the first merge/step reads fully-started state (same as today's inline order).
+                startRound();
+                doublesIntroDone = true;
+
+                // Reveal gameplay UI (same panels as startMultiplayerMatch).
+                if (window.guiElements) {
+                    if (window.guiElements.scorePanel) window.guiElements.scorePanel.isVisible = true;
+                    if (window.guiElements.scoreText) window.guiElements.scoreText.alpha = 1;
+                    if (window.guiElements.playerHealthPanel) window.guiElements.playerHealthPanel.isVisible = true;
+                    if (window.guiElements.aiHealthPanel) window.guiElements.aiHealthPanel.isVisible = true;
+                    if (window.guiElements.playerManaContainer) window.guiElements.playerManaContainer.isVisible = true;
+                    if (window.guiElements.aiManaContainer) window.guiElements.aiManaContainer.isVisible = true;
+                    if (window.guiElements.stageNameText) window.guiElements.stageNameText.isVisible = true;
+                    if (window.guiElements.stageGrid) window.guiElements.stageGrid.isVisible = true;
+                    if (window.guiElements.menuContainer) window.guiElements.menuContainer.isVisible = false;
+                    if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 0;
+                    if (window.guiElements.menuLeftPanel) window.guiElements.menuLeftPanel.isVisible = false;
+                    if (window.setDOMMenuVisible) window.setDOMMenuVisible(false);
+                }
+                // Task 8: a spectator (mySlot===-1, only possible here since this whole function is
+                // online-doubles-only) is a VIEWER — no ability bar/parry button (nothing to cast or
+                // block for), plus the standing "SPECTATING" label. Overrides startRound()'s own
+                // (also spectator-gated) visibility set just above, in case Task-8 wiring there
+                // ever falls out of step with this final word.
+                const isSpectator = (mySlot < 0);
+                const abilityBar = document.getElementById('abilityBar');
+                if (abilityBar) abilityBar.style.display = isSpectator ? 'none' : 'flex';
+                const parryButton = document.getElementById('parryButton');
+                if (parryButton) parryButton.style.display = isSpectator ? 'none' : 'block';
+                if (window.guiElements && window.guiElements.abilityBarBg) window.guiElements.abilityBarBg.isVisible = !isSpectator;
+                if (window.guiElements && window.guiElements.spectatingText) window.guiElements.spectatingText.isVisible = isSpectator;
+                if (window.updateStageIndicator) updateStageIndicator();
+                updateScore();
+                updateHealthBars();
+            });
 
             // Name tags need every back-wizard modelRoot to exist (lazy-loaded on the first doubles
             // match). Gate ONLY the tags on beginBackModels — the netcode state above is synchronous
@@ -20899,6 +20936,15 @@
         function runOnlineDoublesLockstep(renderDt) {
             if (window.updateLingeringTrails) updateLingeringTrails(renderDt);
             updateBarrierPulse(renderDt);
+
+            // MATCH-INTRO HOLD (owner playtest): until this client's Ready/GO intro finishes, hold the
+            // ENTIRE mesh — no input capture, no INPUT_D send, no host merge/step, no hash traffic
+            // (all live in the while loop below). Zero the accumulator like the frame-0 stall so we
+            // don't bank a backlog that would burst at 1x-plus on release. Ambient visuals (trails,
+            // barrier pulse) above still breathe under the fading-up arena. Pull-based lockstep makes
+            // a per-client hold safe: the whole mesh shifts together, so a slower client's longer
+            // intro just reads as lag, never a desync.
+            if (!doublesIntroDone) { netAccumulator = 0; return; }
 
             netAccumulator += renderDt * 1000;
             while (netAccumulator >= TICK_MS) {
