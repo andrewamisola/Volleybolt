@@ -1073,6 +1073,27 @@
         let pvpUiAccumulator = 0;
         const PVP_UI_INTERVAL = 0.1;   // seconds
 
+        // ---- Online Doubles W2: lockstep input mesh -----------------------------------
+        // Four-slot lockstep (NO prediction — W3 adds rollback). Guests send their own slot's
+        // input (INPUT_D) to the host; the host merges all four (filling AI slots at merge time,
+        // host-authoritative) into a confirmed INPUT_SET_D it broadcasts to everyone; every client
+        // (host included) steps the UNCHANGED sim from inputSets. Slot index → sim mapping is the
+        // canonical SLOT_KEYS order: 0=left(BlueFront) 1=leftBack(BlueBack) 2=right(RedFront)
+        // 3=rightBack(RedBack). The host may sit at ANY slot (mySlot), so nothing assumes host===0.
+        const INPUT_DELAY_DOUBLES  = 4;    // input delay (frames) — larger than 1v1's 1: lockstep has
+                                           //   no prediction, so the delay must cover a round-trip to
+                                           //   the host and back without stalling in steady state.
+        const INPUT_SET_REDUNDANCY = 10;   // history frames re-sent on every INPUT_D / INPUT_SET_D
+                                           //   (loss-proofs the unordered channel; ~7 bools/frame).
+        let inputSets = [];                // frame -> [4 inputs] (CONFIRMED only; no prediction).
+        // Host-only: per-slot frame-indexed HUMAN inputs awaiting merge (own slot filled locally;
+        // other humans via INPUT_D; AI slots computed at merge, not stored here).
+        let slotInputs = [[], [], [], []];
+        let doublesMergeFrame = 0;         // host: next (oldest) frame to attempt merging.
+        let doublesSlotKinds = null;       // ['human'|'ai' x4] for the live match (set at match start).
+        let lastDoublesInputFrame = -1;    // guard: capture+send/store each inputFrame exactly ONCE
+                                           //   (re-capturing while stalled would clear pressed one-shots).
+
         function getLocalSide() {
             return isHost ? 'left' : 'right';
         }
@@ -13745,6 +13766,46 @@
                 for (const k in sight) { if (!live.has(+k)) delete sight[k]; }
             }
 
+            // ---- Doubles per-slot AI brain (factored out of the local driver, Online-Doubles W2) ----
+            // Computes ONE AI slot's input for one frame. Same brain LOCAL and ONLINE: the local
+            // doubles driver (runSinglePlayerFrame's teamSize===2 branch) calls it, and the ONLINE
+            // host's lockstep merge calls it too (via window.computeDoublesAIInput) to fill the AI
+            // slots host-authoritatively — guests never run it (they consume the merged INPUT_SET_D).
+            //
+            //   frameOverride: LOCAL passes nothing → uses spFrameCounter (BYTE-IDENTICAL to the
+            //   pre-factor inline `mkInput`: same decideAI frame arg, same makeAIRng seed). The ONLINE
+            //   host passes the sim frame f being merged, so decideAI's cast cadence (frame % castK)
+            //   keys to the real frame regardless of merge-vs-step timing. The value only reaches
+            //   decideAI's `frame` param + the (unused) per-frame RNG seed — never the sim.
+            //
+            // Slot-order-INVARIANT: each slot has its OWN aiSlotState[slotKey] lag ring + threatSight;
+            // buildAIViewForSlot / decideAI only READ shared projectiles/combatants. So the local
+            // driver's right→leftBack→rightBack call order and the online merge's slot-index order
+            // (0..3) produce identical per-slot decisions.
+            function computeDoublesAIInput(slotKey, roleKey, frameOverride) {
+                const frame = (frameOverride === undefined) ? spFrameCounter : frameOverride;
+                const st   = aiSlotState[slotKey];
+                // Opponents scale with the difficulty ELO; the human's AI partner (leftBack) is
+                // fixed at a competent level. Per-slot overrides layer the castK cadence on top
+                // (timing diversity only — unified AI, round 4); the reaction ring depth is the
+                // shared skill lag shifted by the slot's reactionDelta (≥1).
+                const base = skillToProfile(slotKey === 'leftBack' ? DOUBLES_AI.teammateSkill : getAISkill());
+                const prof = { ...base, ...DOUBLES_AI[roleKey],
+                    reactionFrames: Math.max(1, base.reactionFrames + DOUBLES_AI[roleKey].reactionDelta),
+                    // slotSalt de-correlates the parry timing-bucket hash per slot (see decideAI's
+                    // PARRY_BUCKETS) so the two backs don't whiff/land on the same balls in lockstep.
+                    // Reuses the same slotSalt map the (unused) per-frame RNG seed already keyed off.
+                    slotSalt: DOUBLES_AI.slotSalt[slotKey] };
+                updateSlotThreatSight(st, slotKey);            // side-derived incoming sight tick
+                st.views.push(buildAIViewForSlot(slotKey));
+                while (st.views.length > prof.reactionFrames + 1) st.views.shift();
+                return decideAI(st.views[0], frame,
+                    makeAIRng(frame ^ AI_RNG_SEED ^ DOUBLES_AI.slotSalt[slotKey]), prof);
+            }
+            // Exposed so the outer-scope online lockstep merge (host) can fill AI slots — mirrors the
+            // window.decideAI / window.updateMatchPresentation exposures (same inner-closure reason).
+            window.computeDoublesAIInput = computeDoublesAIInput;
+
             // Canonical player-input struct for the singles sim path. Movement is read live from
             // keys[] (Z-axis: W/Up = +1, S/Down = -1 — the same keys the old SP loop used). One-shot
             // action flags come from pendingNetInput (set by keydown / parryCallback / GUI buttons)
@@ -13799,28 +13860,11 @@
                 }
                 if (teamSize === 2) {
                     const leftInput = buildPlayerInput();
-                    const mkInput = (slotKey, roleKey) => {
-                        const st   = aiSlotState[slotKey];
-                        // Opponents scale with the difficulty ELO; the human's AI partner (leftBack) is
-                        // fixed at a competent level. Per-slot overrides layer the castK cadence on top
-                        // (timing diversity only — unified AI, round 4); the reaction ring depth is the
-                        // shared skill lag shifted by the slot's reactionDelta (≥1).
-                        const base = skillToProfile(slotKey === 'leftBack' ? DOUBLES_AI.teammateSkill : getAISkill());
-                        const prof = { ...base, ...DOUBLES_AI[roleKey],
-                            reactionFrames: Math.max(1, base.reactionFrames + DOUBLES_AI[roleKey].reactionDelta),
-                            // slotSalt de-correlates the parry timing-bucket hash per slot (see decideAI's
-                            // PARRY_BUCKETS) so the two backs don't whiff/land on the same balls in lockstep.
-                            // Reuses the same slotSalt map the (unused) per-frame RNG seed already keyed off.
-                            slotSalt: DOUBLES_AI.slotSalt[slotKey] };
-                        updateSlotThreatSight(st, slotKey);            // side-derived incoming sight tick
-                        st.views.push(buildAIViewForSlot(slotKey));
-                        while (st.views.length > prof.reactionFrames + 1) st.views.shift();
-                        return decideAI(st.views[0], spFrameCounter,
-                            makeAIRng(spFrameCounter ^ AI_RNG_SEED ^ DOUBLES_AI.slotSalt[slotKey]), prof);
-                    };
-                    const rightInput = mkInput('right', 'front');
+                    // AI brain factored to computeDoublesAIInput (Online-Doubles W2); call order
+                    // UNCHANGED (right, then leftBack, rightBack) — byte-identical to the old inline mkInput.
+                    const rightInput = computeDoublesAIInput('right', 'front');
                     const ctx = buildSimCtx();
-                    ctx.backInputs = { left: mkInput('leftBack', 'back'), right: mkInput('rightBack', 'back') };
+                    ctx.backInputs = { left: computeDoublesAIInput('leftBack', 'back'), right: computeDoublesAIInput('rightBack', 'back') };
                     window.VolleyboltSim.simulateNetworkFrame(leftInput, rightInput, dt, ctx);
                     updateMatchPresentation(dt);
                     return;
@@ -17402,6 +17446,18 @@
                     break;
                 }
                 case 'LEAVE_D': dropGuest(peerId, 'left'); break;  // dropGuest → netLobbyOnLeave frees the slot
+                case 'INPUT_D': {
+                    // W2: a guest's own-slot input (+ redundancy history). Store idempotently into
+                    // that slot's queue, then try to advance the merge. data.slot is the guest's slot
+                    // (host trusts the sender's declared slot — a guest only ever owns its own slot;
+                    // W3/hardening can cross-check against guestConns[peerId].slot). Slot-general.
+                    if (typeof data.slot === 'number' && data.input) {
+                        storeDoublesSlotInput(data.slot, data.frame, data.input);
+                        if (Array.isArray(data.history)) for (const h of data.history) storeDoublesSlotInput(data.slot, h.frame, h);
+                        hostTryMergeDoubles();
+                    }
+                    break;
+                }
             }
         };
 
@@ -17868,6 +17924,27 @@
             netAccumulator = 0;
             resetPvPParryState();
 
+            // ---- W2 lockstep mesh state (fresh per match) ----
+            inputSets = [];
+            slotInputs = [[], [], [], []];
+            doublesMergeFrame = 0;
+            lastDoublesInputFrame = -1;
+            doublesSlotKinds = slots.map(s => s.kind);   // ['human'|'ai' x4] — drives the host merge
+            // INPUT-DELAY WARMUP: frames 0..INPUT_DELAY_DOUBLES-1 are never CAPTURED by anyone (each
+            // client's first captured input targets frame 0+DELAY). So the host seeds those early
+            // frames' HUMAN slots with the neutral default input, letting the merge produce sets
+            // 0..DELAY-1 immediately (AI slots computed as usual). Guests receive those sets via the
+            // broadcast — they never merge, so they don't seed. Host-only; slot-general.
+            // (The merge itself is deferred to the lockstep loop — its FIRST tick drains these
+            // warmup frames, so the AI-slot fill reads the fully reset/started combatant state.)
+            if (isHost) {
+                for (let f = 0; f < INPUT_DELAY_DOUBLES; f++) {
+                    for (let s = 0; s < 4; s++) {
+                        if (doublesSlotKinds[s] === 'human') slotInputs[s][f] = defaultInput();
+                    }
+                }
+            }
+
             // Names over the wire feed doublesSlotLabel's online override (name tags + STATUS labels).
             netSlotNames = slots.map(s => s.name);
 
@@ -17948,7 +18025,14 @@
             mySlot = derived;
             const slots = netSlots.map(s => ({ kind: s.kind, name: s.name }));
             const seed = Date.now() % 2147483647;
-            hostBroadcast({ type: 'START_MATCH_D', seed, slots, hash: null });
+            // W2 PROTOCOL: START_MATCH_D is now UNICAST per-guest, each carrying that guest's own
+            // `yourSlot` (derived here from netSlots, so it's immune to the unordered channel
+            // reordering the final LOBBY_STATE_D vs START_MATCH_D — the Task-3 W2 FLAG). The host
+            // keeps its sentinel-derived mySlot above.
+            for (const [pid, g] of guestConns) {
+                const yourSlot = netSlots.findIndex(s => s.peerId === pid);
+                if (g.conn && g.conn.open) { try { g.conn.send({ type: 'START_MATCH_D', seed, slots, hash: null, yourSlot }); } catch (e) {} }
+            }
             startOnlineDoublesMatch(seed, slots);
         };
 
@@ -18728,11 +18812,25 @@
 
                 case 'START_MATCH_D':
                     // Online doubles: host's authoritative start. Same seed + slots (kind+name x4)
-                    // for every client; we set up identically and derive our own role from mySlot
-                    // inside startOnlineDoublesMatch. (Start-hash validation lands with W2's hash
-                    // task — data.hash is a reserved placeholder for now.)
+                    // for every client; we set up identically. W2 PROTOCOL: START_MATCH_D is now
+                    // UNICAST per-guest and carries `yourSlot` — this guest's authoritative slot,
+                    // adopted VERBATIM. This cures the Task-3 W2 FLAG: on the unordered channel the
+                    // final LOBBY_STATE_D and START_MATCH_D can reorder, leaving a stale cached mySlot;
+                    // yourSlot is immune (the host derives it at send time, no dependence on ordering).
+                    // (Start-hash validation lands with the hash task — data.hash is a placeholder.)
                     if (!isHost && netMode === 'doubles' && Array.isArray(data.slots)) {
+                        if (typeof data.yourSlot === 'number') mySlot = data.yourSlot;
                         startOnlineDoublesMatch(data.seed, data.slots);
+                    }
+                    break;
+
+                case 'INPUT_SET_D':
+                    // W2: host's confirmed 4-input set for a frame (+ redundancy history). Store
+                    // idempotently; the lockstep loop consumes inputSets[currentFrame]. No ACK in W2
+                    // (redundancy covers loss; ACK/pacing arrives with W3 rollback).
+                    if (!isHost && netMode === 'doubles' && Array.isArray(data.inputs)) {
+                        storeInputSet(data.frame, data.inputs);
+                        if (Array.isArray(data.history)) for (const h of data.history) storeInputSet(h.frame, h.inputs);
                     }
                     break;
 
@@ -19788,6 +19886,90 @@
         }
 
         // ============================================================
+        // ONLINE DOUBLES W2 — lockstep input mesh (INPUT_D / INPUT_SET_D)
+        // ============================================================
+
+        // GUEST → HOST: send this client's own slot input for `inputFrame`, with GGPO-style history
+        // redundancy (newest-first, stop-at-gap, ≤ INPUT_SET_REDUNDANCY) drawn from localInputHistory.
+        // Mirrors sendLocalInput's walk; the host stores it into slotInputs[slot].
+        function sendDoublesInput(inputFrame, input) {
+            if (!(conn && conn.open)) return;
+            const history = [];
+            for (let f = inputFrame - 1; f >= Math.max(0, inputFrame - INPUT_SET_REDUNDANCY); f--) {
+                const h = localInputHistory[f];
+                if (!h) break;
+                history.push({ frame: f, moveDir: h.moveDir, parry: h.parry, fireball: h.fireball,
+                    frostbolt: h.frostbolt, thunderstorm: h.thunderstorm || false, juice: h.juice || false });
+            }
+            try {
+                conn.send({ type: 'INPUT_D', frame: inputFrame, slot: mySlot,
+                    input: { moveDir: input.moveDir, parry: input.parry, fireball: input.fireball,
+                             frostbolt: input.frostbolt, thunderstorm: input.thunderstorm || false, juice: input.juice || false },
+                    history });
+            } catch (e) {}
+        }
+
+        // HOST: idempotent store of one human slot's input for a frame (first write wins — lockstep
+        // has no prediction, so a confirmed input never changes; duplicates from history are free).
+        // Mirrors storeRemoteInput's 6-field shape without the prediction fields.
+        function storeDoublesSlotInput(slot, frame, entry) {
+            if (slot < 0 || slot > 3 || frame < 0) return;
+            if (slotInputs[slot][frame]) return;   // already confirmed
+            slotInputs[slot][frame] = {
+                moveDir: entry.moveDir, parry: entry.parry, fireball: entry.fireball,
+                frostbolt: entry.frostbolt, thunderstorm: entry.thunderstorm || false, juice: entry.juice || false
+            };
+        }
+
+        // HOST: advance the merge as far as possible. For each OLDEST unmerged frame whose every
+        // HUMAN slot has an input present, fill the AI slots (computed AT MERGE TIME, in slot-index
+        // order — host-authoritative), assemble the 4-input set, store it, and broadcast INPUT_SET_D.
+        // The host consumes inputSets like every client. Slot-general: no host===slot-0 assumption.
+        function hostTryMergeDoubles() {
+            if (!isHost || netMode !== 'doubles' || !doublesSlotKinds) return;
+            while (true) {
+                const f = doublesMergeFrame;
+                let ready = true;
+                for (let s = 0; s < 4; s++) {
+                    if (doublesSlotKinds[s] === 'human' && !slotInputs[s][f]) { ready = false; break; }
+                }
+                if (!ready) break;
+                const inputs = new Array(4);
+                for (let s = 0; s < 4; s++) {
+                    if (doublesSlotKinds[s] === 'human') {
+                        inputs[s] = slotInputs[s][f];
+                    } else {
+                        // AI slot: back = index 1 or 3, front = index 0 or 2. Pass f so the AI's cast
+                        // cadence keys to the real sim frame. computeDoublesAIInput lives in the inner
+                        // game-setup closure (window-exposed) — same reason as window.decideAI.
+                        inputs[s] = window.computeDoublesAIInput(SLOT_KEYS[s], (s === 1 || s === 3) ? 'back' : 'front', f);
+                    }
+                }
+                inputSets[f] = inputs;
+                broadcastInputSet(f);
+                doublesMergeFrame++;
+            }
+        }
+
+        // HOST → ALL: broadcast a confirmed set, with the last ≤ INPUT_SET_REDUNDANCY sets replayed
+        // for loss-tolerance (newest-first, stop-at-gap). senderFrame is the host's live sim frame
+        // (pacing metadata; W3 uses it, W2 ignores it).
+        function broadcastInputSet(frame) {
+            const history = [];
+            for (let f = frame - 1; f >= Math.max(0, frame - INPUT_SET_REDUNDANCY); f--) {
+                if (!inputSets[f]) break;
+                history.push({ frame: f, inputs: inputSets[f] });
+            }
+            hostBroadcast({ type: 'INPUT_SET_D', frame, inputs: inputSets[frame], history, senderFrame: currentFrame });
+        }
+
+        // GUEST: idempotent store of a confirmed 4-input set (from INPUT_SET_D or its history replay).
+        function storeInputSet(frame, inputs) {
+            if (frame < 0 || !Array.isArray(inputs) || inputSets[frame]) return;
+            inputSets[frame] = inputs;
+        }
+
+        // ============================================================
         // ROLLBACK NETCODE - State Capture & Restore
         // ============================================================
 
@@ -20280,13 +20462,11 @@
         // ============================================================
 
         function runPvPGameLoop(renderDt) {
-            // W1 stub: online doubles loads the match scene but does NOT advance the sim yet — the
-            // 1v1 lockstep loop below assumes exactly two peers (flat left/right input histories,
-            // binary isHost side selection). W2 wires runOnlineDoublesLockstep here (4-slot input
-            // merge). Until then, park on the loaded scene with a dev note so a multi-tab W1 test
-            // can confirm lobby -> match-scene loading on every client without sim movement.
+            // Online doubles runs the 4-slot lockstep mesh (W2); the 1v1 loop below assumes exactly
+            // two peers (flat left/right histories, binary isHost side selection). Doubles-gated so
+            // classic 1v1 ('duel') is byte-untouched.
             if (netMode === 'doubles') {
-                showMessage('ONLINE DOUBLES — W2 pending');
+                runOnlineDoublesLockstep(renderDt);
                 return;
             }
             // Visual effects always update with render dt
@@ -20357,6 +20537,74 @@
             // settled sim state (after the fixed-step while loop); isResimulating is false here.
             // Via window: updateMatchPresentation is defined in the inner game-setup closure,
             // which this outer-scope loop cannot reach directly.
+            if (window.updateMatchPresentation) window.updateMatchPresentation(renderDt);
+        }
+
+        // ONLINE DOUBLES W2 — the 4-slot lockstep frame loop. Fixed-timestep accumulator like
+        // runPvPGameLoop, but the sim steps ONLY from CONFIRMED inputSets (no prediction/rollback —
+        // W3 adds those). Each tick: capture our own slot's input for currentFrame+INPUT_DELAY_DOUBLES
+        // (host stores + merges; guest sends); then if the set for currentFrame is present, step the
+        // sim from it, else STALL (lockstep waits). The start barrier is the same stall at frame 0 —
+        // we keep capturing/sending while barred so the host can merge frame 0 once all humans' early
+        // frames arrive. Slot→sim mapping is SLOT_KEYS order and host-slot-general.
+        function runOnlineDoublesLockstep(renderDt) {
+            if (window.updateLingeringTrails) updateLingeringTrails(renderDt);
+            updateBarrierPulse(renderDt);
+
+            netAccumulator += renderDt * 1000;
+            while (netAccumulator >= TICK_MS) {
+                // Capture our own input for currentFrame+DELAY EXACTLY ONCE per input frame. While
+                // stalled, currentFrame (and thus inputFrame) doesn't advance, so we skip re-capture —
+                // re-capturing would clear a pressed one-shot (captureLocalInput resets parry/casts).
+                const inputFrame = currentFrame + INPUT_DELAY_DOUBLES;
+                if (inputFrame > lastDoublesInputFrame) {
+                    const localInput = captureLocalInput();
+                    localInputHistory[inputFrame] = localInput;   // redundancy source for INPUT_D history walk
+                    lastDoublesInputFrame = inputFrame;
+                    if (isHost) {
+                        // Host's own input enters its OWN slot (mySlot — may be ANY slot), then merge.
+                        if (mySlot >= 0) slotInputs[mySlot][inputFrame] = localInput;
+                        hostTryMergeDoubles();
+                    } else {
+                        sendDoublesInput(inputFrame, localInput);
+                    }
+                }
+
+                // Lockstep gate (also the start barrier at frame 0): step only when the confirmed set
+                // for currentFrame exists; otherwise wait (drop backlog so we resume at 1x on arrival).
+                const set = inputSets[currentFrame];
+                if (!set) { netAccumulator = 0; break; }
+
+                const ctx = buildSimCtx();
+                ctx.backInputs = { left: set[1], right: set[3] };
+                window.VolleyboltSim.simulateNetworkFrame(set[0], set[2], 1 / TICK_RATE, ctx);
+
+                // Hash bookkeeping (transport-agnostic: stores + compares local hashes). Task 5 wires
+                // the star-topology SENDS; mpMaybeSendHash's single-conn send is intentionally NOT called.
+                mpStoreHash(currentFrame);
+
+                currentFrame++;
+
+                // Prune confirmed sets / per-slot queues older than 300 frames (>> the redundancy
+                // window; W3's rollback window is well under this). Cheap, done every 64 frames.
+                if (currentFrame % 64 === 0) {
+                    const cutoff = currentFrame - 300;
+                    for (const k in inputSets) if ((k | 0) < cutoff) delete inputSets[k];
+                    if (isHost) for (let s = 0; s < 4; s++) for (const k in slotInputs[s]) if ((k | 0) < cutoff) delete slotInputs[s][k];
+                }
+                cleanupOldHistory();   // trims localInputHistory (redundancy source) + the unused remote array
+
+                netAccumulator -= TICK_MS;
+            }
+
+            // Throttled UI + per-frame presentation — identical tail to runPvPGameLoop.
+            pvpUiAccumulator += renderDt;
+            if (pvpUiAccumulator >= PVP_UI_INTERVAL) {
+                updateHealthBars();
+                updateScore();
+                updateMpOverlay();
+                pvpUiAccumulator = 0;
+            }
             if (window.updateMatchPresentation) window.updateMatchPresentation(renderDt);
         }
 
