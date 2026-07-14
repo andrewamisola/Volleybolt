@@ -25,6 +25,19 @@ Ships as one push: M2 (4-player netcode) + M3 (lobby) together.
 | Host migration | None. Host disconnect mid-match = match over via the standing disconnect overlay for all. Guest disconnect mid-match = their slot's inputs become AI (host swaps the virtual-player driver in for that slot, announced in the combat log) — the co-op survives a friend dropping |
 | Late join | No. Lobby only, pre-match |
 
+## Lobby VISUAL redesign (Andrew, 2026-07-14 — replaces the slot-card grid; protocol unchanged)
+
+Owner: "It should be a clear RED and BLUE side on the RIGHT and LEFT side of the screen.
+Then the client player will press LEFT or RIGHT to go on either side, moving their [P1]."
+
+- Full-screen split: BLUE zone = LEFT half, RED zone = RIGHT half (court orientation).
+- Each player is a floating name tag ([P1]/custom name) that SLIDES to the side they pick.
+- Controls: ←/→ (A/D, d-pad) = move to that side (front seat first, back if taken, full
+  side ignored); ↑/↓ = swap front/back with your teammate; Enter = ready (✓ on the tag).
+  Mouse buttons remain for all three.
+- AI seats render as ghosted tags at 50% opacity (name-tag opacity language).
+- Room code large top-center; host START bottom-center; leave button unobtrusive.
+
 ## The lobby (M3 — fighting-game style, decisions locked in M1 spec)
 
 - Host creates a room → room code (existing PeerJS id flow) → up to 3 guests join.
