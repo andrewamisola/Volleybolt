@@ -17599,13 +17599,28 @@
                 // W3: the co-op survives a friend dropping — the vacated seat becomes a host-driven
                 // virtual player. Flipping the kind is sufficient to unblock the merge: the gate
                 // only waits on 'human' slots (hostTryMergeDoubles), and AI fill is computed at
-                // merge time on the host and broadcast like any other input. Inputs the departed
-                // guest already delivered for future frames stay valid (first-write-wins store) —
-                // the AI takes over exactly at the first frame with no stored human input.
+                // merge time on the host by doublesSlotKinds[s], NOT per-frame input availability.
+                // True semantics: takeover applies from the first frame MERGED after the flip —
+                // every not-yet-merged frame is AI-filled from here on even where the departed
+                // guest's real input already sits in slotInputs (that stored input is simply
+                // discarded in favor of AI fill for those frames); frames already MERGED before the
+                // flip keep the human's real inputs untouched. This is safe: the host is
+                // authoritative, and any brief speculation-vs-reality mismatch on other clients is
+                // healed by the ordinary rollback path — no merge behavior changes here.
                 doublesSlotKinds[i] = 'ai';
                 const vacatedName = netSlots[i].name || ('P' + (i + 1));
                 hostBroadcast({ type: 'SLOT_TO_AI_D', slot: i, name: vacatedName });
                 applySlotToAI(i, vacatedName);   // host applies the same presentation locally (2.3)
+                // CRITICAL (T2×T4 seam): recompute the pacing floor NOW. guestConns already had this
+                // peer's entry deleted by dropGuest before it called us (see dropGuest above — delete
+                // precedes the netLobbyOnLeave call), so this walk naturally excludes the departed
+                // guest. Without this call, if that guest was the LAST seated human still sending
+                // INPUT_D, doublesRemoteFrame stays frozen forever at its last senderFrame; the
+                // advantage gate (~L21397) trips ~MAX_FRAME_ADVANTAGE frames later and — because it
+                // sits BEFORE capture-once — freezes the host's own capture too, starving the merge
+                // and hanging the host and every spectator permanently. Recomputing here yields the
+                // surviving humans' min (or -1 if none remain), which is inert against the gate.
+                recomputeDoublesRemoteFrame();
                 // Falls through to the seat->AI netSlots bookkeeping right below (same as any other
                 // AI-seat departure) so the lobby view stays consistent if the match later returns to it.
             }
@@ -21396,6 +21411,17 @@
                 // AHEAD, so a delayed rollback only pulls us back toward where pacing already wants us.
                 if (mySlot >= 0 && doublesRemoteFrame >= 0 &&
                     currentFrame - doublesRemoteFrame > MAX_FRAME_ADVANTAGE) {
+                    // CRITICAL (T1×T4 seam): this branch sits before capture-once and reaches neither
+                    // keepalive site below, so without a re-send here a paced client sends NOTHING —
+                    // under tail-packet loss both directions deadlock permanently (the paced guest
+                    // never re-sends its last INPUT_D; the paced host's own !set keepalive at L21444
+                    // is unreachable because it never gets past this break to build a predicted set).
+                    // doublesStallKeepalive's throttle state (doublesLastStallSend) is SHARED across
+                    // all stall sites by design (see its header comment ~L21231-21236), so this just
+                    // adds a third caller — no double-send risk. The re-sent history/ACK floor already
+                    // covers the paced gap: worst case is ~MAX_FRAME_ADVANTAGE frames plus round-trip
+                    // delay and jitter, comfortably under DOUBLES_HISTORY_CAP (30).
+                    doublesStallKeepalive();
                     netAccumulator = 0; break;
                 }
 
