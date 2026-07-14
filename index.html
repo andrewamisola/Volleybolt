@@ -1112,6 +1112,15 @@
         let slotInputs = [[], [], [], []];
         let doublesMergeFrame = 0;         // host: next (oldest) frame to attempt merging.
         let doublesSlotKinds = null;       // ['human'|'ai' x4] for the live match (set at match start).
+        // Online-doubles match-live gate (final whole-branch fix). ONE flag that separates the LOBBY
+        // phase (slots mutable, joins allowed) from the LIVE MATCH phase (lockstep running). Set true
+        // for both roles in startOnlineDoublesMatch (host after it sends START_MATCH_D, guest when it
+        // receives it); reset false in exitDoublesState — the teardown EVERY route back to the menu
+        // funnels through (showMainMenu/startSinglesMatch/startMultiplayerMatch). It (a) ends the match
+        // cleanly when a seated human leaves mid-lockstep (netLobbyOnLeave, else the merge hangs
+        // forever), (b) freezes the lobby state machine so a late PICK/SWAP/READY can't flip
+        // netSlots/mySlot under the running sim, and (c) rejects new connections mid-match.
+        let doublesMatchLive = false;
         let lastDoublesInputFrame = -1;    // guard: capture+send/store each inputFrame exactly ONCE
                                            //   (re-capturing while stalled would clear pressed one-shots).
 
@@ -17407,6 +17416,7 @@
         // host's own mySlot from the 'HOST' sentinel first, so a host self-swap lands correctly.
         function broadcastLobbyState() {
             if (!isHost || netMode !== 'doubles' || !netSlots) return;
+            if (doublesMatchLive) return;   // C2(b): lobby frozen while the match is live — never re-publish slots mid-lockstep
             mySlot = netSlots.findIndex(s => s.peerId === 'HOST');
             syncGuestSlotFields();
             // slots carries peerId per slot so each guest can recompute its own mySlot; peerIds are
@@ -17442,6 +17452,21 @@
         function netLobbyOnLeave(peerId) {
             if (!isHost || netMode !== 'doubles' || !netSlots) return;
             const i = netSlots.findIndex(s => s.peerId === peerId);
+            // C1: a SEATED human leaving/dying MID-MATCH (LEAVE_D, conn close, or PONG_D timeout — all
+            // three funnel through dropGuest → here) would hang every client forever: hostTryMergeDoubles
+            // blocks on slotInputs[i] for that human slot, which will never arrive, so no INPUT_SET_D is
+            // ever broadcast and all four clients stall at the same frame. W2's contract is a CLEAN exit,
+            // not AI-swap resilience (that's W3 — explicitly NOT built here). So end the match for
+            // everyone: fan MATCH_OVER_D out to the surviving guests, then run the local disconnect
+            // overlay flow (handleDisconnect also cleanupPeers, whose conn.close is the guests' belt-and-
+            // braces even if MATCH_OVER_D is lost). Gate on doublesSlotKinds[i]==='human' (the frozen
+            // match snapshot) so an AI-seat departure — impossible here since AI slots hold no peer — and
+            // a spectator loss (i<0, no seat, Task-8 silent) never trigger it.
+            if (doublesMatchLive && i >= 0 && doublesSlotKinds && doublesSlotKinds[i] === 'human') {
+                hostBroadcast({ type: 'MATCH_OVER_D', reason: 'Player left the match' });
+                handleDisconnect('Player left the match');
+                return;
+            }
             if (i >= 0) {
                 netSlots[i] = aiSlot();
                 broadcastLobbyState();
@@ -17501,6 +17526,12 @@
         // HOST message router — invoked by dispatchGuestData for every non-liveness guest packet.
         window.handleDoublesNetMessage = function (peerId, data) {
             if (!isHost || netMode !== 'doubles' || !netSlots || !data || !data.type) return;
+            // C2(a): once the match is LIVE the lobby is FROZEN — a PICK/SWAP/READY/JOIN racing the
+            // host's Start (unordered channel) must NOT mutate netSlots/mySlot under the running sim
+            // (it would retarget INPUT_D to the wrong slot → permanent deadlock, or seat a late picker
+            // into an 'ai'-kind live slot). Match/liveness/desync traffic (INPUT_D, SYNC_DETAIL_D,
+            // DESYNC_REPORT_D) and LEAVE_D (must still free/end) fall through untouched.
+            if (doublesMatchLive && (data.type === 'JOIN_HELLO_D' || data.type === 'PICK_SIDE_D' || data.type === 'SWAP_D' || data.type === 'READY_D')) return;
             switch (data.type) {
                 case 'JOIN_HELLO_D': {
                     // Task 8: a fresh guest is a SPECTATOR (netLobbyOnJoin no longer auto-seats),
@@ -17566,16 +17597,19 @@
         // no longer gate on mySlot>=0 — only on actually being in a doubles lobby at all. Guard
         // moved to netMode; the seated-vs-spectator branch lives in hostPickSide.
         function doublesLocalPick(side) {
+            if (doublesMatchLive) return;   // C2(d): all pick/swap/ready entry points (keyboard, zone-click, buttons) route through these three — freeze them while live
             if (netMode !== 'doubles' || !netSlots) return;
             if (isHost) hostPickSide('HOST', side);
             else if (conn && conn.open) { try { conn.send({ type: 'PICK_SIDE_D', side }); } catch (e) {} }
         }
         function doublesLocalSwap() {
+            if (doublesMatchLive) return;   // C2(d): lobby frozen while live
             if (mySlot < 0) return;
             if (isHost) hostSwapPos('HOST');
             else if (conn && conn.open) { try { conn.send({ type: 'SWAP_D' }); } catch (e) {} }
         }
         function doublesLocalReady() {
+            if (doublesMatchLive) return;   // C2(d): lobby frozen while live
             if (mySlot < 0 || !netSlots || !netSlots[mySlot]) return;
             const next = !netSlots[mySlot].ready;
             if (isHost) { netSlots[mySlot].ready = next; broadcastLobbyState(); }
@@ -17609,6 +17643,10 @@
         // slots, and recompute OUR OWN mySlot by matching our peer id (guests know it via myPeerId,
         // set in peer.on('open')). This is how a swapped guest's mySlot follows its moved slot.
         function guestApplyLobbyState(data) {
+            // C2(c): ignore any LOBBY_STATE_D that lands after the match went live. On the unordered
+            // channel a stale broadcast can arrive after START_MATCH_D; adopting it would reassign
+            // mySlot mid-match (START_MATCH_D's yourSlot is the ONLY authoritative slot once live).
+            if (doublesMatchLive) return;
             const firstTime = (netMode !== 'doubles');
             netMode = 'doubles';
             netSlots = Array.isArray(data.slots) ? data.slots : null;
@@ -17902,6 +17940,7 @@
         // teamSize !== 2` early-return (before any paddle.position read), so stale entries cost
         // two boolean checks per frame and need no parallel cleanup.
         function exitDoublesState() {
+            doublesMatchLive = false;   // match-live gate off (single teardown funnel — see its declaration)
             document.body.classList.remove('doubles');     // TEAM mana-pool labels off
             // Belt-and-braces: showVictoryScreen already sweeps floating combat text + cast
             // bars at match end, but this teardown runs on every doubles->singles/PvP
@@ -18050,6 +18089,12 @@
             // Online-specific: a rollback PvP match, not the AI-driven singles variant.
             gameMode = 'pvp';
             gameState = 'playing';
+            // The match is now LIVE — freeze the lobby machine (no more PICK/SWAP/READY/JOIN mutate
+            // netSlots), reject late joiners, and arm the seated-guest-loss → clean-exit path. Reset in
+            // exitDoublesState. Both roles reach here: the host right after broadcasting START_MATCH_D
+            // (startDoublesOnlineMatch), a guest on receiving START_MATCH_D. No exitDoublesState runs
+            // inside this function, so this stays true through setup.
+            doublesMatchLive = true;
             if (window.resetCameraToDefault) window.resetCameraToDefault();
             if (window.applyClientPerspective) window.applyClientPerspective(false);   // canonical view, no flip (matches 1v1 PvP)
             if (window.refreshNetStatus) window.refreshNetStatus();
@@ -18613,7 +18658,11 @@
                 // Host receives incoming connection
                 if (!isHost) { try { connection.close(); } catch (e) {} return; }
                 if (netMode === 'doubles') {
-                    if (guestConns.size >= 3) {           // room full — reject the 4th guest
+                    // I2: reject a new connection when the room is full (4th guest) OR the match is
+                    // already LIVE (spec: joining is lobby-only, pre-match). Both reuse the ROOM_FULL_D
+                    // rejection ("Room is full." — truthful enough for a closed/in-progress room, and no
+                    // new ungated receive case). A late joiner mid-match must never register a guestConn.
+                    if (doublesMatchLive || guestConns.size >= 3) {
                         connection.on('open', () => {
                             try { connection.send({ type: 'ROOM_FULL_D' }); } catch (e) {}
                             setTimeout(() => { try { connection.close(); } catch (e) {} }, 250);
@@ -19029,6 +19078,20 @@
                         if (mpDesyncAborted) break;
                         mpDesyncAborted = true;
                         handleDisconnect('Match lost sync — please rematch');
+                    }
+                    break;
+
+                case 'MATCH_OVER_D':
+                    // C1: the host ended a LIVE doubles match because a seated human left (see
+                    // netLobbyOnLeave). Exit via the SAME guarded pattern as DESYNC_ABORT_D above —
+                    // mpDesyncAborted mirrors its idempotence so a guest that already tore down (its own
+                    // desync abort, or the host's conn.close racing this) just ignores it. netMode-gated
+                    // so it can never touch a classic 1v1 session.
+                    if (netMode === 'doubles') {
+                        console.warn('[Doubles] host ended match: ' + (data.reason || 'match over'));
+                        if (mpDesyncAborted) break;
+                        mpDesyncAborted = true;
+                        handleDisconnect(data.reason || 'Player left the match');
                     }
                     break;
 
@@ -21535,7 +21598,12 @@
                 // In PvP, leaving the match also DISCONNECTS the peer, so the opponent gets a clean
                 // "opponent left" (via LEAVE → handleDisconnect) and can't drag us back with a late
                 // rematch request.
-                if (gameMode === 'pvp') {
+                // I1: only the CLASSIC 1v1 path tears down here. Online doubles must fall through to
+                // returnToMenuTransition, the single choke point that owns doubles teardown (LEAVE_D
+                // fan-out/unicast + cleanupPeer + netSlots/mySlot/spectators reset). Pre-empting it with
+                // the 1v1 LEAVE + cleanupPeer here skipped that choke point entirely (LEAVE_D never
+                // sent; guests hung on a silently-dropped host).
+                if (gameMode === 'pvp' && netMode !== 'doubles') {
                     try { sendLeaveMessage('Opponent returned to the menu'); } catch (e) {}
                     try { cleanupPeer(); } catch (e) {}
                 }
