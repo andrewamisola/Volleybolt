@@ -17458,6 +17458,19 @@
                     }
                     break;
                 }
+                case 'SYNC_DETAIL_D':
+                    // A guest reported its per-group sub-hashes for a desynced frame. Diff against
+                    // our own (host) groups for that same frame and reflect ours back to THIS guest
+                    // only (mpReceiveDetail -> mpSendDetail unicasts via guestConnFor(peerId)).
+                    mpReceiveDetail(data.frame, data.groups, peerId);
+                    break;
+                case 'DESYNC_REPORT_D':
+                    // A guest confirmed sustained divergence against our broadcast hash. We are the
+                    // star's authority: run the shared abort path, which (host + doubles) broadcasts
+                    // DESYNC_ABORT_D to every guest and tears down here too. Guarded (mpDesyncAborted)
+                    // so a second guest's report — or one arriving after we already aborted — is inert.
+                    abortOnDesync(data.frame);
+                    break;
             }
         };
 
@@ -18849,10 +18862,36 @@
                     mpCompareHash(data.frame, data.hash);
                     break;
 
+                case 'SYNC_HASH_D':
+                    // Online doubles guest: the host's broadcast state hash for a settled frame
+                    // (W2 star topology — we compare against the host only; mpMaybeSendHash never
+                    // sends OUR hash back, so this is a one-way star, not a mesh).
+                    if (!isHost && netMode === 'doubles') mpCompareHash(data.frame, data.hash);
+                    break;
+
                 case 'SYNC_DETAIL':
                     // Desync field diagnostics: peer's per-group sub-hashes for a desynced frame.
                     // Compare to ours and warn the exact diverged group(s).
                     mpReceiveDetail(data.frame, data.groups);
+                    break;
+
+                case 'SYNC_DETAIL_D':
+                    // Online doubles guest: the host's reflected per-group sub-hashes (host<->one-
+                    // guest unicast, never broadcast). No peerId needed here — a guest only ever
+                    // talks to the host, so mpSendDetail's reflect just uses `conn`.
+                    if (!isHost && netMode === 'doubles') mpReceiveDetail(data.frame, data.groups);
+                    break;
+
+                case 'DESYNC_ABORT_D':
+                    // Online doubles: the host's fan-out abort broadcast — mirrors DESYNC_ABORT's
+                    // guard above (idempotent: a guest that already aborted locally via its own
+                    // badStreak/DESYNC_REPORT_D just ignores this).
+                    if (netMode === 'doubles') {
+                        console.warn('[MP DESYNC] host aborted match (frame ' + data.frame + ')');
+                        if (mpDesyncAborted) break;
+                        mpDesyncAborted = true;
+                        handleDisconnect('Match lost sync — please rematch');
+                    }
                     break;
 
                 case 'REMATCH':
@@ -19028,12 +19067,26 @@
         // Send our per-group sub-hashes for a desynced frame to the peer (once per frame). The peer
         // compares against its own stored groups and prints the differing groups. Guarded so a
         // reflected reply (peer echoing its groups back) does not loop.
-        function mpSendDetail(frame) {
+        // `peerId` is doubles-host-only: it names WHICH guest to unicast to when this call is the
+        // host's reflect-back (see mpReceiveDetail below); a guest calling this to report its OWN
+        // divergence has exactly one target (the host) and never needs it.
+        function mpSendDetail(frame, peerId) {
             if (mpSync.detailSent[frame]) return;
             const groups = mpSync.localGroups[frame];
             if (!groups) return;   // we no longer have this frame's groups (pruned / behind) — nothing to send
             mpSync.detailSent[frame] = true;
-            if (conn && conn.open) {
+            if (netMode === 'doubles') {
+                // Doubles W2 keeps SYNC_DETAIL host<->one-guest (unicast), never broadcast: the
+                // diagnostic is scoped to whichever single guest is diverging.
+                if (isHost) {
+                    const g = peerId && guestConnFor(peerId);
+                    if (g && g.conn && g.conn.open) {
+                        try { g.conn.send({ type: 'SYNC_DETAIL_D', frame: frame, groups: groups }); } catch (e) {}
+                    }
+                } else if (conn && conn.open) {
+                    try { conn.send({ type: 'SYNC_DETAIL_D', frame: frame, groups: groups }); } catch (e) {}
+                }
+            } else if (conn && conn.open) {
                 try { conn.send({ type: 'SYNC_DETAIL', frame: frame, groups: groups }); } catch (e) {}
             }
         }
@@ -19041,7 +19094,9 @@
         // Handle a peer's SYNC_DETAIL: compare their group sub-hashes to ours for the SAME frame and
         // warn listing ONLY the groups that differ — pinpointing the exact diverged state field-group
         // at the root desync frame. Then reflect our own groups back (guarded) so BOTH peers report.
-        function mpReceiveDetail(frame, remoteGroups) {
+        // `peerId` (doubles host only): the guest this SYNC_DETAIL_D arrived from, forwarded straight
+        // through to mpSendDetail so the host's reflect unicasts back to THAT SAME guest.
+        function mpReceiveDetail(frame, remoteGroups, peerId) {
             const localGroups = mpSync.localGroups[frame];
             if (!localGroups || !remoteGroups) {
                 console.warn('[MP DESYNC FIELDS] frame ' + frame + ': cannot compare (missing ' +
@@ -19058,7 +19113,7 @@
                 else console.warn('[MP DESYNC FIELDS] frame ' + frame + ': all group hashes MATCH ' +
                                   '(divergence is in a field not covered by the group set, or it healed by now)');
             }
-            mpSendDetail(frame);   // reflect ours back so the other peer also gets the breakdown (guarded)
+            mpSendDetail(frame, peerId);   // reflect ours back so the other peer also gets the breakdown (guarded)
         }
 
         // A real desync never heals (the peers' states have genuinely diverged), so N consecutive
@@ -19097,7 +19152,15 @@
             mpDesyncAborted = true;
             console.warn('[MP DESYNC] aborting match: sustained divergence since frame ' +
                          (mpSync.desync ? mpSync.desync.frame : frame));
-            if (conn && conn.open) {
+            if (netMode === 'doubles') {
+                // Star fan-out: the host is authoritative and broadcasts the abort to every guest
+                // (case 'DESYNC_ABORT_D'); a guest that detects its OWN sustained divergence first
+                // (against the host's SYNC_HASH_D) can't fan out itself, so it reports up to the
+                // host (case 'DESYNC_REPORT_D' -> host calls this same function, guarded, which
+                // then broadcasts). Either way we still tear down locally below, same as 1v1.
+                if (isHost) hostBroadcast({ type: 'DESYNC_ABORT_D', frame: frame });
+                else if (conn && conn.open) { try { conn.send({ type: 'DESYNC_REPORT_D', frame: frame }); } catch (e) {} }
+            } else if (conn && conn.open) {
                 try { conn.send({ type: 'DESYNC_ABORT', frame: frame }); } catch (e) {}
             }
             handleDisconnect('Match lost sync — please rematch');
@@ -19127,8 +19190,15 @@
             if (gameMode !== 'pvp') return;
             if (currentFrame % MP_SYNC_INTERVAL === 0) {
                 const f = Math.max(0, currentFrame - MP_SYNC_LAG), h = mpSync.local[f];
-                if (h !== undefined && conn && conn.open) {
-                    try { conn.send({ type: 'SYNC_HASH', frame: f, hash: h }); } catch (e) {}
+                if (h !== undefined) {
+                    // W2 star topology: the host broadcasts its hash to every guest; guests never
+                    // send their own (they only compare against the host's — see case 'SYNC_HASH_D').
+                    // Classic 1v1 ('duel') keeps the original single conn.send, byte-identical.
+                    if (netMode === 'doubles') {
+                        if (isHost) hostBroadcast({ type: 'SYNC_HASH_D', frame: f, hash: h });
+                    } else if (conn && conn.open) {
+                        try { conn.send({ type: 'SYNC_HASH', frame: f, hash: h }); } catch (e) {}
+                    }
                 }
             }
             if (currentFrame % 64 === 0) {
@@ -19217,7 +19287,14 @@
                     mode: gameMode, isHost, frame: currentFrame, ping: netPing,
                     sync: { lastOkFrame: mpSync.lastOkFrame, mismatches: mpSync.mismatches,
                             badStreak: mpSync.badStreak, aborted: mpDesyncAborted,
-                            desync: mpSync.desync, rollbacks: mpSync.rollbacks },
+                            desync: mpSync.desync, rollbacks: mpSync.rollbacks,
+                            // Online doubles (W2): star topology state. `guests` is host-only
+                            // (null for a guest/1v1 client — distinct from "host with 0 guests" -> []).
+                            netMode: netMode, mySlot: mySlot,
+                            guests: isHost ? Array.from(guestConns.values(), g => ({
+                                slot: g.slot, ping: g.ping,
+                                lastPongAge: g.lastPongTime ? Math.round(performance.now() - g.lastPongTime) : null
+                            })) : null },
                     lastError: window.lastError || null,
                     perfTail: (window.perfLog || []).slice(-20),
                 };
@@ -20579,11 +20656,15 @@
                 ctx.backInputs = { left: set[1], right: set[3] };
                 window.VolleyboltSim.simulateNetworkFrame(set[0], set[2], 1 / TICK_RATE, ctx);
 
-                // Hash bookkeeping (transport-agnostic: stores + compares local hashes). Task 5 wires
-                // the star-topology SENDS; mpMaybeSendHash's single-conn send is intentionally NOT called.
+                // Hash bookkeeping (transport-agnostic: stores + compares local hashes). Task 5:
+                // mpMaybeSendHash's send site is forked by netMode (star topology — host broadcasts,
+                // guests never send their own hash), same store/frame discipline as the 1v1 loop
+                // (store BEFORE the increment, send AFTER — mirrors runNetworkFrame 6b/7/7b).
                 mpStoreHash(currentFrame);
 
                 currentFrame++;
+
+                mpMaybeSendHash();
 
                 // Prune confirmed sets / per-slot queues older than 300 frames (>> the redundancy
                 // window; W3's rollback window is well under this). Cheap, done every 64 frames.
