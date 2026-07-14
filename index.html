@@ -1020,7 +1020,7 @@
         let netMode = 'none';         // 'none' | 'duel' (classic 1v1) | 'doubles'
         // Host keeps one DataConnection per guest, keyed by guest peerId. Empty (and inert)
         // in 1v1, so every helper below is a no-op on the classic path.
-        const guestConns = new Map(); // peerId -> { conn, slot, name, ready, lastPongTime, ping }
+        const guestConns = new Map(); // peerId -> { conn, slot, name, ready, lastPongTime, ping, ackedUpTo }
 
         // --- Online doubles lobby state (Task 2) --------------------------------------
         // Host-authoritative 4-slot room. Canonical slot indices:
@@ -1106,6 +1106,10 @@
                                            //   the host and back without stalling in steady state.
         const INPUT_SET_REDUNDANCY = 10;   // history frames re-sent on every INPUT_D / INPUT_SET_D
                                            //   (loss-proofs the unordered channel; ~7 bools/frame).
+        const DOUBLES_HISTORY_CAP = 30;    // W3: max frames of un-ACKed history a packet ever carries,
+                                           //   once ACKs are flowing (bounds packet size under sustained loss).
+        const STALL_RESEND_MS = 250;       // W3: wall-clock throttle for the stalled-branch keepalive resend
+                                           //   (transport-side only — never feeds the sim).
         let inputSets = [];                // frame -> [4 inputs] (CONFIRMED only; no prediction).
         // Host-only: per-slot frame-indexed HUMAN inputs awaiting merge (own slot filled locally;
         // other humans via INPUT_D; AI slots computed at merge, not stored here).
@@ -1134,6 +1138,17 @@
         let doublesIntroDone = false;
         let lastDoublesInputFrame = -1;    // guard: capture+send/store each inputFrame exactly ONCE
                                            //   (re-capturing while stalled would clear pressed one-shots).
+        // W3 input-mesh reliability (ACKs + stall resend). GUEST: highest contiguous own-slot frame
+        // the host has ACKed (drives sendDoublesInput's history floor once ACKs start flowing).
+        let doublesAckedInputFrame = -1;
+        // W3 HOST: peerId -> highest contiguous set-frame that guest has ACKed (drives
+        // broadcastInputSet's per-guest history floor). Fresh per match (see startOnlineDoublesMatch).
+        let doublesAckedSetFrame = new Map();
+        // W3: wall-clock ms of the last stalled-branch keepalive resend (STALL_RESEND_MS throttle).
+        let doublesLastStallSend = 0;
+        // W3 GUEST: highest set-frame upTo already SET_ACK_D'd to the host, so we only send when it
+        // actually advances (avoids re-sending the same ACK every INPUT_SET_D receive).
+        let doublesSetAckSent = -1;
 
         function getLocalSide() {
             return isHost ? 'left' : 'right';
@@ -17652,6 +17667,11 @@
                         storeDoublesSlotInput(data.slot, data.frame, data.input);
                         if (Array.isArray(data.history)) for (const h of data.history) storeDoublesSlotInput(data.slot, h.frame, h);
                         hostTryMergeDoubles();
+                        // W3: ACK the highest CONTIGUOUS frame we hold for this slot (gaps = still lost).
+                        let upTo = Math.max(0, (guestConns.get(peerId)?.ackedUpTo ?? -1));
+                        while (slotInputs[data.slot][upTo + 1]) upTo++;
+                        const g = guestConns.get(peerId);
+                        if (g) { g.ackedUpTo = upTo; try { g.conn.send({ type: 'INPUT_ACK_D', slot: data.slot, upTo }); } catch (e) {} }
                     }
                     break;
                 }
@@ -17667,6 +17687,13 @@
                     // DESYNC_ABORT_D to every guest and tears down here too. Guarded (mpDesyncAborted)
                     // so a second guest's report — or one arriving after we already aborted — is inert.
                     abortOnDesync(data.frame);
+                    break;
+                case 'SET_ACK_D':
+                    // W3: a guest's highest contiguous confirmed INPUT_SET_D frame. Drives
+                    // broadcastInputSet's per-guest history floor (min across connected guests).
+                    if (typeof data.upTo === 'number') {
+                        doublesAckedSetFrame.set(peerId, Math.max(doublesAckedSetFrame.get(peerId) ?? -1, data.upTo));
+                    }
                     break;
             }
         };
@@ -18228,6 +18255,14 @@
             slotInputs = [[], [], [], []];
             doublesMergeFrame = 0;
             lastDoublesInputFrame = -1;
+            // W3: fresh ACK/stall-resend state per match — a stale doublesAckedInputFrame from a
+            // previous match would make sendDoublesInput's history floor skip frames that were
+            // never actually confirmed THIS match; a stale guestConns-keyed Map is harmless (peerIds
+            // don't recur) but reset for hygiene anyway.
+            doublesAckedInputFrame = -1;
+            doublesAckedSetFrame = new Map();
+            doublesLastStallSend = 0;
+            doublesSetAckSent = -1;
             doublesSlotKinds = slots.map(s => s.kind);   // ['human'|'ai' x4] — drives the host merge
             // INPUT-DELAY WARMUP: frames 0..INPUT_DELAY_DOUBLES-1 are never CAPTURED by anyone (each
             // client's first captured input targets frame 0+DELAY). So the host seeds those early
@@ -18913,7 +18948,8 @@
                     name: '',
                     ready: false,
                     lastPongTime: performance.now(),
-                    ping: 0
+                    ping: 0,
+                    ackedUpTo: -1              // W3: highest contiguous own-slot frame we've ACKed (INPUT_ACK_D)
                 });
                 // Lazy-start the per-guest heartbeat once we have at least one guest. This is
                 // only ever reached in doubles+host (setupGuestConnection is only called from
@@ -19167,11 +19203,26 @@
 
                 case 'INPUT_SET_D':
                     // W2: host's confirmed 4-input set for a frame (+ redundancy history). Store
-                    // idempotently; the lockstep loop consumes inputSets[currentFrame]. No ACK in W2
-                    // (redundancy covers loss; ACK/pacing arrives with W3 rollback).
+                    // idempotently; the lockstep loop consumes inputSets[currentFrame].
+                    // W3: ACK the highest CONTIGUOUS set-frame we hold back to the host (only when it
+                    // advanced — avoids re-sending the same ACK on every packet).
                     if (!isHost && netMode === 'doubles' && Array.isArray(data.inputs)) {
                         storeInputSet(data.frame, data.inputs);
                         if (Array.isArray(data.history)) for (const h of data.history) storeInputSet(h.frame, h.inputs);
+                        let upTo = Math.max(0, doublesSetAckSent);
+                        while (inputSets[upTo + 1]) upTo++;
+                        if (upTo > doublesSetAckSent && conn && conn.open) {
+                            doublesSetAckSent = upTo;
+                            try { conn.send({ type: 'SET_ACK_D', upTo }); } catch (e) {}
+                        }
+                    }
+                    break;
+
+                case 'INPUT_ACK_D':
+                    // W3: host's ack of our own-slot INPUT_D frames (highest contiguous). Drives
+                    // sendDoublesInput's history floor. netMode-gated; only meaningful for our own slot.
+                    if (!isHost && netMode === 'doubles' && data.slot === mySlot) {
+                        doublesAckedInputFrame = Math.max(doublesAckedInputFrame, data.upTo);
                     }
                     break;
 
@@ -20312,14 +20363,21 @@
         // ============================================================
 
         // GUEST → HOST: send this client's own slot input for `inputFrame`, with GGPO-style history
-        // redundancy (newest-first, stop-at-gap, ≤ INPUT_SET_REDUNDANCY) drawn from localInputHistory.
+        // redundancy (newest-first, stop-at-gap) drawn from localInputHistory. W3: once the host's
+        // first INPUT_ACK_D arrives, the depth is ACK-driven (everything since the last contiguous
+        // ACK, capped at DOUBLES_HISTORY_CAP) instead of the fixed ≤ INPUT_SET_REDUNDANCY window.
         // Mirrors sendLocalInput's walk; the host stores it into slotInputs[slot].
         function sendDoublesInput(inputFrame, input) {
             if (!(conn && conn.open)) return;
             const history = [];
-            for (let f = inputFrame - 1; f >= Math.max(0, inputFrame - INPUT_SET_REDUNDANCY); f--) {
+            // W3: History depth: everything since the host's last contiguous ACK, capped. Falls back
+            // to the fixed redundancy window until the first ACK arrives.
+            const histFloor = doublesAckedInputFrame >= 0
+                ? Math.max(inputFrame - DOUBLES_HISTORY_CAP, doublesAckedInputFrame + 1)
+                : Math.max(0, inputFrame - INPUT_SET_REDUNDANCY);
+            for (let f = inputFrame - 1; f >= histFloor; f--) {
                 const h = localInputHistory[f];
-                if (!h) break;
+                if (!h) break;   // stop-at-gap, same as today
                 history.push({ frame: f, moveDir: h.moveDir, parry: h.parry, fireball: h.fireball,
                     frostbolt: h.frostbolt, thunderstorm: h.thunderstorm || false, juice: h.juice || false });
             }
@@ -20394,13 +20452,31 @@
             }
         }
 
-        // HOST → ALL: broadcast a confirmed set, with the last ≤ INPUT_SET_REDUNDANCY sets replayed
-        // for loss-tolerance (newest-first, stop-at-gap). senderFrame is the host's live sim frame
-        // (pacing metadata; W3 uses it, W2 ignores it).
+        // HOST → ALL: broadcast a confirmed set, with prior sets replayed for loss-tolerance
+        // (newest-first, stop-at-gap). W3: depth is ACK-driven (SET_ACK_D) once any guest has ACKed,
+        // capped at DOUBLES_HISTORY_CAP; falls back to ≤ INPUT_SET_REDUNDANCY until then. senderFrame
+        // is the host's live sim frame (pacing metadata; W3 rollback (Task 3) uses it, this doesn't).
         function broadcastInputSet(frame) {
             const history = [];
-            for (let f = frame - 1; f >= Math.max(0, frame - INPUT_SET_REDUNDANCY); f--) {
-                if (!inputSets[f]) break;
+            // W3: history floor = the SLOWEST connected guest's next-needed frame (min contiguous
+            // ACK+1 across all guestConns), capped at DOUBLES_HISTORY_CAP. Falls back to the fixed
+            // redundancy window until ANY guest has ACKed anything (mirrors sendDoublesInput's
+            // fallback) — once ACKs start flowing, a guest that hasn't confirmed yet is treated
+            // conservatively (floor 0, i.e. wants everything, capped).
+            let histFloor;
+            if (doublesAckedSetFrame.size === 0) {
+                histFloor = Math.max(0, frame - INPUT_SET_REDUNDANCY);
+            } else {
+                let minNextNeeded = Infinity;
+                for (const [pid] of guestConns) {
+                    const acked = doublesAckedSetFrame.get(pid) ?? -1;
+                    if (acked + 1 < minNextNeeded) minNextNeeded = acked + 1;
+                }
+                if (minNextNeeded === Infinity) minNextNeeded = 0;   // no guests connected — safe default
+                histFloor = Math.max(frame - DOUBLES_HISTORY_CAP, minNextNeeded);
+            }
+            for (let f = frame - 1; f >= histFloor; f--) {
+                if (!inputSets[f]) break;   // stop-at-gap, same as today
                 history.push({ frame: f, inputs: inputSets[f] });
             }
             hostBroadcast({ type: 'INPUT_SET_D', frame, inputs: inputSets[frame], history, senderFrame: currentFrame });
@@ -21060,7 +21136,20 @@
                 // Lockstep gate (also the start barrier at frame 0): step only when the confirmed set
                 // for currentFrame exists; otherwise wait (drop backlog so we resume at 1x on arrival).
                 const set = inputSets[currentFrame];
-                if (!set) { netAccumulator = 0; break; }
+                if (!set) {
+                    // Stall keepalive: while frozen, inputFrame doesn't advance so nothing re-sends
+                    // (the W2 weak link). Re-send the newest packet at a wall-clock throttle —
+                    // transport-side only, never feeds the sim.
+                    const now = performance.now();
+                    if (now - doublesLastStallSend > STALL_RESEND_MS) {
+                        doublesLastStallSend = now;
+                        if (isHost) { if (inputSets[doublesMergeFrame - 1]) broadcastInputSet(doublesMergeFrame - 1); }
+                        else if (mySlot >= 0 && localInputHistory[lastDoublesInputFrame]) {
+                            sendDoublesInput(lastDoublesInputFrame, localInputHistory[lastDoublesInputFrame]);
+                        }
+                    }
+                    netAccumulator = 0; break;
+                }
 
                 const ctx = buildSimCtx();
                 ctx.backInputs = { left: set[1], right: set[3] };
