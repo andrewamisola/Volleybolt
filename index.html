@@ -85,6 +85,11 @@
                     <span class="menu-btn-glyph" aria-hidden="true">&#9889;</span>
                     <span class="menu-btn-label">Multiplayer</span>
                 </button>
+                <button class="game-btn menu-btn" id="domBtnDiscord">
+                    <span class="menu-btn-accent" aria-hidden="true"></span>
+                    <span class="menu-btn-glyph" aria-hidden="true">&#128172;</span>
+                    <span class="menu-btn-label">Join Discord</span>
+                </button>
                 <button class="game-btn menu-btn" id="domBtnSettings">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
                     <span class="menu-btn-glyph" aria-hidden="true">&#9881;</span>
@@ -18590,6 +18595,12 @@
 
             btnMP.addEventListener('click', () => {
                 showMultiplayerLobby();
+            });
+
+            // Join Discord — opens the community invite in a new tab (noopener for safety).
+            const btnDiscord = document.getElementById('domBtnDiscord');
+            if (btnDiscord) btnDiscord.addEventListener('click', () => {
+                window.open('https://discord.gg/n8ZYVTG3', '_blank', 'noopener,noreferrer');
             });
 
             const btnSettings = document.getElementById('domBtnSettings');
