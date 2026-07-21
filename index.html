@@ -763,8 +763,24 @@
         // Presentation-only: reads state, never writes sim state.
         // ============================================================
         window.DEBUG_CASTBAR = window.DEBUG_CASTBAR || false;
+
+        // Rolling diagnostic buffer. The [Netcode] and [CASTBAR] lines are pushed here (not just
+        // to console) so a playtester can COPY them for Discord via the bug-report prompt/pause
+        // menu. Capped at 60 lines; presentation-only, never touches sim state.
+        window._diagLog = window._diagLog || [];
+        window._pushDiag = function(line) {
+            try {
+                window._diagLog.push('[' + Math.round(performance.now()) + 'ms] ' + line);
+                if (window._diagLog.length > 60) window._diagLog.shift();
+            } catch (e) {}
+            console.warn(line);
+        };
+
+        // Cast-bar fill watcher. Tracks every cast (cheap) but stays SILENT on normal casts —
+        // it only records + prompts when a cast completes with the bar effectively unfilled
+        // (the reported bug). Always on so playtesters capture it without a console flag;
+        // window.DEBUG_CASTBAR = true additionally logs every normal cast for dev tuning.
         window.__castBarDiag = function(side, c) {
-            if (!window.DEBUG_CASTBAR) return;
             const S = (window._castDbg || (window._castDbg = { left: null, right: null }));
             if (c && c.casting) {
                 const prog = (c.castTime > 0) ? c.castProgress / c.castTime : 0;
@@ -774,14 +790,16 @@
                 r.frames++;
             } else if (S[side]) {
                 const r = S[side]; S[side] = null;
+                const isBug = (r.maxProg < 0.15 && r.frames > 10);
+                if (!isBug && !window.DEBUG_CASTBAR) return;   // normal cast: stay silent
                 const fill = c && c.castFill3D, bg = c && c.castBar3D;
                 const disposed = !!(fill && fill.isDisposed && fill.isDisposed());
                 const fillState = fill ? (disposed ? 'DISPOSED'
                     : 'scaling.x=' + fill.scaling.x.toFixed(2) + ' vis=' + fill.visibility) : 'NULL';
-                const bug = (r.maxProg < 0.15 && r.frames > 10) ? '  <<< FILL NEVER ANIMATED (BUG)' : '';
-                console.warn('[CASTBAR ' + side + '] ' + r.ability + ' ended: maxFill='
+                window._pushDiag('[CASTBAR ' + side + '] ' + r.ability + ' ended: maxFill='
                     + (r.maxProg * 100).toFixed(0) + '% over ' + r.frames + ' frames | fill:' + fillState
-                    + ' | bg:' + (bg ? 'vis=' + bg.visibility : 'NULL') + bug);
+                    + ' | bg:' + (bg ? 'vis=' + bg.visibility : 'NULL') + (isBug ? '  <<< FILL NEVER ANIMATED (BUG)' : ''));
+                if (isBug && window.notePlaytestBug) window.notePlaytestBug('Cast bar didn’t fill');
             }
         };
 
@@ -19184,21 +19202,20 @@
             if (!pc || _iceDiagAttached) return;
             _iceDiagAttached = true;
             window._lastIceState = pc.iceConnectionState;
-            const stamp = () => Math.round(performance.now());
             pc.addEventListener('iceconnectionstatechange', () => {
                 window._lastIceState = pc.iceConnectionState;
-                console.warn('[Netcode] iceConnectionState -> ' + pc.iceConnectionState + ' @' + stamp() + 'ms');
+                window._pushDiag('[Netcode] iceConnectionState -> ' + pc.iceConnectionState);
             });
             pc.addEventListener('connectionstatechange', () => {
-                console.warn('[Netcode] connectionState -> ' + pc.connectionState + ' @' + stamp() + 'ms');
+                window._pushDiag('[Netcode] connectionState -> ' + pc.connectionState);
             });
             // Selected candidate pair tells us whether we ended up relayed (TURN) or direct.
             try {
                 pc.getStats().then((stats) => {
                     stats.forEach((r) => {
                         if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) {
-                            console.log('[Netcode] active candidate pair nominated (local/remote candidate ids:',
-                                r.localCandidateId, r.remoteCandidateId, ')');
+                            window._pushDiag('[Netcode] candidate pair nominated (' +
+                                r.localCandidateId + ' / ' + r.remoteCandidateId + ')');
                         }
                     });
                 }).catch(() => {});
@@ -19231,10 +19248,14 @@
             // which path fired (reason), the last ICE state (a NAT/relay drop shows as
             // disconnected/failed), and how long since the last PONG (silent link vs. hard close).
             const pongAge = lastPongTime ? Math.round(performance.now() - lastPongTime) : 'n/a';
-            console.warn('[Netcode] handleDisconnect: reason="' + reason + '" mode=' + gameMode
+            window._pushDiag('[Netcode] handleDisconnect: reason="' + reason + '" mode=' + gameMode
                 + ' lastIceState=' + (window._lastIceState || 'n/a')
                 + ' msSinceLastPong=' + pongAge
                 + ' connOpen=' + (conn ? !!conn.open : 'no-conn'));
+            // Prompt the playtester to send a report — but not for an intentional quit.
+            if (!/left the match/i.test(String(reason)) && window.notePlaytestBug) {
+                window.notePlaytestBug('Match disconnected');
+            }
 
             // Reset camera + HUD perspective to default view
             if (window.resetCameraToDefault) window.resetCameraToDefault();
@@ -19919,6 +19940,7 @@
                             })) : null },
                     lastError: window.lastError || null,
                     perfTail: (window.perfLog || []).slice(-20),
+                    diagLog: (window._diagLog || []).slice(-40),
                 };
                 // Never let a mid-crash captureGameState() take down the whole report — the
                 // crash-adjacent report is the one that matters most.
@@ -20099,6 +20121,88 @@
             }
             console.log('[bug report]', blob);
             return Promise.resolve(false);
+        };
+
+        // Concise, Discord-pasteable report: version + the recent [Netcode]/[CASTBAR] diagnostic
+        // lines (NOT the full dbg.report() state dump — that's too big for a chat message).
+        window.buildPlaytestReport = function() {
+            const lines = [
+                'Volleybolt playtest report',
+                'version: ' + GAME_VERSION,
+                'when: ' + new Date().toISOString(),
+                'mode: ' + gameMode + ((typeof netPing === 'number' && netPing) ? '  ping: ' + netPing + 'ms' : ''),
+                'browser: ' + navigator.userAgent,
+            ];
+            if (window.lastError) lines.push('lastError: ' + JSON.stringify(window.lastError));
+            lines.push('--- diagnostics (most recent) ---');
+            const dl = (window._diagLog || []).slice(-40);
+            if (dl.length) Array.prototype.push.apply(lines, dl);
+            else lines.push('(no automatic diagnostics captured — please describe what happened)');
+            return lines.join('\n');
+        };
+        // Copy the concise report. Tries the async clipboard, then a hidden-textarea fallback for
+        // browsers that block programmatic writes; resolves true if it reached the clipboard.
+        function _manualCopyFallback(text) {
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = text; ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+                document.body.appendChild(ta); ta.focus(); ta.select();
+                const ok = !!(document.execCommand && document.execCommand('copy'));
+                document.body.removeChild(ta);
+                if (!ok) console.log('[playtest report]\n' + text);
+                return ok;
+            } catch (e) { console.log('[playtest report]\n' + text); return false; }
+        }
+        window.copyPlaytestReport = function() {
+            const text = window.buildPlaytestReport();
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                return navigator.clipboard.writeText(text).then(() => true, () => _manualCopyFallback(text));
+            }
+            return Promise.resolve(_manualCopyFallback(text));
+        };
+
+        // Non-blocking prompt shown when a bug is auto-captured, with a one-click "Copy for
+        // Discord" button. Pure DOM (Babylon GUI has a known post-match click bug), pointer-events
+        // only on the card so it never steals game input, auto-dismisses, and is rate-limited so a
+        // repeated glitch can't spam it.
+        let _lastBugPromptAt = -1e9;
+        window.notePlaytestBug = function(headline) {
+            const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+            if (now - _lastBugPromptAt < 20000) return;   // at most once per 20s
+            _lastBugPromptAt = now;
+            let host = document.getElementById('playtestBugToast');
+            if (!host) {
+                host = document.createElement('div');
+                host.id = 'playtestBugToast';
+                host.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);' +
+                    'z-index:100000;pointer-events:none;font-family:system-ui,\'Segoe UI\',sans-serif;';
+                document.body.appendChild(host);
+            }
+            host.innerHTML =
+                '<div style="pointer-events:auto;max-width:340px;background:rgba(20,22,30,0.96);' +
+                'border:1px solid #6fb0ff;border-radius:8px;padding:12px 14px;color:#eef2ff;' +
+                'box-shadow:0 6px 24px rgba(0,0,0,0.5);font-size:13px;line-height:1.4">' +
+                '<div style="font-weight:700;margin-bottom:4px">🐛 ' + (headline || 'Something looked off') + '</div>' +
+                '<div style="color:#b9c2d6;margin-bottom:10px">Help us fix it — copy a quick report and paste it in the Discord playtest channel.</div>' +
+                '<button id="ptCopyBtn" style="pointer-events:auto;cursor:pointer;background:#3a6df0;color:#fff;' +
+                'border:0;border-radius:6px;padding:7px 12px;font-size:13px;font-weight:600">📋 Copy for Discord</button>' +
+                '<button id="ptDismissBtn" style="pointer-events:auto;cursor:pointer;background:transparent;' +
+                'color:#8a93a6;border:0;padding:7px 10px;font-size:13px;margin-left:4px">Dismiss</button>' +
+                '</div>';
+            const copyBtn = document.getElementById('ptCopyBtn');
+            const dismissBtn = document.getElementById('ptDismissBtn');
+            const hide = () => { host.innerHTML = ''; clearTimeout(host._t); };
+            if (dismissBtn) dismissBtn.onclick = hide;
+            if (copyBtn) copyBtn.onclick = () => {
+                window.copyPlaytestReport().then((ok) => {
+                    copyBtn.textContent = ok ? '✓ Copied — paste in Discord' : 'Copied to console (paste manually)';
+                    copyBtn.style.background = ok ? '#2f9e5f' : '#8a6d3b';
+                    clearTimeout(host._t);
+                    host._t = setTimeout(hide, 6000);
+                });
+            };
+            clearTimeout(host._t);
+            host._t = setTimeout(hide, 18000);   // auto-dismiss
         };
 
         // ---- AI determinism oracle (Phase 2.1) ----
