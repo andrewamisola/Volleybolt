@@ -22324,8 +22324,9 @@
             // that also sweeps the command panel, STATUS window, and combat log (their per-frame
             // observable gates on !window.hudHidden) plus every Babylon GUI HUD control (HUD_GUI_KEYS)
             // — otherwise the command/STATUS/log windows hang visible over Victory/Defeat. The Battle
-            // Report leaderboard + the Play Again / Main Menu buttons are NOT in HUD_GUI_KEYS and live
-            // outside the hidden set, so they stay visible. Restored in hideVictoryScreen() on every
+            // Report leaderboard (Babylon GUI, NOT in HUD_GUI_KEYS) stays visible. The DOM Play Again /
+            // Main Menu buttons live in #endScreenScaleLayer (a sibling of #hudScaleLayer), NOT inside
+            // the layer this blackout display:none's — so they survive it. Restored in hideVictoryScreen() on every
             // exit path (Play Again SP/MP + Main Menu). The explicit panel hides below stay as belt-
             // and-braces (they fire this frame; the observable-driven windows clear on the next).
             if (window.setHudHidden) window.setHudHidden(true);
@@ -22417,13 +22418,31 @@
         // below). Positioned once, BELOW the GUI Battle Report leaderboard (150px tall, centered
         // at +20 → its bottom is ~+95 below center = ref-y 635). Lives in #hudScaleLayer (1920x1080
         // reference, zoomed by --ui-scale), so it scales with the report at every size/fullscreen.
+        // A sibling of #hudScaleLayer that mirrors its 1920x1080 reference + --ui-scale zoom, but is
+        // NOT matched by the match-end HUD blackout rule (body.hud-hidden #hudScaleLayer{display:none}).
+        // The victory buttons must survive that blackout, so they live here instead of inside the HUD
+        // layer — same coordinate space + scale, so their 1920x1080 positions are unchanged. (Bug:
+        // when the buttons lived in #hudScaleLayer, showVictoryScreen's setHudHidden(true) display:none'd
+        // the whole layer and a child style can't override an ancestor's display:none -> ALL buttons
+        // vanished at match end.)
+        function ensureEndScreenScaleLayer() {
+            let layer = document.getElementById('endScreenScaleLayer');
+            if (layer) return layer;
+            layer = document.createElement('div');
+            layer.id = 'endScreenScaleLayer';
+            layer.style.cssText = 'position:absolute;top:0;left:0;width:1920px;height:1080px;zoom:var(--ui-scale,1);pointer-events:none;z-index:650';
+            const hud = document.getElementById('hudScaleLayer');
+            if (hud && hud.parentNode) hud.parentNode.insertBefore(layer, hud.nextSibling);
+            else document.body.appendChild(layer);
+            return layer;
+        }
         function ensureVictoryButtonContainer() {
             let box = document.getElementById('victoryButtons');
             if (box) return box;
             box = document.createElement('div');
             box.id = 'victoryButtons';
             box.style.cssText = 'position:absolute;left:960px;top:calc(540px + 170px);transform:translateX(-50%);z-index:650;display:none;flex-direction:column;gap:14px;align-items:center;pointer-events:none';
-            (document.getElementById('hudScaleLayer') || document.body).appendChild(box);
+            ensureEndScreenScaleLayer().appendChild(box);
             return box;
         }
         // "Waiting for host..." label shown to the PvP joiner in Play Again's slot (order:1),
