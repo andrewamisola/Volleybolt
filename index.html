@@ -750,6 +750,41 @@
         const GAME_VERSION = '2026.07.12';
         console.log('%cVolleybolt ' + GAME_VERSION, 'color:#f0c050;font-weight:bold');
 
+        // ============================================================
+        // DEV DIAGNOSTIC — intermittent "cast bar never fills" bug.
+        // Playtest report: a fireball whose cast COMPLETES but whose bar
+        // shows the dark track and never fills. Rare; cause unconfirmed.
+        // Capture evidence instead of guessing: per cast, track the
+        // highest fill fraction the bar reached and the fill-mesh state
+        // at cast end. Enable in the console with
+        //   window.DEBUG_CASTBAR = true
+        // then reproduce; a cast that ran many frames but whose maxFill
+        // stayed ~0 is the bug, and the log says which layer failed.
+        // Presentation-only: reads state, never writes sim state.
+        // ============================================================
+        window.DEBUG_CASTBAR = window.DEBUG_CASTBAR || false;
+        window.__castBarDiag = function(side, c) {
+            if (!window.DEBUG_CASTBAR) return;
+            const S = (window._castDbg || (window._castDbg = { left: null, right: null }));
+            if (c && c.casting) {
+                const prog = (c.castTime > 0) ? c.castProgress / c.castTime : 0;
+                let r = S[side];
+                if (!r || r.ability !== c.casting) r = S[side] = { ability: c.casting, maxProg: 0, frames: 0 };
+                r.maxProg = Math.max(r.maxProg, prog);
+                r.frames++;
+            } else if (S[side]) {
+                const r = S[side]; S[side] = null;
+                const fill = c && c.castFill3D, bg = c && c.castBar3D;
+                const disposed = !!(fill && fill.isDisposed && fill.isDisposed());
+                const fillState = fill ? (disposed ? 'DISPOSED'
+                    : 'scaling.x=' + fill.scaling.x.toFixed(2) + ' vis=' + fill.visibility) : 'NULL';
+                const bug = (r.maxProg < 0.15 && r.frames > 10) ? '  <<< FILL NEVER ANIMATED (BUG)' : '';
+                console.warn('[CASTBAR ' + side + '] ' + r.ability + ' ended: maxFill='
+                    + (r.maxProg * 100).toFixed(0) + '% over ' + r.frames + ' frames | fill:' + fillState
+                    + ' | bg:' + (bg ? 'vis=' + bg.visibility : 'NULL') + bug);
+            }
+        };
+
         // Global error handler to debug doubles crash + last-error capture for bug reports
         window.onerror = function(msg, url, lineNo, columnNo, error) {
             window.lastError = { msg: String(msg), line: lineNo, col: columnNo,
@@ -15075,6 +15110,9 @@
                 } else {
                     if (window.updateAI3DCastBar) window.updateAI3DCastBar(0, false);
                 }
+                // DEV: capture per-cast fill coverage (no-op unless window.DEBUG_CASTBAR).
+                window.__castBarDiag('left', leftC);
+                window.__castBarDiag('right', rightC);
 
                 // ---- 1c. CASTING LOOP SFX (state-driven, per side) ----
                 // The sim starts the mid-cast loop (deps.castingStart) but has NO deps.castingStop,
@@ -18893,9 +18931,22 @@
             const peerConfig = {
                 debug: 1,
                 config: {
+                    // STUN punches a direct peer-to-peer hole; TURN RELAYS traffic when a direct
+                    // path isn't possible or lapses mid-match (symmetric/carrier NAT, WiFi NAT-binding
+                    // timeouts, network changes). Without a TURN fallback those cases surface as a
+                    // mid-match "Opponent disconnected" (conn close) — reported in playtest. Applies
+                    // to both 1v1 and the doubles host-mesh.
+                    //
+                    // TURN below uses the free public Open Relay Project (metered.ca). It works out of
+                    // the box but is shared/rate-limited — for a stable live build, create a free
+                    // metered.ca account (50GB/mo) or use Twilio and REPLACE the three relay entries
+                    // with your own {urls, username, credential}.
                     iceServers: [
                         { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:global.stun.twilio.com:3478' }
+                        { urls: 'stun:global.stun.twilio.com:3478' },
+                        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+                        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+                        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
                     ]
                 }
             };
@@ -19007,6 +19058,10 @@
                 // Start ping measurement
                 startPingMeasurement();
 
+                // Attach ICE-state diagnostics now that negotiation has produced the
+                // underlying RTCPeerConnection (see attachIceDiagnostics).
+                attachIceDiagnostics();
+
                 // Online doubles handshake: a joiner can't know the room type before connecting,
                 // so it always announces itself. A duel host has no default case in
                 // handleNetworkMessage and silently ignores JOIN_HELLO_D (inert); a doubles host
@@ -19117,7 +19172,41 @@
             if (doublesPingInterval) { clearInterval(doublesPingInterval); doublesPingInterval = null; }
         }
 
+        // ICE / connection-state diagnostics (always on — disconnects are rare and we want
+        // playtesters to capture WHY the channel died without setting any console flag).
+        // Logs every ICE state transition; `disconnected`/`failed`/`closed` are the smoking gun
+        // for a NAT/relay drop (the case the TURN relay above is meant to catch). Records the
+        // last ICE state on window._lastIceState for handleDisconnect to report. Attaches to the
+        // primary `conn` (1v1, and the guest→host link in doubles).
+        let _iceDiagAttached = false;
+        function attachIceDiagnostics() {
+            const pc = conn && conn.peerConnection;   // PeerJS exposes the RTCPeerConnection here
+            if (!pc || _iceDiagAttached) return;
+            _iceDiagAttached = true;
+            window._lastIceState = pc.iceConnectionState;
+            const stamp = () => Math.round(performance.now());
+            pc.addEventListener('iceconnectionstatechange', () => {
+                window._lastIceState = pc.iceConnectionState;
+                console.warn('[Netcode] iceConnectionState -> ' + pc.iceConnectionState + ' @' + stamp() + 'ms');
+            });
+            pc.addEventListener('connectionstatechange', () => {
+                console.warn('[Netcode] connectionState -> ' + pc.connectionState + ' @' + stamp() + 'ms');
+            });
+            // Selected candidate pair tells us whether we ended up relayed (TURN) or direct.
+            try {
+                pc.getStats().then((stats) => {
+                    stats.forEach((r) => {
+                        if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) {
+                            console.log('[Netcode] active candidate pair nominated (local/remote candidate ids:',
+                                r.localCandidateId, r.remoteCandidateId, ')');
+                        }
+                    });
+                }).catch(() => {});
+            } catch (e) {}
+        }
+
         function cleanupPeer() {
+            _iceDiagAttached = false;
             if (window.clearJoinAttemptTimer) window.clearJoinAttemptTimer();
             // Online doubles teardown (no-ops in 1v1: empty map, stopped loop, netMode reset).
             for (const [pid, g] of guestConns) { try { if (g.conn) g.conn.close(); } catch (e) {} }
@@ -19138,7 +19227,14 @@
         }
 
         function handleDisconnect(reason) {
-            console.log('Disconnected:', reason);
+            // Rich context for diagnosing the mid-match "Opponent disconnected" playtest report:
+            // which path fired (reason), the last ICE state (a NAT/relay drop shows as
+            // disconnected/failed), and how long since the last PONG (silent link vs. hard close).
+            const pongAge = lastPongTime ? Math.round(performance.now() - lastPongTime) : 'n/a';
+            console.warn('[Netcode] handleDisconnect: reason="' + reason + '" mode=' + gameMode
+                + ' lastIceState=' + (window._lastIceState || 'n/a')
+                + ' msSinceLastPong=' + pongAge
+                + ' connOpen=' + (conn ? !!conn.open : 'no-conn'));
 
             // Reset camera + HUD perspective to default view
             if (window.resetCameraToDefault) window.resetCameraToDefault();
