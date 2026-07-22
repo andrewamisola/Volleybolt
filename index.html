@@ -19792,9 +19792,10 @@
         // through to mpSendDetail so the host's reflect unicasts back to THAT SAME guest.
         function mpReceiveDetail(frame, remoteGroups, peerId) {
             const localGroups = mpSync.localGroups[frame];
+            let _msg;
             if (!localGroups || !remoteGroups) {
-                console.warn('[MP DESYNC FIELDS] frame ' + frame + ': cannot compare (missing ' +
-                             (!localGroups ? 'local' : 'remote') + ' group hashes)');
+                _msg = '[MP DESYNC FIELDS] frame ' + frame + ': cannot compare (missing ' +
+                       (!localGroups ? 'local' : 'remote') + ' group hashes)';
             } else {
                 const diffs = [];
                 for (const g in localGroups) {
@@ -19803,10 +19804,15 @@
                                    ' != remote ' + (remoteGroups[g] >>> 0).toString(16));
                     }
                 }
-                if (diffs.length) console.warn('[MP DESYNC FIELDS] frame ' + frame + ': ' + diffs.join(', '));
-                else console.warn('[MP DESYNC FIELDS] frame ' + frame + ': all group hashes MATCH ' +
-                                  '(divergence is in a field not covered by the group set, or it healed by now)');
+                _msg = diffs.length
+                    ? ('[MP DESYNC FIELDS] frame ' + frame + ': ' + diffs.join(', '))
+                    : ('[MP DESYNC FIELDS] frame ' + frame + ': all group hashes MATCH ' +
+                       '(divergence is in a field not covered by the group set, or it healed by now)');
             }
+            console.warn(_msg);
+            // Also route into the Copy-for-Discord buffer: this names the exact diverged state group,
+            // which is what a desync report needs to be actionable.
+            if (window._pushDiag) window._pushDiag(_msg);
             mpSendDetail(frame, peerId);   // reflect ours back so the other peer also gets the breakdown (guarded)
         }
 
@@ -19844,8 +19850,12 @@
         function abortOnDesync(frame) {
             if (mpDesyncAborted || gameMode !== 'pvp') return;
             mpDesyncAborted = true;
-            console.warn('[MP DESYNC] aborting match: sustained divergence since frame ' +
-                         (mpSync.desync ? mpSync.desync.frame : frame));
+            const _d = mpSync.desync;
+            const _abortMsg = '[MP DESYNC] abort @frame ' + (_d ? _d.frame : frame) +
+                (_d ? ' (local ' + (_d.local >>> 0).toString(16) + ' != remote ' + (_d.remote >>> 0).toString(16) + ')' : '') +
+                ' mode=' + netMode + ' currentFrame=' + (typeof currentFrame !== 'undefined' ? currentFrame : '?');
+            console.warn(_abortMsg);
+            if (window._pushDiag) window._pushDiag(_abortMsg);   // -> Copy-for-Discord report
             if (netMode === 'doubles') {
                 // Star fan-out: the host is authoritative and broadcasts the abort to every guest
                 // (case 'DESYNC_ABORT_D'); a SEATED guest that detects its OWN sustained divergence
