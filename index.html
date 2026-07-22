@@ -4169,6 +4169,14 @@
             } catch (e) {
                 console.warn('[audio] visibility suspend/resume failed (non-fatal):', e);
             }
+            // Tell the opponent we've tabbed out / come back so their client shows a clear "opponent
+            // stepped away" state and holds the match instead of hard-disconnecting. This runs at the
+            // visibilitychange edge — JS still executes here before the browser fully freezes the tab.
+            try {
+                if (typeof gameMode !== 'undefined' && gameMode === 'pvp' && typeof conn !== 'undefined' && conn && conn.open) {
+                    conn.send({ type: document.hidden ? 'PEER_AWAY' : 'PEER_BACK' });
+                }
+            } catch (e) { /* best-effort */ }
         });
 
         // Initialize Tone.js on any user interaction (keeps trying until successful)
@@ -19264,6 +19272,8 @@
         }
 
         function handleDisconnect(reason) {
+            // Clear the "opponent stepped away" overlay if it was up — this is a real disconnect now.
+            if (typeof hideOpponentAwayOverlay === 'function') hideOpponentAwayOverlay();
             // Rich context for diagnosing the mid-match "Opponent disconnected" playtest report:
             // which path fired (reason), the last ICE state (a NAT/relay drop shows as
             // disconnected/failed), and how long since the last PONG (silent link vs. hard close).
@@ -19308,7 +19318,11 @@
         let pingInterval = null;
         let pingSentTime = 0;
         let lastPongTime = 0;
-        const PONG_TIMEOUT_MS = 5000;  // Treat as disconnected if no PONG in 5s
+        const PONG_TIMEOUT_MS = 18000;  // Treat as disconnected only after 18s of silence — a browser
+                                        // freezes a backgrounded tab (its ping loop throttles), so a
+                                        // short 5s window dropped players for a quick tab-switch. 18s
+                                        // rides out a normal tab-flick/phone-lock; genuine quits still
+                                        // end instantly via conn 'close'/LEAVE. Paired with PEER_AWAY.
 
         function startPingMeasurement() {
             // Seed lastPongTime so we don't trigger an immediate timeout
@@ -19334,6 +19348,33 @@
                 pingInterval = null;
             }
         }
+
+        // "Opponent stepped away" overlay — shown while the peer's tab is backgrounded (their game is
+        // frozen, so ours holds). DOM (not Babylon GUI, which has a post-match click bug); informational
+        // only, pointer-events:none so it never blocks input. Lazy-created, idempotent.
+        function showOpponentAwayOverlay() {
+            let el = document.getElementById('opponentAwayOverlay');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'opponentAwayOverlay';
+                el.style.cssText = 'position:fixed;inset:0;z-index:99998;display:none;align-items:center;' +
+                    'justify-content:center;background:rgba(8,10,16,0.5);pointer-events:none;' +
+                    "font-family:'FF9UI',system-ui,sans-serif";
+                el.innerHTML =
+                    '<div style="background:rgba(20,22,30,0.96);border:1px solid #6fb0ff;border-radius:10px;' +
+                    'padding:20px 28px;color:#eef2ff;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,0.6)">' +
+                    '<div style="font-size:22px;font-weight:700;margin-bottom:6px">⏸ Opponent stepped away</div>' +
+                    '<div style="font-size:14px;color:#b9c2d6">Waiting for them to return…</div></div>';
+                document.body.appendChild(el);
+            }
+            el.style.display = 'flex';
+        }
+        function hideOpponentAwayOverlay() {
+            const el = document.getElementById('opponentAwayOverlay');
+            if (el) el.style.display = 'none';
+        }
+        window.hideOpponentAwayOverlay = hideOpponentAwayOverlay;
+        window.showOpponentAwayOverlay = showOpponentAwayOverlay;
 
         // Handle incoming network messages
         function handleNetworkMessage(data) {
@@ -19388,6 +19429,18 @@
                     // Opponent intentionally left (clicked Disconnect or closed tab).
                     // Show clearer reason than the generic "Connection lost".
                     handleDisconnect(data.reason || 'Opponent left the match');
+                    break;
+
+                case 'PEER_AWAY':
+                    // Opponent tabbed out / backgrounded — the browser has frozen their game, so ours
+                    // will stall waiting for their inputs. Show a clear "stepped away" state instead of
+                    // a confusing freeze, and hold the match (the extended PONG_TIMEOUT_MS grace).
+                    if (gameMode === 'pvp') showOpponentAwayOverlay();
+                    break;
+
+                case 'PEER_BACK':
+                    // Opponent returned — hide the overlay; inputs resume and the sim continues.
+                    hideOpponentAwayOverlay();
                     break;
 
                 // --- Online doubles (guest side) ---
