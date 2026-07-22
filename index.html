@@ -4145,20 +4145,29 @@
             });
         })();
 
-        // Pause/resume audio when tab visibility changes
+        // Pause/resume audio when tab visibility changes.
+        // NOTE: Tone.context is a Tone wrapper WITHOUT suspend()/resume() — those live on the native
+        // AudioContext at Tone.context.rawContext. Calling Tone.context.suspend() throws
+        // "Tone.context.suspend is not a function" (unhandledrejection on every tab-background — seen in
+        // a playtest report). Use the raw context, feature-guard, and try/catch so it's best-effort.
         document.addEventListener('visibilitychange', async () => {
-            if (document.hidden) {
-                // Tab hidden - suspend audio context to stop all sounds
-                if (Tone.context && Tone.context.state === 'running') {
-                    Tone.context.suspend();
+            const ac = (typeof Tone !== 'undefined' && Tone.context) ? (Tone.context.rawContext || Tone.context) : null;
+            try {
+                if (document.hidden) {
+                    // Tab hidden - suspend audio context to stop all sounds
+                    if (ac && ac.state === 'running' && typeof ac.suspend === 'function') {
+                        ac.suspend();
+                    }
+                } else {
+                    // Tab visible - init if needed, then resume
+                    if (!toneStarted) {
+                        await initToneJS();
+                    } else if (ac && ac.state === 'suspended' && typeof ac.resume === 'function') {
+                        ac.resume();
+                    }
                 }
-            } else {
-                // Tab visible - init if needed, then resume
-                if (!toneStarted) {
-                    await initToneJS();
-                } else if (Tone.context && Tone.context.state === 'suspended') {
-                    Tone.context.resume();
-                }
+            } catch (e) {
+                console.warn('[audio] visibility suspend/resume failed (non-fatal):', e);
             }
         });
 
