@@ -11338,12 +11338,23 @@
                 const luma = 0.3 * c.r + 0.59 * c.g + 0.11 * c.b;
                 return new BABYLON.Color3(c.r + (luma - c.r) * 0.12, c.g + (luma - c.g) * 0.12, c.b + (luma - c.b) * 0.12).scale(1.25);
             };
+            // The core relic's juice is the defending team's colour, saturated (the pickle stays green).
+            const coreJuiceColor = (side) => {
+                const tr = window.TEAM_RIGHT || { r: 1.0, g: 0.42, b: 0.33 };
+                return side === 'left' ? new BABYLON.Color3(0.15, 0.4, 1.0)
+                    : new BABYLON.Color3(Math.min(1, tr.r * 1.0), tr.g * 0.38, tr.b * 0.3);
+            };
             window.refreshCastleTeamColors = () => {
                 for (const side of ['left', 'right']) {
                     const c = castles[side];
                     if (!c) continue;
                     const col = castleTeamColor(side);
                     c.teamMats.forEach(m => { m.albedoColor = col; });
+                    if (c.core) {
+                        c.core.teamMats.forEach(m => { m.albedoColor = col; });
+                        const juice = coreJuiceColor(side);
+                        c.core.juiceMats.forEach(m => { m.albedoColor = juice; m.emissiveColor = juice.scale(0.6); });
+                    }
                 }
             };
 
@@ -11381,6 +11392,60 @@
                     window.refreshCastleTeamColors();
                     c.shown = -1;   // first frame snaps to the current HP state
                 }).catch(e => console.warn('[castle] load failed', e));
+
+                // CORE RELIC (the Ancient Pickle Jar) — built in Blender (tools/blender/build_jar.py ->
+                // models/core/core.glb) in the castle's own axes, so it takes the same position, mirror
+                // and tower offset. Replaces this side's castle while the push is at this side's core
+                // (see the stage-dressing check in the per-frame loop below). Same four HP states.
+                const coreRoot = new BABYLON.TransformNode(isPlayer ? 'playerCore' : 'aiCore', scene);
+                coreRoot.position.copyFrom(root.position);
+                coreRoot.scaling.copyFrom(root.scaling);
+                coreRoot.setEnabled(false);
+                const core = c.core = { root: coreRoot, states: [], debris: [], shown: -1, teamMats: [], juiceMats: [] };
+                BABYLON.SceneLoader.ImportMeshAsync('', 'models/core/', 'core.glb?v=2', scene).then(res => {
+                    res.meshes[0].parent = coreRoot;
+                    const nodes = [...res.transformNodes, ...res.meshes];
+                    for (let s = 0; s < 4; s++) core.states[s] = nodes.find(n => n.name === 'core_s' + s);
+                    core.states.forEach((n, i) => { if (n) n.setEnabled(i === 0); });
+                    res.meshes.forEach(m => {
+                        const mat = m.material;
+                        if (!mat) return;
+                        mat.metallic = 0; mat.roughness = 1; mat.environmentIntensity = 0;
+                        if (mat.albedoTexture) mat.albedoTexture.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
+                        const n = mat.name;
+                        if (/_team$/.test(n)) {
+                            if (n === 'M_brine_team') {
+                                // Juice: drawn back-wall + surface only (single-sided) so the pickle keeps its green.
+                                if (!core.juiceMats.includes(mat)) core.juiceMats.push(mat);
+                                mat.alpha = 0.62; mat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;
+                                mat.backFaceCulling = true;
+                            } else if (!core.teamMats.includes(mat)) core.teamMats.push(mat);
+                        }
+                        if (n === 'M_glass') {
+                            mat.alpha = 0.2; mat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;
+                            mat.backFaceCulling = false; mat.emissiveColor = new BABYLON.Color3(0.06, 0.12, 0.08);
+                        }
+                        if (n === 'M_crack') {   // additive: the fracture only brightens what's behind it
+                            mat.backFaceCulling = false; mat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;
+                            mat.alphaMode = BABYLON.Engine.ALPHA_ADD; mat.alpha = 0.22;
+                            mat.albedoColor = new BABYLON.Color3(0.2, 0.22, 0.21); mat.emissiveColor = new BABYLON.Color3(0.22, 0.25, 0.24);
+                        }
+                        if (n === 'M_pickle') mat.emissiveColor = new BABYLON.Color3(0.05, 0.12, 0.01);
+                        if (n === 'M_rune') mat.emissiveColor = new BABYLON.Color3(0.45, 1.0, 0.3);
+                        if (n === 'M_flame') mat.emissiveColor = new BABYLON.Color3(1.0, 0.7, 0.3);
+                    });
+                    const debrisRoot = nodes.find(n => n.name === 'core_debris');
+                    if (debrisRoot) {
+                        debrisRoot.getChildMeshes(true).forEach(mesh => {
+                            core.debris.push({ mesh, parent: mesh.parent, home: mesh.position.clone(),
+                                               homeRot: mesh.rotationQuaternion ? mesh.rotationQuaternion.clone() : null,
+                                               t: -1, vel: new BABYLON.Vector3(), spin: new BABYLON.Vector3(), bounced: false });
+                            mesh.setEnabled(false);
+                        });
+                    }
+                    window.refreshCastleTeamColors();
+                    core.shown = -1;
+                }).catch(e => console.warn('[core] load failed', e));
             };
             loadCastle(true);    // Player (blue) castle
             loadCastle(false);   // AI (red) castle
@@ -11395,6 +11460,8 @@
                 const towerRootA = new BABYLON.TransformNode('aiTowerRoot', scene);
                 castles.left.root.parent = towerRootP;
                 castles.right.root.parent = towerRootA;
+                castles.left.core.root.parent = towerRootP;
+                castles.right.core.root.parent = towerRootA;
                 const blueBaseMesh = scene.getMeshByName('blueBase');
                 const redBaseMesh = scene.getMeshByName('redBase');
                 if (blueBaseMesh) blueBaseMesh.parent = towerRootP;
@@ -11454,8 +11521,19 @@
             let crumbleSeed = 7;   // decorative RNG for debris scatter (not sim state)
             const crumbleRand = () => (crumbleSeed = (crumbleSeed * 16807) % 2147483647) / 2147483647;
 
-            const launchDebris = (side, count) => {
+            // Stage dressing: at a side's own core stage (Blue Core = 0, Red Core = 4) its castle is
+            // replaced by the core relic. `dressStage` only follows currentStage while the stage
+            // transition is fully black (or no round transition is running: match start, new match,
+            // MP resync) — currentStage advances 2.5s BEFORE the fade, and the swap must never show.
+            let dressStage = null;
+            const activeStruct = (side) => {
                 const c = castles[side];
+                if (!c) return null;
+                const coreStage = side === 'left' ? 0 : 4;
+                return (dressStage === coreStage && c.core && c.core.states.length && c.core.states[0]) ? c.core : c;
+            };
+            const launchDebris = (side, count) => {
+                const c = activeStruct(side);
                 if (!c || !c.debris.length) return;
                 const courtDir = side === 'left' ? 1 : -1;
                 for (const d of c.debris) {
@@ -11494,17 +11572,31 @@
             // Round reset / zone change: snap to the current HP state, recall flying debris.
             window.syncCastleStates = () => {
                 for (const side of ['left', 'right']) {
-                    const c = castles[side];
-                    if (!c) continue;
-                    c.debris.forEach(d => { if (d.t >= 0) resetDebris(d); });
-                    c.shown = -1;
+                    for (const c of [castles[side], castles[side] && castles[side].core]) {
+                        if (!c) continue;
+                        c.debris.forEach(d => { if (d.t >= 0) resetDebris(d); });
+                        c.shown = -1;
+                    }
                 }
             };
 
             scene.onBeforeRenderObservable.add(() => {
                 const dt = Math.min(scene.getEngine().getDeltaTime() / 1000, 0.05);
+                const tOv = window.guiElements && window.guiElements.transitionOverlay;
+                const black = !!(tOv && tOv.isVisible && tOv.alpha > 0.98);
+                if (dressStage === null || black || !roundTransitioning || gameState !== 'playing') {
+                    if (dressStage !== currentStage) {
+                        dressStage = currentStage;
+                        window.syncCastleStates();          // the newly shown structure snaps, no crumble
+                    }
+                }
                 for (const side of ['left', 'right']) {
-                    const c = castles[side];
+                    const cs = castles[side];
+                    if (!cs) continue;
+                    const c = activeStruct(side);
+                    const onCore = c !== cs;
+                    cs.root.setEnabled(!onCore);
+                    if (cs.core) cs.core.root.setEnabled(onCore);
                     const comb = combatants[side];
                     if (!c || !c.states.length || !c.states[0] || !comb) continue;
                     const want = castleStateFor(comb.towerHealth);

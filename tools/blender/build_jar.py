@@ -32,14 +32,14 @@ TAU = math.tau
 
 # ---------------------------------------------------------------- layout (Blender units)
 LANE_HALF = 8.0                     # rail centre line (Babylon z = +-7.2 at the game's 0.9 scale)
-C = Vector((2.4, 0.5, 0))           # altar + jar centre, behind the gate line, a touch toward camera
-ALTAR = [(3.6, 0.0), (3.6, 0.45), (3.0, 0.45), (3.0, 0.9), (2.4, 0.9), (2.4, 1.3)]  # 3 steps
+C = Vector((1.9, 0.5, 0))           # altar + jar centre, behind the gate line, a touch toward camera
+ALTAR = [(3.2, 0.0), (3.2, 0.45), (2.7, 0.45), (2.7, 0.9), (2.25, 0.9), (2.25, 1.3)]  # 3 steps
 TOP_Z = 1.3
 GLASS = [(1.55, TOP_Z), (1.9, 1.5), (2.0, 2.2), (2.0, 5.4), (1.86, 5.9), (1.5, 6.2), (1.5, 6.5)]
 LID = [(1.62, 6.38), (1.78, 6.42), (1.78, 6.86), (1.52, 6.96), (1.1, 7.1), (0.36, 7.22),
        (0.3, 7.5), (0.0, 7.78)]
 POST_ANGLES = (40, 140, 220, 320)
-POST_R = 3.3
+POST_R = 2.95
 
 
 # ---------------------------------------------------------------- materials
@@ -242,7 +242,7 @@ def altar(m):
           cap_top=True, smooth=False)
     # Glowing runes on the camera-facing risers of the lower two steps.
     rng = random.Random(2)
-    for r, z0, z1 in ((3.6, 0.0, 0.45), (3.0, 0.45, 0.9)):
+    for r, z0, z1 in ((3.2, 0.0, 0.45), (2.7, 0.45, 0.9)):
         zc = (z0 + z1) / 2
         for a in range(38, 150, 16):
             a += rng.uniform(-3, 3)
@@ -339,18 +339,20 @@ def pickle(m, lying=False):
         xform(m, start, rot, Vector((C.x - 0.25, C.y, TOP_Z + 0.55)))
 
 
+LID_Z = 6.64                                                  # lid pivot height (rim centre)
+
+
 def lid(m, at=None):
-    """The bronze lid with rivets + knob. at=(Matrix, offset) places it (debris/ground)."""
+    """The bronze lid with rivets + knob, built around its own centre (0, 0, 0).
+    at=(Matrix, position) rotates it about that centre and moves it; default = on the jar."""
     start = len(m.v)
-    base = Vector((0, 0, 0))
+    base = Vector((0, 0, -LID_Z))
     lathe(m, LID, 14, base, 'M_bronze', 'bronze', smooth=False)
     for i in range(12):
-        p = cyl_point(i * 30, 6.64, 1.8, base)
+        p = cyl_point(i * 30, 0.0, 1.8, Vector((0, 0, 0)))
         box(m, p, (0.13, 0.13, 0.13), 'M_bronze', 'rivet', rot_z=math.radians(i * 30))
-    if at:
-        xform(m, start, at[0], at[1])
-    else:
-        xform(m, start, Matrix.Identity(3), Vector((C.x, C.y, 0)))
+    rot, pos = at if at else (Matrix.Identity(3), Vector((C.x, C.y, LID_Z)))
+    xform(m, start, rot, pos)
 
 
 def seal_and_tag(m):
@@ -434,8 +436,8 @@ def chains(m, s, tops):
 
 def candles(m):
     rng = random.Random(80)
-    spots = [(70, 3.32, 0.45), (84, 3.28, 0.45), (99, 3.34, 0.45), (113, 3.3, 0.45),
-             (64, 3.95, 0.0), (121, 3.9, 0.0), (92, 4.0, 0.0)]
+    spots = [(70, 2.95, 0.45), (84, 2.92, 0.45), (99, 2.97, 0.45), (113, 2.94, 0.45),
+             (64, 3.55, 0.0), (121, 3.5, 0.0), (92, 3.6, 0.0)]
     for i, (a, r, z) in enumerate(spots):
         p = cyl_point(a, z, r)
         h = rng.uniform(0.28, 0.62)
@@ -453,7 +455,7 @@ def candles(m):
 
 def banners(m):
     # Behind the jar (away from the camera), flanking it, so they frame it instead of covering it.
-    for i, (dx, h) in enumerate(((-2.3, 6.4), (2.5, 6.9))):
+    for i, (dx, h) in enumerate(((-2.1, 6.4), (2.2, 6.9))):
         base = Vector((C.x + dx, C.y - 3.6, 0))
         beam(m, base, base + Vector((0, 0, h)), 0.16, 'M_wood', 'wood')
         beam(m, base + Vector((-0.85, 0, h - 0.35)), base + Vector((0.85, 0, h - 0.35)), 0.12, 'M_wood', 'wood')
@@ -515,7 +517,7 @@ def shattered_glass(m):
     for i in range(16):                                                        # glass scattered on the floor
         a = rng.uniform(0, 360)
         r = rng.uniform(2.6, 5.0)
-        z = 0.47 if r < 3.6 else 0.02
+        z = 0.47 if r < 3.2 else 0.02
         p = cyl_point(a, z, r)
         s = rng.uniform(0.12, 0.3)
         ang = rng.uniform(0, TAU)
@@ -546,8 +548,8 @@ def build_state(s):
         pickle(m, lying=True)
         puddle(m, Vector((C.x, C.y, 0)), 2.0, 2.35, TOP_Z + 0.01, 73)
         puddle(m, Vector((C.x - 0.8, C.y + 4.2, 0)), 1.2, 2.1, 0.02, 74)
-        rot = Matrix.Rotation(math.radians(24), 3, 'X') @ Matrix.Rotation(math.radians(-15), 3, 'Y')
-        lid(m, (rot, Vector((C.x + 2.6, C.y + 3.6, -6.2))))                       # knocked onto the ground
+        rot = Matrix.Rotation(math.radians(18), 3, 'X') @ Matrix.Rotation(math.radians(-12), 3, 'Y')
+        lid(m, (rot, Vector((C.x + 1.3, C.y + 3.4, 0.55))))                       # knocked onto the ground
     return m
 
 
@@ -619,9 +621,9 @@ def build_debris(mats):
         obj.rotation_euler = (0, 0, math.radians(a + 90))
         obj.parent = root
     m = MB()
-    lid(m, (Matrix.Identity(3), Vector((0, 0, -6.4))))
+    lid(m, (Matrix.Identity(3), Vector((0, 0, 0))))
     obj = to_object('lid', m, mats, 450)
-    obj.location = Vector((C.x, C.y, 6.4))
+    obj.location = Vector((C.x, C.y, LID_Z))
     obj.parent = root
     return root
 
