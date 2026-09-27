@@ -7,7 +7,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Volleybolt</title>
+    <title>Dueling Pickles</title>
     <!-- Preload custom font -->
     <link rel="preload" href="fonts/esthetique.otf" as="font" type="font/otf" crossorigin>
     <!-- Retro Game Fonts - Classic 90s/2000s style + NES font -->
@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=61-settings-footer">
+    <link rel="stylesheet" href="styles.css?v=62-title-screen">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -47,7 +47,7 @@
 
     <div id="loadingScreen">
         <div id="loadingCard">
-            <div id="loadingTitle">Volleybolt</div>
+            <div id="loadingTitle"><img src="textures/logo_dueling_pickles.png?v=2" alt="Dueling Pickles"></div>
             <div id="loadingBarContainer">
                 <div id="loadingBar"></div>
             </div>
@@ -59,7 +59,7 @@
     <div id="gameContainer">
     <canvas id="canvas"></canvas>
 
-    <!-- Main Menu (DOM) - overlays 3D scene, left-aligned over the dancing wizard -->
+    <!-- Main Menu (DOM) - Dueling Pickles title screen: left-aligned logo + menu over the arena backdrop (styles.css, end) -->
     <div id="domMenu" class="arcane-overlay crt-screen">
         <div id="domMenuLeftPanel" class="arcane-scrim">
             <div id="domMenuEmbers" class="arcane-embers" aria-hidden="true">
@@ -70,9 +70,9 @@
         </div>
         <div id="domMenuContent" class="arcane-content">
             <div id="domMenuTitleWrap" class="arcane-title-wrap">
-                <h1 id="domMenuTitle" class="arcane-title" data-text="Volleybolt">Volleybolt</h1>
+                <h1 id="domMenuTitle" class="menu-logo"><img src="textures/logo_dueling_pickles.png?v=2" alt="Dueling Pickles"></h1>
                 <div id="domMenuDivider" class="arcane-divider"></div>
-                <div id="domMenuTagline" class="arcane-tagline">Arcane Volley Combat</div>
+                <div id="domMenuTagline" class="arcane-tagline">Arcane Pickle Duels</div>
             </div>
             <div id="domMenuButtons" class="arcane-buttons">
                 <button class="game-btn menu-btn is-primary" id="domBtnStartBattle">
@@ -85,31 +85,34 @@
                     <span class="menu-btn-glyph" aria-hidden="true">&#9889;</span>
                     <span class="menu-btn-label">Multiplayer</span>
                 </button>
-                <button class="game-btn menu-btn" id="domBtnDiscord">
+                <button class="game-btn menu-btn" id="domBtnCareer">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
-                    <span class="menu-btn-glyph" aria-hidden="true">&#128172;</span>
-                    <span class="menu-btn-label">Join Discord</span>
+                    <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
+                    <span class="menu-btn-label">Career</span>
                 </button>
                 <button class="game-btn menu-btn" id="domBtnSettings">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
                     <span class="menu-btn-glyph" aria-hidden="true">&#9881;</span>
                     <span class="menu-btn-label">Settings</span>
                 </button>
-                <button class="game-btn menu-btn" id="domBtnHowTo">
-                    <span class="menu-btn-accent" aria-hidden="true"></span>
-                    <span class="menu-btn-glyph" aria-hidden="true">&#9874;</span>
-                    <span class="menu-btn-label">How to Play</span>
-                </button>
-                <button class="game-btn menu-btn" id="domBtnCredits">
-                    <span class="menu-btn-accent" aria-hidden="true"></span>
-                    <span class="menu-btn-glyph" aria-hidden="true">&#9733;</span>
-                    <span class="menu-btn-label">Credits</span>
-                </button>
-                <button class="game-btn menu-btn" id="domBtnCareer">
-                    <span class="menu-btn-accent" aria-hidden="true"></span>
-                    <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
-                    <span class="menu-btn-label">Career</span>
-                </button>
+                <!-- Secondary links: small, but still .menu-btn so keyboard/gamepad nav reaches them -->
+                <div id="domMenuLinks">
+                    <button class="game-btn menu-btn menu-link" id="domBtnHowTo">
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#9874;</span>
+                        <span class="menu-btn-label">How to Play</span>
+                    </button>
+                    <button class="game-btn menu-btn menu-link" id="domBtnCredits">
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#9733;</span>
+                        <span class="menu-btn-label">Credits</span>
+                    </button>
+                    <button class="game-btn menu-btn menu-link" id="domBtnDiscord">
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#128172;</span>
+                        <span class="menu-btn-label">Discord</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -276,7 +279,7 @@
                 <h1 class="arcane-title" data-text="Credits">Credits</h1>
             </div>
             <div class="arcane-buttons settings-panel">
-                <div class="credits-line credits-title">Volleybolt</div>
+                <div class="credits-line credits-title">Dueling Pickles</div>
                 <div class="credits-line">An arcane volley duel.</div>
                 <div class="credits-line credits-author">Created by Andrew Amisola</div>
                 <div class="credits-line">Built with Babylon.js, Tone.js &amp; PeerJS.</div>
@@ -499,7 +502,7 @@
 
     <!-- Talent Screen (legacy) -->
     <div id="talentScreen" class="crt-screen">
-        <div id="talentTitle">Volleybolt</div>
+        <div id="talentTitle">Dueling Pickles</div>
         <div id="talentButtons">
             <button id="startBattleBtn">Start Battle</button>
         </div>
@@ -753,7 +756,7 @@
         // Build identifier for bug reports (audit #6). Date-based: bump on every player-facing
         // release (itch upload). Logged at boot, shown in the pause menu, embedded in dbg.report().
         const GAME_VERSION = '2026.07.12';
-        console.log('%cVolleybolt ' + GAME_VERSION, 'color:#f0c050;font-weight:bold');
+        console.log('%cDueling Pickles ' + GAME_VERSION, 'color:#f0c050;font-weight:bold');
 
         // ============================================================
         // DEV DIAGNOSTIC — intermittent "cast bar never fills" bug.
@@ -5898,7 +5901,7 @@
 
             // --- MAIN MENU TITLE (GUI for CRT effects) ---
             const menuTitle = new BABYLON.GUI.TextBlock();
-            menuTitle.text = "Volleybolt";
+            menuTitle.text = "Dueling Pickles";
             menuTitle.color = "#f0c050";
             menuTitle.fontSize = 72;
             menuTitle.fontFamily = "'FF9UI', sans-serif";
@@ -19504,7 +19507,7 @@
         // ---- Console commands ----
         window.dbg = {
             help() {
-                console.log('%cVolleybolt MP debug', 'font-weight:bold;color:#2f8f6f');
+                console.log('%cDueling Pickles MP debug', 'font-weight:bold;color:#2f8f6f');
                 console.log([
                     'dbg.overlay()         toggle netcode overlay (or press F2)',
                     'dbg.state()           dump netcode state',
@@ -19758,7 +19761,7 @@
         // lines (NOT the full dbg.report() state dump — that's too big for a chat message).
         window.buildPlaytestReport = function() {
             const lines = [
-                'Volleybolt playtest report',
+                'Dueling Pickles playtest report',
                 'version: ' + GAME_VERSION,
                 'when: ' + new Date().toISOString(),
                 'mode: ' + gameMode + ((typeof netPing === 'number' && netPing) ? '  ping: ' + netPing + 'ms' : ''),
@@ -20088,7 +20091,7 @@
                 console.log('[capture] recording stopped');
             }
         };
-        console.log('%c[Volleybolt] MP debug ready — dbg.help() for commands · dbg.overlay() toggles the netcode overlay (F2 with ?dev)', 'color:#2f8f6f');
+        console.log('%c[Dueling Pickles] MP debug ready — dbg.help() for commands · dbg.overlay() toggles the netcode overlay (F2 with ?dev)', 'color:#2f8f6f');
 
         // Start the multiplayer match
         function startMultiplayerMatch(seed, upgradeId = selectedUpgrade) {

@@ -1526,6 +1526,15 @@ body.flipped-view #aiCastBarContainer {
     gap: 18px;
     min-width: 520px;
 }
+#loadingTitle img {
+    /* The Dueling Pickles logo art (tools/make_logo.py), same as the title screen. */
+    display: block;
+    width: 440px;
+    max-width: 100%;
+    height: auto;
+    margin: 0 auto;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
+}
 #loadingTitle {
     /* Match the title-screen logo: Ferrum display font + clipped gold gradient. */
     font-family: 'Ferrum', 'FF9UI', serif;
@@ -2764,7 +2773,7 @@ body.flipped-view #aiCastBarContainer {
 
 /* Copyright footer */
 .arcane-overlay::after {
-    content: '\00A9 2026 VOLLEYBOLT';
+    content: '\00A9 2026 DUELING PICKLES';
     position: absolute;
     bottom: 26px;
     left: 0;
@@ -3085,3 +3094,84 @@ body.gp-cursor-hidden,
 body.gp-cursor-hidden * {
     cursor: none !important;
 }
+
+
+/* ============================================================
+   DUELING PICKLES title screen (main menu only): left-aligned logo + menu over a blurred,
+   darkened capture of the arena (textures/menu_bg.jpg), fading to dark on the left so the menu
+   reads. Four primary items; How to Play / Credits / Discord are small secondary links (still
+   .menu-btn, so keyboard/gamepad navigation reaches them after Settings).
+   Scoped to #domMenu: the sub-screens keep the shared centred arcane layout.
+   ============================================================ */
+#domMenu {
+    background: #07080d;
+    overflow: hidden;
+}
+#domMenu::before {
+    content: '';
+    position: absolute;
+    inset: -14px;                       /* hide the blur's soft edge */
+    z-index: 0;
+    pointer-events: none;
+    background: url('textures/menu_bg.jpg?v=1') center / cover no-repeat;
+    filter: blur(2.5px) brightness(0.62) saturate(0.9);
+}
+#domMenu #domMenuLeftPanel {
+    display: block !important;          /* re-enable the scrim the FF9 pass hid, as the left fade */
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    z-index: 1;
+    pointer-events: none;
+    background: linear-gradient(90deg,
+        rgba(5, 6, 10, 0.94) 0%, rgba(5, 6, 10, 0.86) 28%, rgba(5, 6, 10, 0.45) 55%,
+        rgba(5, 6, 10, 0.15) 80%, rgba(5, 6, 10, 0.3) 100%);
+}
+#domMenu #domMenuContent { position: relative; z-index: 2; }
+#domMenu.visible {
+    align-items: flex-start;
+    justify-content: center;
+    padding-left: 7.5%;
+    box-sizing: border-box;
+}
+#domMenu .arcane-content { align-items: flex-start; gap: 44px; }
+#domMenu .arcane-title-wrap { align-items: flex-start; }
+#domMenu .arcane-title-wrap::before { left: 42%; width: 720px; opacity: 0.35; }
+.menu-logo { margin: 0; line-height: 0; }
+.menu-logo img {
+    display: block;
+    width: 680px;                       /* design px: .arcane-content scales with --ui-scale */
+    height: auto;
+    margin-left: -24px;                 /* the art's flourishes overhang; align letters with the items */
+    filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55));
+}
+#domMenu .arcane-buttons { align-items: flex-start; gap: 2px; }
+#domMenu .arcane-buttons .menu-btn .menu-btn-label { font-size: 42px; color: #bcae8f; }
+#domMenu .arcane-buttons .menu-btn:hover .menu-btn-label,
+#domMenu .arcane-buttons .menu-btn.gp-focused .menu-btn-label,
+#domMenu .arcane-buttons .menu-btn:focus-visible .menu-btn-label { color: #ffe39a; }
+
+#domMenuLinks {
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+    margin-top: 22px;
+}
+#domMenu #domMenuLinks .menu-btn { padding: 4px 14px 4px 48px; }
+#domMenu #domMenuLinks .menu-btn + .menu-btn { padding-left: 30px; }
+#domMenu #domMenuLinks .menu-btn .menu-btn-label {
+    font-size: 21px;
+    letter-spacing: 1px;
+    color: #8d93a6;
+}
+#domMenu #domMenuLinks .menu-btn:hover .menu-btn-label,
+#domMenu #domMenuLinks .menu-btn.gp-focused .menu-btn-label,
+#domMenu #domMenuLinks .menu-btn:focus-visible .menu-btn-label { color: #ffe39a; }
+#domMenu #domMenuLinks .menu-btn.gp-focused::before,
+#domMenu #domMenuLinks .menu-btn:focus-visible::before { font-size: 14px; left: auto; right: calc(100% - 26px); }
+#domMenu #domMenuLinks .menu-btn + .menu-btn.gp-focused::before,
+#domMenu #domMenuLinks .menu-btn + .menu-btn:focus-visible::before { right: calc(100% - 12px); }
+
+/* Copyright footer: left-aligned with the menu column. */
+#domMenu.arcane-overlay::after { left: 7.5%; width: auto; text-align: left; }
