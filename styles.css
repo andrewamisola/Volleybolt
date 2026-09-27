@@ -3099,7 +3099,7 @@ body.gp-cursor-hidden * {
 /* ============================================================
    DUELING PICKLES menu system (every .arcane-overlay screen: title, mode select, settings, how to
    play, credits, career, multiplayer). One look everywhere:
-   - backdrop: a blurred, darkened capture of the arena (textures/menu_bg.jpg), fading to dark on
+   - backdrop: the menu art (set by the KH2 light theme at the end of this file) with a fade on
      the left where the content sits;
    - left-aligned content column (7.5% in), headings in the logo's wizard purple;
    - menu items in muted cream, brightening on hover / keyboard / gamepad focus;
@@ -3117,7 +3117,7 @@ body.gp-cursor-hidden * {
     inset: -14px;                       /* hide the blur's soft edge */
     z-index: 0;
     pointer-events: none;
-    background: url('textures/menu_bg.jpg?v=1') center / cover no-repeat;
+    background: none;   /* the art is set by the light theme below */
     filter: blur(2.5px) brightness(0.62) saturate(0.9);
 }
 .arcane-overlay > .arcane-scrim {
@@ -3289,7 +3289,7 @@ body.gp-cursor-hidden * {
     position: absolute;
     inset: -14px;
     pointer-events: none;
-    background: url('textures/menu_bg.jpg?v=1') center / cover no-repeat;
+    background: none;   /* the art is set by the light theme below */
     filter: blur(2.5px) brightness(0.62) saturate(0.9);
 }
 #loadingScreen::after {                 /* the menus' left fade */
@@ -3344,3 +3344,145 @@ body.gp-cursor-hidden * {
 #loadingBar { height: 100%; background: linear-gradient(90deg, #8a5ee0, #c9a8ff); box-shadow: none; }
 #loadingText { text-align: left; font-size: 40px; color: #ffe39a; margin-top: 0; }
 #loadingTip { text-align: left; }
+
+/* ============================================================
+   KH2-STYLE LIGHT THEME (overrides the dark menu system above; every .arcane-overlay screen
+   + the splash). Off-white page (#fcfcfa = the art's own background, so the art has no edge),
+   the pickle-wizard campfire art (textures/menu_art.jpg) on the right, content on the left.
+   Menu items are Kingdom Hearts style: soft grey caps; the selected one gets a purple bar
+   fading out to the right and a glowing pickle-green square marker. Data windows stay the
+   dark FF9 steel boxes (they read well on white and match the in-game HUD).
+   ============================================================ */
+.arcane-overlay,
+#loadingScreen { background: #f9f9f6; }   /* = the art's own background, so it has no edge */
+.arcane-overlay::before,
+#loadingScreen::before {
+    inset: 0;
+    /* KH2-style: the art sits back, faded, like the washed-out character art. The art itself is
+       composed for the menu (one wizard seen from behind on the right third, left half empty), so it fills the frame. */
+    background: url('textures/menu_art.jpg?v=3') right center / cover no-repeat;
+    opacity: 0.55;
+    filter: saturate(0.85);
+}
+/* Title + splash: the art as-is, only a whisper of fade behind the menu column. */
+.arcane-overlay > .arcane-scrim,
+#loadingScreen::after {
+    background: linear-gradient(90deg, rgba(249, 249, 246, 0.9) 0%, rgba(249, 249, 246, 0.6) 26%,
+        rgba(249, 249, 246, 0) 44%);
+}
+/* Sub-screens: stronger fade so wider content (settings, career) stays clean. */
+.arcane-overlay:not(#domMenu) > .arcane-scrim {
+    background: linear-gradient(90deg, rgba(249, 249, 246, 0.97) 0%, rgba(249, 249, 246, 0.92) 38%,
+        rgba(249, 249, 246, 0.55) 56%, rgba(249, 249, 246, 0) 72%);
+}
+
+/* Headings: deeper purple so they hold on white. */
+.arcane-title {
+    background: linear-gradient(180deg, #a67cf0 0%, #7a4fd6 50%, #4b2c96 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    filter: drop-shadow(0 2px 0 rgba(60, 30, 110, 0.18));
+}
+.arcane-title::before { display: none; }          /* the white shimmer sweep vanishes on white */
+.menu-logo img,
+#loadingTitle img { filter: drop-shadow(0 5px 0 rgba(40, 20, 70, 0.35)); }   /* straight-down drop shadow */
+
+/* ---- KH menu items ---- */
+.arcane-buttons .menu-btn { padding: 6px 40px 6px 48px; }
+.arcane-buttons .menu-btn .menu-btn-label {
+    font-size: 40px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: #a3a1ad;
+    text-shadow: none;
+    position: relative;
+    z-index: 1;
+}
+.arcane-buttons .menu-btn:hover .menu-btn-label,
+.arcane-buttons .menu-btn.gp-focused .menu-btn-label,
+.arcane-buttons .menu-btn:focus-visible .menu-btn-label { color: #3b2a5e; }
+/* The highlight bar: purple, fading out to the right. */
+.arcane-buttons .menu-btn::after {
+    content: '';
+    position: absolute;
+    left: 30px;
+    top: 4px;
+    bottom: 4px;
+    width: 560px;
+    background: linear-gradient(90deg, rgba(138, 94, 224, 0.4) 0%, rgba(138, 94, 224, 0.16) 55%, rgba(138, 94, 224, 0) 100%);
+    border-left: 3px solid rgba(138, 94, 224, 0.75);
+    opacity: 0;
+    transition: opacity 0.12s ease;
+    pointer-events: none;
+}
+.arcane-buttons .menu-btn:hover::after,
+.arcane-buttons .menu-btn.gp-focused::after,
+.arcane-buttons .menu-btn:focus-visible::after { opacity: 1; }
+/* The marker: a glowing pickle-green square (KH's orange square, in our colours). */
+.arcane-buttons .menu-btn::before,
+.arcane-buttons .menu-btn.gp-focused:not(:disabled)::before,
+.arcane-buttons .menu-btn:focus-visible:not(:disabled)::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    transform: translateY(-50%);
+    border: none;
+    border-radius: 2px;
+    background: linear-gradient(135deg, #d8f59a 0%, #8fd14f 55%, #4f9a2a 100%);
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 0 10px 3px rgba(143, 209, 79, 0.75);
+    opacity: 0;
+    filter: none;
+    color: transparent;
+    font-size: 0;
+    transition: opacity 0.12s ease;
+}
+.arcane-buttons .menu-btn:hover::before,
+.arcane-buttons .menu-btn.gp-focused:not(:disabled)::before,
+.arcane-buttons .menu-btn:focus-visible:not(:disabled)::before { opacity: 1; }
+/* Back / Cancel / Leave: smaller, lighter. */
+.arcane-buttons .menu-btn.menu-btn-ghost .menu-btn-label { font-size: 28px; color: #b3b1bc; }
+.arcane-buttons .menu-btn.menu-btn-ghost:hover .menu-btn-label,
+.arcane-buttons .menu-btn.menu-btn-ghost.gp-focused .menu-btn-label { color: #3b2a5e; }
+/* Ghost buttons inside the dark data windows keep light text. */
+.settings-panel .menu-btn.menu-btn-ghost .menu-btn-label { color: #9aa0b3; }
+.settings-panel .menu-btn.menu-btn-ghost:hover .menu-btn-label,
+.settings-panel .menu-btn.menu-btn-ghost.gp-focused .menu-btn-label { color: #ffe39a; }
+.settings-panel .menu-btn::after { display: none; }
+
+/* Title-screen secondary links. */
+#domMenu #domMenuLinks .menu-btn { padding: 4px 14px 4px 34px; }
+#domMenu #domMenuLinks .menu-btn + .menu-btn { padding-left: 34px; }
+#domMenu #domMenuLinks .menu-btn .menu-btn-label { font-size: 20px; letter-spacing: 2px; color: #a3a1ad; }
+#domMenu #domMenuLinks .menu-btn:hover .menu-btn-label,
+#domMenu #domMenuLinks .menu-btn.gp-focused .menu-btn-label { color: #3b2a5e; }
+#domMenu #domMenuLinks .menu-btn::after { left: 22px; width: 150px; }
+#domMenu #domMenuLinks .menu-btn::before,
+#domMenu #domMenuLinks .menu-btn.gp-focused:not(:disabled)::before { left: 6px; right: auto; width: 10px; height: 10px; }
+
+/* ---- Text that sat on the dark backdrop: dark on light now ---- */
+.arcane-tagline,
+.lobby-prompt,
+.lobby-status,
+.lobby-ready-line,
+.lobby-connected-msg { color: #5d5870; text-shadow: none; }
+.lobby-ready-line.ready { color: #3f8f2f; }
+.lobby-code {
+    background: #2a2440;
+    color: #ffe39a;
+    border: 2px solid rgba(224, 230, 240, 0.9);
+    text-shadow: 2px 2px 0 #000;
+}
+.lobby-input { color: #2a2440; }
+.arcane-overlay.visible::after { color: #a3a1ad; text-shadow: none; }
+
+/* ---- Splash text ---- */
+#loadingText { color: #3b2a5e; text-shadow: none; text-transform: uppercase; letter-spacing: 4px; }
+#loadingTip { color: #7d7890; text-shadow: none; }
+#loadingBarContainer { background: rgba(60, 40, 100, 0.12); }
+
+/* Prompt bar (Navigate / Select / Back hints) over the light menus: dark labels, not white. Only
+   while a light menu screen is up; over the dark pause screen it keeps its light labels. */
+#gameContainer:has(.arcane-overlay.visible) #gamepadPromptBar .gp-prompt-item { color: #5d5870; text-shadow: none; }
