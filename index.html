@@ -3016,7 +3016,9 @@
         // first (stopping a not-yet-started loop = no-op) and then the awaited start() would loop
         // forever with no matching stop. Gating start() on this flag prevents the orphaned loop.
         const _castingDesired = { player: false, ai: false };
-        const MUSIC_ENABLED = false;   // background music on/off: false = the music player is never created
+        const MUSIC_ENABLED = false;
+        const COMBAT_MUSIC_DB = -10;   // combat loop base level (ducks further while paused)
+        let _combatStopToken = 0;      // cancels a pending fade-out stop if a new match starts first   // background music on/off: false = the music player is never created
         let therapyReverb = null;
         let therapyDelay = null;
         let therapyPanner = null;
@@ -3319,6 +3321,17 @@
                 synths.music.volume.value = -12;  // Lower volume
                 // Volume is player-controlled via the Settings Music slider (musicBus).
             }
+
+            // Combat music: loops during matches only (independent of MUSIC_ENABLED, which is the menu
+            // track). Straight to the music bus (no bitcrusher), so the Settings Music slider controls it.
+            synths.combat = new Tone.Player({
+                url: 'sfx/combat_loop.ogg',
+                loop: true,
+                fadeIn: 1.2,
+                fadeOut: 1.2,
+                onload: () => { synths.combatLoaded = true; }
+            }).connect(window.musicBus);
+            synths.combat.volume.value = COMBAT_MUSIC_DB;
 
             // Wait for all samples to actually load (with timeout)
             try {
@@ -4072,6 +4085,35 @@
                 if (synths.music && synths.music.state === 'started') {
                     synths.music.stop();
                 }
+            },
+
+            // Combat loop: starts with a match, keeps going across rounds/stages, fades at the end.
+            combatStart: async () => {
+                if (!toneStarted) await initToneJS();
+                const p = synths.combat;
+                if (!p) return;
+                _combatStopToken++;                                   // cancel any fade-out in flight
+                for (let i = 0; i < 100 && !p.loaded; i++) await new Promise(r => setTimeout(r, 100));
+                if (!p.loaded) return;
+                p.volume.cancelScheduledValues(Tone.now());
+                p.volume.value = COMBAT_MUSIC_DB;
+                if (p.state !== 'started') { try { p.start(); } catch (e) { console.warn('combat music start', e); } }
+            },
+            combatStop: (fade = 1.2) => {
+                const p = synths.combat;
+                if (!p || p.state !== 'started') return;
+                const token = ++_combatStopToken;
+                p.volume.rampTo(-60, fade);
+                setTimeout(() => {
+                    if (token !== _combatStopToken) return;           // a new match started meanwhile
+                    try { p.stop(); } catch (e) {}
+                    p.volume.value = COMBAT_MUSIC_DB;
+                }, fade * 1000 + 50);
+            },
+            combatDuck: (on) => {
+                const p = synths.combat;
+                if (!p || p.state !== 'started') return;
+                p.volume.rampTo(on ? COMBAT_MUSIC_DB - 10 : COMBAT_MUSIC_DB, 0.3);
             },
 
             musicFadeOut: async (duration = 1) => {
@@ -8558,7 +8600,24 @@
                 t.wrapU = BABYLON.Texture.CLAMP_ADDRESSMODE;
                 t.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;
                 t.vScale = vScale; t.vOffset = vOffset;
-                t.uScale = uScale; t.uOffset = (1 - uScale) / 2;
+                if (window._backdropMirror) { t.uScale = -uScale; t.uOffset = (1 + uScale) / 2; }   // mirrored along the lane
+                else { t.uScale = uScale; t.uOffset = (1 - uScale) / 2; }
+            };
+
+            // Per-stage backdrops. The territory/core paintings were made from the forest one (same
+            // camera, lane band and rails composited back in from the original, so the self-alignment
+            // above still holds); they're painted with the DEFENDER on the right, and mirrored for a
+            // blue defender. Swapped by applyStageGround (while the stage transition is black).
+            const BACKDROPS = {
+                forest: backdropLayer.texture,
+                territory: new BABYLON.Texture('textures/backdrop_territory.jpg?v=2', scene),
+                core: new BABYLON.Texture('textures/backdrop_core.jpg?v=2', scene),
+            };
+            window.setStageBackdrop = (kind, mirror) => {
+                const tex = BACKDROPS[kind] || BACKDROPS.forest;
+                backdropLayer.texture = tex;
+                window._backdropMirror = !!mirror && tex !== BACKDROPS.forest;
+                window.alignBackdrop();
             };
 
             // ============================================================
@@ -8626,12 +8685,24 @@
 
             // Warm color selector for fire projectiles
             glowLayer.customEmissiveColorSelector = (mesh, subMesh, material, result) => {
+                // Babylon passes ONE shared color object and never resets it when a custom selector is set,
+                // so a mesh that sets nothing inherits the previous mesh's glow (the whole scene bloomed
+                // castle-window orange). Start every mesh from "no glow".
+                const nc = glowLayer.neutralColor;
+                result.set(nc.r, nc.g, nc.b, nc.a);
                 if (mesh.name && mesh.name.includes('fireball')) {
                     result.set(1, 0.5, 0.15, 1);  // Warm fire glow
                 } else if (mesh.name && mesh.name.includes('frostbolt')) {
                     result.set(0.4, 0.7, 1, 1);  // Cool ice glow
                 } else if (mesh.name && mesh.name.includes('magma')) {
                     result.set(1, 0.3, 0.1, 1);  // Deep magma glow
+                } else if (material && material.emissiveColor) {
+                    // Stage structures: the core jar's team juice + runes (the relic should shine), the
+                    // catapult's magic boulder, braziers/torches/windows. Everything else stays unbloomed.
+                    const n = material.name || '';
+                    const k = n.startsWith('M_brine_team') ? 3.2 : n.startsWith('M_glow_team') ? 1.6
+                        : n.startsWith('M_rune') ? 1.8 : (n.startsWith('M_flame') || n.startsWith('M_window')) ? 0.8 : 0;
+                    if (k) { const e = material.emissiveColor; result.set(e.r * k, e.g * k, e.b * k, 1); }
                 }
             };
 
@@ -8956,6 +9027,155 @@
                 lane.receiveShadows = true;
                 lane.isPickable = false;
                 window.lanePath = lane;
+            })();
+
+            // ============================================================
+            // STAGE GROUND — fortress paving laid over the lane per stage (the grass floor + dirt road
+            // stay underneath). Midfield: none. A territory stage: flagstone from the DEFENDER's end,
+            // giving way to the dirt road with a ragged worn edge just past the middle (the attacker's
+            // half stays open ground). A core stage: inside the fortress, paved rail to rail the whole
+            // way, with scuffed dirt patches at the breach (attacker's) end. The paving is lightly
+            // tinted to the defender's colour. Swapped by the stage-dressing check (while the stage
+            // transition is black), via window.applyStageGround(stage). Presentation only.
+            // ============================================================
+            (function buildStageGround() {
+                const paveMat = new BABYLON.StandardMaterial("stagePaveMat", scene);
+                // Calm courtyard stone, generated: nearly flat like the dirt road (which varies by only
+                // ~3% — the ground has to stay quiet so spells read on it). Muted stone colour, soft
+                // mottling, and large running-bond slabs whose joints are only a few percent darker.
+                const PT = 512;
+                const paveTex = new BABYLON.DynamicTexture("stagePaveTex", { width: PT, height: PT }, scene, true);
+                {
+                    const g = paveTex.getContext();
+                    let sd = 13;
+                    const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+                    g.fillStyle = 'rgb(152,140,124)';
+                    g.fillRect(0, 0, PT, PT);
+                    const SW = 128, SH = 96;                        // slab size in texels (4 x ~5 per tile)
+                    for (let row = 0; row * SH < PT; row++) {
+                        const off = (row % 2) * SW / 2;
+                        for (let col = -1; col * SW < PT; col++) {
+                            const v = (r() - 0.5) * 7;              // per-slab tone, +-3.5
+                            g.fillStyle = `rgb(${152 + v},${140 + v},${124 + v})`;
+                            g.fillRect(col * SW + off, row * SH, SW, SH);
+                        }
+                    }
+                    for (let i = 0; i < 90; i++) {                  // soft mottling
+                        const x = r() * PT, y = r() * PT, rad = 8 + r() * 30, v = (r() - 0.5) * 10;
+                        g.fillStyle = `rgba(${v > 0 ? 255 : 0},${v > 0 ? 250 : 0},${v > 0 ? 240 : 0},${Math.abs(v) / 255 * 2.2})`;
+                        for (const ox of [-PT, 0, PT]) for (const oy of [-PT, 0, PT]) {
+                            g.beginPath(); g.arc(x + ox, y + oy, rad, 0, Math.PI * 2); g.fill();
+                        }
+                    }
+                    g.strokeStyle = 'rgba(70,60,50,0.16)';          // faint joints
+                    g.lineWidth = 2;
+                    for (let row = 0; row * SH <= PT; row++) {
+                        g.beginPath(); g.moveTo(0, row * SH); g.lineTo(PT, row * SH); g.stroke();
+                        const off = (row % 2) * SW / 2;
+                        for (let col = -1; col * SW <= PT; col++) {
+                            g.beginPath(); g.moveTo(col * SW + off, row * SH); g.lineTo(col * SW + off, row * SH + SH); g.stroke();
+                        }
+                    }
+                    const soft = document.createElement('canvas');   // take the edge off (wrapped blur)
+                    soft.width = PT * 3; soft.height = PT * 3;
+                    const sg = soft.getContext('2d');
+                    for (const ox of [0, PT, 2 * PT]) for (const oy of [0, PT, 2 * PT]) sg.drawImage(g.canvas, ox, oy);
+                    g.filter = 'blur(1.2px)'; g.drawImage(soft, -PT, -PT); g.filter = 'none';
+                    paveTex.update();
+                }
+                paveTex.wrapU = paveTex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+                const TILE = 6.0;                                   // world units per tile (slabs ~1.5 x 1.1)
+                paveTex.uScale = groundLength / TILE;
+                paveTex.vScale = tableDepth / TILE;
+                paveMat.diffuseTexture = paveTex;
+                paveMat.specularColor = BABYLON.Color3.Black();
+                paveMat.emissiveColor = new BABYLON.Color3(0.1, 0.09, 0.08);   // same black-point lift as the road
+                paveMat.zOffset = -3;                               // over the road decal
+                const pave = BABYLON.MeshBuilder.CreateGround("stagePaving", { width: groundLength + 0.2, height: tableDepth + 0.2 }, scene);
+                pave.position.y = 0.075;                            // just above the road (0.06)
+                pave.material = paveMat;
+                pave.receiveShadows = true;
+                pave.isPickable = false;
+                pave.setEnabled(false);
+
+                // Masks map the whole ground mesh: u = along the lane (0 = left/blue end), v = across.
+                const MW = 2048, MH = 256;
+                const stageFrac = tableWidth / groundLength;        // the visible stage's share of u
+                const u0 = (1 - stageFrac) / 2;                     // u at the blue stage end
+                const xToU = (x) => u0 + (x / tableWidth + 0.5) * stageFrac;   // x in [-W/2, W/2]
+                const masks = {};
+                const makeMask = (kind, defender) => {
+                    const key = kind + ':' + defender;
+                    if (masks[key]) return masks[key];
+                    const tex = new BABYLON.DynamicTexture("stageGroundMask_" + key, { width: MW, height: MH }, scene, false);
+                    const g = tex.getContext();
+                    let seed = kind === 'core' ? 91 : 57;
+                    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+                    g.fillStyle = 'black';
+                    g.fillRect(0, 0, MW, MH);
+                    g.fillStyle = 'white';
+                    // Draw for a DEFENDER on the right, then mirror for the left.
+                    if (kind === 'territory') {
+                        // Paved from just past the middle to the right end; ragged, wavy front edge.
+                        const edgeU = xToU(tableWidth * 0.06);
+                        g.beginPath();
+                        g.moveTo(MW, 0);
+                        for (let y = 0; y <= MH; y += 4) {
+                            const t = y / MH;
+                            const wob = Math.sin(t * 7.1 + 0.4) * 0.018 + Math.sin(t * 17.3) * 0.007;
+                            g.lineTo((edgeU + wob) * MW, y);
+                        }
+                        g.lineTo(MW, MH);
+                        g.closePath();
+                        g.fill();
+                        // A few stray slabs out onto the road (soft edge comes from the blur below).
+                        for (let i = 0; i < 14; i++) {
+                            const u = edgeU - rnd() * 0.035, y = rnd() * MH, r = 5 + rnd() * 10;
+                            g.beginPath(); g.arc(u * MW, y, r, 0, Math.PI * 2); g.fill();
+                        }
+                    } else {
+                        // Core: inside their fortress — their floor, clean, rail to rail, end to end.
+                        g.fillRect(0, 0, MW, MH);
+                    }
+                    if (defender === 'left') {                           // mirror along the lane
+                        const flip = document.createElement('canvas');
+                        flip.width = MW; flip.height = MH;
+                        const f = flip.getContext('2d');
+                        f.translate(MW, 0); f.scale(-1, 1); f.drawImage(g.canvas, 0, 0);
+                        g.clearRect(0, 0, MW, MH); g.drawImage(flip, 0, 0);
+                    }
+                    const soft = document.createElement('canvas');      // soften the edges
+                    soft.width = MW; soft.height = MH;
+                    const sg = soft.getContext('2d');
+                    sg.drawImage(g.canvas, 0, 0);
+                    g.fillStyle = 'black'; g.fillRect(0, 0, MW, MH);
+                    g.filter = 'blur(9px)'; g.drawImage(soft, 0, 0); g.filter = 'none';   // soft road-to-stone blend
+                    tex.update();
+                    tex.getAlphaFromRGB = true;
+                    tex.wrapU = BABYLON.Texture.CLAMP_ADDRESSMODE;
+                    tex.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;
+                    return (masks[key] = tex);
+                };
+                // Stone colour matched to the painted backdrops' stone. Must stay DARK: under the sun a
+                // brighter base clips in every channel and renders a cool pinkish grey (~128,113,111) no
+                // matter how it's tinted. Measured in-game: a neutral 0.45 base renders (119,100,86) against
+                // the core painting's courtyard (113,95,87). Not team-tinted: the paintings aren't either.
+                const paveTint = (kind) => kind === 'core'
+                    ? new BABYLON.Color3(0.44, 0.44, 0.46) : new BABYLON.Color3(0.44, 0.43, 0.41);
+                let shownKey = null;
+                window.applyStageGround = (stage) => {
+                    const kind = stage === 0 || stage === 4 ? 'core' : stage === 1 || stage === 3 ? 'territory' : null;
+                    const defender = stage <= 1 ? 'left' : 'right';
+                    const key = kind ? kind + ':' + defender : 'none';
+                    if (key === shownKey) return;
+                    shownKey = key;
+                    if (window.setStageBackdrop) window.setStageBackdrop(kind || 'forest', defender === 'left');
+                    if (window.applyStageLighting) window.applyStageLighting(kind, defender);
+                    if (!kind) { pave.setEnabled(false); return; }
+                    paveMat.opacityTexture = makeMask(kind, defender);
+                    paveMat.diffuseColor = paveTint(kind);
+                    pave.setEnabled(true);
+                };
             })();
 
             // No lane-side bushes: they competed with the wizards for readability (a corner clump
@@ -11344,108 +11564,108 @@
                 return side === 'left' ? new BABYLON.Color3(0.15, 0.4, 1.0)
                     : new BABYLON.Color3(Math.min(1, tr.r * 1.0), tr.g * 0.38, tr.b * 0.3);
             };
+            const allStructs = (c) => [c, ...Object.values(c.alts || {})];
             window.refreshCastleTeamColors = () => {
                 for (const side of ['left', 'right']) {
                     const c = castles[side];
                     if (!c) continue;
                     const col = castleTeamColor(side);
-                    c.teamMats.forEach(m => { m.albedoColor = col; });
-                    if (c.core) {
-                        c.core.teamMats.forEach(m => { m.albedoColor = col; });
-                        const juice = coreJuiceColor(side);
-                        c.core.juiceMats.forEach(m => { m.albedoColor = juice; m.emissiveColor = juice.scale(0.6); });
+                    const juice = coreJuiceColor(side);
+                    for (const st of allStructs(c)) {
+                        st.teamMats.forEach(m => { m.albedoColor = col; });
+                        st.juiceMats.forEach(m => { m.albedoColor = juice; m.emissiveColor = juice.scale(0.6); });
+                        st.glowMats.forEach(m => { m.albedoColor = juice; m.emissiveColor = juice.scale(0.8); });
                     }
                 }
             };
 
+            // ============================================================
+            // STAGE STRUCTURES — every end-of-lane structure is a Blender-built GLB in the castle's own
+            // axes (tools/blender/build_*.py), so all take the same position, X-mirror (red) and tower
+            // offset, and all expose <kind>_s0..s3 damage states + a <kind>_debris pool. Which one a
+            // side shows depends on the stage (STAGE_DRESSING below): Midfield keeps the castles; a
+            // territory stage puts the defender's gatehouse against the attacker's siege catapult; a
+            // core stage puts the defender's Ancient Pickle Jar against the attacker's battering ram
+            // in the breach. A kind whose GLB is missing or still loading falls back to the castle.
+            // ============================================================
+            const STRUCT_FILES = {
+                castle:    { dir: 'models/castle/',    file: 'castle.glb?v=1' },
+                core:      { dir: 'models/core/',      file: 'core.glb?v=2' },
+                gatehouse: { dir: 'models/gatehouse/', file: 'gatehouse.glb?v=1' },
+                catapult:  { dir: 'models/catapult/',  file: 'catapult.glb?v=1' },
+                ram:       { dir: 'models/ram/',       file: 'ram.glb?v=1' },
+            };
+            // Materials are styled by NAME (the Blender scripts use a shared vocabulary).
+            const styleStructMat = (st, mat) => {
+                // Match the flat PS1 storybook look (same treatment as the pickle wizards):
+                // no PBR gloss/reflections, crisp nearest texels with mipmapped minification.
+                mat.metallic = 0; mat.roughness = 1; mat.environmentIntensity = 0;
+                if (mat.albedoTexture) mat.albedoTexture.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
+                const n = mat.name;
+                const add = (list) => { if (!list.includes(mat)) list.push(mat); };
+                if (n === 'M_brine_team') {
+                    // Juice: drawn back-wall + surface only (single-sided) so the pickle keeps its green.
+                    add(st.juiceMats);
+                    mat.alpha = 0.62; mat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;
+                    mat.backFaceCulling = true;
+                } else if (n === 'M_glow_team') add(st.glowMats);      // team-coloured and glowing (magic boulder)
+                else if (/_team$/.test(n)) add(st.teamMats);
+                if (n === 'M_window') mat.emissiveColor = new BABYLON.Color3(0.95, 0.6, 0.25);
+                if (n === 'M_flame') mat.emissiveColor = new BABYLON.Color3(1.0, 0.7, 0.3);
+                if (n === 'M_rune') mat.emissiveColor = new BABYLON.Color3(0.45, 1.0, 0.3);
+                if (n === 'M_pickle') mat.emissiveColor = new BABYLON.Color3(0.05, 0.12, 0.01);
+                if (n === 'M_glass') {
+                    mat.alpha = 0.2; mat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;
+                    mat.backFaceCulling = false; mat.emissiveColor = new BABYLON.Color3(0.06, 0.12, 0.08);
+                }
+                if (n === 'M_crack') {   // additive: the fracture only brightens what's behind it
+                    mat.backFaceCulling = false; mat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;
+                    mat.alphaMode = BABYLON.Engine.ALPHA_ADD; mat.alpha = 0.22;
+                    mat.albedoColor = new BABYLON.Color3(0.2, 0.22, 0.21); mat.emissiveColor = new BABYLON.Color3(0.22, 0.25, 0.24);
+                }
+            };
+            const makeStruct = (kind, root) => ({ kind, root, states: [], debris: [], shown: -1,
+                                                   teamMats: [], juiceMats: [], glowMats: [], ready: false });
+            const loadStruct = (st) => {
+                const f = STRUCT_FILES[st.kind];
+                BABYLON.SceneLoader.ImportMeshAsync('', f.dir, f.file, scene).then(res => {
+                    res.meshes[0].parent = st.root;   // glTF __root__ (carries the handedness flip)
+                    const nodes = [...res.transformNodes, ...res.meshes];
+                    for (let s = 0; s < 4; s++) st.states[s] = nodes.find(n => n.name === st.kind + '_s' + s);
+                    st.states.forEach((n, i) => { if (n) n.setEnabled(i === 0); });   // pristine until the first frame syncs
+                    res.meshes.forEach(m => { if (m.material) styleStructMat(st, m.material); });
+                    const debrisRoot = nodes.find(n => n.name === st.kind + '_debris');
+                    if (debrisRoot) {
+                        debrisRoot.getChildMeshes(true).forEach(mesh => {
+                            st.debris.push({ mesh, parent: mesh.parent, home: mesh.position.clone(),
+                                             homeRot: mesh.rotationQuaternion ? mesh.rotationQuaternion.clone() : null,
+                                             t: -1, vel: new BABYLON.Vector3(), spin: new BABYLON.Vector3(), bounced: false });
+                            mesh.setEnabled(false);
+                        });
+                    }
+                    st.ready = !!st.states[0];
+                    window.refreshCastleTeamColors();
+                    st.shown = -1;   // first frame snaps to the current HP state
+                }).catch(e => console.warn('[' + st.kind + '] load failed', e));
+            };
+
             const loadCastle = (isPlayer) => {
                 const side = isPlayer ? 'left' : 'right';
-                const root = new BABYLON.TransformNode(isPlayer ? 'playerCastle' : 'aiCastle', scene);
-                root.position.set((isPlayer ? -1 : 1) * towerX, 0, 0);
-                // 0.9: keeps the pennant clear of the HUD's tower labels. Red = mirrored in X.
-                root.scaling.set(isPlayer ? 0.9 : -0.9, 0.9, 0.9);
-                const c = castles[side] = { root, states: [], debris: [], shown: -1, teamMats: [] };
-                BABYLON.SceneLoader.ImportMeshAsync('', 'models/castle/', 'castle.glb?v=1', scene).then(res => {
-                    res.meshes[0].parent = root;   // glTF __root__ (carries the handedness flip)
-                    const nodes = [...res.transformNodes, ...res.meshes];
-                    for (let s = 0; s < 4; s++) c.states[s] = nodes.find(n => n.name === 'castle_s' + s);
-                    c.states.forEach((n, i) => { if (n) n.setEnabled(i === 0); });   // pristine until the first frame syncs
-                    res.meshes.forEach(m => {
-                        const mat = m.material;
-                        if (!mat) return;
-                        // Match the flat PS1 storybook look (same treatment as the pickle wizards):
-                        // no PBR gloss/reflections, crisp nearest texels with mipmapped minification.
-                        mat.metallic = 0; mat.roughness = 1; mat.environmentIntensity = 0;
-                        if (mat.albedoTexture) mat.albedoTexture.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
-                        if (/_team$/.test(mat.name) && !c.teamMats.includes(mat)) c.teamMats.push(mat);
-                        if (mat.name === 'M_window') mat.emissiveColor = new BABYLON.Color3(0.95, 0.6, 0.25);
-                    });
-                    const debrisRoot = nodes.find(n => n.name === 'castle_debris');
-                    if (debrisRoot) {
-                        debrisRoot.getChildMeshes(true).forEach(mesh => {
-                            c.debris.push({ mesh, parent: mesh.parent, home: mesh.position.clone(),
-                                            homeRot: mesh.rotationQuaternion ? mesh.rotationQuaternion.clone() : null,
-                                            t: -1, vel: new BABYLON.Vector3(), spin: new BABYLON.Vector3(), bounced: false });
-                            mesh.setEnabled(false);
-                        });
-                    }
-                    window.refreshCastleTeamColors();
-                    c.shown = -1;   // first frame snaps to the current HP state
-                }).catch(e => console.warn('[castle] load failed', e));
-
-                // CORE RELIC (the Ancient Pickle Jar) — built in Blender (tools/blender/build_jar.py ->
-                // models/core/core.glb) in the castle's own axes, so it takes the same position, mirror
-                // and tower offset. Replaces this side's castle while the push is at this side's core
-                // (see the stage-dressing check in the per-frame loop below). Same four HP states.
-                const coreRoot = new BABYLON.TransformNode(isPlayer ? 'playerCore' : 'aiCore', scene);
-                coreRoot.position.copyFrom(root.position);
-                coreRoot.scaling.copyFrom(root.scaling);
-                coreRoot.setEnabled(false);
-                const core = c.core = { root: coreRoot, states: [], debris: [], shown: -1, teamMats: [], juiceMats: [] };
-                BABYLON.SceneLoader.ImportMeshAsync('', 'models/core/', 'core.glb?v=2', scene).then(res => {
-                    res.meshes[0].parent = coreRoot;
-                    const nodes = [...res.transformNodes, ...res.meshes];
-                    for (let s = 0; s < 4; s++) core.states[s] = nodes.find(n => n.name === 'core_s' + s);
-                    core.states.forEach((n, i) => { if (n) n.setEnabled(i === 0); });
-                    res.meshes.forEach(m => {
-                        const mat = m.material;
-                        if (!mat) return;
-                        mat.metallic = 0; mat.roughness = 1; mat.environmentIntensity = 0;
-                        if (mat.albedoTexture) mat.albedoTexture.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
-                        const n = mat.name;
-                        if (/_team$/.test(n)) {
-                            if (n === 'M_brine_team') {
-                                // Juice: drawn back-wall + surface only (single-sided) so the pickle keeps its green.
-                                if (!core.juiceMats.includes(mat)) core.juiceMats.push(mat);
-                                mat.alpha = 0.62; mat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;
-                                mat.backFaceCulling = true;
-                            } else if (!core.teamMats.includes(mat)) core.teamMats.push(mat);
-                        }
-                        if (n === 'M_glass') {
-                            mat.alpha = 0.2; mat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;
-                            mat.backFaceCulling = false; mat.emissiveColor = new BABYLON.Color3(0.06, 0.12, 0.08);
-                        }
-                        if (n === 'M_crack') {   // additive: the fracture only brightens what's behind it
-                            mat.backFaceCulling = false; mat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;
-                            mat.alphaMode = BABYLON.Engine.ALPHA_ADD; mat.alpha = 0.22;
-                            mat.albedoColor = new BABYLON.Color3(0.2, 0.22, 0.21); mat.emissiveColor = new BABYLON.Color3(0.22, 0.25, 0.24);
-                        }
-                        if (n === 'M_pickle') mat.emissiveColor = new BABYLON.Color3(0.05, 0.12, 0.01);
-                        if (n === 'M_rune') mat.emissiveColor = new BABYLON.Color3(0.45, 1.0, 0.3);
-                        if (n === 'M_flame') mat.emissiveColor = new BABYLON.Color3(1.0, 0.7, 0.3);
-                    });
-                    const debrisRoot = nodes.find(n => n.name === 'core_debris');
-                    if (debrisRoot) {
-                        debrisRoot.getChildMeshes(true).forEach(mesh => {
-                            core.debris.push({ mesh, parent: mesh.parent, home: mesh.position.clone(),
-                                               homeRot: mesh.rotationQuaternion ? mesh.rotationQuaternion.clone() : null,
-                                               t: -1, vel: new BABYLON.Vector3(), spin: new BABYLON.Vector3(), bounced: false });
-                            mesh.setEnabled(false);
-                        });
-                    }
-                    window.refreshCastleTeamColors();
-                    core.shown = -1;
-                }).catch(e => console.warn('[core] load failed', e));
+                const mkRoot = (kind) => {
+                    const r = new BABYLON.TransformNode((isPlayer ? 'player_' : 'ai_') + kind, scene);
+                    r.position.set((isPlayer ? -1 : 1) * towerX, 0, 0);
+                    // 0.9: keeps the pennant clear of the HUD's tower labels. Red = mirrored in X.
+                    r.scaling.set(isPlayer ? 0.9 : -0.9, 0.9, 0.9);
+                    return r;
+                };
+                const c = castles[side] = makeStruct('castle', mkRoot('castle'));
+                loadStruct(c);
+                c.alts = {};
+                for (const kind of ['core', 'gatehouse', 'catapult', 'ram']) {
+                    const st = c.alts[kind] = makeStruct(kind, mkRoot(kind));
+                    st.root.setEnabled(false);
+                    loadStruct(st);
+                }
             };
             loadCastle(true);    // Player (blue) castle
             loadCastle(false);   // AI (red) castle
@@ -11460,8 +11680,8 @@
                 const towerRootA = new BABYLON.TransformNode('aiTowerRoot', scene);
                 castles.left.root.parent = towerRootP;
                 castles.right.root.parent = towerRootA;
-                castles.left.core.root.parent = towerRootP;
-                castles.right.core.root.parent = towerRootA;
+                for (const st of Object.values(castles.left.alts)) st.root.parent = towerRootP;
+                for (const st of Object.values(castles.right.alts)) st.root.parent = towerRootA;
                 const blueBaseMesh = scene.getMeshByName('blueBase');
                 const redBaseMesh = scene.getMeshByName('redBase');
                 if (blueBaseMesh) blueBaseMesh.parent = towerRootP;
@@ -11521,16 +11741,25 @@
             let crumbleSeed = 7;   // decorative RNG for debris scatter (not sim state)
             const crumbleRand = () => (crumbleSeed = (crumbleSeed * 16807) % 2147483647) / 2147483647;
 
-            // Stage dressing: at a side's own core stage (Blue Core = 0, Red Core = 4) its castle is
-            // replaced by the core relic. `dressStage` only follows currentStage while the stage
-            // transition is fully black (or no round transition is running: match start, new match,
-            // MP resync) — currentStage advances 2.5s BEFORE the fade, and the swap must never show.
+            // Stage dressing: which structure each side shows at each stage (0 Blue Core .. 4 Red Core).
+            // `dressStage` only follows currentStage while the stage transition is fully black (or no
+            // round transition is running: match start, new match, MP resync) — currentStage advances
+            // 2.5s BEFORE the fade, and the swap must never show.
+            const STAGE_DRESSING = [
+                { left: 'core',      right: 'ram' },        // Blue Core: Red's ram in Blue's breached gate
+                { left: 'gatehouse', right: 'catapult' },   // Blue Territory: Red besieges Blue's outer wall
+                { left: 'castle',    right: 'castle' },     // Midfield
+                { left: 'catapult',  right: 'gatehouse' },  // Red Territory
+                { left: 'ram',       right: 'core' },       // Red Core
+            ];
             let dressStage = null;
+            window.getStructInfo = (side) => { const st = activeStruct(side); return st ? { kind: st.kind, shown: st.shown } : null; };
             const activeStruct = (side) => {
                 const c = castles[side];
                 if (!c) return null;
-                const coreStage = side === 'left' ? 0 : 4;
-                return (dressStage === coreStage && c.core && c.core.states.length && c.core.states[0]) ? c.core : c;
+                const kind = (STAGE_DRESSING[dressStage] || {})[side] || 'castle';
+                const st = kind === 'castle' ? c : c.alts && c.alts[kind];
+                return (st && st.ready) ? st : c;
             };
             const launchDebris = (side, count) => {
                 const c = activeStruct(side);
@@ -11572,8 +11801,8 @@
             // Round reset / zone change: snap to the current HP state, recall flying debris.
             window.syncCastleStates = () => {
                 for (const side of ['left', 'right']) {
-                    for (const c of [castles[side], castles[side] && castles[side].core]) {
-                        if (!c) continue;
+                    if (!castles[side]) continue;
+                    for (const c of allStructs(castles[side])) {
                         c.debris.forEach(d => { if (d.t >= 0) resetDebris(d); });
                         c.shown = -1;
                     }
@@ -11588,15 +11817,17 @@
                     if (dressStage !== currentStage) {
                         dressStage = currentStage;
                         window.syncCastleStates();          // the newly shown structure snaps, no crumble
+                        if (window.applyStageGround) window.applyStageGround(dressStage);
                     }
                 }
                 for (const side of ['left', 'right']) {
                     const cs = castles[side];
                     if (!cs) continue;
                     const c = activeStruct(side);
-                    const onCore = c !== cs;
-                    cs.root.setEnabled(!onCore);
-                    if (cs.core) cs.core.root.setEnabled(onCore);
+                    for (const st of allStructs(cs)) {
+                        const on = st === c;
+                        if (st.root.isEnabled(false) !== on) st.root.setEnabled(on);
+                    }
                     const comb = combatants[side];
                     if (!c || !c.states.length || !c.states[0] || !comb) continue;
                     const want = castleStateFor(comb.towerHealth);
@@ -14689,8 +14920,9 @@
                             // Right/red-orange beam: deepen the team color for drama
                             _tFogR = _TR3.r * 0.55; _tFogG = _TR3.g * 0.25; _tFogB = _TR3.b * 0.12;
                         } else {
-                            // No beam → restore originals
-                            _tFogR = _fst.origSceneFog.r; _tFogG = _fst.origSceneFog.g; _tFogB = _fst.origSceneFog.b;
+                            // No beam → restore the stage's base fog (the core interior is purple; see applyStageLighting)
+                            const _base = window._stageFogColor || _fst.origSceneFog;
+                            _tFogR = _base.r; _tFogG = _base.g; _tFogB = _base.b;
                         }
 
                         // LERP current colors toward target (~0.4s settle)
@@ -15294,6 +15526,7 @@
             }, scene);
             fogPlane.position.y = 0.25;  // Higher above floor for better visibility
             fogPlane.renderingGroupId = 1;  // Render on top
+            fogPlane.alphaIndex = 0;        // first among group 1's transparents: the core's floor light/shadows go over it
 
             // Track fog cuts - trails left by projectiles that fade back in
             const fogCuts = [];  // { x, z, age, maxAge }
@@ -15326,6 +15559,7 @@
                 uniform int lightCount;
                 uniform float planeWidth;
                 uniform float planeHeight;
+                uniform vec3 gateClear;   // x, strength, reach: thins the fog near the core stage's breach
 
                 // Simplex noise
                 vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -15389,6 +15623,9 @@
                                      smoothstep(0.0, 0.15, uv.y) * smoothstep(1.0, 0.85, uv.y);
                     fogDensity *= edgeFade;
 
+                    // Core stages: the breach blows the haze away, so the gate light reaches the floor.
+                    fogDensity *= 1.0 - gateClear.y * smoothstep(gateClear.z, 0.0, abs(worldPos.x - gateClear.x));
+
                     // Base fog color
                     vec3 finalColor = fogColor;
                     float finalAlpha = fogDensity * fogOpacity;
@@ -15436,7 +15673,7 @@
                 fragment: "reactiveFog"
             }, {
                 attributes: ["position", "uv"],
-                uniforms: ["worldViewProjection", "time", "fogColor", "fogOpacity", "fogCuts", "cutCount", "projLights", "lightCount", "planeWidth", "planeHeight"]
+                uniforms: ["worldViewProjection", "time", "fogColor", "fogOpacity", "fogCuts", "cutCount", "projLights", "lightCount", "planeWidth", "planeHeight", "gateClear"]
             });
 
             fogMaterial.setColor3("fogColor", new BABYLON.Color3(0.25, 0.28, 0.35));  // Lighter, more blue
@@ -15445,6 +15682,7 @@
             fogMaterial.setFloat("planeHeight", tableDepth + 4);
             fogMaterial.setInt("cutCount", 0);
             fogMaterial.setInt("lightCount", 0);
+            fogMaterial.setVector3("gateClear", new BABYLON.Vector3(0, 0, 1));   // off (set per stage by applyStageLighting)
             fogMaterial.alpha = 0.99;
             fogMaterial.backFaceCulling = false;
             fogMaterial.alphaMode = BABYLON.Engine.ALPHA_COMBINE;
@@ -15456,6 +15694,231 @@
             // Store references for debugging
             window.fogCuts = fogCuts;
             window.fogMaterial = fogMaterial;
+
+            // ============================================================
+            // STAGE LIGHTING — the core stages are INSIDE the enemy fortress: darker, purple and shadowy,
+            // lit by warm outside light pouring in through the breach on the attacker's side. The sun
+            // swings round to come in low through that gate, the fill goes dim purple, the fog deepens
+            // to purple, the painted courtyard dims, and a warm spill of light + a few faint dusty shafts
+            // fan across the floor from the breach. Every other stage keeps the outdoor lighting it
+            // booted with. Applied by applyStageGround (while the stage transition is black).
+            // ============================================================
+            (function stageLighting() {
+                const sun = window.sunLight;
+                const amb = scene.getLightByName('ambient');
+                const ip = scene.imageProcessingConfiguration;
+                const OUT = {
+                    sunDir: sun.direction.clone(), sunI: sun.intensity, sunCol: sun.diffuse.clone(),
+                    ambI: amb.intensity, ambCol: amb.diffuse.clone(), ambGround: amb.groundColor.clone(),
+                    exposure: ip.exposure, fogOpacity: 0.45,
+                    backdrop: window.backdropLayer ? window.backdropLayer.color.clone() : null,
+                };
+                const CORE = {
+                    sunI: 1.6, sunCol: new BABYLON.Color3(1.0, 0.8, 0.52),           // warm daylight through the gate
+                    ambI: 0.46, ambCol: new BABYLON.Color3(0.5, 0.4, 0.64), ambGround: new BABYLON.Color3(0.2, 0.15, 0.26),
+                    exposure: 1.08, fogOpacity: 0.48, fog: new BABYLON.Color3(0.22, 0.14, 0.32),
+                    backdrop: new BABYLON.Color4(1.18, 1.14, 1.12, 1),   // lift the dark interior painting a touch
+                };
+                // The relic's own light: one of the zero-intensity pad lights (see LIGHT_CAP) is borrowed, so the
+                // light count never changes. Raised priority keeps it ahead of transient spell lights.
+                const jarLight = scene.getLightByName('lightSlotPad0');
+
+                // Light spill: a warm fan of light on the floor, widening from the breach into the lane.
+                const spillTex = new BABYLON.DynamicTexture('gateSpillTex', { width: 256, height: 256 }, scene, false);
+                {
+                    const g = spillTex.getContext();
+                    g.fillStyle = 'black'; g.fillRect(0, 0, 256, 256);
+                    // u (x) runs away from the gate; the fan widens with distance and fades out.
+                    for (let x = 0; x < 256; x++) {
+                        const t = x / 255;
+                        const half = 118 - t * 18;                   // lights the full lane width near the gate
+                        const a = Math.pow(1 - t, 1.25) * Math.min(1, t * 10);
+                        const grd = g.createLinearGradient(0, 128 - half, 0, 128 + half);
+                        grd.addColorStop(0, 'rgba(255,255,255,0)');
+                        grd.addColorStop(0.5, `rgba(255,255,255,${a.toFixed(3)})`);
+                        grd.addColorStop(1, 'rgba(255,255,255,0)');
+                        g.fillStyle = grd; g.fillRect(x, 128 - half, 1, half * 2);
+                    }
+                    spillTex.update();
+                }
+                const spillMat = new BABYLON.StandardMaterial('gateSpillMat', scene);
+                spillMat.disableLighting = true;
+                spillMat.diffuseColor = BABYLON.Color3.Black();
+                spillMat.emissiveColor = new BABYLON.Color3(1.0, 0.74, 0.4);
+                spillMat.opacityTexture = spillTex; spillTex.getAlphaFromRGB = true;
+                spillMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
+                spillMat.alpha = 1.0;
+                spillMat.fogEnabled = false;
+                // Matches the painted light fan: from the screen edge past the gate, across ~40% of the lane.
+                const SPILL_W = 20;
+                const spill = BABYLON.MeshBuilder.CreateGround('gateSpill', { width: SPILL_W, height: tableDepth }, scene);
+                spill.material = spillMat;
+                // Group 1 with the wizards + fog (depth-tested), NOT group 2: group 2 starts with a cleared depth
+                // buffer, so floor light/shadow there painted OVER the wizards standing in it.
+                spill.renderingGroupId = 1;
+                spill.isPickable = false;
+                spill.setEnabled(false);
+
+                // Dusty shafts: tall soft planes facing the camera, leaning in from the gate.
+                const shaftTex = new BABYLON.DynamicTexture('gateShaftTex', { width: 64, height: 256 }, scene, false);
+                {
+                    const g = shaftTex.getContext();
+                    g.fillStyle = 'black'; g.fillRect(0, 0, 64, 256);
+                    for (let y = 0; y < 256; y++) {
+                        const t = y / 255;
+                        const a = Math.sin(Math.PI * t) * (0.4 + 0.6 * (1 - t));   // brighter toward the top (the gate)
+                        const grd = g.createLinearGradient(0, 0, 64, 0);
+                        grd.addColorStop(0, 'rgba(255,255,255,0)');
+                        grd.addColorStop(0.5, `rgba(255,255,255,${a.toFixed(3)})`);
+                        grd.addColorStop(1, 'rgba(255,255,255,0)');
+                        g.fillStyle = grd; g.fillRect(0, y, 64, 1);
+                    }
+                    shaftTex.update();
+                }
+                const shaftMat = new BABYLON.StandardMaterial('gateShaftMat', scene);
+                shaftMat.disableLighting = true;
+                shaftMat.diffuseColor = BABYLON.Color3.Black();
+                shaftMat.emissiveColor = new BABYLON.Color3(1.0, 0.8, 0.5);
+                shaftMat.opacityTexture = shaftTex; shaftTex.getAlphaFromRGB = true;
+                shaftMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
+                shaftMat.alpha = 0.28;
+                shaftMat.backFaceCulling = false;
+                shaftMat.fogEnabled = false;
+                const shafts = [[-4.2, 1.6, 1.0], [0.4, 2.2, 1.0], [4.4, 1.3, 0.8]].map(([z, w, k], i) => {
+                    const p = BABYLON.MeshBuilder.CreatePlane('gateShaft' + i, { width: w, height: 9 }, scene);
+                    p.material = shaftMat;
+                    p.renderingGroupId = 2;
+                    p.isPickable = false;
+                    p.setEnabled(false);
+                    p._z = z; p._k = k;
+                    return p;
+                });
+
+                // side = the ATTACKER's end ('left' or 'right'), where the breach is.
+                const placeLight = (side) => {
+                    const sgn = side === 'left' ? -1 : 1;
+                    const gateX = sgn * (tableWidth / 2);
+                    spill.position.set(gateX + sgn * 7 - sgn * SPILL_W / 2, 0.32, 0);   // starts ~7 past the gate (screen edge)
+                    spill.rotation.y = side === 'left' ? 0 : Math.PI;   // u runs away from the gate
+                    shafts.forEach((p, i) => {
+                        p.position.set(gateX - sgn * (2.6 + i * 0.6), 3.4, p._z);
+                        p.rotation.z = sgn * 0.62;                       // top leans back toward the gate
+                        p.scaling.y = p._k;
+                    });
+                };
+
+                // LONG SHADOWS — the gate light is low and behind the attacker, so the ram and the wizards
+                // throw long shadows down the hall. No shadow maps in this game (PS1 look): soft stretched
+                // decals instead, like the blob shadows. Drawn over the light spill so they cut it.
+                // Alpha lives in the texture's own alpha channel (black + alpha), like the blob shadows —
+                // an opacityTexture mask here only ever brightened (it blended additively), never darkened.
+                const wedgeTex = new BABYLON.DynamicTexture('longShadowWedgeTex', { width: 256, height: 128 }, scene, false);
+                {
+                    const g = wedgeTex.getContext();
+                    g.clearRect(0, 0, 256, 128);
+                    for (let x = 0; x < 256; x++) {                  // u runs away from the caster
+                        const t = x / 255, half = 58 - t * 26, a = Math.pow(1 - t, 1.3);
+                        const grd = g.createLinearGradient(0, 64 - half, 0, 64 + half);
+                        grd.addColorStop(0, 'rgba(0,0,0,0)'); grd.addColorStop(0.2, `rgba(0,0,0,${a.toFixed(3)})`);
+                        grd.addColorStop(0.8, `rgba(0,0,0,${a.toFixed(3)})`); grd.addColorStop(1, 'rgba(0,0,0,0)');
+                        g.fillStyle = grd; g.fillRect(x, 64 - half, 1, half * 2);
+                    }
+                    wedgeTex.hasAlpha = true;
+                    wedgeTex.update();
+                }
+                const makeShadowMat = (name, alpha) => {
+                    const m = new BABYLON.StandardMaterial(name, scene);
+                    m.disableLighting = true;
+                    m.diffuseColor = BABYLON.Color3.Black(); m.specularColor = BABYLON.Color3.Black();
+                    m.emissiveColor = new BABYLON.Color3(0.02, 0.0, 0.04);
+                    m.diffuseTexture = wedgeTex; m.useAlphaFromDiffuseTexture = true;
+                    m.alpha = alpha; m.fogEnabled = false;
+                    return m;
+                };
+                spill.alphaIndex = 1;                                 // spill first, shadows over it
+                const ramShadow = BABYLON.MeshBuilder.CreateGround('ramLongShadow', { width: 1, height: 6.2 }, scene);
+                ramShadow.material = makeShadowMat('ramLongShadowMat', 0.72);
+                ramShadow.renderingGroupId = 1; ramShadow.alphaIndex = 2; ramShadow.isPickable = false; ramShadow.setEnabled(false);
+                const wizShadowMat = makeShadowMat('wizLongShadowMat', 1);
+                const wizShadows = [0, 1].map(i => {
+                    const m = BABYLON.MeshBuilder.CreateGround('wizLongShadow' + i, { width: 1, height: 1.0 }, scene);
+                    m.material = wizShadowMat.clone('wizLongShadowMat' + i);
+                    m.renderingGroupId = 1; m.alphaIndex = 2; m.isPickable = false; m.setEnabled(false);
+                    return m;
+                });
+                let longShadow = null;                                // { dir: +1|-1, gateX, attacker }
+                scene.onBeforeRenderObservable.add(() => {
+                    if (!longShadow) return;
+                    const { dir, gateX, attacker } = longShadow;
+                    // Ram: long when standing, short once it's a collapsed wreck.
+                    const info = window.getStructInfo ? window.getStructInfo(attacker) : null;
+                    const ramUp = info && info.kind === 'ram';
+                    ramShadow.setEnabled(!!ramUp);
+                    if (ramUp) {
+                        const L = info.shown === 3 ? 4 : 10;
+                        ramShadow.scaling.x = L;
+                        ramShadow.position.set(gateX + dir * (L / 2 - 0.6), 0.34, 0);
+                        ramShadow.rotation.y = dir > 0 ? 0 : Math.PI;
+                    }
+                    // Wizards: stretched shadows pointing away from the gate, fading deeper into the hall.
+                    const blobs = window.blobShadows || [];
+                    wizShadows.forEach((m, i) => {
+                        const b = blobs[i];
+                        const on = !!(b && b.isVisible);
+                        m.setEnabled(on);
+                        if (!on) return;
+                        const near = Math.max(0, 1 - Math.abs(b.position.x - gateX) / (tableWidth * 0.75));
+                        const L = 2.2 + 3.8 * near;
+                        m.scaling.x = L;
+                        m.position.set(b.position.x + dir * (L / 2 - 0.3), 0.35, b.position.z);
+                        m.rotation.y = dir > 0 ? 0 : Math.PI;
+                        m.material.alpha = 0.18 + 0.5 * near;
+                    });
+                });
+
+                window.applyStageLighting = (kind, defender) => {
+                    const core = kind === 'core';
+                    const c = core ? CORE : OUT;
+                    if (core) {
+                        const sgn = defender === 'right' ? 1 : -1;       // light travels away from the attacker's gate
+                        sun.direction = new BABYLON.Vector3(sgn, -0.62, 0.34).normalize();
+                        placeLight(defender === 'right' ? 'left' : 'right');
+                    } else {
+                        sun.direction = OUT.sunDir.clone();
+                    }
+                    sun.intensity = c.sunI; sun.diffuse = c.sunCol.clone();
+                    amb.intensity = c.ambI; amb.diffuse = c.ambCol.clone(); amb.groundColor = c.ambGround.clone();
+                    ip.exposure = c.exposure;
+                    fogMaterial.setFloat('fogOpacity', c.fogOpacity);
+                    // Fog clears near the breach; the relic glows into the fog and lights its end of the hall.
+                    const defSgn = defender === 'right' ? 1 : -1;
+                    fogMaterial.setVector3('gateClear', core ? new BABYLON.Vector3(-defSgn * (tableWidth / 2), 0.85, 11) : new BABYLON.Vector3(0, 0, 1));
+                    const juice = defender === 'left' ? new BABYLON.Color3(0.25, 0.5, 1.0) : new BABYLON.Color3(1.0, 0.3, 0.2);
+                    // Placed on the lane just in front of the jar: the fog fades out at the lane ends, so a glow
+                    // point AT the jar (x≈±14) lit nothing visible.
+                    window._coreGlow = core ? { x: defSgn * 11.8, z: 0.4, intensity: 3.4, type: defender === 'left' ? 2.0 : 3.0 } : null;
+                    if (jarLight) {
+                        jarLight.position = core ? new BABYLON.Vector3(defSgn * 15.5, 4.5, 0.5) : new BABYLON.Vector3(0, -500, 0);
+                        jarLight.diffuse = juice;
+                        jarLight.specular = BABYLON.Color3.Black();
+                        jarLight.intensity = core ? 1.6 : 0;
+                        jarLight.range = core ? 16 : 0.01;
+                        jarLight.renderPriority = core ? 5 : -10;
+                    }
+                    window._stageFogColor = core ? CORE.fog : null;
+                    if (window.backdropLayer && OUT.backdrop) window.backdropLayer.color = (core ? CORE.backdrop : OUT.backdrop).clone();
+                    spill.setEnabled(core);
+                    shafts.forEach(p => p.setEnabled(false));   // the painted beams carry this now (kept for tuning)
+                    if (core) {
+                        const attacker = defender === 'right' ? 'left' : 'right';
+                        longShadow = { dir: attacker === 'left' ? 1 : -1, gateX: (attacker === 'left' ? -1 : 1) * (tableWidth / 2), attacker };
+                    } else {
+                        longShadow = null;
+                        ramShadow.setEnabled(false);
+                        wizShadows.forEach(m => m.setEnabled(false));
+                    }
+                };
+            })();
             window.fogPlane = fogPlane;
             window.testFogCut = () => {
                 // Add a test cut at origin
@@ -15566,6 +16029,7 @@
                     lightArray.push(x, z, intensity, type);
                     lightCount++;
                 };
+                if (window._coreGlow) { const cg = window._coreGlow; pushLight(cg.x, cg.z, cg.intensity, cg.type); }   // the core relic's glow
                 for (const fl of (window._fogFlashes || [])) {
                     if (fl.intensity > 0.05) pushLight(fl.x, fl.z, fl.intensity, fl.type !== undefined ? fl.type : 4.0);   // 4 = lightning
                 }
@@ -16277,6 +16741,7 @@
             if (window.ToneSFX) {
                 ToneSFX.castingStop();
                 ToneSFX.musicStop();
+                ToneSFX.combatStop(0.6);
             }
             // Full Overdrive reset (dim/meshes/lights/jitter/audio) — supersedes the plain roar backstop
             if (window.resetOverdrivePresentation) window.resetOverdrivePresentation();
@@ -16439,6 +16904,7 @@
                 // it unless it was already hidden (debug Hide HUD / capture stage).
                 this._hudWasHidden = !!window.hudHidden;
                 if (window.setHudHidden) window.setHudHidden(true);
+                if (window.ToneSFX) ToneSFX.combatDuck(true);
                 const ov = document.getElementById('pauseOverlay');
                 if (ov) ov.style.display = 'flex';
                 if (window.setGamepadPrompts) setGamepadPrompts([{ action: 'navigate' }, { action: 'confirm' }, { action: 'back' }]);
@@ -16468,6 +16934,7 @@
                 const ov = document.getElementById('pauseOverlay');
                 if (ov) ov.style.display = 'none';
                 if (!this._hudWasHidden && window.setHudHidden) window.setHudHidden(false);
+                if (window.ToneSFX) ToneSFX.combatDuck(false);
             },
             enterGameOver(r) { showVictoryScreen(r === 'victory'); },
             enterLobby()     { if (window.showMultiplayerLobby) showMultiplayerLobby(); },
@@ -16990,6 +17457,7 @@
             if (window.ToneSFX) {
                 ToneSFX.castingStop();
                 ToneSFX.musicStop();
+                ToneSFX.combatStop(0.6);
             }
             // Full Overdrive reset (dim/meshes/lights/jitter/audio) — supersedes the plain roar backstop
             if (window.resetOverdrivePresentation) window.resetOverdrivePresentation();
@@ -22210,6 +22678,7 @@
 
             // Start beta brainwave entrainment for gameplay focus
             if (window.ToneSFX) ToneSFX.gameplayStart();
+            if (window.ToneSFX) ToneSFX.combatStart();   // combat loop (keeps playing if already on)
 
             // Reset combatant state with isStart=true (starts with 1 mana)
             const combatantsToReset = getAllCombatants();
@@ -22320,6 +22789,7 @@
 
         // Show celebratory victory/defeat screen
         function showVictoryScreen(isVictory) {
+            if (window.ToneSFX) ToneSFX.combatStop(2.0);   // the fight's over: let the combat loop fade out
             // Clear any stale de-dup guard from a prior match so Continue can never be permanently
             // dead (a partial/aborted previous return-to-menu must not block this one).
             _returningToMenu = false;
