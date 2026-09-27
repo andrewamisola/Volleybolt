@@ -76,6 +76,15 @@
 //     dbg.determinismDoubles(180, 99999) -> 6e043c14
 //     dbg.aiDeterminismDoubles(50, 42)   -> 0e029492
 //     dbg.aiDeterminism(50, 42)          -> e6fdfae9 (confirmed unchanged)
+//   STALE — oracle environment (2026-09-26), owner re-pins the two doubles STATE folds. No sim
+//     change: both 2026-07-14 doubles pins were recorded AFTER red won round 1. The oracle's
+//     mana reset reads territorial getMaxMana (live currentStage) and hashGameState mixes both
+//     scores, and neither was pinned. Injecting stage 1 / score 0-1 into a fresh match reproduces
+//     47424ad5 + 6e043c14 exactly (same for the 07-13 singles pins 5d4dfc6/3aa202de: stage 0 /
+//     score 0-2). Both oracles now pin currentStage=2 and scores 0-0 (restored after), so the
+//     fold no longer depends on match progress. Fresh-match candidates, identical at cf9e305 and
+//     after the pin fix: determinismDoubles(180,12345) -> c736299e, (180,99999) -> 85eecc3f.
+//     Singles a90063b5/5e5eca1b and both AI folds do not move (already fresh-match values).
 //   HEADER-ONLY NOTE (ai-parry-buckets branch, 2026-07-13, header-only edit — this file's
 //   sim code is untouched, decideAI lives in index.html): decideAI's parry gate now hashes
 //   each threat's id + profile.slotSalt into a stable early/perfect/late timing bucket

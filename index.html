@@ -1146,6 +1146,9 @@
         let lastConfirmedRemoteFrame = -1;
         let highestRemoteInputFrame = -1; // Highest remote INPUT frame received (for time-sync). Remote's est. frame ~= this - INPUT_DELAY.
         let remoteCurrentFrame = -1;   // DEFECT 2: the peer's ACTUAL currentFrame, piggybacked on each INPUT msg (data.senderFrame). Gives a true frame gap instead of a latency-lagged estimate.
+        let remoteReportedAdv = null;  // 1v1 time sync: the peer's raw advantage (its currentFrame - its remoteCurrentFrame), piggybacked on INPUT as data.adv. null = peer doesn't send it (older build) -> sync off.
+        let timeSyncCooldown = 0;      // ticks until the next time-sync skip is allowed
+        let timeSyncSkewAvg = 0;       // smoothed skew (frames we're ahead of the peer)
         let gameStateHistory = [];     // State snapshots for rollback
         // LATENCY-TUNING VALUES — "prioritize YOUR OWN input" config (a precise paddle game must not
         // feel input-delayed). Philosophy: near-zero local input delay + lean on PREDICTION+ROLLBACK
@@ -1169,6 +1172,17 @@
         const INPUT_DELAY = 1;          // 1 frame (~16ms) — essentially instant; rely on rollback, not delay
         const MAX_FRAME_ADVANTAGE = 16; // stall point UNCHANGED (feel is identical); now sits comfortably
                                         //   below the 30-frame window per the GGPO margin rule.
+        // 1v1 TIME SYNC (GGPO-style). The hard stall above only fires past 16 frames, so any smaller
+        // skew — e.g. the start barrier lets the joiner begin a few frames ahead — persisted the whole
+        // match, forcing the ahead peer to predict (and roll back) on every opponent input. Each peer
+        // piggybacks its raw advantage (currentFrame - remoteCurrentFrame, which includes one-way
+        // latency); skew = (localRaw - remoteRaw) / 2 cancels the latency and leaves the true offset.
+        // The ahead peer drops at most one tick per TIME_SYNC_SKIP_INTERVAL until |skew| < DEADZONE.
+        // The raw skew jitters ~±1 frame with packet timing, so the trigger reads a smoothed average
+        // (and subtracts the 1 frame each skip removes, so the average's lag can't overshoot).
+        const TIME_SYNC_DEADZONE = 1;        // frames of SMOOTHED skew before we start dropping ticks
+        const TIME_SYNC_SMOOTHING = 0.1;     // EMA weight per tick (~10-tick time constant)
+        const TIME_SYNC_SKIP_INTERVAL = 6;   // at most ~10 dropped ticks/s — gradual, never a visible hitch
         const TICK_RATE = 60;
         const TICK_MS = 1000 / TICK_RATE;
         let netAccumulator = 0;        // For fixed timestep
@@ -19364,6 +19378,9 @@
             lastConfirmedRemoteFrame = -1;
             highestRemoteInputFrame = -1;
             remoteCurrentFrame = -1;
+            remoteReportedAdv = null;
+            timeSyncCooldown = 0;
+            timeSyncSkewAvg = 0;
             gameStateHistory = [];
             nextProjectileId = 0;
             netAccumulator = 0;
@@ -19426,7 +19443,7 @@
             // Reset netcode test harness (mirror startMultiplayerMatch). Not sim state and the loop
             // is held below, so ordering vs the intro is irrelevant — done up front as before.
             mpSync.local = {}; mpSync.remote = {}; mpSync.localGroups = {}; mpSync.detailSent = {}; mpSync.lastOkFrame = -1;
-            mpSync.desync = null; mpSync.mismatches = 0; mpSync.badStreak = 0; mpSync.rollbacks = 0; mpSync.lastRollback = 0;
+            mpSync.desync = null; mpSync.mismatches = 0; mpSync.badStreak = 0; mpSync.rollbacks = 0; mpSync.lastRollback = 0; mpSync.timeSyncSkips = 0;
             mpDesyncAborted = false;
             toggleMpOverlay(!!window.DEV_MODE);
 
@@ -20738,7 +20755,7 @@
         // Each peer periodically broadcasts the hash of a settled (past-rollback) frame; the
         // other compares it to its own hash for that exact frame number and flags divergence.
         // ============================================================
-        const mpSync = { local: {}, remote: {}, localGroups: {}, detailSent: {}, lastOkFrame: -1, desync: null, mismatches: 0, badStreak: 0, rollbacks: 0, lastRollback: 0 };
+        const mpSync = { local: {}, remote: {}, localGroups: {}, detailSent: {}, lastOkFrame: -1, desync: null, mismatches: 0, badStreak: 0, rollbacks: 0, lastRollback: 0, timeSyncSkips: 0 };
         const MP_SYNC_INTERVAL = 20;        // broadcast a hash every N frames (~0.33s)
         const MP_SYNC_LAG = MAX_ROLLBACK_FRAMES + 2;   // hash a frame old enough to never roll back
 
@@ -21082,7 +21099,7 @@
                 updateHealthBars();
                 return c.side + ' tower ' + c.towerHealth + '/' + stageMaxHealth(c.side);
             },
-            state() { return { mode: gameMode, isHost, localSide: (typeof getLocalSide === 'function' ? getLocalSide() : '?'), frame: currentFrame, confirmed: lastConfirmedRemoteFrame, lag: currentFrame - lastConfirmedRemoteFrame, ping: netPing, rollbacks: mpSync.rollbacks, lastOkFrame: mpSync.lastOkFrame, mismatches: mpSync.mismatches, desync: mpSync.desync, projectiles: projectiles ? projectiles.length : 0 }; },
+            state() { return { mode: gameMode, isHost, localSide: (typeof getLocalSide === 'function' ? getLocalSide() : '?'), frame: currentFrame, confirmed: lastConfirmedRemoteFrame, lag: currentFrame - lastConfirmedRemoteFrame, ping: netPing, rollbacks: mpSync.rollbacks, timeSyncSkips: mpSync.timeSyncSkips, remoteAdv: remoteReportedAdv, lastOkFrame: mpSync.lastOkFrame, mismatches: mpSync.mismatches, desync: mpSync.desync, projectiles: projectiles ? projectiles.length : 0 }; },
             hash() { return (hashGameState() >>> 0).toString(16); },
             sync() {
                 const base = mpSync.desync
@@ -21091,7 +21108,7 @@
                 // W3: rollback + doubles-frontier telemetry, tacked on regardless of mode — frontier/
                 // specDepth/ackedInput stay at their doubles-only defaults (-1/currentFrame+1/-1) in 1v1.
                 const specDepth = currentFrame - (doublesConfirmedFrontier + 1);
-                return base + ' | rollbacks ' + mpSync.rollbacks + ' (last ' + mpSync.lastRollback + ') frontier ' + doublesConfirmedFrontier + ' specDepth ' + specDepth + ' ackedInput ' + doublesAckedInputFrame;
+                return base + ' | rollbacks ' + mpSync.rollbacks + ' (last ' + mpSync.lastRollback + ') timeSyncSkips ' + mpSync.timeSyncSkips + ' frontier ' + doublesConfirmedFrontier + ' specDepth ' + specDepth + ' ackedInput ' + doublesAckedInputFrame;
             },
             // One-paste bug report: everything needed to act on a stranger's Discord report.
             // Babylon objects (mesh/particles/paddle) are stripped — they're circular and huge.
@@ -21103,7 +21120,7 @@
                     mode: gameMode, isHost, frame: currentFrame, ping: netPing,
                     sync: { lastOkFrame: mpSync.lastOkFrame, mismatches: mpSync.mismatches,
                             badStreak: mpSync.badStreak, aborted: mpDesyncAborted,
-                            desync: mpSync.desync, rollbacks: mpSync.rollbacks, lastRollback: mpSync.lastRollback,
+                            desync: mpSync.desync, rollbacks: mpSync.rollbacks, lastRollback: mpSync.lastRollback, timeSyncSkips: mpSync.timeSyncSkips,
                             // Online doubles (W2): star topology state. `guests` is host-only
                             // (null for a guest/1v1 client — distinct from "host with 0 guests" -> []).
                             netMode: netMode, mySlot: mySlot,
@@ -21178,6 +21195,11 @@
                 try {
                     isResimulating = true;      // suppress sounds / floating text
                     netRngSeed = seed;
+                    // Pin match progress to fresh-match values: getMaxMana (the mana reset below) is
+                    // territorial on currentStage, and hashGameState mixes both scores directly — so
+                    // without this, a run after any round ended folds differently. restoreGameState
+                    // puts the live values back.
+                    currentStage = 2; playerScore = 0; aiScore = 0;
                     for (const c of [combatants.left, combatants.right]) {
                         c.mana = getMaxMana(c.side); c.manaRegen = 0; c.freezeTime = 0;
                         c.casting = null; c.castProgress = 0; c.castTime = 0;
@@ -21248,6 +21270,7 @@
                 try {
                     isResimulating = true;
                     netRngSeed = seed;
+                    currentStage = 2; playerScore = 0; aiScore = 0;   // fresh-match progress (see determinism())
                     for (const c of getAllCombatants()) {
                         c.mana = getMaxMana(c.side); c.manaRegen = 0; c.freezeTime = 0;
                         c.casting = null; c.castProgress = 0; c.castTime = 0;
@@ -21681,6 +21704,9 @@
             lastConfirmedRemoteFrame = -1;
             highestRemoteInputFrame = -1;
             remoteCurrentFrame = -1;
+            remoteReportedAdv = null;
+            timeSyncCooldown = 0;
+            timeSyncSkewAvg = 0;
             gameStateHistory = [];
             nextProjectileId = 0;
             netAccumulator = 0;
@@ -21728,7 +21754,7 @@
             // Reset netcode test harness; telemetry overlay auto-shows in dev mode only
             // (ship-clean — players see no debug UI; ?dev + F2 or dbg.overlay() brings it back).
             mpSync.local = {}; mpSync.remote = {}; mpSync.localGroups = {}; mpSync.detailSent = {}; mpSync.lastOkFrame = -1;
-            mpSync.desync = null; mpSync.mismatches = 0; mpSync.badStreak = 0; mpSync.rollbacks = 0; mpSync.lastRollback = 0;
+            mpSync.desync = null; mpSync.mismatches = 0; mpSync.badStreak = 0; mpSync.rollbacks = 0; mpSync.lastRollback = 0; mpSync.timeSyncSkips = 0;
             mpDesyncAborted = false;
             toggleMpOverlay(!!window.DEV_MODE);
 
@@ -21804,6 +21830,9 @@
             // pacing-only — never read inside simulateNetworkFrame.
             if (typeof data.senderFrame === 'number' && data.senderFrame > remoteCurrentFrame) {
                 remoteCurrentFrame = data.senderFrame;
+                // Time sync: take adv only from the NEWEST packet (unordered channel), so it stays
+                // paired with the senderFrame it was measured at.
+                if (typeof data.adv === 'number') remoteReportedAdv = data.adv;
             }
 
             // Store the newest input
@@ -21855,6 +21884,9 @@
                     // gap for the stall (frame is the DELAYED input frame = currentFrame + INPUT_DELAY;
                     // senderFrame is where our sim actually is). Pacing metadata only.
                     senderFrame: currentFrame,
+                    // Time sync: our raw advantage as we see it (includes one-way latency; the peer
+                    // cancels that out against its own). Pacing metadata only; null until we've heard it.
+                    adv: remoteCurrentFrame >= 0 ? currentFrame - remoteCurrentFrame : null,
                     moveDir: input.moveDir,
                     parry: input.parry,
                     fireball: input.fireball,
@@ -22039,6 +22071,7 @@
                     casting: combatants.left ? combatants.left.casting : null,
                     castProgress: combatants.left ? combatants.left.castProgress : 0,
                     castTime: combatants.left ? combatants.left.castTime : 0,
+                    pendingManaCost: combatants.left ? (combatants.left.pendingManaCost || 0) : 0,   // debited at cast COMPLETION (completeCasting) — must roll back with casting/castProgress
                     cooldowns: combatants.left ? { ...combatants.left.cooldowns } : { fireball: 0, frostbolt: 0 },
                     juice: combatants.left ? (combatants.left.juice || 0) : 0,
                     juiceActive: combatants.left ? (combatants.left.juiceActive || false) : false,
@@ -22058,6 +22091,7 @@
                     casting: combatants.right ? combatants.right.casting : null,
                     castProgress: combatants.right ? combatants.right.castProgress : 0,
                     castTime: combatants.right ? combatants.right.castTime : 0,
+                    pendingManaCost: combatants.right ? (combatants.right.pendingManaCost || 0) : 0,
                     cooldowns: combatants.right ? { ...combatants.right.cooldowns } : { fireball: 0, frostbolt: 0 },
                     juice: combatants.right ? (combatants.right.juice || 0) : 0,
                     juiceActive: combatants.right ? (combatants.right.juiceActive || false) : false,
@@ -22080,6 +22114,7 @@
                     casting: combatants.leftBack.casting,
                     castProgress: combatants.leftBack.castProgress,
                     castTime: combatants.leftBack.castTime,
+                    pendingManaCost: combatants.leftBack.pendingManaCost || 0,
                     cooldowns: { ...combatants.leftBack.cooldowns },
                     juice: combatants.leftBack.juice || 0,
                     juiceActive: combatants.leftBack.juiceActive || false,
@@ -22097,6 +22132,7 @@
                     casting: combatants.rightBack.casting,
                     castProgress: combatants.rightBack.castProgress,
                     castTime: combatants.rightBack.castTime,
+                    pendingManaCost: combatants.rightBack.pendingManaCost || 0,
                     cooldowns: { ...combatants.rightBack.cooldowns },
                     juice: combatants.rightBack.juice || 0,
                     juiceActive: combatants.rightBack.juiceActive || false,
@@ -22185,6 +22221,7 @@
                 combatants.left.casting = state.left.casting;
                 combatants.left.castProgress = state.left.castProgress;
                 combatants.left.castTime = state.left.castTime;
+                combatants.left.pendingManaCost = state.left.pendingManaCost || 0;
                 combatants.left.cooldowns = { ...state.left.cooldowns };
                 combatants.left.juice = state.left.juice || 0;
                 combatants.left.juiceActive = state.left.juiceActive || false;
@@ -22204,6 +22241,7 @@
                 combatants.right.casting = state.right.casting;
                 combatants.right.castProgress = state.right.castProgress;
                 combatants.right.castTime = state.right.castTime;
+                combatants.right.pendingManaCost = state.right.pendingManaCost || 0;
                 combatants.right.cooldowns = { ...state.right.cooldowns };
                 combatants.right.juice = state.right.juice || 0;
                 combatants.right.juiceActive = state.right.juiceActive || false;
@@ -22224,6 +22262,7 @@
                 combatants.leftBack.casting = state.leftBack.casting;
                 combatants.leftBack.castProgress = state.leftBack.castProgress;
                 combatants.leftBack.castTime = state.leftBack.castTime;
+                combatants.leftBack.pendingManaCost = state.leftBack.pendingManaCost || 0;
                 combatants.leftBack.cooldowns = { ...state.leftBack.cooldowns };
                 combatants.leftBack.juice = state.leftBack.juice || 0;
                 combatants.leftBack.juiceActive = state.leftBack.juiceActive || false;
@@ -22242,6 +22281,7 @@
                 combatants.rightBack.casting = state.rightBack.casting;
                 combatants.rightBack.castProgress = state.rightBack.castProgress;
                 combatants.rightBack.castTime = state.rightBack.castTime;
+                combatants.rightBack.pendingManaCost = state.rightBack.pendingManaCost || 0;
                 combatants.rightBack.cooldowns = { ...state.rightBack.cooldowns };
                 combatants.rightBack.juice = state.rightBack.juice || 0;
                 combatants.rightBack.juiceActive = state.rightBack.juiceActive || false;
@@ -22344,6 +22384,9 @@
                     existing.isParried = sp.isParried;
                     existing.parriedBy = sp.parriedBy;
                     existing.bounceCount = sp.bounceCount;
+                    // hitboxRadius is a pure function of volleyCount, but only recomputed on a hit —
+                    // re-derive it so a volley on the abandoned timeline can't leave a stale (bigger) hitbox.
+                    if (existing.type === 'fireball' && window.updateFireballScale) window.updateFireballScale(existing);
                 } else {
                     // Need to create this projectile (shouldn't happen often during rollback)
                     // For now, just spawn it at the state position
@@ -22367,9 +22410,18 @@
                         if (newProj.mesh) {
                             newProj.mesh.position.y = sp.y;
                         }
+                        if (newProj.type === 'fireball' && window.updateFireballScale) window.updateFireballScale(newProj);
                     }
                 }
             }
+
+            // Re-spawned projectiles were appended at the END; restore the snapshot's array order.
+            // The sim's collision passes and hashGameState both iterate `projectiles` in order, so a
+            // reordered list folds and resolves collisions differently from the peer. (In-place sort:
+            // buildSimCtx and every other holder keep the same array reference.)
+            const orderById = {};
+            stateProjectiles.forEach((sp, i) => { orderById[sp.id] = i; });
+            projectiles.sort((a, b) => orderById[a.id] - orderById[b.id]);
         }
 
         // Get default input (no buttons pressed)
@@ -22701,6 +22753,23 @@
                 if (frameAdvantage > MAX_FRAME_ADVANTAGE) {
                     netAccumulator = 0; // drop backlog so we resume at 1x once the remote catches up (avoids a burst)
                     break;
+                }
+
+                // Time sync (see TIME_SYNC_DEADZONE): if we're ahead of the peer by >= 1 true frame,
+                // consume this tick's time without stepping so our clock slips one frame toward theirs.
+                // Pure local pacing like the stall above — both peers still simulate identical frames.
+                if (remoteReportedAdv !== null) {
+                    const skew = (frameAdvantage - remoteReportedAdv) / 2;
+                    timeSyncSkewAvg += (skew - timeSyncSkewAvg) * TIME_SYNC_SMOOTHING;
+                    if (timeSyncCooldown > 0) {
+                        timeSyncCooldown--;
+                    } else if (timeSyncSkewAvg >= TIME_SYNC_DEADZONE) {
+                        timeSyncCooldown = TIME_SYNC_SKIP_INTERVAL;
+                        timeSyncSkewAvg -= 1;
+                        mpSync.timeSyncSkips++;
+                        netAccumulator -= TICK_MS;
+                        continue;
+                    }
                 }
                 runNetworkFrame();
                 netAccumulator -= TICK_MS;
@@ -23135,7 +23204,10 @@
             getMaxMana: (side) => getMaxMana(side),
             isRooted: (c) => combatantIsRooted(c),   // vestigial: cast-rooting was replaced by cancel-on-move (sim cancelCastOnMove); kept for any legacy reader
             // FX/UI for a cast aborted by movement; the sim clears the authoritative cast state itself.
-            onCastCancelled: (c) => cancelCasting(c.side === 'left' ? 'player' : 'ai', true),
+            // Backs are skipped: cancelCasting resolves 'player'/'ai' to the FRONT (getCombatantLegacy),
+            // so a back moving mid-cast wiped its teammate's cast — on live frames only (this dep is
+            // !isResimulating-gated), which desynced online doubles whenever a rollback replayed it.
+            onCastCancelled: (c) => { if (c.position !== 'back') cancelCasting(c.side === 'left' ? 'player' : 'ai', true); },
             dealDamageToTower: (isPlayerTower, dmg, z) => dealDamageToTower(isPlayerTower, dmg, z),
             destroyProjectile: (p) => window.destroyProjectile(p),
             useShieldCharge: (c) => useShieldCharge(c),
