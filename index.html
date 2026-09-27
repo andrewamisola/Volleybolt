@@ -8852,7 +8852,12 @@
             const STAGE_RUNOFF = 30;
             const groundLength = tableWidth + 2 * STAGE_RUNOFF;
             const groundRatio = groundLength / tableWidth;
-            floorMat.diffuseTexture.uScale = 4 * groundRatio;
+            // A box's top face runs u ACROSS the lane (z) and v ALONG it (x), so the length tiling goes
+            // on v: 2 tiles per stage length, 1 across the depth (big, soft texels that sit with the
+            // painted backdrop's grass). Scaling u here instead stretched each grass tile ~43 units
+            // along the lane into horizontal streaks.
+            floorMat.diffuseTexture.uScale = 1;
+            floorMat.diffuseTexture.vScale = 2 * groundRatio;
             const table = BABYLON.MeshBuilder.CreateBox("arenaFloor", {
                 width: groundLength,
                 height: 0.3,
@@ -8945,136 +8950,22 @@
                 window.lanePath = lane;
             })();
 
-            // ============================================================
-            // JUNGLE / BRUSH PROPS - real low-poly foliage clumps that frame
-            // the lane along the grass flanks (storybook MOBA, not billboards).
-            // Placed along the far/near edges, kept short so they don't occlude
-            // the play area. Purely cosmetic (built once at scene setup).
-            // ============================================================
-            (function buildFoliage() {
-                const bushMats = [
-                    new BABYLON.StandardMaterial("bushMatA", scene),
-                    new BABYLON.StandardMaterial("bushMatB", scene),
-                    new BABYLON.StandardMaterial("bushMatC", scene)
-                ];
-                // Low-fi dappled leaf texture (shared, seamless) + a per-material tint so the
-                // three bush shades stay distinct while the texture adds storybook leaf detail.
-                const leafTex = new BABYLON.Texture("textures/bush_leaves.png?v=1", scene, false, true,
-                    BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
-                leafTex.anisotropicFilteringLevel = 4;
-                const tints = [[0.95, 1.0, 0.85], [0.72, 0.82, 0.6], [1.05, 1.05, 0.92]];
-                bushMats.forEach((m, i) => {
-                    m.diffuseTexture = leafTex;
-                    m.diffuseColor = new BABYLON.Color3(...tints[i]);
-                    m.specularColor = BABYLON.Color3.Black();
-                    m.emissiveColor = new BABYLON.Color3(0.05, 0.09, 0.04);  // tiny lift so shadowed bushes aren't black
-                });
+            // No lane-side bushes: they competed with the wizards for readability (a corner clump
+            // swallowed the red wizard's silhouette). The rails' baked ground shadows (see ARENA
+            // BORDER WALLS) give the lane edges their depth instead.
 
-                // Three hidden source icospheres — one per bush material. All bush blobs are
-                // InstancedMesh from these sources: same geometry, same material, no extra draw
-                // calls per instance. Instances inherit the source material so the shared leafTex
-                // wind-wobble UV animation applies automatically to every bush in the scene.
-                const bushSources = bushMats.map((mat, i) => {
-                    const src = BABYLON.MeshBuilder.CreateIcoSphere("bushSrc" + i,
-                        { radius: 1, subdivisions: 1 }, scene);
-                    src.material = mat;
-                    src.isPickable = false;
-                    src.receiveShadows = false;
-                    src.isVisible = false;   // hidden; instances render in its place
-                    return src;
-                });
-
-                // Hidden source plane for bush ground-shadow instances.  One instance is
-                // created per bush cluster inside makeBush; all share the static shadow
-                // material (getStaticShadowMaterial).  renderingGroupId 2: above fogPlane.
-                const bushShadowSrc = BABYLON.MeshBuilder.CreateGround("bushShadowSrc",
-                    { width: 1, height: 1 }, scene);
-                bushShadowSrc.material = getStaticShadowMaterial();
-                bushShadowSrc.isPickable = false;
-                bushShadowSrc.receiveShadows = false;
-                bushShadowSrc.renderingGroupId = 2;
-                bushShadowSrc.isVisible = false;   // hidden; instances render in its place
-
-                // Bushes are placed once at BUILD-TIME singles depth (tableDepth === SINGLES_DEPTH),
-                // but the arena floor/walls/bases stretch in Z for doubles (resizeStageForMode).
-                // Record each bush mesh's build-time Z here so resizeStageForMode can rescale them
-                // by the same depth/SINGLES_DEPTH ratio the floor uses (window.rebuildBushPositions
-                // below) — the bushes then track the court edges instead of sitting at the old
-                // singles-depth Z forever. Positions are RESTORED exactly at ratio 1 (singles).
-                const bushRepositionList = [];  // { mesh, baseZ }[]
-
-                // One bush clump = a few instanced blob spheres — no new geometry per blob
-                const makeBush = (x, z, scale) => {
-                    const blobs = 2 + Math.floor(Math.random() * 3);
-                    for (let i = 0; i < blobs; i++) {
-                        const r = (0.38 + Math.random() * 0.3) * scale;
-                        const matIdx = Math.floor(Math.random() * 3);
-                        const inst = bushSources[matIdx].createInstance("bushInst");
-                        inst.position.x = x + (Math.random() - 0.5) * 0.9 * scale;
-                        inst.position.z = z + (Math.random() - 0.5) * 0.7 * scale;
-                        inst.position.y = r * 0.62;
-                        // Source radius=1; scale XZ to r and Y to r*0.7 (matches original
-                        // CreateIcoSphere radius:r + blob.scaling.y=0.7 squash)
-                        inst.scaling.set(r, r * 0.7, r);
-                        inst.isPickable = false;
-                        inst.receiveShadows = false;
-                        bushRepositionList.push({ mesh: inst, baseZ: inst.position.z });
-                    }
-                    // Painted ground shadow under this bush cluster — one instance per
-                    // cluster, at the cluster centre (x,z).  Scaled to the cluster footprint.
-                    // Static geometry-wise (never re-scaled/rebuilt); Z DOES track the cluster
-                    // via rebuildBushPositions so the shadow stays under its bush in doubles.
-                    const bShadow = bushShadowSrc.createInstance("bushShadowInst");
-                    bShadow.position.set(x, 0.08, z);
-                    bShadow.scaling.set(scale * 1.8, 1, scale * 1.5);
-                    bShadow.isPickable = false;
-                    bShadow.receiveShadows = false;
-                    bushRepositionList.push({ mesh: bShadow, baseZ: bShadow.position.z });
-                };
-
-                const halfW = tableWidth / 2;      // 13
-                const halfD = tableDepth / 2;       // 7
-                const farZ = halfD - 0.7;           // back flank (away from camera)
-                const nearZ = -(halfD - 0.7);       // near flank (toward camera) - keep short/sparse
-                // Far flank: denser, slightly taller clumps frame the top of the lane
-                for (let x = -halfW + 2; x <= halfW - 2; x += 1.7 + Math.random() * 0.8) {
-                    makeBush(x, farZ + (Math.random() - 0.5) * 0.5, 0.9 + Math.random() * 0.5);
-                }
-                // Near flank: shorter and sparser so they don't block the play area
-                for (let x = -halfW + 2.5; x <= halfW - 2.5; x += 2.6 + Math.random() * 1.0) {
-                    makeBush(x, nearZ + (Math.random() - 0.5) * 0.4, 0.65 + Math.random() * 0.3);
-                }
-                // A few taller "tree" clumps at the corners for silhouette variety
-                [[-halfW + 1, farZ], [halfW - 1, farZ]].forEach(([cx, cz]) => {
-                    makeBush(cx, cz, 1.6 + Math.random() * 0.4);
-                });
-
-                // Rescale every bush (+ its ground shadow) by the depth/SINGLES_DEPTH ratio —
-                // same formula resizeStageForMode already uses for arenaFloor.scaling.z — so the
-                // clumps track the stretched court edges in doubles and snap back exactly
-                // (ratio 1) in singles. Called from resizeStageForMode.
-                window.rebuildBushPositions = function() {
-                    const depth = window.getEffectiveTableDepth ? window.getEffectiveTableDepth() : SINGLES_DEPTH;
-                    const ratio = depth / SINGLES_DEPTH;
-                    for (let i = 0; i < bushRepositionList.length; i++) {
-                        const entry = bushRepositionList[i];
-                        entry.mesh.position.z = entry.baseZ * ratio;
-                    }
-                };
-
-                // --- Wind wobble: gently oscillate ONLY the grass + bush leaf UV offsets with
-                // sine waves so the foliage looks alive (texture-space, so no geometry/other
-                // materials move). Bushes rustle a touch more than the ground. Honors Esc pause. ---
+            // --- Wind wobble: gently oscillate the grass UV offsets with sine waves so the ground
+            // looks alive (texture-space, so no geometry moves). Honors Esc pause; off under Reduce Motion. ---
+            (function grassWind() {
                 const grassTex = (scene.getMaterialByName('floorMat') || {}).diffuseTexture;
+                if (!grassTex) return;
                 scene.onBeforeRenderObservable.add(() => {
                     if (typeof paused !== 'undefined' && paused) return;   // freeze with the rest on pause
+                    if (window._reduceMotion) { grassTex.uOffset = 0; grassTex.vOffset = 0; return; }   // no sway under Reduce Motion
                     const t = performance.now() * 0.001;
-                    leafTex.uOffset = Math.sin(t * 1.3) * 0.02;
-                    leafTex.vOffset = Math.cos(t * 1.0) * 0.014;
-                    if (grassTex) {
-                        grassTex.uOffset = Math.sin(t * 0.7) * 0.012;
-                        grassTex.vOffset = Math.cos(t * 0.55) * 0.009;
-                    }
+                    // (offsets are in tiles; the tiles are large, so these stay small: ~0.04 world units)
+                    grassTex.uOffset = Math.sin(t * 0.7) * 0.003;
+                    grassTex.vOffset = Math.cos(t * 0.55) * 0.00225;
                 });
             })();
 
@@ -9111,6 +9002,53 @@
             // D2 style: only characters/projectiles cast shadows
             wallFront.receiveShadows = true;
             window.wallFront = wallFront;  // Store reference for resizing
+
+            // Baked rail shadows: soft dark bands on the ground along the rails, so the lane edges
+            // have depth now that there are no bushes (and no shadow map). The camera is only ~30 deg
+            // above the ground, so the near (camera-side, -Z) rail hides ~0.9 units of lane behind it
+            // and its true sun shadow would be invisible: it gets a wide, gentle edge-darkening that
+            // reaches past that hidden strip. The far rail gets a contact shadow inside the lane and a
+            // short cast shadow on the grass behind it. One gradient texture (opaque at the rail,
+            // fading to nothing), under the fog like the ground; children of the walls so
+            // resizeStageForMode's z shift carries them.
+            (function bakeRailShadows() {
+                const tex = new BABYLON.DynamicTexture("railShadowTex", { width: 4, height: 64 }, scene, false);
+                const g = tex.getContext();
+                const grad = g.createLinearGradient(0, 0, 0, 64);
+                grad.addColorStop(0, "rgba(0,0,0,1)");
+                grad.addColorStop(0.35, "rgba(0,0,0,0.55)");
+                grad.addColorStop(1, "rgba(0,0,0,0)");
+                g.fillStyle = grad;
+                g.fillRect(0, 0, 4, 64);
+                tex.hasAlpha = true;
+                tex.update();
+                tex.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;
+                const make = (wall, depth, strength, intoLane) => {
+                    const mat = new BABYLON.StandardMaterial(wall.name + "ShadowMat" + intoLane, scene);
+                    mat.diffuseTexture = tex;
+                    mat.useAlphaFromDiffuseTexture = true;
+                    mat.diffuseColor = new BABYLON.Color3(0.1, 0.07, 0.05);    // warm, not grey-black
+                    mat.emissiveColor = new BABYLON.Color3(0.1, 0.07, 0.05);
+                    mat.disableLighting = true;
+                    mat.specularColor = BABYLON.Color3.Black();
+                    mat.alpha = strength;
+                    mat.zOffset = -3;                                     // over the road decal
+                    const band = BABYLON.MeshBuilder.CreateGround(wall.name + "Shadow" + (intoLane > 0 ? "P" : "N"), { width: groundLength, height: depth }, scene);
+                    band.material = mat;
+                    band.parent = wall;
+                    // Local frame: the wall's centre is borderDepth/2 behind its inner face; y from the
+                    // wall centre down to just above the road decal (y 0.06 in world).
+                    band.position.set(0, 0.075 - wall.position.y, intoLane * (borderDepth / 2 + depth / 2));
+                    // The gradient's opaque end must sit against the rail: unrotated, a ground's opaque
+                    // end lands on its +Z edge, so bands reaching toward +Z are turned around.
+                    if (intoLane > 0) band.rotation.y = Math.PI;
+                    band.isPickable = false;
+                };
+                // wallBack sits at -Z (camera side); wallFront at +Z (far side).
+                make(wallBack, 2.2, 0.45, +1);    // inside the near rail, wide + gentle
+                make(wallFront, 0.9, 0.5, -1);    // contact shadow inside the far rail
+                make(wallFront, 0.7, 0.45, +1);   // cast shadow on the grass behind the far rail
+            })();
 
             // === SIDE BASES ===
             const baseWidth = 4;
@@ -9227,10 +9165,6 @@
                 // runs later, after the rest of initGame's synchronous body (incl. the dash builder)
                 // has executed.
                 if (window.rebuildCenterDashes) window.rebuildCenterDashes();
-
-                // Bushes were placed once at build time (singles depth) — rescale their Z by the
-                // same ratio the floor uses so they track the stretched court edges in doubles.
-                if (window.rebuildBushPositions) window.rebuildBushPositions();
 
                 console.log('Stage resized for depth:', depth);
             };
