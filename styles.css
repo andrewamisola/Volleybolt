@@ -2777,6 +2777,14 @@ body.flipped-view #aiCastBarContainer {
     text-shadow: var(--ff9-shadow);
     pointer-events: none;
 }
+/* The footer and #gamepadPromptBar (right:24/bottom:24) share the same unscaled bottom band, and
+   neither scales with --ui-scale — so on narrow stages the prompt bar runs into the centered
+   footer (Settings' 4-hint bar is ~433px: collides below a ~1130px-wide stage; 3-hint screens
+   below ~914px). Move the footer to the free bottom-left corner there. The stage is the largest
+   16:9 box that fits, so its width is < 1130 exactly when the viewport is < 1130 wide or < 636 tall. */
+@media (max-width: 1130px), (max-height: 636px) {
+    .arcane-overlay::after { left: 24px; width: auto; text-align: left; }
+}
 
 /* --- Title logo: Ferrum display font + light bloom behind it --- */
 .arcane-title {
@@ -2827,11 +2835,18 @@ body.flipped-view #aiCastBarContainer {
 }
 
 /* ---- Settings screen rows ---- */
-.settings-panel { gap: 10px; align-items: stretch; min-width: 420px; }
+.settings-panel { gap: 4px; align-items: stretch; min-width: 420px; }
 .settings-section-label {
     font-family: 'FF9UI', sans-serif; font-size: 22px; color: var(--ff9-gold);
-    text-shadow: var(--ff9-shadow); margin-top: 8px; letter-spacing: 1px; text-align: left;
+    text-shadow: var(--ff9-shadow); margin-top: 12px; letter-spacing: 1px; text-align: left;
 }
+/* Settings is the tallest menu: at the default rhythm (88px title gap, 10px row gap) it filled
+   ~1031 of the 1080 design px, so the Back button landed on the copyright footer at EVERY window
+   size (the footer is unscaled px on .arcane-overlay::after, bottom:26px ~18px tall -> a 26-46px
+   band). Reserve that band the same way #lobbyDoublesView does, and tighten the rhythm (~923
+   design px) so the content fits above it down to ~560px-wide windows. */
+#settingsScreen.visible { padding-bottom: 46px; box-sizing: border-box; }
+#settingsScreen .arcane-content { gap: 48px; }
 .settings-row {
     display: flex; align-items: center; justify-content: space-between; gap: 16px;
     font-family: 'FF9UI', sans-serif; font-size: 22px; color: #e7ecf6;

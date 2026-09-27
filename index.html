@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=60-dlobby-rowfix">
+    <link rel="stylesheet" href="styles.css?v=61-settings-footer">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -1050,6 +1050,9 @@
                 const obj = proj[k];
                 if (obj && obj.renderingGroupId !== undefined) obj.renderingGroupId = PROJECTILE_RENDER_GROUP;
             });
+            // Fireballs and frostbolts are light sources: no shadow under them. Their point light,
+            // bloom and the reactive fog carry them. Anything else keeps a dark contact shadow.
+            if (proj.type === 'fireball' || proj.type === 'frostbolt') return;
             const blobSize = 1.0;
             const blob = BABYLON.MeshBuilder.CreateGround("projBlob", { width: blobSize, height: blobSize }, scene);
             blob.material = getProjectileBlobMaterial();
@@ -2723,6 +2726,7 @@
         window.refreshTeamColors = function () {
             const TR = window.TEAM_RIGHT;
             try {
+                if (window.refreshCastleTeamColors) window.refreshCastleTeamColors();
                 if (window.barrierMaterials && window.barrierMaterials.ai)
                     window.barrierMaterials.ai.emissiveColor = new BABYLON.Color3(TR.r, TR.g, TR.b);
                 // Doubles (Task 6): also recolor the AI back-row shield, if it exists yet (null-safe —
@@ -3836,8 +3840,9 @@
 
             // Backstop: stop both sides' roars + rumbles + crackles — called at round/game/rematch end
             // alongside castingStop() so no orphaned loop survives a game exit.
-            beamRoarStopAll: () => {
+            beamRoarStopAll: (fadeSec = 0.05) => {
                 if (!synths.overdrive) return;
+                const _fadeMs = Math.round(fadeSec * 1000);
                 for (const _sk of ['left', 'right']) {
                     const s = synths.overdrive[_sk];
                     if (!s) continue;
@@ -3846,22 +3851,28 @@
                         s._stopGen = (s._stopGen || 0) + 1;   // same generation guard as beamRoarStop
                         const _gen = s._stopGen;
                         try {
-                            s.roar.volume.rampTo(-80, 0.05);
+                            s.roar.volume.rampTo(-80, fadeSec);
                             const _sRef = s;
                             setTimeout(() => {
                                 if (_sRef._stopGen !== _gen || _sRef.roarRunning) return;
                                 try { _sRef.roar.stop(); } catch(e2) {}
                                 try { _sRef.roar.volume.value = -6; } catch(e2) {}
-                            }, 80);
+                            }, _fadeMs + 30);
                         } catch(e) {}
                     }
+                    // Rumble + crackle: stop right away on a plain cut; on a fade, let them ride
+                    // under the roar's fade and stop at its end (they don't carry a volume ramp).
                     if (s.rumbleRunning) {
                         s.rumbleRunning = false;
-                        try { s.rumble.stop(); } catch(e) {}
+                        const _r = s.rumble;
+                        if (fadeSec > 0.1) setTimeout(() => { try { if (!s.rumbleRunning) _r.stop(); } catch(e) {} }, _fadeMs);
+                        else { try { _r.stop(); } catch(e) {} }
                     }
                     if (s.crackleRunning) {
                         s.crackleRunning = false;
-                        try { s.crk.stop(); } catch(e) {}
+                        const _c = s.crk;
+                        if (fadeSec > 0.1) setTimeout(() => { try { if (!s.crackleRunning) _c.stop(); } catch(e) {} }, _fadeMs * 0.5);
+                        else { try { _c.stop(); } catch(e) {} }
                     }
                 }
                 // Also reset the presentation state so the next game starts clean
@@ -5018,6 +5029,39 @@
             let renderFrame = true;
 
             scene = new BABYLON.Scene(engine);  // Store globally
+
+            // Spells are light sources: a fireball lights up the ground, the wizards and the side
+            // of the castle it's flying at. Materials default to 4 lights, and the scene's first four
+            // (sun, ambient + the two freeze lights) used to fill that, so projectile lights never
+            // reached anything but the fog. Lift the cap on every material, and give PBR materials
+            // (glTF castle + wizards) range-based falloff: physical inverse-square falloff made a
+            // point light all but invisible at these distances. Directional/hemispheric light is
+            // unaffected by falloff, so daylight looks the same.
+            //
+            // The cap is 8, and it is a hard ceiling: each light is its own uniform block, and with the
+            // material + scene blocks a shader may declare only 12 (GL_MAX_VERTEX_UNIFORM_BLOCKS on
+            // common GPUs). Past that the shader fails to compile, Babylon silently builds a fallback,
+            // and every mesh on that material skips drawing meanwhile (the whole scene blinking out on
+            // a fireball impact). Babylon's own clamp for this doesn't run on WebGL, and the glTF
+            // loader raises EVERY material's cap to the scene's light count after each load, so the
+            // setter itself is clamped here.
+            const LIGHT_CAP = 8;
+            window.LIGHT_CAP = LIGHT_CAP;
+            for (const C of [BABYLON.StandardMaterial, BABYLON.PBRMaterial]) {
+                let p = C.prototype, d;
+                while (p && !(d = Object.getOwnPropertyDescriptor(p, 'maxSimultaneousLights'))) p = Object.getPrototypeOf(p);
+                if (!d || !d.set || p._lightCapClamped) continue;
+                p._lightCapClamped = true;
+                Object.defineProperty(p, 'maxSimultaneousLights', {
+                    configurable: true, enumerable: d.enumerable, get: d.get,
+                    set(v) { d.set.call(this, Math.min(v, LIGHT_CAP)); }
+                });
+            }
+            const liftLightCap = (mat) => {
+                mat.maxSimultaneousLights = LIGHT_CAP;
+                if (mat instanceof BABYLON.PBRMaterial) mat.usePhysicalLightFalloff = false;
+            };
+            scene.onNewMaterialAddedObservable.add(liftLightCap);
 
             // ============================================================
             // NES PALETTE - Authentic 8-bit colors from the NES PPU
@@ -8531,6 +8575,23 @@
             ambient.diffuse = new BABYLON.Color3(0.55, 0.5, 0.46); // Warm soft fill (was cold blue)
             ambient.groundColor = new BABYLON.Color3(0.26, 0.22, 0.18); // Warm bounce light (was pitch black)
 
+            // Constant light count, so shaders never recompile mid-match. Spells, impacts, freezes
+            // and the Overdrive beam create and remove point lights all the time; every change in
+            // how many lights a material sees compiled a new shader, and while it compiled the
+            // mesh could drop out for a frame (the tower "disappearing" when a Juice beam erupted).
+            // Lights are sorted by priority: sun + ambient first, spell lights next, and eight
+            // zero-intensity pad lights last. Every material (LIGHT_CAP, see liftLightCap) therefore
+            // always sees exactly LIGHT_CAP lights — spell lights just take the pads' slots.
+            scene.requireLightSorting = true;
+            sunLight.renderPriority = 10;
+            ambient.renderPriority = 10;
+            for (let i = 0; i < window.LIGHT_CAP - 2; i++) {
+                const pad = new BABYLON.PointLight("lightSlotPad" + i, new BABYLON.Vector3(0, -500, 0), scene);
+                pad.intensity = 0;
+                pad.range = 0.01;
+                pad.renderPriority = -10;
+            }
+
             // PS1/FF9 aesthetic: no real-time shadow map. Blob shadows (blobShadow0–3)
             // ground the characters instead, matching the working projectile blob approach.
             // Stub keeps addShadowCaster() calls in all model-loader callbacks as silent
@@ -8783,8 +8844,17 @@
             // ============================================================
 
             // === ARENA FLOOR ===
+            // The floor, the dirt road and the rails all run STAGE_RUNOFF past both stage ends
+            // (under the castles and off-screen). The painted backdrop continues the lane with a
+            // flatter ground and much thinner painted rails; wherever the 3D stage stopped short
+            // of the screen edge, that mismatch showed as a hard seam. Texture tiling scales with
+            // the length, so everything inside the stage looks exactly as before.
+            const STAGE_RUNOFF = 30;
+            const groundLength = tableWidth + 2 * STAGE_RUNOFF;
+            const groundRatio = groundLength / tableWidth;
+            floorMat.diffuseTexture.uScale = 4 * groundRatio;
             const table = BABYLON.MeshBuilder.CreateBox("arenaFloor", {
-                width: tableWidth,
+                width: groundLength,
                 height: 0.3,
                 depth: tableDepth
             }, scene);
@@ -8802,7 +8872,7 @@
             (function buildLanePath() {
                 const dirtMat = new BABYLON.StandardMaterial("lanePathMat", scene);
                 const dirtTex = new BABYLON.Texture("textures/dirt_road.png?v=3", scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
-                dirtTex.uScale = 6;  dirtTex.vScale = 3;   // tile for surface detail
+                dirtTex.uScale = 6 * groundRatio;  dirtTex.vScale = 3;   // tile for surface detail
                 dirtMat.diffuseTexture = dirtTex;
                 dirtMat.specularColor = BABYLON.Color3.Black();
                 dirtMat.emissiveColor = new BABYLON.Color3(0.12, 0.10, 0.07);  // match grass black-point lift
@@ -8814,15 +8884,20 @@
                 ctx.fillStyle = "black";
                 ctx.fillRect(0, 0, MW, MH);
                 const cy = MH * 0.5, half = MH * 0.34;  // central band covering ~68% of court depth
+                // The mask repeats along the extended road, so it must tile seamlessly: every edge
+                // wave completes a whole number of cycles across MW (cycle counts match the old
+                // frequencies), and the blobs below are drawn wrapped around the edges.
+                const cyc = (k) => (x) => x * k * Math.PI * 2 / MW;
+                const a2 = cyc(2), a7 = cyc(7), a8 = cyc(8), a18 = cyc(18), a20 = cyc(20);
                 ctx.fillStyle = "white";
                 ctx.beginPath();
                 ctx.moveTo(0, cy - half);
-                for (let x = 0; x <= MW; x += 6) {
-                    const n = Math.sin(x * 0.012) * 16 + Math.sin(x * 0.045 + 1.3) * 9 + Math.sin(x * 0.11) * 4;
+                for (let x = 0; x <= MW; x += 4) {
+                    const n = Math.sin(a2(x)) * 16 + Math.sin(a7(x) + 1.3) * 9 + Math.sin(a18(x)) * 4;
                     ctx.lineTo(x, cy - half + n);
                 }
-                for (let x = MW; x >= 0; x -= 6) {
-                    const n = Math.sin(x * 0.013 + 2.1) * 16 + Math.sin(x * 0.05 + 0.7) * 9 + Math.sin(x * 0.12) * 4;
+                for (let x = MW; x >= 0; x -= 4) {
+                    const n = Math.sin(a2(x) + 2.1) * 16 + Math.sin(a8(x) + 0.7) * 9 + Math.sin(a20(x)) * 4;
                     ctx.lineTo(x, cy + half + n);
                 }
                 ctx.closePath();
@@ -8832,23 +8907,36 @@
                 for (let i = 0; i < 38; i++) {
                     const x = Math.random() * MW;
                     const y = (Math.random() < 0.5 ? cy - half : cy + half) + (Math.random() - 0.5) * 70;
-                    ctx.beginPath(); ctx.arc(x, y, 6 + Math.random() * 24, 0, Math.PI * 2); ctx.fill();
+                    const r = 6 + Math.random() * 24;
+                    for (const ox of [-MW, 0, MW]) { ctx.beginPath(); ctx.arc(x + ox, y, r, 0, Math.PI * 2); ctx.fill(); }
                 }
                 ctx.fillStyle = "black";
                 for (let i = 0; i < 28; i++) {
                     const x = Math.random() * MW;
                     const y = (Math.random() < 0.5 ? cy - half + 18 : cy + half - 18) + (Math.random() - 0.5) * 40;
-                    ctx.beginPath(); ctx.arc(x, y, 5 + Math.random() * 18, 0, Math.PI * 2); ctx.fill();
+                    const r = 5 + Math.random() * 18;
+                    for (const ox of [-MW, 0, MW]) { ctx.beginPath(); ctx.arc(x + ox, y, r, 0, Math.PI * 2); ctx.fill(); }
                 }
-                // Soften the whole mask so road edges blend organically into grass
+                // Soften the whole mask so road edges blend organically into grass. Blur a
+                // side-by-side wrapped copy: the mask repeats along the extended road, and blurring
+                // it alone fades its left/right edges (the blur reads transparent past the canvas),
+                // which left a thin grass line at every repeat boundary.
+                const wrapped = document.createElement("canvas");
+                wrapped.width = MW * 3; wrapped.height = MH;
+                const wctx = wrapped.getContext("2d");
+                for (const ox of [0, MW, 2 * MW]) wctx.drawImage(ctx.canvas, ox, 0);
                 ctx.filter = "blur(5px)";
-                ctx.drawImage(ctx.canvas, 0, 0);
+                ctx.drawImage(wrapped, -MW, 0);
                 ctx.filter = "none";
                 mask.update();
                 dirtMat.opacityTexture = mask;
                 dirtMat.opacityTexture.getAlphaFromRGB = true;
+                // Repeat the mask along the longer road; the centre repeat covers exactly the stage.
+                mask.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+                mask.uScale = groundRatio;
+                mask.uOffset = (1 - groundRatio) / 2;
 
-                const lane = BABYLON.MeshBuilder.CreateGround("lanePath", { width: tableWidth + 0.2, height: tableDepth + 0.2 }, scene);
+                const lane = BABYLON.MeshBuilder.CreateGround("lanePath", { width: groundLength + 0.2, height: tableDepth + 0.2 }, scene);
                 lane.position.y = 0.06;    // clear of the grass floor (top at y=0) to avoid z-fighting flicker
                 lane.material = dirtMat;
                 dirtMat.zOffset = -2;       // polygon offset: render the decal in front of the floor, no z-fight
@@ -8997,10 +9085,12 @@
             // side face, which otherwise peeks out as a bright green sliver under the rail
             // (glaring against the painted backdrop, especially during screen shake).
             const borderSkirt = 0.3;
+            // Rails run the full groundLength too (see ARENA FLOOR), same brick size.
+            wallStoneMat.diffuseTexture.uScale = 8 * groundRatio;
 
             // Back wall (far from camera)
             const wallBack = BABYLON.MeshBuilder.CreateBox("wallBack", {
-                width: tableWidth,
+                width: groundLength,
                 height: borderHeight + borderSkirt,
                 depth: borderDepth
             }, scene);
@@ -9012,7 +9102,7 @@
 
             // Front wall (near camera)
             const wallFront = BABYLON.MeshBuilder.CreateBox("wallFront", {
-                width: tableWidth,
+                width: groundLength,
                 height: borderHeight + borderSkirt,
                 depth: borderDepth
             }, scene);
@@ -9790,202 +9880,6 @@
                 console.log("Animation stepping: " + (enabled ? fps + "fps" : "smooth"));
             };
 
-            // Animation name mapping - maps game actions to actual animation names in model
-            // User's original mapping:
-            // - idle_5 = idle
-            // - cautious_crouch_walk_left_inplace = move left
-            // - cautious_crouch_walk_right_inplace = move right
-            // - mage_soell_cast_5 = mid-cast (looping during cast)
-            // - mage_soell_cast_3 = spell release
-            // - cherish_pop_dance = victory
-            // - angry_ground_stomp_1 = defeat
-            const ANIM_MAP = {
-                'idle': 'idle_5',
-                'left': 'cautious_crouch_walk_left_inplace',
-                'right': 'cautious_crouch_walk_right_inplace',
-                'cast_loop': 'mage_soell_cast_5',
-                'cast_release': 'mage_soell_cast_3',
-                'parry': 'mage_soell_cast_3', // Alias parry to cast release clip
-                'victory': 'cherish_pop_dance',
-                'defeat': 'angry_ground_stomp_1'
-            };
-
-            // ============================================================
-            // CHARACTER MODEL LOADING - SIMPLE VERSION
-            // ============================================================
-
-            // Reverse map: file animation name -> action names
-            const REVERSE_ANIM_MAP = {};
-            for (const [action, fileName] of Object.entries(ANIM_MAP)) {
-                const key = fileName.toLowerCase();
-                if (!REVERSE_ANIM_MAP[key]) REVERSE_ANIM_MAP[key] = [];
-                REVERSE_ANIM_MAP[key].push(action);
-            }
-
-            // Helper to setup animations on a combatant
-            const setupCombatantAnimations = (combatant, animationGroups) => {
-                console.log(`[${combatant.side}] Setting up ${animationGroups.length} animations:`);
-                animationGroups.forEach(anim => {
-                    anim.stop();
-                    const name = anim.name.toLowerCase();
-                    console.log(`  - "${anim.name}" (lowercased: "${name}")`);
-                    combatant.animations[name] = anim;
-
-                    // Try exact match from REVERSE_ANIM_MAP first
-                    if (REVERSE_ANIM_MAP[name]) {
-                        REVERSE_ANIM_MAP[name].forEach(action => {
-                            combatant.animations[action] = anim;
-                            console.log(`    -> mapped to action: ${action}`);
-                        });
-                    }
-
-                    // Fallback: keyword matching for common animations
-                    if (!combatant.animations['idle'] && name.includes('idle')) {
-                        combatant.animations['idle'] = anim;
-                        console.log(`    -> keyword mapped to: idle`);
-                    }
-                    if (!combatant.animations['victory'] && (name.includes('dance') || name.includes('cherish'))) {
-                        combatant.animations['victory'] = anim;
-                        console.log(`    -> keyword mapped to: victory`);
-                    }
-                    if (!combatant.animations['defeat'] && (name.includes('stomp') || name.includes('angry'))) {
-                        combatant.animations['defeat'] = anim;
-                        console.log(`    -> keyword mapped to: defeat`);
-                    }
-                    if (!combatant.animations['left'] && name.includes('left')) {
-                        combatant.animations['left'] = anim;
-                        console.log(`    -> keyword mapped to: left`);
-                    }
-                    if (!combatant.animations['right'] && name.includes('right')) {
-                        combatant.animations['right'] = anim;
-                        console.log(`    -> keyword mapped to: right`);
-                    }
-                    if (!combatant.animations['cast_loop'] && name.includes('cast') && name.includes('5')) {
-                        combatant.animations['cast_loop'] = anim;
-                        console.log(`    -> keyword mapped to: cast_loop`);
-                    }
-                    if (!combatant.animations['cast_release'] && name.includes('cast') && name.includes('3')) {
-                        combatant.animations['cast_release'] = anim;
-                        console.log(`    -> keyword mapped to: cast_release`);
-                    }
-                });
-
-                // Adjust cast_release: 3x speed and skip first 20 frames
-                const castRelease = combatant.animations['cast_release'];
-                if (castRelease) {
-                    castRelease.speedRatio = 3.0;
-                    const origFrom = castRelease.from;
-                    const origTo = castRelease.to;
-                    castRelease.normalize(origFrom + 20, origTo);
-                    console.log(`[${combatant.side}] cast_release: 3x speed, frames ${origFrom + 20}-${origTo}`);
-                }
-
-                console.log(`[${combatant.side}] Final animation map:`, Object.keys(combatant.animations));
-            };
-
-            const loadCharacterModels = () => {
-                // P1 - Player (left side)
-                BABYLON.SceneLoader.ImportMesh("", "models/", "Character_All_Animations.glb", scene,
-                    (meshes, particleSystems, skeletons, animationGroups) => {
-                        console.log('[P1] Loaded:', meshes.length, 'meshes,', animationGroups.length, 'anims');
-
-                        const root = new BABYLON.TransformNode("p1Root", scene);
-                        meshes.forEach(m => {
-                            if (!m.parent || m.parent === scene) m.parent = root;
-                            m.renderingGroupId = 1;  // Characters above bushes (group 0)
-                            if (m.material) m.material.backFaceCulling = true;
-                            shadowGenerator.addShadowCaster(m);
-                        });
-
-                        root.parent = playerPaddle;
-                        root.rotation.y = Math.PI / 2;  // Face right
-                        playerPaddle.visibility = 0;
-
-                        combatants.left.modelRoot = root;
-                        combatants.left.skeleton = skeletons[0];
-                        combatants.left.flashMeshes = meshes.filter(m => m.material);
-                        combatants.left.modelLoaded = true;
-                        playerModelRoot = root;
-                        playerSkeleton = skeletons[0];
-                        playerFlashMeshes = combatants.left.flashMeshes;
-                        playerModelLoaded = true;
-
-                        setupCombatantAnimations(combatants.left, animationGroups);
-                        Object.assign(playerAnimations, combatants.left.animations);
-
-                        // Start with idle
-                        if (combatants.left.animations['idle']) {
-                            combatants.left.animations['idle'].play(true);
-                        }
-
-                        console.log('[P1] Anims:', Object.keys(combatants.left.animations));
-                        updateLoadingProgress(55, 'Player ready...');
-                        checkAllLoaded();
-                    },
-                    null,
-                    (scene, msg, err) => {
-                        console.log("P1 error:", err);
-                        combatants.left.modelLoaded = true;
-                        playerModelLoaded = true;
-                        playerPaddle.visibility = 1;
-                        updateLoadingProgress(55, 'Player ready...');
-                        checkAllLoaded();
-                    }
-                );
-
-                // P2 - AI (right side)
-                BABYLON.SceneLoader.ImportMesh("", "models/", "Character_All_Animations_P2.glb", scene,
-                    (meshes, particleSystems, skeletons, animationGroups) => {
-                        console.log('[P2] Loaded:', meshes.length, 'meshes,', animationGroups.length, 'anims');
-
-                        const root = new BABYLON.TransformNode("p2Root", scene);
-                        meshes.forEach(m => {
-                            if (!m.parent || m.parent === scene) m.parent = root;
-                            m.renderingGroupId = 1;  // Characters above bushes (group 0)
-                            if (m.material) m.material.backFaceCulling = true;
-                            shadowGenerator.addShadowCaster(m);
-                        });
-
-                        root.parent = aiPaddle;
-                        root.rotation.y = -Math.PI / 2;  // Face left
-                        aiPaddle.visibility = 0;
-
-                        combatants.right.modelRoot = root;
-                        combatants.right.skeleton = skeletons[0];
-                        combatants.right.flashMeshes = meshes.filter(m => m.material);
-                        combatants.right.modelLoaded = true;
-                        aiModelRoot = root;
-                        aiSkeleton = skeletons[0];
-                        aiFlashMeshes = combatants.right.flashMeshes;
-                        aiModelLoaded = true;
-
-                        setupCombatantAnimations(combatants.right, animationGroups);
-                        Object.assign(aiAnimations, combatants.right.animations);
-
-                        // Start with idle
-                        if (combatants.right.animations['idle']) {
-                            combatants.right.animations['idle'].play(true);
-                        }
-
-                        console.log('[P2] Anims:', Object.keys(combatants.right.animations));
-                        updateLoadingProgress(100, 'Ready!');
-                        checkAllLoaded();
-                    },
-                    null,
-                    (scene, msg, err) => {
-                        console.log("P2 error:", err);
-                        combatants.right.modelLoaded = true;
-                        aiModelLoaded = true;
-                        aiPaddle.visibility = 1;
-                        updateLoadingProgress(100, 'Ready!');
-                        checkAllLoaded();
-                    }
-                );
-            };
-
-            // Load characters based on mode toggle
-            // loadCharacterModels(); // Original GLB loader - called conditionally below
-
             // ============================================================
             // SIMPLE ANIMATION SYSTEM
             // ============================================================
@@ -10755,8 +10649,8 @@
             // ========================================
             // CHARACTER MODE SELECTION
             // ========================================
-            // Options: 'wizard' (original GLB), 'procedural_wizard', 'meshy_wizard'
-            const CHARACTER_MODE = 'pickle'; // 'merged_glb' = original wizards; 'pickle' = pickle-wizard swap (idle only)
+            // Options: 'pickle' (rigged pickle-wizard GLBs), 'procedural_wizard' (built from primitives)
+            const CHARACTER_MODE = 'pickle';
 
             let playerWizardParts = null;
             let aiWizardParts = null;
@@ -11002,244 +10896,9 @@
                 });
             };
 
-            // ========================================
-            // MESHY PICKLE GLB LOADER - Individual Animation Files
-            // ========================================
-            const ANIM_FILES_P1 = {
-                'idle': 'Meshy_AI_Animation_Idle_5_withSkin.glb',
-                'left': 'Meshy_AI_Animation_Cautious_Crouch_Walk_Left_inplace_withSkin.glb',
-                'right': 'Meshy_AI_Animation_Cautious_Crouch_Walk_Right_inplace_withSkin.glb',
-                'cast_loop': 'Meshy_AI_Animation_mage_soell_cast_5_withSkin.glb',
-                'cast_release': 'Meshy_AI_Animation_mage_soell_cast_3_withSkin.glb',
-                // No dedicated parry clip; alias to cast_release
-                'parry': 'Meshy_AI_Animation_mage_soell_cast_3_withSkin.glb',
-                'victory': 'Meshy_AI_Animation_Cherish_Pop_Dance_withSkin.glb',
-                'defeat': 'Meshy_AI_Animation_Angry_Ground_Stomp_1_withSkin.glb'
-            };
-            const ANIM_FILES_P2 = {
-                'idle': 'Meshy_AI_Animation_Idle_5_P2_withSkin.glb',
-                'left': 'Meshy_AI_Animation_Cautious_Crouch_Walk_Left_inplace_P2_withSkin.glb',
-                'right': 'Meshy_AI_Animation_Cautious_Crouch_Walk_Right_inplace_P2_withSkin.glb',
-                'cast_loop': 'Meshy_AI_Animation_mage_soell_cast_5_P2_withSkin.glb',
-                'cast_release': 'Meshy_AI_Animation_mage_soell_cast_3_P2_withSkin.glb',
-                'parry': 'Meshy_AI_Animation_mage_soell_cast_3_P2_withSkin.glb',
-                'victory': 'Meshy_AI_Animation_Cherish_Pop_Dance_P2_withSkin.glb',
-                'defeat': 'Meshy_AI_Animation_Angry_Ground_Stomp_1_P2_withSkin.glb'
-            };
-
-            // Retarget imported animation group to a specific skeleton (prevents cross-binding)
-            const retargetAnimationGroup = (animGroup, skeleton) => {
-                if (!animGroup || !skeleton) return;
-                animGroup.targetedAnimations.forEach(ta => {
-                    const targetName = ta.target && ta.target.name;
-                    if (!targetName) return;
-                    const bone = skeleton.bones?.find(b => b.name === targetName);
-                    if (bone) ta.target = bone;
-                });
-            };
-
-            const loadMeshyWizard = () => {
-                // Helper to load a character with all animations from individual files
-                const loadCharacterWithAnims = (side, paddle, facingRotation, onComplete) => {
-                    const isPlayer = side === 'left';
-                    const prefix = isPlayer ? 'player' : 'ai';
-                    const combatant = isPlayer ? combatants.left : combatants.right;
-                    const animStore = isPlayer ? playerAnimations : aiAnimations;
-                    // Use per-player model folders and animation files
-                    const modelPath = isPlayer ? 'models/p1/' : 'models/p2/';
-                    const ANIM_FILES = isPlayer ? ANIM_FILES_P1 : ANIM_FILES_P2;
-
-                    console.log(`=== ${prefix.toUpperCase()} CHARACTER LOADING ===`);
-
-                    // Load base model (idle file has mesh + skeleton + idle anim)
-                    BABYLON.SceneLoader.ImportMesh("", modelPath, ANIM_FILES['idle'], scene,
-                        (meshes, particleSystems, skeletons, animationGroups) => {
-                            console.log(`${prefix} base model loaded!`, meshes.length, "meshes");
-
-                            // Create root transform
-                            const modelRoot = new BABYLON.TransformNode(`${prefix}MeshyRoot`, scene);
-                            meshes.forEach(m => {
-                                if (!m.parent || m.parent === scene) {
-                                    m.parent = modelRoot;
-                                }
-                                m.renderingGroupId = 1;  // Characters above bushes (group 0)
-                                shadowGenerator.addShadowCaster(m);
-
-                                // Flat shading
-                                if (m.geometry && m.getTotalVertices && m.getTotalVertices() > 0) {
-                                    try { m.convertToFlatShadedMesh(); } catch (e) {}
-                                }
-
-                                // Matte materials
-                                if (m.material) {
-                                    m.material.roughness = 0.95;
-                                    m.material.metallic = 0;
-                                    if (m.material.environmentIntensity !== undefined) {
-                                        m.material.environmentIntensity = 0.2;
-                                    }
-                                    if (m.material.emissiveIntensity !== undefined) {
-                                        m.material.emissiveIntensity = 0;
-                                    }
-                                    if (m.material.emissiveColor) {
-                                        m.material.emissiveColor = new BABYLON.Color3(0, 0, 0);
-                                    }
-                                    m.material.emissiveFresnelParameters = null;
-
-                                    // Tint AI character red/orange to distinguish from player
-                                    if (!isPlayer) {
-                                        // Clone material so player isn't affected
-                                        const tintedMat = m.material.clone(`${m.material.name}_aiTint`);
-                                        m.material = tintedMat;
-                                        // Apply strong red tint by shifting color significantly
-                                        if (tintedMat.albedoColor) {
-                                            tintedMat.albedoColor = new BABYLON.Color3(
-                                                Math.min(1, tintedMat.albedoColor.r * 1.5 + 0.3),
-                                                tintedMat.albedoColor.g * 0.4,
-                                                tintedMat.albedoColor.b * 0.3
-                                            );
-                                        } else if (tintedMat.diffuseColor) {
-                                            tintedMat.diffuseColor = new BABYLON.Color3(
-                                                Math.min(1, tintedMat.diffuseColor.r * 1.5 + 0.3),
-                                                tintedMat.diffuseColor.g * 0.4,
-                                                tintedMat.diffuseColor.b * 0.3
-                                            );
-                                        }
-                                    }
-                                }
-                            });
-
-                            modelRoot.parent = paddle;
-                            modelRoot.position.set(0, 0, 0);
-                            modelRoot.scaling = new BABYLON.Vector3(1, 1, 1);
-                            modelRoot.rotation.y = facingRotation;
-                            paddle.visibility = 0;
-
-                            // Store references
-                            combatant.modelRoot = modelRoot;
-                            combatant.skeleton = skeletons[0] || null;
-                            combatant.flashMeshes = meshes.filter(m => m.material);
-                            if (isPlayer) {
-                                playerModelRoot = modelRoot;
-                                playerFlashMeshes = combatant.flashMeshes;
-                            } else {
-                                aiModelRoot = modelRoot;
-                                aiFlashMeshes = combatant.flashMeshes;
-                            }
-
-                            // Store idle animation (from base file) - stop it for now, play later
-                            if (animationGroups.length > 0) {
-                                const idleAnim = animationGroups[0];
-                                idleAnim.name = `${prefix}_idle`;
-                                idleAnim.stop(); // Don't play yet
-                                combatant.animations['idle'] = idleAnim;
-                                animStore['idle'] = idleAnim;
-                                console.log(`${prefix} stored idle animation`);
-                            }
-
-                            // Load other animations SEQUENTIALLY to avoid race conditions
-                            const otherAnims = ['left', 'right', 'cast_loop', 'cast_release', 'parry', 'victory', 'defeat'];
-                            let animIndex = 0;
-
-                            const loadNextAnim = () => {
-                                if (animIndex >= otherAnims.length) {
-                                    // All done
-                                    console.log(`${prefix} all animations loaded:`, Object.keys(combatant.animations));
-                                    // STOP ALL animations first to prevent blending
-                                    Object.values(combatant.animations).forEach(a => {
-                                        if (a && a.stop) a.stop();
-                                    });
-                                    // Play ONLY idle by default
-                                    if (combatant.animations['idle']) {
-                                        combatant.animations['idle'].play(true);
-                                        combatant.currentAnim = 'idle';
-                                    }
-                                    onComplete();
-                                    return;
-                                }
-
-                                const action = otherAnims[animIndex];
-                                animIndex++;
-
-                                const fileName = ANIM_FILES[action];
-                                if (!fileName) {
-                                    console.warn(`No file for action "${action}"`);
-                                    loadNextAnim();
-                                    return;
-                                }
-
-                                // Parry reuses cast_release clip; avoid double-loading same file
-                                if (action === 'parry' && combatant.animations['cast_release']) {
-                                    combatant.animations['parry'] = combatant.animations['cast_release'];
-                                    animStore['parry'] = combatant.animations['cast_release'];
-                                    loadNextAnim();
-                                    return;
-                                }
-
-                                // Track animation count before loading
-                                const animCountBefore = scene.animationGroups.length;
-
-                                // Import just the animation, targeting our skeleton
-                                BABYLON.SceneLoader.ImportAnimations(
-                                    modelPath, fileName, scene,
-                                    false, // don't merge
-                                    BABYLON.SceneLoaderAnimationGroupLoadingMode.NoSync,
-                                    null, // target
-                                    (loadedScene) => {
-                                        // Get newly added animation groups
-                                        const newAnims = scene.animationGroups.slice(animCountBefore);
-                                        console.log(`${prefix} "${action}": loaded ${newAnims.length} anim(s) from ${fileName.split('/').pop()}`);
-
-                                        if (newAnims.length > 0) {
-                                            const anim = newAnims[0];
-                                            console.log(`  -> "${anim.name}"`);
-                                            retargetAnimationGroup(anim, combatant.skeleton);
-                                            anim.name = `${prefix}_${action}`;
-                                            combatant.animations[action] = anim;
-                                            animStore[action] = anim;
-                                            anim.stop();
-                                        } else {
-                                            console.warn(`${prefix} no animations in file for "${action}"`);
-                                        }
-                                        loadNextAnim(); // Load next one
-                                    },
-                                    null,
-                                    (err) => {
-                                        console.error(`${prefix} failed to load "${action}":`, err);
-                                        loadNextAnim(); // Continue even on error
-                                    }
-                                );
-                            };
-
-                            // Start sequential loading
-                            loadNextAnim();
-                        },
-                        null,
-                        (scene, msg, err) => {
-                            console.error(`Failed to load ${prefix} base model:`, msg, err);
-                            paddle.visibility = 1;
-                            onComplete();
-                        }
-                    );
-                };
-
-                // Load player
-                loadCharacterWithAnims('left', playerPaddle, Math.PI / 2, () => {
-                    combatants.left.modelLoaded = true;
-                    playerModelLoaded = true;
-                    checkAllLoaded();
-                });
-
-                // Load AI
-                loadCharacterWithAnims('right', aiPaddle, -Math.PI / 2, () => {
-                    combatants.right.modelLoaded = true;
-                    aiModelLoaded = true;
-                    checkAllLoaded();
-                });
-            };
-
             // === PICKLE WIZARD QUICK SWAP (idle only) ===
             // Loads the single rigged pickle GLB for both players at the same paddle transform
-            // as the current characters. Reversible: set CHARACTER_MODE back to 'merged_glb'.
+            // as the current characters.
             const loadPickleWizard = () => {
                 // side is a SLOT key: 'left'/'right' (front, unchanged) or 'leftBack'/'rightBack'
                 // (Task 6 doubles backs). isPlayer = team (left side); isBack = back-row slot.
@@ -11261,7 +10920,11 @@
                     // Higgsfield 3d_rigging (so proportions stay correct, unlike retargeting the
                     // humanoid wizard clips). All clips share the same 24-bone rig from the same
                     // source mesh, so name-matched retargeting onto the idle base is clean.
-                    const modelPath = 'models/pickle/';
+                    // Animation-only copies (nodes + clips, no mesh/texture) made by
+                    // tools/strip_anim_glb.py: the originals each embed a ~6.7 MB texture that
+                    // ImportAnimations downloads, decodes and discards (~3.5 s on the first
+                    // doubles match, ~41 MB at boot). Originals stay for capture_viewer.html.
+                    const modelPath = 'models/pickle/clips/';
                     const PICKLE_ANIMS = {
                         left: 'pickle_left.glb', right: 'pickle_right.glb',
                         cast_loop: 'pickle_cast.glb', cast_release: 'pickle_cast_release.glb',
@@ -11476,12 +11139,8 @@
             updateLoadingProgress(30, 'Loading wizards...');
             if (CHARACTER_MODE === 'pickle') {
                 loadPickleWizard();
-            } else if (CHARACTER_MODE === 'meshy_wizard') {
-                loadMeshyWizard();
             } else if (CHARACTER_MODE === 'procedural_wizard') {
                 loadWizardCharacters();
-            } else {
-                loadCharacterModels(); // Original wizard
             }
             // Note: Main showMainMenu is called after models load (see checkAllModelsLoaded)
             // This is a fallback that may run before models are ready
@@ -11568,6 +11227,7 @@
             const playerIceLight = new BABYLON.PointLight("playerIceLight", new BABYLON.Vector3(0, 0.5, 0), scene);
             playerIceLight.diffuse = new BABYLON.Color3(0.5, 0.7, 1);
             playerIceLight.intensity = 0;
+            playerIceLight.setEnabled(false);   // enabled only while frozen (frees a light slot)
             playerIceLight.range = 4;
             playerIceLight.parent = playerPaddle;
             playerIceLight.position.x = modelBackFor('left');   // follow the moved-back model
@@ -11584,6 +11244,7 @@
             const aiIceLight = new BABYLON.PointLight("aiIceLight", new BABYLON.Vector3(0, 0.5, 0), scene);
             aiIceLight.diffuse = new BABYLON.Color3(0.5, 0.7, 1);
             aiIceLight.intensity = 0;
+            aiIceLight.setEnabled(false);       // enabled only while frozen (frees a light slot)
             aiIceLight.range = 4;
             aiIceLight.parent = aiPaddle;
             aiIceLight.position.x = modelBackFor('right');   // follow the moved-back model
@@ -11685,380 +11346,75 @@
                 animateShards();
             };
 
-            // Gate materials - Duolingo flat (no emissive)
-            const playerGateMat = new BABYLON.StandardMaterial("playerGateMat", scene);
-            playerGateMat.diffuseColor = MCM.teakLight;  // Light teak
-            playerGateMat.specularColor = BABYLON.Color3.Black();  // FLAT
-
-            const aiGateMat = new BABYLON.StandardMaterial("aiGateMat", scene);
-            aiGateMat.diffuseColor = MCM.teakLight;  // Light teak
-            aiGateMat.specularColor = BABYLON.Color3.Black();  // FLAT
-
-            // Keystone - gold
-            const keystoneMat = new BABYLON.StandardMaterial("keystoneMat", scene);
-            keystoneMat.diffuseColor = MCM.gold;
-            keystoneMat.specularColor = BABYLON.Color3.Black();  // FLAT
-
-            // Load castle wall texture with PS1-style baked grunge variation
-            // Materials for buttresses (tiled texture) - will be set when stone image loads
-            let playerButtressMat = null;
-            let aiButtressMat = null;
-            const loadGateTextures = () => {
-                // Crisp native pixel-art stone + darkening (0.62). NO composited grunge: on the
-                // tiled keep/buttress faces the grunge repeated and, minified at distance, smeared
-                // over the brick detail (read as "smudged/stretched"). Darkening alone gives the
-                // moodier look while keeping the bricks sharp at every tiling.
-                const STONE_DARK = new BABYLON.Color3(0.62, 0.62, 0.62);
-                const wallTex = new BABYLON.Texture("textures/tower_stone.png?v=3", scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR,
-                    () => {
-                        wallTex.uScale = 1; wallTex.vScale = 1;
-                        playerGateMat.diffuseTexture = wallTex;
-                        playerGateMat.diffuseColor = STONE_DARK.clone();
-                        aiGateMat.diffuseTexture = wallTex.clone();
-                        aiGateMat.diffuseColor = STONE_DARK.clone();
-                        // Keystones keep gold identity, slightly toned
-                        keystoneMat.diffuseTexture = wallTex.clone();
-                        keystoneMat.diffuseColor = MCM.goldBright.scale(0.82);
-
-                        // Buttresses: tall & narrow — tile 3× vertically (crisp native, no grunge)
-                        const buttressTex = wallTex.clone();
-                        buttressTex.uScale = 1; buttressTex.vScale = 3;
-                        playerButtressMat = playerGateMat.clone("playerButtressMat");
-                        playerButtressMat.diffuseTexture = buttressTex;
-                        aiButtressMat = aiGateMat.clone("aiButtressMat");
-                        aiButtressMat.diffuseTexture = buttressTex.clone();
-
-                        scene.meshes.forEach(m => {
-                            if (m.name.includes("playerButtress")) m.material = playerButtressMat;
-                            if (m.name.includes("aiButtress")) m.material = aiButtressMat;
-                        });
-                        console.log("Castle wall texture loaded (crisp native + darkened)");
-                    },
-                    () => console.log("No castle wall texture, using solid colors")
-                );
-            };
-            loadGateTextures();
-
-            // Castle wall dimensions
-            const wallWidth = 6.0;      // Total width of wall
-            const wallHeight = 4.5;     // Total height
-            const wallDepth = 1.2;      // Thickness of main wall
-            const brickRows = 4;        // Vertical rows of destructible bricks
-            const brickCols = 5;        // Horizontal columns
-            const brickHeight = wallHeight / brickRows;
-            const brickWidth = wallWidth / brickCols;
+            // ============================================================
+            // CASTLES — built in Blender (tools/blender/build_castle.py -> models/castle/castle.glb).
+            // One GLB loaded per side; the red castle is the same model mirrored in X, so the keep
+            // sits toward the backdrop and the gate wall toward the court on both ends. Four authored
+            // damage states (castle_s0 pristine .. castle_s3 ruined) swap on tower-HP thresholds, and
+            // a pool of loose chunks (castle_debris) drops for the crumble beat. Visual only: the
+            // sim's gate line is an X constant and never reads these meshes, and the shown state is
+            // re-derived from towerHealth every frame (see the castle state system below), so a
+            // rollback/resim can never leave the castle out of step with the HP bar.
+            // ============================================================
             const towerX = tableWidth/2 + 2.0;
+            const castles = {};   // 'left'|'right' -> { root, states[4], debris[], shown, teamMats[] }
 
-            // Darker material for recesses/details
-            const darkStoneMat = new BABYLON.StandardMaterial("darkStoneMat", scene);
-            darkStoneMat.diffuseColor = new BABYLON.Color3(0.34, 0.29, 0.24);  // Warm storybook stone (was near-black)
-            darkStoneMat.specularColor = BABYLON.Color3.Black();
-
-            // Store bricks for destruction
-            const playerBricks = [];
-            const aiBricks = [];
-
-            // Create medieval castle wall
-            const createGate = (isPlayer) => {
-                const bricks = isPlayer ? playerBricks : aiBricks;
-                const mat = isPlayer ? playerGateMat : aiGateMat;
-                const xSign = isPlayer ? -1 : 1;
-                const baseX = xSign * towerX;
-
-                // === MAIN WALL (Destructible Bricks) ===
-                // 5 columns × 4 rows = 20 bricks (matches health system)
-                // No gaps - looks like solid wall until destroyed
-                for (let row = 0; row < brickRows; row++) {
-                    for (let col = 0; col < brickCols; col++) {
-                        const brick = BABYLON.MeshBuilder.CreateBox(
-                            (isPlayer ? "playerBrick_" : "aiBrick_") + row + "_" + col,
-                            { width: wallDepth, height: brickHeight, depth: brickWidth },
-                            scene
-                        );
-
-                        const brickX = baseX;
-                        const brickZ = -wallWidth/2 + brickWidth/2 + col * brickWidth;
-                        const brickY = brickHeight/2 + row * brickHeight;
-
-                        brick.position.set(brickX, brickY, brickZ);
-
-                        brick.originalPos = brick.position.clone();
-                        brick.originalRot = brick.rotation.clone();
-                        brick.originalZ = brickZ;
-
-                        // All bricks share same material (seamless look)
-                        brick.material = mat;
-
-                        // No edge rendering - looks like solid wall
-                        // Edges only show when brick is destroyed/flying
-                        // D2 style: only characters/projectiles cast shadows
-                        brick.receiveShadows = true;
-                        bricks.push(brick);
-                    }
+            // Team tint for the roof shingles + pennant (multiplies the grey shingle texture, so it's
+            // lifted 1.25x). Only lightly desaturated (12% toward luma): the shingles' own shading
+            // and the fog already mute it enough to sit under the HP bars. Right side reads
+            // window.TEAM_RIGHT, so it follows colorblind mode.
+            const castleTeamColor = (side) => {
+                const tr = window.TEAM_RIGHT || { r: 1.0, g: 0.42, b: 0.33 };
+                const c = side === 'left' ? new BABYLON.Color3(0.25, 0.45, 1.0) : new BABYLON.Color3(tr.r, tr.g, tr.b);
+                const luma = 0.3 * c.r + 0.59 * c.g + 0.11 * c.b;
+                return new BABYLON.Color3(c.r + (luma - c.r) * 0.12, c.g + (luma - c.g) * 0.12, c.b + (luma - c.b) * 0.12).scale(1.25);
+            };
+            window.refreshCastleTeamColors = () => {
+                for (const side of ['left', 'right']) {
+                    const c = castles[side];
+                    if (!c) continue;
+                    const col = castleTeamColor(side);
+                    c.teamMats.forEach(m => { m.albedoColor = col; });
                 }
+            };
 
-                // === BUTTRESSES (Corner pillars - decorative) ===
-                const buttressWidth = 0.8;
-                const buttressDepth = 1.8;
-                const buttressHeight = wallHeight + 0.5;
-
-                [-1, 1].forEach((side, idx) => {
-                    const buttress = BABYLON.MeshBuilder.CreateBox(
-                        (isPlayer ? "playerButtress_" : "aiButtress_") + idx,
-                        { width: buttressDepth, height: buttressHeight, depth: buttressWidth },
-                        scene
-                    );
-                    buttress.position.set(
-                        baseX + xSign * 0.3,  // Slightly forward
-                        buttressHeight / 2,
-                        side * (wallWidth/2 + buttressWidth/2 - 0.2)
-                    );
-                    buttress.material = mat;  // Use same material - texture loads async
-                    // D2 style: only characters/projectiles cast shadows
-                    buttress.receiveShadows = true;
-                });
-
-                // === CRENELLATIONS (Merlons - the raised parts) ===
-                const topY = wallHeight;
-                const merlonCount = 5;
-                const merlonWidth = 0.9;
-                const merlonHeight = 0.8;
-                const merlonDepth = wallDepth + 0.2;
-                const merlonSpacing = wallWidth / merlonCount;
-
-                for (let i = 0; i < merlonCount; i++) {
-                    const merlon = BABYLON.MeshBuilder.CreateBox(
-                        (isPlayer ? "playerMerlon_" : "aiMerlon_") + i,
-                        { width: merlonDepth, height: merlonHeight, depth: merlonWidth },
-                        scene
-                    );
-                    merlon.position.set(
-                        baseX,
-                        topY + merlonHeight/2,
-                        -wallWidth/2 + merlonSpacing/2 + i * merlonSpacing
-                    );
-                    merlon.material = keystoneMat;
-                    // D2 style: only characters/projectiles cast shadows
-                }
-
-                // === ARROW SLITS (Dark recesses) ===
-                const slitPositions = [-1.5, 1.5];  // Two arrow slits
-                slitPositions.forEach((zPos, idx) => {
-                    const slit = BABYLON.MeshBuilder.CreateBox(
-                        (isPlayer ? "playerSlit_" : "aiSlit_") + idx,
-                        { width: 0.3, height: 1.5, depth: 0.2 },
-                        scene
-                    );
-                    slit.position.set(
-                        baseX - xSign * 0.5,  // Slightly recessed
-                        wallHeight * 0.6,     // Upper middle of wall
-                        zPos
-                    );
-                    slit.material = darkStoneMat;
-                    // D2 style: only characters/projectiles cast shadows
-                });
-
-                // === GATE ARCHWAY (Dark recess in center) ===
-                const archway = BABYLON.MeshBuilder.CreateBox(
-                    (isPlayer ? "playerArchway" : "aiArchway"),
-                    { width: 0.4, height: 2.2, depth: 1.8 },
-                    scene
-                );
-                archway.position.set(
-                    baseX - xSign * 0.4,  // Recessed
-                    1.1,                   // Bottom of wall
-                    0                      // Center
-                );
-                archway.material = darkStoneMat;
-                // D2 style: only characters/projectiles cast shadows
-
-                // Arch top (decorative keystone)
-                const archTop = BABYLON.MeshBuilder.CreateBox(
-                    (isPlayer ? "playerArchTop" : "aiArchTop"),
-                    { width: 0.5, height: 0.5, depth: 2.0 },
-                    scene
-                );
-                archTop.position.set(baseX, 2.4, 0);
-                archTop.material = keystoneMat;
-                // D2 style: only characters/projectiles cast shadows
-
-                // === STONE FOUNDATION (Base) ===
-                const foundation = BABYLON.MeshBuilder.CreateBox(
-                    (isPlayer ? "playerFoundation" : "aiFoundation"),
-                    { width: wallDepth + 0.6, height: 0.4, depth: wallWidth + 1.0 },
-                    scene
-                );
-                foundation.position.set(baseX, 0.2, 0);
-                const foundationMat = mat.clone((isPlayer ? "pFoundMat" : "aFoundMat"));
-                foundationMat.diffuseColor = mat.diffuseColor.scale(0.7);  // Darker base
-                foundation.material = foundationMat;
-                // D2 style: only characters/projectiles cast shadows
-                foundation.receiveShadows = true;
-
-                // ============================================================
-                // TOWER KEEP - a tall stone tower rising behind the gate so the
-                // whole structure reads as a fortified tower (gate = destructible
-                // base; keep + crenellations + roof = the tower silhouette).
-                // ============================================================
-                const teamCol = isPlayer ? new BABYLON.Color3(0.30, 0.45, 0.95) : new BABYLON.Color3(0.95, 0.32, 0.28);
-                const keepX = baseX + xSign * 1.3;     // set back behind the gate wall
-                const keepS = 3.4;                      // square footprint (narrower than the 6-wide gate)
-                const keepH = 8.0;                      // tall
-                const edgeBlack = () => new BABYLON.Color4(0, 0, 0, 1);
-
-                const keep = BABYLON.MeshBuilder.CreateBox((isPlayer ? "playerKeep" : "aiKeep"),
-                    { width: keepS, height: keepH, depth: keepS }, scene);
-                keep.position.set(keepX, keepH / 2, 0);
-                // Dedicated material that tiles the stone properly so it isn't stretched
-                // vertically over the tall keep faces.
-                const keepTex = new BABYLON.Texture("textures/tower_stone.png?v=3", scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
-                keepTex.uScale = 2; keepTex.vScale = 5;
-                const keepMat = new BABYLON.StandardMaterial((isPlayer ? "pKeepMat" : "aKeepMat"), scene);
-                keepMat.diffuseTexture = keepTex;
-                keepMat.specularColor = BABYLON.Color3.Black();
-                keepMat.diffuseColor = new BABYLON.Color3(0.62, 0.62, 0.62);  // darken (kept crisp native tex)
-                // NOTE: deliberately NOT grunged — on the tall keep the 512 grunge tiles 2x5 (10x) and,
-                // minified at distance, the soft AO blobs drown the brick detail (reads washed/stretched).
-                // The crisp native tower_stone tex + darkening reads far better here. Gate keeps its grunge.
-                keep.material = keepMat;
-                keep.receiveShadows = true;
-                if (window.shadowGenerator) window.shadowGenerator.addShadowCaster(keep);
-
-                // Parapet band at the top (slightly oversized)
-                const parapet = BABYLON.MeshBuilder.CreateBox((isPlayer ? "playerParapet" : "aiParapet"),
-                    { width: keepS + 0.5, height: 0.6, depth: keepS + 0.5 }, scene);
-                parapet.position.set(keepX, keepH, 0);
-                const parapetTex = new BABYLON.Texture("textures/tower_stone.png?v=3", scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
-                parapetTex.uScale = 3; parapetTex.vScale = 1;
-                const parapetMat = new BABYLON.StandardMaterial((isPlayer ? "pParaMat" : "aParaMat"), scene);
-                parapetMat.diffuseTexture = parapetTex;
-                parapetMat.specularColor = BABYLON.Color3.Black();
-                parapetMat.diffuseColor = new BABYLON.Color3(0.62, 0.62, 0.62);  // darken (kept crisp native tex)
-                parapet.material = parapetMat;
-                parapet.receiveShadows = true;
-
-                // Crenellations around the parapet edge
-                const pHalf = (keepS + 0.5) / 2;
-                const merlonY = keepH + 0.6 + 0.3;
-                for (let p = -pHalf + 0.35; p <= pHalf - 0.35; p += 0.78) {
-                    [[p, pHalf], [p, -pHalf], [pHalf, p], [-pHalf, p]].forEach(([dx, dz], k) => {
-                        const m = BABYLON.MeshBuilder.CreateBox((isPlayer ? "pKM" : "aKM") + p.toFixed(1) + k,
-                            { width: 0.45, height: 0.7, depth: 0.45 }, scene);
-                        m.position.set(keepX + dx, merlonY, dz);
-                        m.material = keystoneMat;
+            const loadCastle = (isPlayer) => {
+                const side = isPlayer ? 'left' : 'right';
+                const root = new BABYLON.TransformNode(isPlayer ? 'playerCastle' : 'aiCastle', scene);
+                root.position.set((isPlayer ? -1 : 1) * towerX, 0, 0);
+                // 0.9: keeps the pennant clear of the HUD's tower labels. Red = mirrored in X.
+                root.scaling.set(isPlayer ? 0.9 : -0.9, 0.9, 0.9);
+                const c = castles[side] = { root, states: [], debris: [], shown: -1, teamMats: [] };
+                BABYLON.SceneLoader.ImportMeshAsync('', 'models/castle/', 'castle.glb?v=1', scene).then(res => {
+                    res.meshes[0].parent = root;   // glTF __root__ (carries the handedness flip)
+                    const nodes = [...res.transformNodes, ...res.meshes];
+                    for (let s = 0; s < 4; s++) c.states[s] = nodes.find(n => n.name === 'castle_s' + s);
+                    c.states.forEach((n, i) => { if (n) n.setEnabled(i === 0); });   // pristine until the first frame syncs
+                    res.meshes.forEach(m => {
+                        const mat = m.material;
+                        if (!mat) return;
+                        // Match the flat PS1 storybook look (same treatment as the pickle wizards):
+                        // no PBR gloss/reflections, crisp nearest texels with mipmapped minification.
+                        mat.metallic = 0; mat.roughness = 1; mat.environmentIntensity = 0;
+                        if (mat.albedoTexture) mat.albedoTexture.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
+                        if (/_team$/.test(mat.name) && !c.teamMats.includes(mat)) c.teamMats.push(mat);
+                        if (mat.name === 'M_window') mat.emissiveColor = new BABYLON.Color3(0.95, 0.6, 0.25);
                     });
-                }
-
-                // Team-colored pyramidal roof
-                const roof = BABYLON.MeshBuilder.CreateCylinder((isPlayer ? "playerRoof" : "aiRoof"),
-                    { diameterTop: 0, diameterBottom: keepS + 1.0, height: 3.4, tessellation: 4 }, scene);
-                roof.rotation.y = Math.PI / 4;          // align the 4-sided pyramid square to the keep
-                roof.position.set(keepX, keepH + 0.6 + 1.7, 0);
-                const roofMat = new BABYLON.StandardMaterial((isPlayer ? "pRoofMat" : "aRoofMat"), scene);
-                // Heavily desaturated team color: the saturated cones clashed with the red/blue
-                // HP bars directly above them in the HUD. Mix ~55% toward luma grey, keep it dark.
-                const roofLuma = 0.3 * teamCol.r + 0.59 * teamCol.g + 0.11 * teamCol.b;
-                const roofCol = new BABYLON.Color3(
-                    teamCol.r + (roofLuma - teamCol.r) * 0.38,
-                    teamCol.g + (roofLuma - teamCol.g) * 0.38,
-                    teamCol.b + (roofLuma - teamCol.b) * 0.38);
-                roofMat.diffuseColor = roofCol.scale(0.55);
-                roofMat.specularColor = BABYLON.Color3.Black();
-                roofMat.emissiveColor = roofCol.scale(0.04);   // barely-there glow
-                roof.material = roofMat;
-                if (window.shadowGenerator) window.shadowGenerator.addShadowCaster(roof);
+                    const debrisRoot = nodes.find(n => n.name === 'castle_debris');
+                    if (debrisRoot) {
+                        debrisRoot.getChildMeshes(true).forEach(mesh => {
+                            c.debris.push({ mesh, parent: mesh.parent, home: mesh.position.clone(),
+                                            homeRot: mesh.rotationQuaternion ? mesh.rotationQuaternion.clone() : null,
+                                            t: -1, vel: new BABYLON.Vector3(), spin: new BABYLON.Vector3(), bounced: false });
+                            mesh.setEnabled(false);
+                        });
+                    }
+                    window.refreshCastleTeamColors();
+                    c.shown = -1;   // first frame snaps to the current HP state
+                }).catch(e => console.warn('[castle] load failed', e));
             };
-
-            createGate(true);   // Player gate
-            createGate(false);  // AI gate
-
-            // Remove the hard black outline (enableEdgesRendering) from the castle pieces -
-            // it reads as a harsh cartoon edge on the towers.
-            scene.meshes.forEach(m => {
-                if (m.name && /(Brick|Buttress|Merlon|Arch|Foundation|Keep|Parapet|Roof|KM)/.test(m.name) && m.disableEdgesRendering) {
-                    m.disableEdgesRendering();
-                }
-            });
-
-            // Characters and towers keep the sun's DYNAMIC shadow -- it casts a crisp,
-            // offset shape on the lit ground that reads far more clearly than a soft blob
-            // disc centered under the model (which the body occludes and the fog washes out).
-            // Only projectiles were pulled off the sun (they use blob shadows) to keep the
-            // fireball's per-frame interaction load down. The separate castleLight still does
-            // castle self-shadowing.
-            // (sunLight.shadowEnabled stays true by default.)
-
-            // === CASTLE SELF-SHADOWING ===
-            // Create a separate light & shadow generator just for castle self-shadows
-            // This way castle shadows don't appear on the floor
-            const castleLight = new BABYLON.DirectionalLight(
-                "castleLight",
-                sunLight.direction.clone(),  // Same direction as main sun
-                scene
-            );
-            castleLight.intensity = 0;  // No actual illumination, just for shadows
-            castleLight.shadowEnabled = true;
-
-            const castleShadowGen = new BABYLON.ShadowGenerator(1024, castleLight);
-            castleShadowGen.darkness = 0.3;
-            castleShadowGen.useExponentialShadowMap = false;
-            castleShadowGen.usePoissonSampling = true;
-            castleShadowGen.bias = 0.0001;
-            castleShadowGen.getShadowMap().refreshRate = 1;  // Every frame - no crawling shimmer
-
-            // Find all castle meshes and add them as shadow casters
-            const castlePrefixes = ["playerBrick_", "aiBrick_", "playerButtress_", "aiButtress_",
-                "playerMerlon_", "aiMerlon_", "playerSlit_", "aiSlit_",
-                "playerArchway", "aiArchway", "playerArchTop", "aiArchTop",
-                "playerFoundation", "aiFoundation"];
-
-            scene.meshes.forEach(mesh => {
-                const isCastle = castlePrefixes.some(prefix => mesh.name.startsWith(prefix));
-                if (isCastle) {
-                    castleShadowGen.addShadowCaster(mesh);
-                    mesh.receiveShadows = true;  // Receive shadows from castle light
-                }
-            });
-
-            // Limit castle light to only affect castle meshes (so shadows only appear on castle)
-            castleLight.includedOnlyMeshes = scene.meshes.filter(mesh =>
-                castlePrefixes.some(prefix => mesh.name.startsWith(prefix))
-            );
-
-            // === TEAM-COLORED BACKDROP WALLS ===
-            const playerBackdropMat = new BABYLON.StandardMaterial("playerBackdropMat", scene);
-            playerBackdropMat.diffuseColor = new BABYLON.Color3(0.20, 0.33, 0.65);  // Blue tint, darkened ~0.65×
-            playerBackdropMat.specularColor = BABYLON.Color3.Black();
-
-            const aiBackdropMat = new BABYLON.StandardMaterial("aiBackdropMat", scene);
-            aiBackdropMat.diffuseColor = new BABYLON.Color3(0.65, 0.26, 0.23);  // Red tint, darkened ~0.65×
-            aiBackdropMat.specularColor = BABYLON.Color3.Black();
-
-            const createBackdrop = (isPlayer) => {
-                const xSign = isPlayer ? -1 : 1;
-                const baseX = xSign * towerX;
-
-                const backdropHeight = 8;
-                const backdropWidth = 6;
-                const backdrop = BABYLON.MeshBuilder.CreateBox(
-                    (isPlayer ? "playerBackdrop" : "aiBackdrop"),
-                    { width: 0.3, height: backdropHeight, depth: backdropWidth },
-                    scene
-                );
-                backdrop.position.set(
-                    baseX + xSign * 1.5,  // Behind the castle
-                    backdropHeight / 2,
-                    0
-                );
-                backdrop.material = isPlayer ? playerBackdropMat : aiBackdropMat;
-                // D2 style: only characters/projectiles cast shadows
-                backdrop.receiveShadows = true;
-
-                return backdrop;
-            };
-
-            const playerBackdrop = createBackdrop(true);
-            const aiBackdrop = createBackdrop(false);
+            loadCastle(true);    // Player (blue) castle
+            loadCastle(false);   // AI (red) castle
 
             // --- Tower placement: group every end-structure mesh under one root per side
             // so the whole tower can be nudged as a unit to sit flush against the stage.
@@ -12068,25 +11424,24 @@
             {
                 const towerRootP = new BABYLON.TransformNode('playerTowerRoot', scene);
                 const towerRootA = new BABYLON.TransformNode('aiTowerRoot', scene);
-                const isTowerPiece = /(Brick_|Buttress_|Merlon_|Slit_|Archway|ArchTop|Foundation|Keep|Parapet|Roof|Backdrop)/;
-                scene.meshes.forEach(m => {
-                    if (!m.name || m.parent) return;
-                    if (m.name.startsWith('player') && isTowerPiece.test(m.name)) m.parent = towerRootP;
-                    else if (m.name.startsWith('ai') && isTowerPiece.test(m.name)) m.parent = towerRootA;
-                    else if (m.name.startsWith('pKM')) m.parent = towerRootP;
-                    else if (m.name.startsWith('aKM')) m.parent = towerRootA;
-                });
+                castles.left.root.parent = towerRootP;
+                castles.right.root.parent = towerRootA;
                 const blueBaseMesh = scene.getMeshByName('blueBase');
                 const redBaseMesh = scene.getMeshByName('redBase');
                 if (blueBaseMesh) blueBaseMesh.parent = towerRootP;
                 if (redBaseMesh) redBaseMesh.parent = towerRootA;
+                // The Blender castles stand straight on the lane (the rails now run past the stage
+                // ends), so the team-colored base slabs are hidden. Kept, not deleted: doubles
+                // still resizes them and the painted tower shadows are placed from them.
+                if (blueBaseMesh) blueBaseMesh.setEnabled(false);
+                if (redBaseMesh) redBaseMesh.setEnabled(false);
                 window.setTowerOffset = (hugX = 0, upZ = 0) => {
                     towerRootP.position.set(hugX, 0, upZ);
                     towerRootA.position.set(-hugX, 0, upZ);
                 };
-                // Tuned against the painted backdrop: hug the stage ends and lift so the
-                // base slabs meet the top rail with no backdrop sliver showing through.
-                window.setTowerOffset(0.4, -1.0);
+                // Hug the stage ends; centred on the lane, since the castle's gate wall spans
+                // rail to rail (its drum bastions sit on the two rails).
+                window.setTowerOffset(0.4, 0);
             }
 
             // Load castle wall texture for team-colored surfaces
@@ -12100,21 +11455,11 @@
                         blueTex.vScale = 2;
                         blueBaseMat.diffuseTexture = blueTex;
 
-                        const blueBackTex = teamTex.clone();
-                        blueBackTex.uScale = 2;
-                        blueBackTex.vScale = 3;
-                        playerBackdropMat.diffuseTexture = blueBackTex;
-
                         // Apply to red team (base + backdrop)
                         const redTex = teamTex.clone();
                         redTex.uScale = 2;
                         redTex.vScale = 2;
                         redBaseMat.diffuseTexture = redTex;
-
-                        const redBackTex = teamTex.clone();
-                        redBackTex.uScale = 2;
-                        redBackTex.vScale = 3;
-                        aiBackdropMat.diffuseTexture = redBackTex;
 
                         console.log("Team textures loaded (castle wall with color tints)");
                     },
@@ -12123,98 +11468,101 @@
             };
             loadTeamTextures();
 
-            // Store brick arrays globally
-            window.playerBricks = playerBricks;
-            window.aiBricks = aiBricks;
+            // ============================================================
+            // CASTLE DAMAGE STATES + CRUMBLE BEAT (presentation only)
+            // Every frame, each castle shows the state for its tower's CURRENT towerHealth:
+            //   > 75% pristine · > 50% battered · > 25% breached · otherwise ruined.
+            // Deriving it from settled state (rather than reacting to damage calls, which also run
+            // inside rollback resims) keeps it rollback-safe, and it also covers HP carried between
+            // zones and the 50% regen floor. Dropping into a worse state mid-round plays the
+            // crumble: loose chunks fall off the castle with a small shake. Round resets and zone
+            // changes snap straight to the right state instead.
+            // ============================================================
+            const castleStateFor = (hp) => {
+                const f = hp / maxTowerHealth;
+                return f > 0.75 ? 0 : f > 0.5 ? 1 : f > 0.25 ? 2 : 3;
+            };
+            let crumbleSeed = 7;   // decorative RNG for debris scatter (not sim state)
+            const crumbleRand = () => (crumbleSeed = (crumbleSeed * 16807) % 2147483647) / 2147483647;
 
-            // Position-based brick destruction
-            window.destroyBrickAt = (isPlayerGate, hitZ) => {
-                const bricks = isPlayerGate ? playerBricks : aiBricks;
-                const visibleBricks = bricks.filter(b => b.isVisible && !b.isDestroying);
-                if (visibleBricks.length === 0) return;
+            const launchDebris = (side, count) => {
+                const c = castles[side];
+                if (!c || !c.debris.length) return;
+                const courtDir = side === 'left' ? 1 : -1;
+                for (const d of c.debris) {
+                    if (count <= 0) break;
+                    if (d.t >= 0) continue;   // already falling
+                    count--;
+                    d.mesh.setEnabled(true);
+                    d.mesh.visibility = 1;
+                    d.mesh.setParent(null);   // fly in world space (keeps its current world transform)
+                    d.vel.set(courtDir * (1.2 + crumbleRand() * 2.8), 1.5 + crumbleRand() * 3.5, -(0.8 + crumbleRand() * 2.2));
+                    d.spin.set((crumbleRand() - 0.5) * 9, (crumbleRand() - 0.5) * 9, (crumbleRand() - 0.5) * 9);
+                    d.t = 0;
+                    d.bounced = false;
+                }
+            };
+            const resetDebris = (d) => {
+                d.t = -1;
+                d.mesh.setEnabled(false);
+                d.mesh.visibility = 1;
+                d.mesh.setParent(d.parent);
+                d.mesh.position.copyFrom(d.home);
+                if (d.homeRot) d.mesh.rotationQuaternion.copyFrom(d.homeRot);
+            };
+            const showCastleState = (c, s) => {
+                c.states.forEach((n, i) => { if (n) n.setEnabled(i === s); });
+                c.shown = s;
+            };
 
-                // Find brick closest to hit position
-                let closestBrick = null;
-                let closestDist = Infinity;
+            // Per-hit feedback (replaces the old brick pop): a chunk or two breaks off. Skipped
+            // during rollback resims so a replayed hit can't spawn a second set.
+            window.castleHit = (isPlayerTower, damage) => {
+                if (typeof isResimulating !== 'undefined' && isResimulating) return;
+                if (window._reduceMotion) return;
+                launchDebris(isPlayerTower ? 'left' : 'right', Math.min(2, damage));
+            };
+            // Round reset / zone change: snap to the current HP state, recall flying debris.
+            window.syncCastleStates = () => {
+                for (const side of ['left', 'right']) {
+                    const c = castles[side];
+                    if (!c) continue;
+                    c.debris.forEach(d => { if (d.t >= 0) resetDebris(d); });
+                    c.shown = -1;
+                }
+            };
 
-                for (const brick of visibleBricks) {
-                    const dist = Math.abs(brick.originalZ - hitZ);
-                    if (dist < closestDist) {
-                        closestDist = dist;
-                        closestBrick = brick;
+            scene.onBeforeRenderObservable.add(() => {
+                const dt = Math.min(scene.getEngine().getDeltaTime() / 1000, 0.05);
+                for (const side of ['left', 'right']) {
+                    const c = castles[side];
+                    const comb = combatants[side];
+                    if (!c || !c.states.length || !c.states[0] || !comb) continue;
+                    const want = castleStateFor(comb.towerHealth);
+                    if (want !== c.shown) {
+                        const crumble = c.shown >= 0 && want > c.shown && gameState === 'playing' && !roundTransitioning;
+                        showCastleState(c, want);
+                        if (crumble) {
+                            launchDebris(side, window._reduceMotion ? 4 : 12);
+                            if (window.screenShake && !window._reduceMotion) window.screenShake(0.35, 0.35);
+                        }
+                    }
+                    for (const d of c.debris) {
+                        if (d.t < 0) continue;
+                        d.t += dt;
+                        d.vel.y -= 18 * dt;
+                        d.mesh.position.addInPlace(d.vel.scale(dt));
+                        d.mesh.addRotation(d.spin.x * dt, d.spin.y * dt, d.spin.z * dt);
+                        if (d.mesh.position.y < 0.15 && d.vel.y < 0) {
+                            d.mesh.position.y = 0.15;
+                            if (!d.bounced) { d.vel.y *= -0.3; d.vel.x *= 0.5; d.vel.z *= 0.5; d.spin.scaleInPlace(0.4); d.bounced = true; }
+                            else { d.vel.set(0, 0, 0); d.spin.set(0, 0, 0); }
+                        }
+                        if (d.t > 1.1) d.mesh.visibility = Math.max(0, 1 - (d.t - 1.1) / 0.5);
+                        if (d.t > 1.6) resetDebris(d);
                     }
                 }
-
-                if (!closestBrick) return;
-
-                closestBrick.isDestroying = true;
-
-                // Explosive physics - fly outward in random directions
-                const startTime = performance.now();
-                const explodeDuration = 1200;
-                const gravity = 15;
-
-                // Random explosive velocity (outward from gate)
-                const outwardDir = isPlayerGate ? -1 : 1;  // Away from gate
-                const explodeSeed = closestBrick.originalZ || 0;
-                let velX = outwardDir * (3 + deterministicRange(explodeSeed + 1, 0, 5));  // Strong outward
-                let velY = 2 + deterministicRange(explodeSeed + 2, 0, 6);  // Upward burst
-                let velZ = (deterministicValue(explodeSeed + 3) - 0.5) * 8;  // Sideways
-
-                // Dramatic rotation
-                const rotSpeedX = (deterministicValue(explodeSeed + 4) - 0.5) * 12;
-                const rotSpeedY = (deterministicValue(explodeSeed + 5) - 0.5) * 12;
-                const rotSpeedZ = (deterministicValue(explodeSeed + 6) - 0.5) * 12;
-
-                const animateExplode = () => {
-                    const elapsed = performance.now() - startTime;
-                    const progress = elapsed / explodeDuration;
-
-                    if (progress < 1) {
-                        // Apply gravity
-                        velY -= gravity * 0.016;
-
-                        // Move brick
-                        closestBrick.position.x += velX * 0.016;
-                        closestBrick.position.y += velY * 0.016;
-                        closestBrick.position.z += velZ * 0.016;
-
-                        // Spin wildly
-                        closestBrick.rotation.x += rotSpeedX * 0.016;
-                        closestBrick.rotation.y += rotSpeedY * 0.016;
-                        closestBrick.rotation.z += rotSpeedZ * 0.016;
-
-                        // Fade out in second half
-                        if (progress > 0.5) {
-                            closestBrick.visibility = 1 - ((progress - 0.5) / 0.5);
-                        }
-
-                        requestAnimationFrame(animateExplode);
-                    } else {
-                        closestBrick.isVisible = false;
-                        closestBrick.visibility = 1;
-                    }
-                };
-
-                animateExplode();
-            };
-
-            // Reset bricks function
-            window.resetBricks = () => {
-                [...playerBricks, ...aiBricks].forEach(brick => {
-                    brick.isVisible = true;
-                    brick.isDestroying = false;
-                    brick.visibility = 1;
-                    if (brick.originalPos) {
-                        brick.position.copyFrom(brick.originalPos);
-                    }
-                    if (brick.originalRot) {
-                        brick.rotation.copyFrom(brick.originalRot);
-                    } else {
-                        brick.rotation.set(0, 0, 0);
-                    }
-                });
-            };
+            });
 
             // Glow layer reference (created in lighting section)
             const glow = window.glowLayer;
@@ -12233,6 +11581,119 @@
                 "squareParticle", squareParticleCanvas.toDataURL(), scene, false, false,
                 BABYLON.Texture.NEAREST_SAMPLINGMODE
             );
+
+            // ============================================================
+            // SPELL MODELS — built in Blender (tools/blender/build_spells.py -> models/fx/spells.glb):
+            // fx_fireball (faceted flame comet) and fx_frostbolt (faceted ice spear), coloured by
+            // vertex colours and rendered unlit. Each projectile gets a clone parented to its
+            // proj.mesh (the sim-mirrored anchor), so it inherits position + the per-volley scale;
+            // the old dot core + sphere halo are hidden. Everything that feeds the reactive fog is
+            // kept on purpose (point light, fog cuts, trail, sparks); the cores bloom on spellGlow.
+            // Visual only. If the GLB isn't loaded yet, a projectile keeps the old look.
+            // ============================================================
+            const spellTemplates = {};
+            // The spell cores bloom on their OWN glow layer: brighter than the scene's warm glow
+            // (only the core blooms, so the halo still hugs the hitbox). Created once the templates
+            // exist: a GlowLayer with an empty include list would bloom every emissive mesh.
+            let spellGlow = null;
+            const isSpellCore = m => m.material && m.material.name === 'M_fx_core';
+            BABYLON.SceneLoader.ImportMeshAsync('', 'models/fx/', 'spells.glb?v=1', scene).then(res => {
+                res.meshes[0].setEnabled(false);   // glTF __root__: templates stay hidden
+                for (const key of ['fx_fireball', 'fx_frostbolt', 'fx_iceblock']) {
+                    spellTemplates[key] = [...res.transformNodes, ...res.meshes].find(n => n.name === key);
+                }
+                spellGlow = new BABYLON.GlowLayer('spellGlow', scene, { blurKernelSize: 24, mainTextureFixedSize: 256 });
+                spellGlow.intensity = 2.4;
+                res.meshes.filter(isSpellCore).forEach(m => spellGlow.addIncludedOnlyMesh(m));   // (hidden)
+                spellGlow.customEmissiveColorSelector = (mesh, subMesh, material, result) => {
+                    if (mesh.name.includes('frostbolt')) result.set(0.08, 0.14, 0.22, 1);   // ice: a cold sheen, not a light
+                    else if (mesh.name.startsWith('skyBolt')) result.set(0.85 * material.alpha, 0.62 * material.alpha, 0.18 * material.alpha, 1);   // lightning: gold
+                    else if (mesh.name.startsWith('impact')) {                               // impacts: soft, in their own colour
+                        const c = material.emissiveColor;
+                        result.set(c.r * 0.3, c.g * 0.3, c.b * 0.3, 1);
+                    }
+                    else result.set(1, 0.5, 0.15, 1);
+                };
+                // Freeze prisons: swap the old box crystals for the Blender crystal ring, under the
+                // same roots (freeze timing, wobble and shatter are unchanged).
+                for (const root of [window.playerIceBlock, window.aiIceBlock]) {
+                    const tmpl = spellTemplates.fx_iceblock;
+                    if (!root || !tmpl) continue;
+                    root.getChildMeshes(true).forEach(m => m.dispose(false, false));
+                    root.scaling.setAll(1);           // the gem is authored at true size (old boxes were stretched)
+                    // Centre the gem on the wizard MODEL (it sits MODEL_BACK behind the paddle), not
+                    // halfway to the shield: the old stretched boxes hid that offset, the gem doesn't.
+                    root.position.x = modelBackFor(root === window.playerIceBlock ? 'left' : 'right');
+                    root.position.z = 0;
+                    const crystals = tmpl.clone(root.name + '_crystals', root);
+                    crystals.setEnabled(true);
+                    crystals.position.setAll(0);
+                    crystals.rotationQuaternion = null;
+                    crystals.rotation.setAll(0);
+                    crystals.scaling.setAll(1);
+                    [crystals, ...crystals.getChildMeshes(false)].forEach(m => {
+                        if (m instanceof BABYLON.AbstractMesh) { m.renderingGroupId = 2; m.isPickable = false; }
+                    });
+                }
+                window.spellGlowLayer = spellGlow;
+                res.meshes.forEach(m => {
+                    const mat = m.material;
+                    if (!mat) return;
+                    mat.unlit = true;                 // vertex colours ARE the colour
+                    mat.backFaceCulling = false;
+                    if (mat.name === 'M_fx_ice') {    // freeze prison: see-through blue glass, so the
+                        mat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;   // frozen
+                        mat.alpha = 0.55;             // wizard reads clearly inside, tinted blue
+                    }
+                    if (mat.name === 'M_fx_shell') {  // translucent fire shells, ADDITIVE on purpose:
+                        mat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;
+                        mat.alphaMode = BABYLON.Engine.ALPHA_ADD;   // they stack to a white-hot head —
+                        mat.alpha = 0.85;             // nothing else in the scene is white, so the ball
+                    }                                 // pops off its orange trail (A/B'd vs a 50/50 blend)
+                });
+            }).catch(e => console.warn('[spells] load failed', e));
+
+            // Model size on top of the per-volley mesh scale. The fireball is authored so its
+            // bright core IS the collision sphere at every volley tier (see build_spells.py) —
+            // players block by eye, so the visual must never read bigger than the hitbox.
+            const SPELL_MODEL_SCALE = { fx_fireball: 1.0, fx_frostbolt: 1.4 };
+            const attachSpellModel = (proj, key) => {
+                const tmpl = spellTemplates[key];
+                if (!tmpl) return;
+                const pivot = new BABYLON.TransformNode(proj.type + '_visPivot', scene);
+                pivot.parent = proj.mesh;
+                pivot.scaling.setAll(SPELL_MODEL_SCALE[key] || 1);
+                const vis = tmpl.clone(proj.type + '_vis', pivot);   // clones children, shares materials
+                vis.setEnabled(true);
+                vis.position.setAll(0);
+                vis.rotationQuaternion = null;
+                vis.rotation.setAll(0);
+                vis.scaling.setAll(1);
+                // Only the solid core blooms (not the flame shells), so the glow hugs the hitbox.
+                if (spellGlow) vis.getChildMeshes(false).concat(vis instanceof BABYLON.AbstractMesh ? [vis] : [])
+                    .filter(isSpellCore)
+                    .forEach(m => spellGlow.addIncludedOnlyMesh(m));
+                proj.mesh.isVisible = false;          // old dot core
+                if (proj.glow) proj.glow.isVisible = false;   // old sphere halo
+                if (proj.trailMat) proj.trailMat.alpha *= 0.65; // trail = faint motion streak behind the flame
+                proj.visPivot = pivot;
+                proj.vis = vis;
+            };
+            // Per-frame: point along the flight direction; fire flickers + rolls, ice spins.
+            const updateSpellModel = (proj) => {
+                if (!proj.vis) return;
+                if (proj.velX || proj.velZ) proj.visPivot.rotation.y = Math.atan2(-proj.velZ, proj.velX);
+                const t = proj.time || 0;
+                if (proj.type === 'frostbolt') {
+                    proj.vis.rotation.x = t * 7;
+                } else {
+                    proj.vis.rotation.x = t * 3.5;
+                    proj.vis.scaling.x = 1 + Math.sin(t * 23) * 0.12 + Math.sin(t * 41 + 1.3) * 0.06;
+                    const puff = 1 + Math.sin(t * 31 + 0.7) * 0.06;
+                    proj.vis.scaling.y = puff; proj.vis.scaling.z = puff;
+                }
+            };
+            window.updateSpellModel = updateSpellModel;
 
             // Fireball material - glowing hot core (D2 style)
             const fireballCoreMat = new BABYLON.StandardMaterial("fireballCoreMat", scene);
@@ -12333,11 +11794,16 @@
                 proj.trail.alwaysSelectAsActiveMesh = true;
 
                 // Fire light - illuminates surfaces
-                proj.light = new BABYLON.PointLight("fireLight_" + Date.now(), new BABYLON.Vector3(0, 0.3, 0), scene);
+                // Lifted above the ball and nudged toward the camera (a key-light cheat): the camera
+                // mostly sees tops and camera-facing sides, so that's where the fire should land —
+                // wall tops, the keep's face and the wizards light up as it passes.
+                proj.light = new BABYLON.PointLight("fireLight_" + Date.now(), new BABYLON.Vector3(0, 2.4, -1.6), scene);
                 proj.light.diffuse = new BABYLON.Color3(1, 0.6, 0.2);
-                proj.light.intensity = 1.2;       // Enhanced for ground/wall visibility
-                proj.light.range = 12;            // Wider range to reach surfaces
-                proj.baseIntensity = 1.2;
+                // Tuned against the 2.1 sun on the glTF castle/wizards (PBR, range falloff): bright
+                // enough that the side of the castle a fireball flies at visibly warms up.
+                proj.light.intensity = 12;
+                proj.light.range = 9;
+                proj.baseIntensity = 12;
                 proj.light.parent = proj.mesh;
 
                 // Particles
@@ -12402,6 +11868,8 @@
                 // Attach roaring fire sound (Tone.js synthesized)
                 const pan = startX / 10;  // Convert X position to -1 to 1 pan
                 proj.loopSound = createFireRoarSound(pan);
+
+                attachSpellModel(proj, 'fx_fireball');
 
                 // (Overdrive note: while channeling, spell casting is blocked entirely —
                 // tryNetworkCast gates on juiceActive, and every cast path routes through it
@@ -12509,12 +11977,12 @@
                 proj.trail.alwaysSelectAsActiveMesh = true;  // prevent frustum-cull blink
 
                 // Ice light
-                proj.light = new BABYLON.PointLight("iceLight_" + Date.now(), new BABYLON.Vector3(0, 0.3, 0), scene);
+                proj.light = new BABYLON.PointLight("iceLight_" + Date.now(), new BABYLON.Vector3(0, 2.4, -1.6), scene);   // see fireLight
                 proj.light.diffuse = new BABYLON.Color3(0.6, 0.85, 1);
-                proj.light.intensity = 1.0;           // Enhanced for ground/wall visibility
-                proj.light.range = 12;                // Wider range to reach surfaces
+                proj.light.intensity = 5;             // cold glint on what it passes (ice reflects, it doesn't burn)
+                proj.light.range = 8;
                 proj.light.parent = proj.mesh;
-                proj.baseIntensity = 1.0;
+                proj.baseIntensity = 5;
 
                 // Ice particles
                 proj.particles = new BABYLON.ParticleSystem("iceCore_" + Date.now(), 60, scene);
@@ -12596,6 +12064,8 @@
 
                 // Attach frostbolt looping sound
                 proj.loopSound = createLoopingSound('frostboltLoop', startX, 0.1);
+
+                attachSpellModel(proj, 'fx_frostbolt');
 
                 setupProjectileSceneFx(proj);
                 projectiles.push(proj);
@@ -12941,34 +12411,88 @@
                 bubble.dispose();
             };
 
+            // Impact burst (parries, spell-vs-spell cancels/overpowers, gate hits): a flat-shaded
+            // PS1 starburst (white-hot faceted core + a spray of sharp spikes, stepped retro fade)
+            // and, like the spells, a light source: a short pulse lights the wizards/castle and
+            // flashes the fog in the impact's colour. Reduce Motion: the burst geometry is skipped,
+            // only a gentle light fade remains. Presentation only.
+            const IMPACT_SPIKES = 9;
+            const buildSpikeBurst = (name, size) => {
+                const positions = [], indices = [];
+                for (let i = 0; i < IMPACT_SPIKES; i++) {
+                    // Mostly outward and upward; never down into the ground.
+                    const yaw = (i / IMPACT_SPIKES) * Math.PI * 2 + Math.random() * 0.5;
+                    const pitch = 0.1 + Math.random() * 0.9;
+                    const dir = new BABYLON.Vector3(Math.cos(yaw) * Math.cos(pitch), Math.sin(pitch), Math.sin(yaw) * Math.cos(pitch));
+                    const len = size * (0.5 + Math.random() * 0.45);
+                    const w = size * 0.07;
+                    const side = BABYLON.Vector3.Cross(dir, BABYLON.Axis.Y).normalize().scale(w);
+                    const up = BABYLON.Vector3.Cross(side, dir).normalize().scale(w);
+                    const base = positions.length / 3;
+                    const tip = dir.scale(len);
+                    for (const v of [side, up, side.scale(-1), up.scale(-1), tip]) positions.push(v.x, v.y, v.z);
+                    for (let k = 0; k < 4; k++) indices.push(base + k, base + (k + 1) % 4, base + 4);
+                }
+                const mesh = new BABYLON.Mesh(name, scene);
+                const vd = new BABYLON.VertexData();
+                vd.positions = positions; vd.indices = indices;
+                vd.normals = []; BABYLON.VertexData.ComputeNormals(positions, indices, vd.normals);
+                vd.applyToMesh(mesh);
+                return mesh;
+            };
             window.createImpactFlash = (position, color, size = 1.5) => {
-                if (window._reduceMotion) return;   // skip bright expanding impact flashes under Reduce Motion
-                const flash = BABYLON.MeshBuilder.CreateSphere("impact_" + Date.now(), { diameter: size }, scene);
-                flash.position.copyFrom(position);
-                flash.renderingGroupId = 2;     // above fog plane (group 1) — same fix as projectile/beam FX
+                const reduce = !!window._reduceMotion;
+                const light = new BABYLON.PointLight("impactLight", new BABYLON.Vector3(position.x, position.y + 2.2, position.z - 1.4), scene);
+                light.diffuse = color;
+                light.range = 6 + size * 2;
+                const peak = 7 * size;
+                const flash = { x: position.x, z: position.z, intensity: 0, type: color.b > color.r ? 1.0 : 0.0 };
+                (window._fogFlashes = window._fogFlashes || []).push(flash);
 
-                const flashMat = new BABYLON.StandardMaterial("impactMat_" + Date.now(), scene);
-                flashMat.emissiveColor = color;
-                flashMat.alpha = 0.8;
-                flashMat.disableLighting = true;
-                flashMat.fogEnabled = false;    // consistent with all beam/FX materials
-                flash.material = flashMat;
-
-                // Stepped fading (retro style) - 0.8 → 0.6 → 0.4 → 0.2 → 0, 40ms per step
-                const alphaSteps = [0.8, 0.6, 0.4, 0.2, 0];
-                const scaleSteps = [1.0, 1.3, 1.6, 1.9, 2.2];
-                let step = 0;
-                const stepInterval = setInterval(() => {
-                    step++;
-                    if (step >= alphaSteps.length) {
-                        clearInterval(stepInterval);
-                        flash.dispose();
-                        flashMat.dispose();
-                    } else {
-                        flashMat.alpha = alphaSteps[step];
-                        flash.scaling.setAll(scaleSteps[step]);
+                let core = null, spikes = null, mat = null;
+                if (!reduce) {
+                    mat = new BABYLON.StandardMaterial("impactMat", scene);
+                    mat.emissiveColor = BABYLON.Color3.Lerp(color, BABYLON.Color3.White(), 0.15);
+                    mat.disableLighting = true;
+                    mat.backFaceCulling = false;
+                    mat.fogEnabled = false;
+                    core = BABYLON.MeshBuilder.CreateIcoSphere("impactCore", { radius: size * 0.22, subdivisions: 1, flat: true }, scene);
+                    spikes = buildSpikeBurst("impactSpikes", size);
+                    for (const m of [core, spikes]) {
+                        m.position.copyFrom(position);
+                        m.material = mat;
+                        m.renderingGroupId = 2;     // above the fog plane
+                        m.isPickable = false;
+                        if (window.spellGlowLayer) window.spellGlowLayer.addIncludedOnlyMesh(m);
                     }
-                }, 40);
+                    spikes.rotation.y = Math.random() * Math.PI * 2;
+                }
+                // PS1 50/50 semi-transparency (half background + half burst) so a burst never whites
+                // out the play, then a stepped retro fade: 5 steps x 40ms; the light decays alongside.
+                const alphaSteps = [0.5, 0.5, 0.35, 0.2, 0];
+                const start = performance.now();
+                const life = reduce ? 320 : 200;
+                const obs = scene.onBeforeRenderObservable.add(() => {
+                    const t = performance.now() - start;
+                    const k = Math.max(0, 1 - t / life);
+                    light.intensity = peak * k * k;
+                    flash.intensity = 3 * k;
+                    if (mat) {
+                        const step = Math.min(alphaSteps.length - 1, Math.floor(t / 40));
+                        mat.alpha = alphaSteps[step];
+                        core.scaling.setAll(1 + step * 0.35);
+                        spikes.scaling.setAll(0.6 + step * 0.35);
+                    }
+                    if (t >= life) {
+                        scene.onBeforeRenderObservable.remove(obs);
+                        light.dispose();
+                        if (core) core.dispose();
+                        if (spikes) spikes.dispose();
+                        if (mat) mat.dispose();
+                        const i = window._fogFlashes.indexOf(flash);
+                        if (i >= 0) window._fogFlashes.splice(i, 1);
+                    }
+                });
             };
 
             // Parry a specific projectile
@@ -13991,6 +13515,7 @@
                     // PARRY_BUCKETS) so the two backs don't whiff/land on the same balls in lockstep.
                     // Reuses the same slotSalt map the (unused) per-frame RNG seed already keyed off.
                     slotSalt: DOUBLES_AI.slotSalt[slotKey] };
+                if (window._dbgAiOff) return defaultInput();   // dbg.aiOff(): AI stands idle
                 updateSlotThreatSight(st, slotKey);            // side-derived incoming sight tick
                 st.views.push(buildAIViewForSlot(slotKey));
                 while (st.views.length > prof.reactionFrames + 1) st.views.shift();
@@ -14100,7 +13625,8 @@
                 const lag = (aiProfile.reactionFrames | 0);
                 while (aiViewHistory.length > lag + 1) aiViewHistory.shift();
                 const aiView = aiViewHistory[0];   // oldest retained ≈ `lag` frames old once warmed
-                const rightInput = decideAI(aiView, spFrameCounter, makeAIRng(spFrameCounter ^ AI_RNG_SEED), aiProfile);
+                const rightInput = window._dbgAiOff ? defaultInput()   // dbg.aiOff(): AI stands idle
+                    : decideAI(aiView, spFrameCounter, makeAIRng(spFrameCounter ^ AI_RNG_SEED), aiProfile);
                 window.VolleyboltSim.simulateNetworkFrame(leftInput, rightInput, dt, buildSimCtx());
                 updateMatchPresentation(dt);
             }
@@ -15317,6 +14843,61 @@
                         }
                         _odClashWasActive = false;
                     };
+
+                    // Round/match end mid-Overdrive: wind the ult down instead of cutting it. The beam
+                    // and orbs collapse, their lights fade, the backdrop dim/tint and the fog colour
+                    // ease back, and the roar fades out; the instant reset above then runs at the end
+                    // as the guarantee. Driven from the render loop (the sim may already have stopped).
+                    window.fadeOutOverdrivePresentation = function (ms = 700) {
+                        if (window._odFadeObs) return;
+                        const roots = ['_overdriveBeamRoot_left', '_overdriveBeamRoot_right',
+                                       '_overdriveOrb_left', '_overdriveOrb_right']
+                            .map(k => window[k]).filter(n => n && n.isEnabled && n.isEnabled());
+                        if (_odClashOrbState && _odClashOrbState.root && _odClashOrbState.root.isEnabled && _odClashOrbState.root.isEnabled()) roots.push(_odClashOrbState.root);
+                        const scale0 = roots.map(n => n.scaling.clone());
+                        const lights = [];
+                        for (const sk of ['left', 'right']) {
+                            const t = window['_odT4_' + sk];
+                            if (!t) continue;
+                            for (const l of [...(t.beamLights || []), t.orbLight]) {
+                                if (l && l.isEnabled()) lights.push({ l, i0: l.intensity });
+                            }
+                        }
+                        const d = window._odBgDim;
+                        const bg = window.backdropLayer && window.backdropLayer.color;
+                        const bg0 = bg ? bg.clone() : null;
+                        const fog0 = (_odFogState && scene && scene.fogColor) ? scene.fogColor.clone() : null;
+                        const mat0 = _odFogState ? _odFogState.curMatFog.clone() : null;
+                        if (window.ToneSFX && ToneSFX.beamRoarStopAll) ToneSFX.beamRoarStopAll(ms / 1000);
+                        const start = performance.now();
+                        window._odFadeObs = scene.onBeforeRenderObservable.add(() => {
+                            const k = Math.min(1, (performance.now() - start) / ms);
+                            const e = 1 - (1 - k) * (1 - k);             // ease-out
+                            // Keep the beam/orbs on while they collapse: the per-frame Overdrive code
+                            // hides them the moment the channel ends, which is the pop we're removing.
+                            roots.forEach((n, i) => {
+                                if (k < 1 && !n.isEnabled()) n.setEnabled(true);
+                                n.scaling.set(scale0[i].x, scale0[i].y * (1 - e), scale0[i].z * (1 - e));
+                            });
+                            lights.forEach(o => { o.l.intensity = o.i0 * (1 - e); });
+                            if (bg && bg0 && d && d.origColor) {
+                                bg.r = bg0.r + (d.origColor.r - bg0.r) * e;
+                                bg.g = bg0.g + (d.origColor.g - bg0.g) * e;
+                                bg.b = bg0.b + (d.origColor.b - bg0.b) * e;
+                                if (d.cur) d.cur.copyFrom(bg);
+                            }
+                            if (fog0 && mat0) {
+                                BABYLON.Color3.LerpToRef(fog0, _odFogState.origSceneFog, e, scene.fogColor);
+                                BABYLON.Color3.LerpToRef(mat0, _odFogState.origMatFog, e, _odFogState.curMatFog);
+                                if (window.fogMaterial) window.fogMaterial.setColor3("fogColor", _odFogState.curMatFog);
+                            }
+                            if (k >= 1) {
+                                scene.onBeforeRenderObservable.remove(window._odFadeObs);
+                                window._odFadeObs = null;
+                                window.resetOverdrivePresentation();
+                            }
+                        });
+                    };
                 }
 
                 // ---- 1b. BACKGROUND DIM + TEAM TINT during overdrive ult ----
@@ -15460,13 +15041,13 @@
                     if ((c.freezeTime || 0) > 0) {
                         if (iceBlock) {
                             if (!iceBlock.isEnabled()) iceBlock.setEnabled(true);
-                            if (iceLight) iceLight.intensity = 0.8 + Math.sin(c.freezeTime * 10) * 0.2;
+                            if (iceLight) { iceLight.setEnabled(true); iceLight.intensity = 0.8 + Math.sin(c.freezeTime * 10) * 0.2; }
                             iceBlock.rotation.y = Math.sin(c.freezeTime * 3) * 0.08;
                         }
                     } else if (iceBlock && iceBlock.isEnabled()) {
                         if (window.shatterIceBlock) window.shatterIceBlock(isPlayer);
                         iceBlock.setEnabled(false);
-                        if (iceLight) iceLight.intensity = 0;
+                        if (iceLight) { iceLight.intensity = 0; iceLight.setEnabled(false); }
                         if (unfreezeAnim) unfreezeAnim();
                     }
                 }
@@ -15493,6 +15074,27 @@
                         }
                     }
 
+                    // dbg.hitboxes(): wireframe of the real collision sphere (parented, so it goes
+                    // away with the projectile; scaled against the mesh's own per-volley scale).
+                    if (window._dbgHitboxes) {
+                        if (!proj.dbgHit) {
+                            if (!window._dbgHitMat) {
+                                const hm = new BABYLON.StandardMaterial('dbgHitMat', scene);
+                                hm.wireframe = true; hm.disableLighting = true;
+                                hm.emissiveColor = new BABYLON.Color3(0.2, 1, 0.4);
+                                window._dbgHitMat = hm;
+                            }
+                            proj.dbgHit = BABYLON.MeshBuilder.CreateSphere('dbgHitbox', { diameter: 2, segments: 8 }, scene);
+                            proj.dbgHit.material = window._dbgHitMat;
+                            proj.dbgHit.renderingGroupId = 2;
+                            proj.dbgHit.parent = proj.mesh;
+                        }
+                        proj.dbgHit.scaling.setAll((proj.hitboxRadius || 0.25) / (proj.mesh.scaling.x || 1));
+                    } else if (proj.dbgHit) {
+                        proj.dbgHit.dispose();
+                        proj.dbgHit = null;
+                    }
+
                     // 6b. Blob shadow tracks projectile on the ground plane
                     if (proj.blobShadow && !proj.blobShadow.isDisposed()) {
                         proj.blobShadow.position.x = proj.mesh.position.x;
@@ -15502,8 +15104,9 @@
                     // 6c. Fireball flicker + glow pulse (old ~12457-12469)
                     if (proj.time !== undefined && (proj.type === 'fireball' || !proj.type)) {
                         proj.time += dt;
+                        if (window.updateSpellModel) updateSpellModel(proj);
                         if (proj.light && proj.baseIntensity) {
-                            proj.light.intensity = proj.baseIntensity + Math.sin(proj.time * 30) * 0.2 + Math.sin(proj.time * 7.3) * 0.15;
+                            proj.light.intensity = proj.baseIntensity * (1 + Math.sin(proj.time * 30) * 0.08 + Math.sin(proj.time * 7.3) * 0.06);
                         }
                         if (proj.glowMat) {
                             proj.glowMat.alpha = 0.25 + Math.sin(proj.time * 20) * 0.1;
@@ -15515,14 +15118,15 @@
                     // 6d. Frostbolt icy animation (old ~12472-12491)
                     if (proj.type === 'frostbolt' && proj.time !== undefined) {
                         proj.time += dt;
-                        if (proj.mesh.rotationQuaternion) {
+                        if (proj.vis && window.updateSpellModel) updateSpellModel(proj);   // spear aims + spins itself
+                        else if (proj.mesh.rotationQuaternion) {
                             const rotSpeed = 3;
                             const rotation = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, proj.time * rotSpeed);
                             const tilt     = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, Math.sin(proj.time * 2) * 0.3);
                             proj.mesh.rotationQuaternion = rotation.multiply(tilt);
                         }
                         if (proj.light && proj.baseIntensity) {
-                            proj.light.intensity = proj.baseIntensity + Math.sin(proj.time * 15) * 0.15 + Math.sin(proj.time * 4.7) * 0.05;
+                            proj.light.intensity = proj.baseIntensity * (1 + Math.sin(proj.time * 15) * 0.06 + Math.sin(proj.time * 4.7) * 0.03);
                         }
                         if (proj.glowMat) {
                             proj.glowMat.alpha = 0.2 + Math.sin(proj.time * 10) * 0.08;
@@ -15747,7 +15351,7 @@
                         float lightRadius = 4.0;  // How far light reaches
                         float glow = smoothstep(lightRadius, 0.0, dist) * intensity;
 
-                        // Light color by type: 0=fire  1=ice  2=blue magic (player shield)  3=red magic (AI shield)
+                        // Light color by type: 0=fire  1=ice  2=blue magic (player shield)  3=red magic (AI shield)  4=lightning
                         vec3 lightColor;
                         if (lightType < 0.5) {
                             lightColor = vec3(1.0, 0.5, 0.15);    // fire - warm orange/red
@@ -15755,8 +15359,10 @@
                             lightColor = vec3(0.3, 0.7, 1.0);     // ice - cool blue/cyan
                         } else if (lightType < 2.5) {
                             lightColor = vec3(0.43, 0.72, 1.0);   // blue magic - player shield
-                        } else {
+                        } else if (lightType < 3.5) {
                             lightColor = vec3(1.0, 0.42, 0.33);   // red magic - AI shield
+                        } else {
+                            lightColor = vec3(1.0, 0.93, 0.62);   // lightning - Thunderstorm strike (warm white-yellow)
                         }
 
                         lightAccum += lightColor * glow * 0.6;
@@ -15905,9 +15511,15 @@
                     lightArray.push(x, z, intensity, type);
                     lightCount++;
                 };
+                for (const fl of (window._fogFlashes || [])) {
+                    if (fl.intensity > 0.05) pushLight(fl.x, fl.z, fl.intensity, fl.type !== undefined ? fl.type : 4.0);   // 4 = lightning
+                }
                 for (const proj of projectiles) {
                     if (!proj.mesh) continue;
-                    pushLight(proj.mesh.position.x, proj.mesh.position.z, 1.0, proj.type === 'frostbolt' ? 1.0 : 0.0);  // 0=fire 1=ice
+                    // Spells light the fog strongly: with no shadow/glow decal under them, the lit fog
+                    // is what carries their position and magnitude on the ground.
+                    const _ice = proj.type === 'frostbolt';
+                    pushLight(proj.mesh.position.x, proj.mesh.position.z, _ice ? 1.6 : 2.0, _ice ? 1.0 : 0.0);  // 0=fire 1=ice
                 }
                 // The shields are pure magic light: they glow into the fog in their team color,
                 // type 2 = blue (player), type 3 = red (AI). Only while visible (in a match). Task 6:
@@ -19981,12 +19593,27 @@
                     'dbg.juice(side?)      activate Juice (default: your side)  [LOCAL poke]',
                     "dbg.freeze(side?,s?)  freeze a side for s sec (default: opponent, 1s)  [LOCAL poke]",
                     'dbg.win() / dbg.lose()    force match end',
+                    'dbg.pause(on?)        freeze/unfreeze the sim (no pause menu; rendering continues)',
+                    'dbg.aiOff(on?)        AI wizards stand idle (toggle)  [LOCAL poke]',
+                    'dbg.hitboxes(on?)     show every projectile hitbox (the real collision sphere; toggle)',
+                    "dbg.towerHp(side,hp)  set a tower's HP, e.g. to check castle damage states  [LOCAL poke]",
                     'dbg.forceDesync()     nudge local RNG to TEST the desync detector',
                     'dbg.capture.*         branding capture stage (stage/record/fireball/frostbolt/thunder/parry)',
                     "side = 'left' | 'right'.  LOCAL pokes change only this peer => will show DESYNC (expected)."
                 ].join('\n'));
             },
             overlay() { return toggleMpOverlay(); },
+            pause(on) { paused = (on === undefined) ? !paused : !!on; return 'sim ' + (paused ? 'paused' : 'running'); },
+            hitboxes(on) { window._dbgHitboxes = (on === undefined) ? !window._dbgHitboxes : !!on; return 'hitboxes ' + (window._dbgHitboxes ? 'shown' : 'hidden'); },
+            aiOff(on) { window._dbgAiOff = (on === undefined) ? !window._dbgAiOff : !!on; return 'AI ' + (window._dbgAiOff ? 'idle' : 'active'); },
+            towerHp(side, hp) {
+                const c = combatants[side || 'right'];
+                if (!c) return 'no combatant';
+                c.towerHealth = Math.max(0, Math.min(maxTowerHealth, hp));
+                if (c.side === 'left') playerTowerHealth = c.towerHealth; else aiTowerHealth = c.towerHealth;
+                updateHealthBars();
+                return c.side + ' tower ' + c.towerHealth + '/' + maxTowerHealth;
+            },
             state() { return { mode: gameMode, isHost, localSide: (typeof getLocalSide === 'function' ? getLocalSide() : '?'), frame: currentFrame, confirmed: lastConfirmedRemoteFrame, lag: currentFrame - lastConfirmedRemoteFrame, ping: netPing, rollbacks: mpSync.rollbacks, lastOkFrame: mpSync.lastOkFrame, mismatches: mpSync.mismatches, desync: mpSync.desync, projectiles: projectiles ? projectiles.length : 0 }; },
             hash() { return (hashGameState() >>> 0).toString(16); },
             sync() {
@@ -22377,8 +22004,10 @@
             _returningToMenu = false;
             // A JUICE-KILL ends the match MID-CHANNEL: presentation frames stop before the audio
             // state machine can catch the falling edge, so the roar/rumble loops would replay
-            // forever over the victory screen. Kill everything channel-driven right here.
-            if (window.resetOverdrivePresentation) window.resetOverdrivePresentation();
+            // forever over the victory screen. Wind everything channel-driven down right here (it
+            // finishes in the full reset, which also stops those loops).
+            if (window.fadeOutOverdrivePresentation) window.fadeOutOverdrivePresentation();
+            else if (window.resetOverdrivePresentation) window.resetOverdrivePresentation();
             // A match can also end MID-CAST: a spell-cast bubble or other floating combat text
             // (frostbolt Frozen!, NO TARGET, damage numbers, etc.) is a DOM element that renders
             // above the canvas — nothing subsequently clears it, so it hangs there over the
@@ -22786,9 +22415,9 @@
             updateCooldownUI();
             updateHealthBars();
 
-            // Rebuild the gates
-            if (window.resetBricks) {
-                window.resetBricks();
+            // Snap the castles to their current HP state (and recall any falling debris)
+            if (window.syncCastleStates) {
+                window.syncCastleStates();
             }
 
             // Show current stage name instead of generic "Ready"
@@ -23425,7 +23054,80 @@
             return true;
         }
 
-        // Create lightning strike from sky to target position
+        window._fogFlashes = window._fogFlashes || [];
+
+        // Lightning's ground mark: a branching crack pattern (a Lichtenberg figure) radiating from
+        // the strike point, instead of the generic round burn decal. It flashes blue-hot, cools to
+        // dark char, then fades. Four random patterns are generated once and reused.
+        const _scorchTextures = [];
+        function lightningScorchTexture() {
+            if (_scorchTextures.length < 4) {
+                const SZ = 128;
+                const tex = new BABYLON.DynamicTexture("lightningScorchTex", { width: SZ, height: SZ }, scene, false);
+                const g = tex.getContext();
+                g.clearRect(0, 0, SZ, SZ);
+                g.strokeStyle = "rgba(255,255,255,1)";
+                g.lineCap = "round";
+                const branch = (x, y, ang, len, width, depth) => {
+                    let px = x, py = y;
+                    const steps = 4 + Math.floor(Math.random() * 3);
+                    for (let i = 0; i < steps; i++) {
+                        ang += (Math.random() - 0.5) * 1.1;
+                        const nx = px + Math.cos(ang) * len / steps, ny = py + Math.sin(ang) * len / steps;
+                        g.lineWidth = Math.max(0.8, width * (1 - i / (steps + 1)));
+                        g.beginPath(); g.moveTo(px, py); g.lineTo(nx, ny); g.stroke();
+                        if (depth > 0 && Math.random() < 0.45) branch(nx, ny, ang + (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.6), len * 0.5, width * 0.6, depth - 1);
+                        px = nx; py = ny;
+                    }
+                };
+                const arms = 5 + Math.floor(Math.random() * 3);
+                for (let a = 0; a < arms; a++) branch(SZ / 2, SZ / 2, (a / arms) * Math.PI * 2 + Math.random() * 0.6, SZ * (0.3 + Math.random() * 0.16), 3.2, 2);
+                g.fillStyle = "rgba(255,255,255,1)";
+                g.beginPath(); g.arc(SZ / 2, SZ / 2, 4, 0, Math.PI * 2); g.fill();
+                tex.hasAlpha = true;
+                tex.update();
+                tex.updateSamplingMode(BABYLON.Texture.NEAREST_SAMPLINGMODE);   // crisp PS1 texels
+                _scorchTextures.push(tex);
+                return tex;
+            }
+            return _scorchTextures[Math.floor(Math.random() * _scorchTextures.length)];
+        }
+        function createLightningScorch(x, z) {
+            const plane = BABYLON.MeshBuilder.CreateGround("lightningScorch", { width: 2.6, height: 2.6 }, scene);
+            plane.position.set(x, 0.28, z);          // just above the fog plane (0.25), like the other ground FX
+            plane.rotation.y = Math.random() * Math.PI * 2;
+            plane.renderingGroupId = 2;
+            plane.isPickable = false;
+            const mat = new BABYLON.StandardMaterial("lightningScorchMat", scene);
+            mat.diffuseTexture = lightningScorchTexture();
+            mat.useAlphaFromDiffuseTexture = true;
+            mat.diffuseColor = new BABYLON.Color3(0.08, 0.06, 0.1);   // charred
+            mat.specularColor = BABYLON.Color3.Black();
+            mat.disableLighting = true;
+            mat.zOffset = -2;
+            mat.fogEnabled = false;
+            plane.material = mat;
+            const hot = new BABYLON.Color3(1.0, 0.85, 0.4);   // yellow-hot, like the bolt
+            const start = performance.now();
+            const obs = scene.onBeforeRenderObservable.add(() => {
+                const t = performance.now() - start;
+                // 0-250ms blue-hot glow cooling to char; hold; fade out by 2.2s
+                const heat = Math.max(0, 1 - t / 250);
+                mat.emissiveColor.copyFrom(hot).scaleInPlace(heat);
+                mat.alpha = t < 1200 ? 0.85 : Math.max(0, 0.85 * (1 - (t - 1200) / 1000));
+                if (t > 2200) {
+                    scene.onBeforeRenderObservable.remove(obs);
+                    plane.dispose();
+                    mat.dispose();   // (the shared scorch texture is kept)
+                }
+            });
+        }
+
+        // Create lightning strike from sky to target position. The ORIGINAL strike (white-yellow core
+        // in a blue glow tube + expanding impact flash, owner favourite), enhanced: it now lights the
+        // scene like the other spells (a warm white-yellow light pulse on the wizards/castles + a fog
+        // flash) and leaves a branching crack scorch that glows yellow-hot, then cools to char.
+        const STRIKE_PULSE = [0.35, 1, 0.8, 0.55, 0.3, 0.1];   // per 25ms frame: flicker, re-strike, fade
         function createSkyLightningStrike(targetPos) {
             if (!scene) return;
 
@@ -23453,7 +23155,7 @@
             // Main thick bolt
             const bolt = BABYLON.MeshBuilder.CreateTube("skyBolt_" + Date.now(), {
                 path: points,
-                radius: 0.08,
+                radius: 0.1,
                 tessellation: 6,
                 cap: BABYLON.Mesh.CAP_ALL
             }, scene);
@@ -23466,12 +23168,12 @@
             // Create a bright glow bolt behind it
             const glowBolt = BABYLON.MeshBuilder.CreateTube("skyBoltGlow_" + Date.now(), {
                 path: points,
-                radius: 0.2,
+                radius: 0.24,
                 tessellation: 6
             }, scene);
             const glowMat = new BABYLON.StandardMaterial("skyBoltGlowMat_" + Date.now(), scene);
-            glowMat.emissiveColor = new BABYLON.Color3(0.5, 0.5, 1);
-            glowMat.alpha = 0.4;
+            glowMat.emissiveColor = new BABYLON.Color3(1, 0.78, 0.2);   // gold (was blue)
+            glowMat.alpha = 0.55;
             glowMat.disableLighting = true;
             glowBolt.material = glowMat;
 
@@ -23483,10 +23185,22 @@
             impactFlash.position = targetPos.clone();
             impactFlash.position.y = 0.3;
             const impactMat = new BABYLON.StandardMaterial("impactMat_" + Date.now(), scene);
-            impactMat.emissiveColor = new BABYLON.Color3(1, 1, 0.8);
+            impactMat.emissiveColor = new BABYLON.Color3(1, 0.9, 0.55);
             impactMat.alpha = 0.9;
             impactMat.disableLighting = true;
             impactFlash.material = impactMat;
+
+            // Enhancement: the strike is a light source — warm pulse on the scene + a fog flash.
+            const light = new BABYLON.PointLight("thunderLight", new BABYLON.Vector3(targetPos.x, 2.6, targetPos.z - 1.6), scene);
+            light.diffuse = new BABYLON.Color3(1, 0.95, 0.72);
+            light.range = 12;
+            light.intensity = 16;
+            const flash = { x: targetPos.x, z: targetPos.z, intensity: 3.5 };
+            window._fogFlashes.push(flash);
+            createLightningScorch(targetPos.x, targetPos.z);
+            // Power: the core blooms gold on the spell glow layer, and a small camera punch lands it.
+            if (window.spellGlowLayer) window.spellGlowLayer.addIncludedOnlyMesh(bolt);
+            if (window.screenShake) window.screenShake(0.14, 0.14);
 
             // Animate and dispose
             let frame = 0;
@@ -23501,13 +23215,29 @@
                     if (glowMat && !glowMat.isDisposed) glowMat.dispose();
                     if (impactMat && !impactMat.isDisposed) impactMat.dispose();
                 } else {
-                    // Fade out
-                    mat.alpha = 1 - (frame / 6);
-                    glowMat.alpha = 0.4 * (1 - frame / 6);
+                    // Strike, flicker, RE-STRIKE, then fade (real lightning double-pulses).
+                    const a = STRIKE_PULSE[frame - 1];
+                    mat.alpha = a;
+                    glowMat.alpha = 0.55 * a;
                     impactMat.alpha = 0.9 * (1 - frame / 6);
                     impactFlash.scaling.scaleInPlace(1.3);
                 }
             }, 25);
+            // The light + fog flash linger a touch past the bolt (~0.3s) so the strike "rings".
+            const lStart = performance.now();
+            const lObs = scene.onBeforeRenderObservable.add(() => {
+                const t = performance.now() - lStart;
+                const k = Math.max(0, 1 - t / 300);
+                const pulse = (t > 25 && t < 50) ? 0.4 : 1;   // dips with the bolt's flicker, then re-strikes
+                light.intensity = 16 * k * k * pulse;
+                flash.intensity = 3.5 * k * pulse;
+                if (k <= 0) {
+                    scene.onBeforeRenderObservable.remove(lObs);
+                    light.dispose();
+                    const i = window._fogFlashes.indexOf(flash);
+                    if (i >= 0) window._fogFlashes.splice(i, 1);
+                }
+            });
         }
 
         // Create zap flash at position
@@ -23523,7 +23253,7 @@
             flash.position.y += 0.5;
 
             const mat = new BABYLON.StandardMaterial("zapFlashMat_" + Date.now(), scene);
-            mat.emissiveColor = new BABYLON.Color3(1, 1, 0.8);
+            mat.emissiveColor = new BABYLON.Color3(1, 0.92, 0.55);
             mat.disableLighting = true;
             mat.alpha = 0.8;
             flash.material = mat;
@@ -24549,14 +24279,12 @@
                 window.createImpactDecal({ x: gateX, z: hitZ }, 'burn');
             }
 
-            // Destroy bricks based on damage amount. Done immediately (no
-            // setTimeout stagger) so rollback can't leave queued mutations
-            // in flight. Visual impact reads as one bigger explosion.
-            if (window.destroyBrickAt) {
-                for (let i = 0; i < damage; i++) {
-                    const offset = (deterministicValue(hitZ + i) - 0.5) * 2;
-                    window.destroyBrickAt(isPlayerTower, hitZ + offset);
-                }
+            // A chunk or two breaks off the castle (its damage STATE follows towerHealth on its own)
+            if (window.castleHit) window.castleHit(isPlayerTower, damage);
+            // Impact burst + light pulse on the castle wall (presentation; skipped in rollback resims)
+            if (window.createImpactFlash && !(typeof isResimulating !== 'undefined' && isResimulating)) {
+                window.createImpactFlash(new BABYLON.Vector3(isPlayerTower ? -13.9 : 13.9, 0.9, hitZ),
+                    new BABYLON.Color3(1, 0.55, 0.2), 1.3 + damage * 0.25);
             }
         }
 
@@ -24606,9 +24334,11 @@
                 ToneSFX.castingStop();
                 ToneSFX.roundEnd();  // Alpha brainwaves for rest
             }
-            // Full Overdrive presentation reset (dim/beam/orb/lights/jitter/audio) — a match
-            // ending MID-CHANNEL otherwise strands the ult state into the next game
-            if (window.resetOverdrivePresentation) window.resetOverdrivePresentation();
+            // Wind the Overdrive presentation down (dim/beam/orb/lights/jitter/audio) instead of
+            // cutting it on the killing frame; it ends in the full reset, so a round ending
+            // MID-CHANNEL still can't strand the ult state into the next round.
+            if (window.fadeOutOverdrivePresentation) window.fadeOutOverdrivePresentation();
+            else if (window.resetOverdrivePresentation) window.resetOverdrivePresentation();
             playerCasting = null;
             aiCasting = null;
 
