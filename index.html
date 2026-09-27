@@ -3044,7 +3044,7 @@
         // first (stopping a not-yet-started loop = no-op) and then the awaited start() would loop
         // forever with no matching stop. Gating start() on this flag prevents the orphaned loop.
         const _castingDesired = { player: false, ai: false };
-        const MUSIC_ENABLED = false;   // background music track on/off (see ToneSFX.musicStart)
+        const MUSIC_ENABLED = false;   // background music on/off: false = the music player is never created
         let therapyReverb = null;
         let therapyDelay = null;
         let therapyPanner = null;
@@ -3327,22 +3327,26 @@
             // Separate chain for music - only bitcrusher, no panning (centered)
             const musicBitCrusher = new Tone.BitCrusher(8).connect(window.musicBus);  // -> music bus
 
-            // Music player - loops automatically
-            synths.music = new Tone.Player({
-                url: 'sfx/musica.ogg',
-                loop: true,
-                loopStart: 0,
-                loopEnd: 0,  // 0 = loop entire file
-                fadeIn: 0.5,
-                fadeOut: 0.5,
-                onload: () => {
-                    synths.musicLoaded = true;
-                }
-            }).connect(musicBitCrusher);
-            synths.music.volume.value = -12;  // Lower volume
-            // Music re-enabled 2026-07-13 (owner request) — was muted 7b4a9ef "for now".
-            // Volume is player-controlled via the Settings Music slider (musicBus).
+            // Music player - loops automatically. Not created at all while MUSIC_ENABLED is false:
+            // every start path (musicStart, gameplayStart, ...) checks synths.music first, so a
+            // missing player means nothing can start it (and the track isn't even downloaded).
+            synths.music = null;
             synths.musicLoaded = false;
+            if (MUSIC_ENABLED) {
+                synths.music = new Tone.Player({
+                    url: 'sfx/musica.ogg',
+                    loop: true,
+                    loopStart: 0,
+                    loopEnd: 0,  // 0 = loop entire file
+                    fadeIn: 0.5,
+                    fadeOut: 0.5,
+                    onload: () => {
+                        synths.musicLoaded = true;
+                    }
+                }).connect(musicBitCrusher);
+                synths.music.volume.value = -12;  // Lower volume
+                // Volume is player-controlled via the Settings Music slider (musicBus).
+            }
 
             // Wait for all samples to actually load (with timeout)
             try {
