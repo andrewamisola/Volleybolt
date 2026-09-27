@@ -1533,7 +1533,7 @@ body.flipped-view #aiCastBarContainer {
     max-width: 100%;
     height: auto;
     margin: 0 auto;
-    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
+    filter: drop-shadow(3px 4px 0 rgba(0, 0, 0, 0.8));   /* crisp offset shadow, like the title screen */
 }
 #loadingTitle {
     /* Match the title-screen logo: Ferrum display font + clipped gold gradient. */
@@ -3137,14 +3137,14 @@ body.gp-cursor-hidden * {
 }
 #domMenu .arcane-content { align-items: flex-start; gap: 44px; }
 #domMenu .arcane-title-wrap { align-items: flex-start; }
-#domMenu .arcane-title-wrap::before { left: 42%; width: 720px; opacity: 0.35; }
+#domMenu .arcane-title-wrap::before { display: none; }   /* no bloom behind the logo art */
 .menu-logo { margin: 0; line-height: 0; }
 .menu-logo img {
     display: block;
     width: 680px;                       /* design px: .arcane-content scales with --ui-scale */
     height: auto;
     margin-left: -24px;                 /* the art's flourishes overhang; align letters with the items */
-    filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55));
+    filter: drop-shadow(4px 5px 0 rgba(0, 0, 0, 0.8));   /* crisp FF9-style offset shadow, no blur */
 }
 #domMenu .arcane-buttons { align-items: flex-start; gap: 2px; }
 #domMenu .arcane-buttons .menu-btn .menu-btn-label { font-size: 42px; color: #bcae8f; }
@@ -3172,6 +3172,10 @@ body.gp-cursor-hidden * {
 #domMenu #domMenuLinks .menu-btn:focus-visible::before { font-size: 14px; left: auto; right: calc(100% - 26px); }
 #domMenu #domMenuLinks .menu-btn + .menu-btn.gp-focused::before,
 #domMenu #domMenuLinks .menu-btn + .menu-btn:focus-visible::before { right: calc(100% - 12px); }
+
+/* Splash: #loadingTitle now holds the logo image; drop the old text-title glow + gradient that
+   would otherwise wrap the image in a soft shadow and gold haze (the img has its own crisp shadow). */
+#loadingTitle { filter: none; background: none; }
 
 /* Copyright footer: left-aligned with the menu column. */
 #domMenu.arcane-overlay::after { left: 7.5%; width: auto; text-align: left; }

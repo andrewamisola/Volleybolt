@@ -6,13 +6,13 @@ The source is black outlines on white. Light regions are labelled, then classifi
 across the outline strokes: the background touching the border is depth 0, the letter bodies it
 touches through one stroke are depth 1 (filled), holes inside letters (the counters of D, P, ...) are
 depth 2 (transparent), and so on alternating. Letter bodies get a vertical gold gradient, the strokes
-become a dark warm rim, and a soft dark halo is added outside so the logo reads over any background.
+become a dark warm rim. No shadow is baked in (the game adds a crisp offset shadow in CSS).
 """
 import sys
 from collections import deque
 
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image
 from scipy import ndimage
 
 GOLD_TOP, GOLD_MID, GOLD_BOT = (255, 238, 170), (240, 190, 80), (178, 112, 34)
@@ -78,11 +78,9 @@ def main(src, dst):
     rgb = np.where(ink[..., None], np.array(RIM)[None, None, :], grad)
     alpha = body.astype(np.float64)
 
-    # Soft dark halo outside the logo.
-    halo = Image.fromarray((ndimage.binary_dilation(body, iterations=10) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(10))
-    halo = np.asarray(halo).astype(np.float64) / 255 * 0.55
-    out_a = np.maximum(alpha, halo)
-    out_rgb = np.where(alpha[..., None] > 0, rgb, np.array((8, 6, 4))[None, None, :])
+    # No baked halo: the game adds a crisp FF9-style offset shadow in CSS where it's needed.
+    out_a = alpha
+    out_rgb = rgb
     out = np.dstack([out_rgb, out_a * 255]).clip(0, 255).astype(np.uint8)
 
     im = Image.fromarray(out, 'RGBA')
