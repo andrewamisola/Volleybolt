@@ -3686,14 +3686,16 @@ body.gp-cursor-hidden * {
     image-rendering: auto;
 }
 #endScreen.visible { display: block; }
-#endScreen .end-scrim {
+#endScreen .end-scrim,
+#pauseOverlay .end-scrim {
     position: absolute;
     inset: 0;
-    background: linear-gradient(90deg, rgba(243, 242, 238, 0.96) 0%, rgba(243, 242, 238, 0.9) 30%,
-        rgba(243, 242, 238, 0.55) 46%, rgba(243, 242, 238, 0) 64%);
+    background: linear-gradient(90deg, rgba(10, 8, 18, 0.92) 0%, rgba(12, 9, 22, 0.82) 30%,
+        rgba(14, 10, 26, 0.45) 48%, rgba(14, 10, 26, 0) 66%);
     animation: endFade 0.4s ease both;
 }
-#endScreen .end-content {
+#endScreen .end-content,
+#pauseOverlay .end-content {
     position: absolute;
     left: 144px;                        /* 7.5% of 1920, the menu column */
     top: 0;
@@ -3705,7 +3707,8 @@ body.gp-cursor-hidden * {
     gap: 34px;
     animation: menuRise 0.6s ease 0.1s both;
 }
-#endScreen .arcane-title { font-size: 128px; margin: 0 0 -6px -4px; }
+#endScreen .arcane-title,
+#pauseOverlay .arcane-title { font-size: 128px; margin: 0 0 -6px -4px; }
 #endScreen.is-defeat .arcane-title {
     background: linear-gradient(180deg, #b7b3c4 0%, #7d7890 50%, #4a4658 100%);
     -webkit-background-clip: text;
@@ -3752,5 +3755,63 @@ body.gp-cursor-hidden * {
 }
 @keyframes endFade { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-    #endScreen .end-scrim, #endScreen .end-content { animation: none; }
+    #endScreen .end-scrim, #endScreen .end-content,
+    #pauseOverlay .end-scrim, #pauseOverlay .end-content { animation: none; }
 }
+
+/* ---- Pause: the end screen's layout (scrim + left column), shown via style.display ---- */
+#pauseOverlay {
+    position: absolute;
+    inset: 0;
+    z-index: 2;                         /* above #endScreen inside the same layer */
+    pointer-events: auto;               /* blocks clicks to the arena; the layer itself is none */
+    image-rendering: auto;
+    background: rgba(8, 6, 16, 0.3);    /* same tint the end screen puts over the arena */
+}
+#pauseOverlay .arcane-buttons { opacity: 1; gap: 6px; margin-left: -48px; }
+#pauseOverlay .menu-btn.menu-btn-ghost { margin-top: 18px; }
+#pauseOverlay .pause-version {
+    font-family: 'Cabin', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.16em;
+    color: #a3a1ad;
+    margin-top: -8px;
+}
+
+/* ---- In-match menus go DARK (Pause, Victory/Defeat, Settings opened from Pause) ----
+   The front-door menus stay light (KH2 page + art); inside a match the same layout sits over the
+   dark-fantasy arena, so the fade is deep plum and the text is light. Same fonts, same purple bar
+   + green marker, lighter purple title with the logo's solid black drop shadow. */
+.arcane-overlay.in-match { background: rgba(8, 6, 16, 0.3); }
+.arcane-overlay.in-match::before { display: none; }                 /* no menu art over the arena */
+.arcane-overlay.in-match::after { display: none; }                  /* no copyright footer mid-match */
+.arcane-overlay.in-match:not(#domMenu) > .arcane-scrim {   /* :not() matches the light sub-screen rule's specificity */
+    background: linear-gradient(90deg, rgba(10, 8, 18, 0.94) 0%, rgba(12, 9, 22, 0.88) 38%,
+        rgba(14, 10, 26, 0.5) 58%, rgba(14, 10, 26, 0) 76%);
+}
+:is(#endScreen, #pauseOverlay, .arcane-overlay.in-match) .arcane-title {
+    background: linear-gradient(180deg, #efe6ff 0%, #c3a4ff 45%, #8a5ee0 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    filter: drop-shadow(0 5px 0 #000);
+}
+#endScreen.is-defeat .arcane-title {
+    background: linear-gradient(180deg, #e4e0ec 0%, #aaa4bb 50%, #6c6780 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+}
+:is(#endScreen, #pauseOverlay, .arcane-overlay.in-match) .arcane-buttons .menu-btn .menu-btn-label { color: #a9a3ba; }
+:is(#endScreen, #pauseOverlay, .arcane-overlay.in-match) .arcane-buttons .menu-btn:hover .menu-btn-label,
+:is(#endScreen, #pauseOverlay, .arcane-overlay.in-match) .arcane-buttons .menu-btn.gp-focused .menu-btn-label,
+:is(#endScreen, #pauseOverlay, .arcane-overlay.in-match) .arcane-buttons .menu-btn:focus-visible .menu-btn-label { color: #ffffff; }
+:is(#endScreen, #pauseOverlay, .arcane-overlay.in-match) .arcane-buttons .menu-btn.menu-btn-ghost .menu-btn-label { color: #7f7992; }
+:is(#endScreen, #pauseOverlay, .arcane-overlay.in-match) .arcane-buttons .menu-btn.menu-btn-ghost:hover .menu-btn-label,
+:is(#endScreen, #pauseOverlay, .arcane-overlay.in-match) .arcane-buttons .menu-btn.menu-btn-ghost.gp-focused .menu-btn-label { color: #ffffff; }
+:is(#endScreen, #pauseOverlay, .arcane-overlay.in-match) .arcane-buttons .menu-btn::after {
+    background: linear-gradient(90deg, rgba(150, 110, 240, 0.42) 0%, rgba(150, 110, 240, 0.16) 55%, rgba(150, 110, 240, 0) 100%);
+    border-left-color: rgba(190, 150, 255, 0.85);
+}
+:is(#endScreen, #pauseOverlay) .arcane-buttons .menu-btn:disabled .menu-btn-label { color: #5f5a70; }
+#endScreen .end-wait { color: #a9a3ba; }
+#pauseOverlay .pause-version { color: #6d6880; }

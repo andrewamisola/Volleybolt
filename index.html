@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=76-endscreen">
+    <link rel="stylesheet" href="styles.css?v=79-dark-ingame">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -15676,69 +15676,218 @@
             });
 
             // --- IMPACT DECALS ---
+            // Ground marks for spell impacts, built like the lightning scorch: a procedural texture on a
+            // plane just ABOVE the reactive fog (y 0.25, group 1; the old discs sat at y 0.01 under it
+            // and barely showed), glowing hot when they land, then cooling to char / melting away.
+            //   burn/fire: ragged soot blot + soot rays, with a separate ember layer that glows and dies.
+            //   overpower: tapered scorched skid along the winning spell's path, hot core line.
+            //   frost:     icy crack star + rime, pale blue, flashes then melts.
+            // A few random variants per type are generated once and reused. Presentation only.
             const impactDecals = [];
             const maxDecals = 20;
-
-            window.createImpactDecal = (position, type = 'burn', direction = null) => {
-                let decal;
-
-                // Overpower: thin pointed oval streak in the direction of the winning projectile
-                if (type === 'overpower' && direction) {
-                    const streakSeed = (position.x + position.z) || 0;
-                    const streakLength = 1.8 + deterministicRange(streakSeed + 1, 0, 0.5);  // Long scratch
-                    const streakWidth = 0.01;  // Hair-thin scratch
-                    // Use disc scaled to create pointed oval shape
-                    decal = BABYLON.MeshBuilder.CreateDisc("streakDecal", {
-                        radius: 0.5,
-                        tessellation: 12  // Smooth oval
-                    }, scene);
-                    decal.position.set(position.x, 0.01, position.z);
-                    decal.rotation.x = Math.PI / 2;
-                    // Scale to create thin pointed oval
-                    decal.scaling.x = streakLength;
-                    decal.scaling.z = streakWidth;
-                    // Rotate to match projectile direction
-                    const angle = Math.atan2(direction.z, direction.x);
-                    decal.rotation.y = -angle;
-                } else {
-                    // Regular circular decal for cancel/burn/frost
-                    const decalSeed = (position.x + position.z) || 0;
-                    const decalSize = 0.5 + deterministicRange(decalSeed + 2, 0, 0.5);
-                    decal = BABYLON.MeshBuilder.CreateDisc("decal", {
-                        radius: decalSize,
-                        tessellation: 8
-                    }, scene);
-                    decal.position.set(position.x, 0.01, position.z);
-                    decal.rotation.x = Math.PI / 2;
-                    decal.rotation.y = deterministicRange(decalSeed + 3, 0, Math.PI * 2);
+            const _decalTex = {};
+            const decalTexture = (kind, w, h, draw, crisp = false) => {
+                const list = _decalTex[kind] || (_decalTex[kind] = []);
+                if (list.length >= 3) return list[Math.floor(Math.random() * list.length)];
+                const tex = new BABYLON.DynamicTexture("decalTex_" + kind, { width: w, height: h }, scene, false);
+                const g = tex.getContext();
+                g.clearRect(0, 0, w, h);
+                draw(g, w, h);
+                tex.hasAlpha = true;
+                tex.update();
+                // Soft layers (soot, skid) filter smoothly so their edges melt into the dirt; embers + frost stay crisp.
+                tex.updateSamplingMode(crisp ? BABYLON.Texture.NEAREST_SAMPLINGMODE : BABYLON.Texture.BILINEAR_SAMPLINGMODE);
+                list.push(tex);
+                return tex;
+            };
+            const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
+            const drawSoot = (g, S) => {
+                const c = S / 2;
+                const halo = g.createRadialGradient(c, c, S * 0.1, c, c, S * 0.48);   // soft falloff into the ground
+                halo.addColorStop(0, 'rgba(255,255,255,0.35)');
+                halo.addColorStop(1, 'rgba(255,255,255,0)');
+                g.fillStyle = halo;
+                g.fillRect(0, 0, S, S);
+                for (let i = 0; i < 70; i++) {                       // blotchy core, thinning outward
+                    const r = Math.pow(Math.random(), 1.4) * S * 0.36;
+                    const ang = Math.random() * Math.PI * 2;
+                    const rad = (S * 0.06 + Math.random() * S * 0.1) * (1 - r / (S * 0.5));
+                    g.fillStyle = 'rgba(255,255,255,' + (0.06 + 0.1 * (1 - r / (S * 0.36))).toFixed(3) + ')';
+                    g.beginPath(); g.arc(c + Math.cos(ang) * r, c + Math.sin(ang) * r, Math.max(1.5, rad), 0, Math.PI * 2); g.fill();
                 }
-
-                const decalMat = new BABYLON.StandardMaterial("decalMat", scene);
-                decalMat.disableLighting = true;
-                if (type === 'overpower') {
-                    // Dark burnt streak for overpower
-                    decalMat.emissiveColor = new BABYLON.Color3(0.2, 0.08, 0.02);
-                    decalMat.alpha = 0.85;
-                } else if (type === 'burn' || type === 'fire') {
-                    // Red/brown burn mark, starting at 70% opacity
-                    decalMat.emissiveColor = new BABYLON.Color3(0.35, 0.15, 0.05);
-                    decalMat.alpha = 0.7;
-                } else if (type === 'frost') {
-                    decalMat.emissiveColor = new BABYLON.Color3(0.1, 0.2, 0.3);
-                    decalMat.alpha = 0.5;
+                const rays = 5 + Math.floor(Math.random() * 3);      // faint soot thrown out from the blast
+                for (let i = 0; i < rays; i++) {
+                    const ang = (i / rays) * Math.PI * 2 + rnd(-0.3, 0.3);
+                    const len = S * rnd(0.3, 0.48), w0 = S * rnd(0.03, 0.05), r0 = S * 0.1;
+                    const px = -Math.sin(ang), py = Math.cos(ang);
+                    g.fillStyle = 'rgba(255,255,255,0.14)';
+                    g.beginPath();
+                    g.moveTo(c + Math.cos(ang) * r0 + px * w0, c + Math.sin(ang) * r0 + py * w0);
+                    g.lineTo(c + Math.cos(ang) * len, c + Math.sin(ang) * len);
+                    g.lineTo(c + Math.cos(ang) * r0 - px * w0, c + Math.sin(ang) * r0 - py * w0);
+                    g.fill();
                 }
-                decal.material = decalMat;
-
-                impactDecals.push({ mesh: decal, life: 5 });
-
-                // Remove oldest if too many
-                if (impactDecals.length > maxDecals) {
-                    const old = impactDecals.shift();
-                    old.mesh.dispose();
+                const core = g.createRadialGradient(c, c, 0, c, c, S * 0.22);   // solid burnt centre
+                core.addColorStop(0, 'rgba(255,255,255,0.6)');
+                core.addColorStop(1, 'rgba(255,255,255,0)');
+                g.fillStyle = core;
+                g.fillRect(0, 0, S, S);
+            };
+            const drawEmbers = (g, S) => {
+                const c = S / 2;
+                for (let i = 0; i < 34; i++) {                       // glowing specks, mostly toward the rim
+                    const r = S * rnd(0.08, 0.34), ang = Math.random() * Math.PI * 2, sz = Math.random() < 0.3 ? 3 : 2;
+                    g.fillStyle = 'rgba(255,255,255,' + rnd(0.6, 1).toFixed(2) + ')';
+                    g.fillRect(Math.round(c + Math.cos(ang) * r), Math.round(c + Math.sin(ang) * r), sz, sz);
+                }
+                for (let i = 0; i < 5; i++) {                        // broken hot ring at the blast edge
+                    const a0 = Math.random() * Math.PI * 2;
+                    g.strokeStyle = 'rgba(255,255,255,0.85)';
+                    g.lineWidth = 1.6;
+                    g.beginPath(); g.arc(c, c, S * rnd(0.17, 0.23), a0, a0 + rnd(0.3, 0.9)); g.stroke();
+                }
+            };
+            const drawSkid = (g, W, H, hot) => {
+                const cy = H / 2, N = 24;
+                const top = [], bot = [];
+                for (let i = 0; i <= N; i++) {                       // tapered both ends, fattest past the middle
+                    const t = i / N, x = 6 + t * (W - 12);
+                    const hw = (hot ? H * 0.09 : H * 0.36) * Math.pow(Math.sin(Math.PI * Math.pow(t, 0.8)), 0.8);
+                    const j = hot ? 0 : rnd(-0.18, 0.18) * H * 0.3;
+                    top.push([x, cy - hw + j]); bot.push([x, cy + hw + j]);
+                }
+                g.fillStyle = hot ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0.55)';
+                g.beginPath(); g.moveTo(top[0][0], top[0][1]);
+                for (const p of top) g.lineTo(p[0], p[1]);
+                for (let i = bot.length - 1; i >= 0; i--) g.lineTo(bot[i][0], bot[i][1]);
+                g.closePath(); g.fill();
+                if (!hot) {                                          // flecks thrown off the sides
+                    for (let i = 0; i < 26; i++) {
+                        const x = rnd(0.2, 0.95) * W, off = rnd(0.2, 0.45) * H * (Math.random() < 0.5 ? -1 : 1);
+                        g.fillStyle = 'rgba(255,255,255,' + rnd(0.3, 0.7).toFixed(2) + ')';
+                        g.fillRect(Math.round(x), Math.round(cy + off), 2, 2);
+                    }
+                }
+            };
+            const drawFrost = (g, S) => {
+                const c = S / 2;
+                for (let i = 0; i < 40; i++) {                       // rime haze
+                    const r = Math.pow(Math.random(), 1.2) * S * 0.3, ang = Math.random() * Math.PI * 2;
+                    g.fillStyle = 'rgba(255,255,255,0.08)';
+                    g.beginPath(); g.arc(c + Math.cos(ang) * r, c + Math.sin(ang) * r, S * rnd(0.05, 0.1), 0, Math.PI * 2); g.fill();
+                }
+                g.strokeStyle = 'rgba(255,255,255,1)';
+                g.lineCap = 'square';
+                const spoke = (x, y, ang, len, w, depth) => {        // straight crystal spokes with side barbs
+                    const ex = x + Math.cos(ang) * len, ey = y + Math.sin(ang) * len;
+                    g.lineWidth = w; g.beginPath(); g.moveTo(x, y); g.lineTo(ex, ey); g.stroke();
+                    if (depth > 0) {
+                        const n = 2 + Math.floor(Math.random() * 2);
+                        for (let k = 1; k <= n; k++) {
+                            const t = k / (n + 1), bx = x + (ex - x) * t, by = y + (ey - y) * t;
+                            spoke(bx, by, ang + 0.9, len * 0.32 * (1 - t * 0.5), w * 0.6, depth - 1);
+                            spoke(bx, by, ang - 0.9, len * 0.32 * (1 - t * 0.5), w * 0.6, depth - 1);
+                        }
+                    }
+                };
+                const arms = 6, rot = Math.random() * Math.PI;
+                for (let i = 0; i < arms; i++) spoke(c, c, rot + (i / arms) * Math.PI * 2, S * rnd(0.3, 0.42), 2.6, 1);
+                for (let i = 0; i < 14; i++) {                       // sparkle
+                    const r = S * rnd(0.05, 0.4), ang = Math.random() * Math.PI * 2;
+                    g.fillStyle = 'rgba(255,255,255,1)';
+                    g.fillRect(Math.round(c + Math.cos(ang) * r), Math.round(c + Math.sin(ang) * r), 2, 2);
                 }
             };
 
-            // Fade out decals over time (stepped for retro style)
+            let _decalLayer = 0;
+            const makeDecalPlane = (name, w, h, x, z, rotY, tex) => {
+                const plane = BABYLON.MeshBuilder.CreateGround(name, { width: w, height: h }, scene);
+                _decalLayer = (_decalLayer + 1) % 8;
+                plane.position.set(x, 0.28 + _decalLayer * 0.002, z);   // above the fog; newer marks stack on top
+                plane.rotation.y = rotY;
+                plane.renderingGroupId = 2;
+                plane.isPickable = false;
+                const mat = new BABYLON.StandardMaterial(name + "Mat", scene);
+                mat.diffuseTexture = tex;
+                mat.useAlphaFromDiffuseTexture = true;
+                mat.specularColor = BABYLON.Color3.Black();
+                mat.disableLighting = true;
+                mat.zOffset = -2;
+                mat.fogEnabled = false;
+                plane.material = mat;
+                return { plane, mat };
+            };
+
+            window.createImpactDecal = (position, type = 'burn', direction = null) => {
+                const x = position.x, z = position.z;
+                const layers = [];   // { plane, mat, role }
+                let life = 7;
+                if (type === 'overpower' && direction) {
+                    const rotY = -Math.atan2(direction.z, direction.x);
+                    const L = rnd(3.0, 3.6);
+                    const charL = makeDecalPlane("skidDecal", L, 0.9, x, z, rotY,
+                        decalTexture('skid', 256, 64, (g, W, H) => drawSkid(g, W, H, false)));
+                    charL.mat.diffuseColor = new BABYLON.Color3(0.2, 0.12, 0.07);   // warm char, not black
+                    layers.push({ ...charL, role: 'char', alpha: 0.6 });
+                    const hotL = makeDecalPlane("skidHot", L * 0.85, 0.9, x, z, rotY,
+                        decalTexture('skidHot', 256, 64, (g, W, H) => drawSkid(g, W, H, true), true));
+                    hotL.mat.diffuseColor = BABYLON.Color3.Black();
+                    hotL.mat.alphaMode = BABYLON.Engine.ALPHA_ADD;
+                    layers.push({ ...hotL, role: 'ember', color: new BABYLON.Color3(1.0, 0.55, 0.15), alpha: 1, glow: 1.6 });
+                } else if (type === 'frost') {
+                    life = 6;
+                    const size = rnd(2.2, 2.7);
+                    const f = makeDecalPlane("frostDecal", size, size, x, z, Math.random() * Math.PI * 2,
+                        decalTexture('frost', 128, 128, (g, S) => drawFrost(g, S), true));
+                    f.mat.diffuseColor = new BABYLON.Color3(0.62, 0.84, 1.0);
+                    layers.push({ ...f, role: 'frost', color: new BABYLON.Color3(0.55, 0.85, 1.0), alpha: 0.9 });
+                } else {
+                    // burn / fire
+                    const size = type === 'fire' ? rnd(3.0, 3.4) : rnd(2.6, 3.0);
+                    const rotY = Math.random() * Math.PI * 2;
+                    const soot = makeDecalPlane("burnDecal", size, size, x, z, rotY,
+                        decalTexture('soot', 128, 128, (g, S) => drawSoot(g, S)));
+                    soot.mat.diffuseColor = new BABYLON.Color3(0.18, 0.11, 0.07);   // warm char, not black
+                    layers.push({ ...soot, role: 'char', alpha: 0.65 });
+                    const emb = makeDecalPlane("burnEmbers", size, size, x, z, rotY,
+                        decalTexture('embers', 128, 128, (g, S) => drawEmbers(g, S), true));
+                    emb.mat.diffuseColor = BABYLON.Color3.Black();
+                    emb.mat.alphaMode = BABYLON.Engine.ALPHA_ADD;
+                    layers.push({ ...emb, role: 'ember', color: new BABYLON.Color3(1.0, 0.5, 0.12), alpha: 1, glow: 2.4 });
+                }
+                for (const l of layers) l.mat.alpha = l.alpha;
+                impactDecals.push({ layers, t: 0, life, fade: 1.6 });
+                while (impactDecals.length > maxDecals) disposeDecal(impactDecals.shift());
+            };
+            const disposeDecal = (d) => {
+                for (const l of d.layers) { try { l.plane.dispose(); l.mat.dispose(); } catch (e) {} }   // textures are shared
+            };
+            // Per-frame: heat -> char / flash -> melt, then fade out over the last `fade` seconds.
+            const HOT_CHAR = new BABYLON.Color3(1.0, 0.45, 0.1);
+            const updateDecal = (d, dt) => {
+                d.t += dt;
+                const out = Math.min(1, Math.max(0, (d.life - d.t) / d.fade));      // 1 -> 0 at the end
+                for (const l of d.layers) {
+                    if (l.role === 'char') {
+                        const heat = Math.max(0, 1 - d.t / 0.3);                     // brief orange flash, then char
+                        l.mat.emissiveColor.copyFrom(HOT_CHAR).scaleInPlace(heat * 0.8);
+                        l.mat.alpha = l.alpha * out;
+                    } else if (l.role === 'ember') {
+                        // Embers glow bright, flicker, and die out well before the soot fades.
+                        const k = Math.max(0, 1 - d.t / l.glow);
+                        const flick = 0.75 + 0.25 * Math.sin(d.t * 23 + l.plane.uniqueId);
+                        l.mat.emissiveColor.copyFrom(l.color).scaleInPlace(k * k * flick);
+                        l.mat.alpha = k > 0 ? 1 : 0;
+                        if (k <= 0) l.plane.isVisible = false;
+                    } else if (l.role === 'frost') {
+                        const flash = Math.max(0, 1 - d.t / 0.35);                   // icy flash, then settles
+                        l.mat.emissiveColor.copyFrom(l.color).scaleInPlace(0.25 + flash * 0.9);
+                        l.mat.alpha = l.alpha * out;
+                    }
+                }
+            };
+
+            // Age the decals (heat, embers, fade)
             scene.onBeforeRenderObservable.add(() => {
                 // Combat-text / decal lifetimes are TIMERS — drive them off authoritative
                 // wall-clock (performance.now delta between draws), NOT engine.getDeltaTime().
@@ -15753,16 +15902,10 @@
                 window._combatTextLastNow = _ctNow;
                 for (let i = impactDecals.length - 1; i >= 0; i--) {
                     const d = impactDecals[i];
-                    d.life -= dt;
-                    if (d.life <= 0) {
-                        d.mesh.dispose();
+                    updateDecal(d, dt);
+                    if (d.t >= d.life) {
+                        disposeDecal(d);
                         impactDecals.splice(i, 1);
-                    } else if (d.life < 2) {
-                        // Stepped fading: 0.6 → 0.45 → 0.3 → 0.15 → 0
-                        const fadeProgress = (2 - d.life) / 2;
-                        const alphaSteps = [0.6, 0.45, 0.3, 0.15, 0];
-                        const stepIndex = Math.min(Math.floor(fadeProgress * alphaSteps.length), alphaSteps.length - 1);
-                        d.mesh.material.alpha = alphaSteps[stepIndex];
                     }
                 }
 
@@ -16198,8 +16341,12 @@
                 if (window.ToneSFX) ToneSFX.castingStop();
                 if (window.resetOverdrivePresentation) window.resetOverdrivePresentation();
                 if (gameMode !== 'pvp') paused = true;   // freeze sim (can't pause a P2P peer)
-                const quitBtn = document.getElementById('pauseQuitBtn');
-                if (quitBtn) quitBtn.textContent = (gameMode === 'pvp') ? 'Leave Match' : 'Quit to Menu';
+                const quitLabel = document.querySelector('#pauseQuitBtn .menu-btn-label');
+                if (quitLabel) quitLabel.textContent = (gameMode === 'pvp') ? 'Leave Match' : 'Quit to Menu';
+                // Clean frame while paused: hide the whole HUD (like the end screen); resume restores
+                // it unless it was already hidden (debug Hide HUD / capture stage).
+                this._hudWasHidden = !!window.hudHidden;
+                if (window.setHudHidden) window.setHudHidden(true);
                 const ov = document.getElementById('pauseOverlay');
                 if (ov) ov.style.display = 'flex';
                 if (window.setGamepadPrompts) setGamepadPrompts([{ action: 'navigate' }, { action: 'confirm' }, { action: 'back' }]);
@@ -16228,6 +16375,7 @@
                 }
                 const ov = document.getElementById('pauseOverlay');
                 if (ov) ov.style.display = 'none';
+                if (!this._hudWasHidden && window.setHudHidden) window.setHudHidden(false);
             },
             enterGameOver(r) { showVictoryScreen(r === 'victory'); },
             enterLobby()     { if (window.showMultiplayerLobby) showMultiplayerLobby(); },
@@ -16240,17 +16388,24 @@
             if (document.getElementById('pauseOverlay')) return;
             const ov = document.createElement('div');
             ov.id = 'pauseOverlay';
-            ov.style.cssText = 'position:fixed;inset:0;z-index:700;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.6)';
+            // Same language as every other menu (KH2 light theme): white fade from the left over the
+            // frozen arena, the title, then KH menu items. Lives in the 16:9 stage's 1920x1080 end-
+            // screen layer (scaled by --ui-scale) instead of covering the whole window. Shown/hidden
+            // via style.display 'flex'/'none' (isAnyMenuOpen + the settings hand-off read that).
+            ov.style.display = 'none';
             ov.innerHTML =
-                '<div style="background:rgba(46,56,76,0.94);border:2px solid #dfe6f2;border-radius:11px;padding:28px 44px;text-align:center;box-shadow:inset 0 0 0 1px rgba(16,24,40,0.7), inset 0 2px 3px rgba(255,255,255,0.14), 0 8px 24px rgba(0,0,0,.55)">' +
-                '<div style="color:#f0c050;font-family:\'FF9UI\',serif;font-size:40px;letter-spacing:2px;margin-bottom:22px;text-shadow:2px 2px 0 #1a1f2a">Paused</div>' +
-                '<button id="pauseResumeBtn" class="game-btn menu-btn" style="display:block;width:240px;margin:10px auto">Resume</button>' +
-                '<button id="pauseSettingsBtn" class="game-btn menu-btn" style="display:block;width:240px;margin:10px auto">Settings</button>' +
-                '<button id="pauseQuitBtn" class="game-btn menu-btn" style="display:block;width:240px;margin:10px auto">Quit to Menu</button>' +
-                '<button id="pauseBugBtn" class="game-btn menu-btn" style="display:block;width:240px;margin:10px auto">Copy Bug Report</button>' +
-                '<div style="color:#8a93a6;font-size:12px;margin-top:14px">v' + GAME_VERSION + '</div>' +
+                '<div class="end-scrim"></div>' +
+                '<div class="end-content">' +
+                    '<h1 class="arcane-title" data-text="Paused">Paused</h1>' +
+                    '<div class="arcane-buttons">' +
+                        '<button id="pauseResumeBtn" class="game-btn menu-btn"><span class="menu-btn-label">Resume</span></button>' +
+                        '<button id="pauseSettingsBtn" class="game-btn menu-btn"><span class="menu-btn-label">Settings</span></button>' +
+                        '<button id="pauseQuitBtn" class="game-btn menu-btn"><span class="menu-btn-label">Quit to Menu</span></button>' +
+                        '<button id="pauseBugBtn" class="game-btn menu-btn menu-btn-ghost"><span class="menu-btn-label">Copy Bug Report</span></button>' +
+                    '</div>' +
+                    '<div class="pause-version">v' + GAME_VERSION + '</div>' +
                 '</div>';
-            document.body.appendChild(ov);
+            ensureEndScreenScaleLayer().appendChild(ov);
             ov.querySelector('#pauseResumeBtn').addEventListener('click', () => GameSM.resumeMatch());
             ov.querySelector('#pauseSettingsBtn').addEventListener('click', () => window.openSettings('pause'));
             ov.querySelector('#pauseQuitBtn').addEventListener('click', () => {
@@ -16259,10 +16414,10 @@
                 returnToMenuTransition();   // verified clean teardown -> 2D menu
             });
             ov.querySelector('#pauseBugBtn').addEventListener('click', () => {
-                const btn = ov.querySelector('#pauseBugBtn');
+                const label = ov.querySelector('#pauseBugBtn .menu-btn-label');
                 window.copyBugReport().then((toClipboard) => {
-                    btn.textContent = toClipboard ? 'Copied!' : 'Printed to console';
-                    setTimeout(() => { btn.textContent = 'Copy Bug Report'; }, 1500);
+                    label.textContent = toClipboard ? 'Copied!' : 'Printed to console';
+                    setTimeout(() => { label.textContent = 'Copy Bug Report'; }, 1500);
                 });
             });
         }
@@ -18457,7 +18612,8 @@
             if (from === 'pause') { const ov = document.getElementById('pauseOverlay'); if (ov) ov.style.display = 'none'; }
             hideAllMenuScreens();
             const el = document.getElementById(id);
-            if (el) el.classList.add('visible');
+            // Opened from Pause: the dark in-match variant over the frozen arena, not the light page.
+            if (el) { el.classList.toggle('in-match', from === 'pause'); el.classList.add('visible'); }
             if (window.setGamepadPrompts) {
                 if (id === 'settingsScreen') setGamepadPrompts([{ action: 'navigate' }, { action: 'adjust' }, { action: 'confirm' }, { action: 'back' }]);
                 else if (id === 'howToPlayScreen') setGamepadPrompts([{ action: 'page' }, { action: 'back' }]);
@@ -21791,6 +21947,7 @@
             onFrostboltCancel: (midX, midZ) => {
                 const pos = new BABYLON.Vector3(midX, 0.6, midZ);
                 if (window.createImpactFlash) createImpactFlash(pos, new BABYLON.Color3(0.5, 0.8, 1), 1.5);
+                if (window.createImpactDecal) createImpactDecal({ x: midX, z: midZ }, 'frost');
                 if (window.showCombatTextAt) showCombatTextAt(pos, 'Cancel', 'cancel');
                 if (window.logNeutral) window.logNeutral('Cancel!');
                 playSound('cancel', midX, 0.7);
