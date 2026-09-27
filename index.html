@@ -3044,6 +3044,7 @@
         // first (stopping a not-yet-started loop = no-op) and then the awaited start() would loop
         // forever with no matching stop. Gating start() on this flag prevents the orphaned loop.
         const _castingDesired = { player: false, ai: false };
+        const MUSIC_ENABLED = false;   // background music track on/off (see ToneSFX.musicStart)
         let therapyReverb = null;
         let therapyDelay = null;
         let therapyPanner = null;
@@ -4069,7 +4070,10 @@
             },
 
             // Music controls
+            // Background music is switched OFF for now (owner, 2026-09-26). Flip MUSIC_ENABLED back to
+            // true to bring it back; SFX and the Settings Music slider are unaffected.
             musicStart: async () => {
+                if (!MUSIC_ENABLED) return;
                 if (!toneStarted) await initToneJS();
                 if (synths.music) {
                     // Wait for both our flag AND Tone.js internal loaded state
