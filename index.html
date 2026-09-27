@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=75-logo-shadow">
+    <link rel="stylesheet" href="styles.css?v=76-endscreen">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -2108,47 +2108,19 @@
             if (window.logJuice) window.logJuice(c.side === 'left' ? 'blue' : 'red');
             return true;
         }
-        // Per-frame while channeling: drain the bar 100->0 over the duration + animate/fade the aura.
+        // Per-frame while channeling: keep the white-hot tint on (the sim drains the bar).
         // (No buff: mana and cooldowns tick normally during the channel — the beam does the work.)
         function updateJuice(dt) {
             // Gameplay (timer drain, juice=MAX*frac, end-of-channel state clearing) is now owned
             // by tickOverdrive in js/sim.js (runs inside simulateNetworkFrame for both SP + MP).
-            // This function is PRESENTATION-ONLY: aura wobble + white-hot tint re-assertion.
+            // This function is PRESENTATION-ONLY: white-hot tint re-assertion.
             const list = (typeof getAllCombatants === 'function')
                 ? getAllCombatants()
                 : [combatants && combatants.left, combatants && combatants.right];
             for (const c of list) {
                 if (!c || !c.juiceActive) continue;
                 if (window._juiceTint) window._juiceTint(c, true);  // re-assert the white-hot tint (hit-flash clobbers it)
-                if (c.juiceAura && c.juiceAura.outer) {                 // crazy wobble + fade as it drains
-                    c.juiceAura.t = (c.juiceAura.t || 0) + dt;
-                    const t = c.juiceAura.t;
-                    const wob = (m, sp, amp) => {
-                        if (!m) return;
-                        m.scaling.x = 1 + amp * Math.sin(t * sp);
-                        m.scaling.z = 1 + amp * Math.sin(t * sp * 1.37 + 1.7);
-                        m.scaling.y = 1 + 0.14 * Math.sin(t * sp * 0.6);
-                        m.rotation.y = 0.5 * Math.sin(t * sp * 0.5);   // twist back & forth (not a spin)
-                        m.rotation.x = 0.22 * Math.sin(t * sp * 1.1);
-                        m.rotation.z = 0.22 * Math.cos(t * sp * 0.85);
-                        // Per-vertex lick: jitter x/z, stronger toward the tip. Object-space, so it
-                        // wobbles wildly but never leaves the player.
-                        const base = m._juiceBaseArr, sc = m._juiceScratch;
-                        if (base && sc) {
-                            for (let i = 0; i < base.length; i += 3) {
-                                const bx = base[i], by = base[i + 1], bz = base[i + 2];
-                                const a = 0.04 + 0.24 * (by / 2.7);    // more sway higher up
-                                const ph = i * 0.17;
-                                sc[i]     = bx + a * Math.sin(t * (sp + 4) + ph);
-                                sc[i + 1] = by;
-                                sc[i + 2] = bz + a * Math.cos(t * (sp + 1.5) + ph * 1.4);
-                            }
-                            m.updateVerticesData(BABYLON.VertexBuffer.PositionKind, sc);
-                        }
-                    };
-                    wob(c.juiceAura.outer, 12, 0.28);
-                    wob(c.juiceAura.inner, 16, 0.40);
-                }
+                c._juiceFx = true;   // so the presentation reconcile clears it even if the start hook never ran
             }
         }
         window.addJuice = addJuice;
@@ -9700,6 +9672,41 @@
                 // Assign to combatant and sync legacy
                 combatants.right.castBar3D = ai3DCastBar;
                 combatants.right.castFill3D = ai3DCastFill;
+
+                // Doubles back row: the two back wizards cast too, but only the fronts got bars here.
+                // Build one on demand for any combatant, parented to its paddle exactly like the
+                // fronts' (same size, height, materials: gold for blue, red for red). Cached on the
+                // paddle, so later doubles matches reuse the same meshes. Presentation only.
+                window.ensureCastBar3D = (combatant, isLeft) => {
+                    if (!combatant || !combatant.paddle) return;
+                    const paddle = combatant.paddle;
+                    if (!paddle._castBar3D || (paddle._castBar3D.isDisposed && paddle._castBar3D.isDisposed())) {
+                        const bar = BABYLON.MeshBuilder.CreateBox(paddle.name + "3DCastBar", {
+                            width: barWidth, height: barHeight, depth: barDepth
+                        }, scene);
+                        bar.material = bgMat;
+                        bar.parent = paddle;
+                        bar.position.set(0, 2.0, 0);
+                        bar.visibility = 0;
+                        bar.renderingGroupId = 1;
+                        bar.isPickable = false;
+                        const fill = BABYLON.MeshBuilder.CreateBox(paddle.name + "3DCastFill", {
+                            width: barWidth * 0.98, height: barHeight * 0.7, depth: barDepth + 0.01
+                        }, scene);
+                        fill.material = isLeft ? playerFillMat : aiFillMat;
+                        fill.parent = bar;
+                        fill.position.set(0, 0, 0);
+                        fill.scaling.x = 0;
+                        fill.visibility = 0;
+                        fill.setPivotPoint(new BABYLON.Vector3(-barWidth * 0.49, 0, 0));
+                        fill.renderingGroupId = 1;
+                        fill.isPickable = false;
+                        paddle._castBar3D = bar;
+                        paddle._castFill3D = fill;
+                    }
+                    combatant.castBar3D = paddle._castBar3D;
+                    combatant.castFill3D = paddle._castFill3D;
+                };
             };
 
             // Unified combatant 3D cast bar update
@@ -13814,6 +13821,12 @@
                 const leftC  = combatants.left;
                 const rightC = combatants.right;
 
+                // Juice FX follow the sim state, not just its start/end hooks: the end hook is skipped
+                // while resimulating (rollback), which left the white-hot tint + rumble stuck on.
+                for (const jc of getAllCombatants()) {
+                    if (jc._juiceFx && !jc.juiceActive && window.onJuiceEnd) window.onJuiceEnd(jc);
+                }
+
                 // ---- 1. CAST BARS (old ~12256-12294) ----
                 // 2D under-mana cast bars are POSITIONAL. Both peers see the SAME canonical view
                 // (no camera flip; the HUD is canonical — applyClientPerspective is only ever called
@@ -14615,6 +14628,16 @@
                     if (window.updateAI3DCastBar) window.updateAI3DCastBar(progress, true);
                 } else {
                     if (window.updateAI3DCastBar) window.updateAI3DCastBar(0, false);
+                }
+                // Doubles back row: same rule for the two back wizards (null outside doubles).
+                for (const bc of [combatants.leftBack, combatants.rightBack]) {
+                    if (!bc || !window.combatantUpdate3DCastBar) continue;
+                    if (!bc.castBar3D && window.ensureCastBar3D) window.ensureCastBar3D(bc, bc === combatants.leftBack);
+                    if (bc.casting) {
+                        window.combatantUpdate3DCastBar(bc, bc.castTime > 0 ? bc.castProgress / bc.castTime : 0, true);
+                    } else {
+                        window.combatantUpdate3DCastBar(bc, 0, false);
+                    }
                 }
                 // DEV: capture per-cast fill coverage (no-op unless window.DEBUG_CASTBAR).
                 window.__castBarDiag('left', leftC);
@@ -15590,78 +15613,24 @@
                 try { d.noise.stop(); } catch (e) {}
                 setTimeout(() => { try { d.noise.dispose(); d.filter.dispose(); if (d.panner) d.panner.dispose(); d.vol.dispose(); } catch (e) {} }, 250);
             }
-            // Transparent low-poly teardrop flame (additive = soft glow, no blur/post-process needed).
-            // Held at a constant SUBTLE alpha for the whole burst, then faded out at the very end.
+            // Juice (Overdrive) start FX: power-up sound, the local rumble and the white-hot gold tint.
+            // (The low-poly flame aura that used to wrap the wizard is gone — the mega beam is the tell.)
+            // c._juiceFx marks the FX as live so presentation can end them if the sim's end hook is
+            // skipped (rollback resim, match over mid-channel): see the reconcile in updateMatchPresentation.
             window.onJuiceStart = (c) => {
                 if (!c) return;
                 const px = (c.paddle && c.paddle.position) ? c.paddle.position.x : 0;
                 if (window.playSound) playSound('juiceUp', px, 1.0);       // power-up poof on activation
+                if (c._juiceFx) { try { window.onJuiceEnd(c); } catch (e) {} }
                 startJuiceDrone(c);                                        // low rumble while active (local)
-                if (c.juiceAura) { try { window.onJuiceEnd(c); } catch (e) {} }
-                const paddle = c.paddle;
-                if (!paddle) return;
-                // Flame profile (revolved): rounded bulbous base curving to a point at the tip.
-                const flameProfile = (s) => [
-                    new BABYLON.Vector3(0.00,     0.00 * s, 0),   // bottom center
-                    new BABYLON.Vector3(0.42 * s, 0.18 * s, 0),   // flare out -> rounded base
-                    new BABYLON.Vector3(0.60 * s, 0.55 * s, 0),   // belly (widest)
-                    new BABYLON.Vector3(0.52 * s, 1.00 * s, 0),
-                    new BABYLON.Vector3(0.37 * s, 1.45 * s, 0),   // curve inward
-                    new BABYLON.Vector3(0.20 * s, 1.95 * s, 0),
-                    new BABYLON.Vector3(0.07 * s, 2.35 * s, 0),
-                    new BABYLON.Vector3(0.00,     2.70 * s, 0),   // tip point
-                ];
-                const makeFlame = (s, r, g, b, alpha) => {
-                    const m = BABYLON.MeshBuilder.CreateLathe("juiceFlame_" + c.side,
-                        { shape: flameProfile(s), tessellation: 7, closed: false, updatable: true }, scene);
-                    // No flat-shade / no snap override: the emissive material ignores normals (silhouette
-                    // is the same low-poly shape), and the wobble is object-space vertex jitter so it
-                    // stays ON the player instead of being flung off by the coarse clip-space snap.
-                    // Parent to the MODEL root (p1Root/p2Root — unit-scale, and it carries the moved-back
-                    // offset + facing rotation + juice scale pulse) so the flame rides the CHARACTER, not
-                    // the collision paddle in front of it. Fall back to the paddle only if the model never
-                    // loaded (error path leaves modelRoot null and shows the paddle mesh as the character).
-                    if (c.modelRoot) { m.parent = c.modelRoot; m.position.set(0, -0.1, 0); }
-                    else { m.parent = paddle; m.position.set(modelBackFor(c.side), -0.1, 0); }   // base at feet, tip overhead
-                    m.isPickable = false;
-                    const mat = new BABYLON.StandardMaterial("juiceFlameMat_" + c.side, scene);
-                    mat.emissiveColor = new BABYLON.Color3(r, g, b);
-                    mat.diffuseColor = new BABYLON.Color3(0, 0, 0);
-                    mat.disableLighting = true;
-                    mat.backFaceCulling = false;
-                    mat.alpha = alpha;
-                    mat.alphaMode = BABYLON.Engine.ALPHA_ADD;    // additive glow -> reads over fog
-                    m.material = mat;
-                    m._juiceBaseAlpha = alpha;                   // remembered for the end fade-out
-                    m.renderingGroupId = 1;
-                    const bp = m.getVerticesData(BABYLON.VertexBuffer.PositionKind);
-                    m._juiceBaseArr = bp ? Float32Array.from(bp) : null;     // rest pose for the wobble
-                    m._juiceScratch = bp ? new Float32Array(bp.length) : null;
-                    return m;
-                };
-                const outer = makeFlame(1.05, 1.0, 0.40, 0.02, 0.38);   // deep orange body — denser + more saturated
-                const inner = makeFlame(0.68, 1.0, 0.85, 0.28, 0.62);   // bright gold core, clearly reads through fog
-                setJuiceModelTint(c, true);                                 // wizard goes white-hot gold
-                c.juiceAura = { outer, inner, t: 0 };
+                setJuiceModelTint(c, true);                                // wizard goes white-hot gold
+                c._juiceFx = true;
             };
             window.onJuiceEnd = (c) => {
                 if (!c) return;
                 if (c.isLocalPlayer) stopJuiceDrone();                      // only the local player's rumble
                 setJuiceModelTint(c, false);                                // restore the model
-                if (c.juiceAura) {
-                    const a = c.juiceAura; c.juiceAura = null;
-                    const meshes = [a.outer, a.inner].filter(Boolean);
-                    let life = 0.1;                                         // quick fade-out then dispose
-                    const obs = scene.onBeforeRenderObservable.add(() => {
-                        life -= scene.getEngine().getDeltaTime() / 1000;
-                        const k = Math.max(0, life / 0.1);
-                        meshes.forEach((m) => { if (m.material) m.material.alpha = (m._juiceBaseAlpha || 0.3) * k; });
-                        if (life <= 0) {
-                            scene.onBeforeRenderObservable.remove(obs);
-                            meshes.forEach((m) => { try { if (m.material) m.material.dispose(); m.dispose(); } catch (e) {} });
-                        }
-                    });
-                }
+                c._juiceFx = false;
             };
 
             // (Removed the fake god-ray light cones over the towers/midfield -- they read as
@@ -17930,6 +17899,11 @@
             combatants.rightBack.inputSource = 'ai';
             combatants.leftBack.paddle  = playerBackPaddle;
             combatants.rightBack.paddle = aiBackPaddle;
+            // 3D cast bars over the back wizards (the fronts' are built at scene init).
+            if (window.ensureCastBar3D) {
+                window.ensureCastBar3D(combatants.leftBack, true);
+                window.ensureCastBar3D(combatants.rightBack, false);
+            }
             // Facing (Task 6 review fix): createCombatant defaults baseRotY/targetRotY to 0, and only
             // the FRONTS get theirs set (initCombatants). Backs face the same way as their side's
             // front. Set here — this block runs on EVERY doubles match start, before beginBackModels,
@@ -22118,6 +22092,10 @@
             // bars (and 2D/GUI cast bars) freeze visible because stepFixedSim early-returns
             // on gameOver, so updateMatchPresentation never runs its hide branch again.
             if (window.hideAllCastBars) hideAllCastBars();
+            // A match that ends mid-channel leaves juiceActive set until resetGame; drop its FX now.
+            for (const jc of getAllCombatants()) {
+                if (jc._juiceFx && window.onJuiceEnd) { try { window.onJuiceEnd(jc); } catch (e) {} }
+            }
             // FULL HUD BLACKOUT at match end (owner decision, round 4): hide the ENTIRE HUD wholesale,
             // not just the score/health/ability panels below. setHudHidden(true) is the one mechanism
             // that also sweeps the command panel, STATUS window, and combat log (their per-frame
@@ -22145,6 +22123,15 @@
                 title.text = "Defeat";
                 title.color = "#c04040";  // Red
             }
+            // The end screen itself is DOM now (#endScreen, same KH2 light look as the menus); the GUI
+            // title + leaderboard stay built but hidden. The GUI overlay stays up as the pointer
+            // blocker, with a lighter tint so the frozen arena still reads behind the white fade.
+            overlay.background = "rgba(8, 6, 16, 0.3)";
+            const endScreen = ensureEndScreen();
+            const endTitle = document.getElementById('endScreenTitle');
+            endTitle.textContent = isVictory ? 'Victory' : 'Defeat';
+            endTitle.setAttribute('data-text', endTitle.textContent);
+            endScreen.classList.toggle('is-defeat', !isVictory);
 
             // Hide the regular message
             hideMessage();
@@ -22173,6 +22160,35 @@
 
             // Populate + show the end-of-match leaderboard from the final per-combatant stats
             // (matchStats are still intact here; resetGame() clears them on Continue).
+            // DOM report: team totals (doubles adds the back wizard's numbers to its side).
+            {
+                const zero = { spellsCast: 0, parries: 0, damageDealt: 0 };
+                const cb = window.combatants || {};
+                const team = (a, b) => {
+                    const x = (a && a.matchStats) || zero, y = (b && b.matchStats) || zero;
+                    return { cast: (x.spellsCast || 0) + (y.spellsCast || 0),
+                             parry: (x.parries || 0) + (y.parries || 0),
+                             dmg: Math.round((x.damageDealt || 0) + (y.damageDealt || 0)) };
+                };
+                const isDoubles = !!(cb.leftBack || cb.rightBack);
+                const rows = [
+                    { cls: 'blue', name: isDoubles ? 'Blue Team' : window.getPlayerName(), s: team(cb.left, cb.leftBack) },
+                    { cls: 'red',  name: isDoubles ? 'Red Team' : 'Red', s: team(cb.right, cb.rightBack) },
+                ];
+                const tbody = document.getElementById('endReportBody');
+                tbody.textContent = '';
+                for (const r of rows) {
+                    const tr = document.createElement('tr');
+                    tr.className = 'end-row-' + r.cls;
+                    for (const [v, c] of [[r.name, 'end-name'], [r.s.cast], [r.s.parry], [r.s.dmg]]) {
+                        const td = document.createElement('td');
+                        td.textContent = '' + v;
+                        if (c) td.className = c;
+                        tr.appendChild(td);
+                    }
+                    tbody.appendChild(tr);
+                }
+            }
             const lbRefs = window.guiElements.victoryLeaderboardRefs;
             if (lbRefs) {
                 const blS = (window.combatants && window.combatants.left && window.combatants.left.matchStats) || { spellsCast: 0, parries: 0, damageDealt: 0 };
@@ -22180,11 +22196,11 @@
                 lbRefs.blue.cast.text = '' + (blS.spellsCast || 0); lbRefs.blue.parry.text = '' + (blS.parries || 0); lbRefs.blue.dmg.text = '' + Math.round(blS.damageDealt || 0);
                 lbRefs.red.cast.text  = '' + (rdS.spellsCast || 0); lbRefs.red.parry.text  = '' + (rdS.parries || 0); lbRefs.red.dmg.text  = '' + Math.round(rdS.damageDealt || 0);
             }
-            if (window.guiElements.victoryLeaderboard) window.guiElements.victoryLeaderboard.isVisible = true;
+            if (window.guiElements.victoryLeaderboard) window.guiElements.victoryLeaderboard.isVisible = false;
 
-            // Show the overlay and its children (subtitle stays hidden).
+            // Show the overlay (pointer blocker + tint); the GUI title + subtitle stay hidden.
             overlay.isVisible = true;
-            if (title) title.isVisible = true;
+            if (title) title.isVisible = false;
             if (subtitle) subtitle.isVisible = false;
             // The Babylon GUI Continue button is retired (tan styling clashed with the menu, and
             // its clicks died after a real match). Continue is now a DOM .game-btn that matches
@@ -22197,13 +22213,15 @@
             const contBtn = ensureVictoryContinueBtn();
             const paBtn   = ensureVictoryPlayAgainBtn();
             const waitEl  = ensureVictoryWaitLabel();
-            const btnBox  = ensureVictoryButtonContainer();
-            btnBox.style.display = 'flex';
+            ensureVictoryButtonContainer();
+            endScreen.classList.remove('visible');
+            void endScreen.offsetWidth;          // restart the rise-in animation
+            endScreen.classList.add('visible');
             // Host-authoritative rematch: the decider (SP local player, or the PvP HOST) gets Play
             // Again; the PvP JOINER instead sees "Waiting for host..." and can only leave. This is
             // why one player can't force the other into a rematch.
             const joinerWaiting = (gameMode === 'pvp' && !isHost);
-            paBtn.style.display  = joinerWaiting ? 'none' : 'block';
+            paBtn.style.display  = joinerWaiting ? 'none' : 'flex';
             waitEl.style.display = joinerWaiting ? 'block' : 'none';
             contBtn.disabled = true;
             paBtn.disabled = true;
@@ -22235,13 +22253,34 @@
             else document.body.appendChild(layer);
             return layer;
         }
+        // Victory/Defeat screen, laid out like every other menu (KH2 light theme): a white fade
+        // from the left over the frozen arena, then one left column — title, the Battle Report
+        // (dark steel data window, like Career), and the Play Again / Main Menu items.
+        function ensureEndScreen() {
+            let el = document.getElementById('endScreen');
+            if (el) return el;
+            el = document.createElement('div');
+            el.id = 'endScreen';
+            el.innerHTML =
+                '<div class="end-scrim"></div>' +
+                '<div class="end-content">' +
+                    '<h1 class="arcane-title" id="endScreenTitle" data-text="Victory">Victory</h1>' +
+                    '<div class="career-card end-report">' +
+                        '<div class="career-card-title">Battle Report</div>' +
+                        '<table><thead><tr><th></th><th>CAS</th><th>PAR</th><th>DMG</th></tr></thead>' +
+                        '<tbody id="endReportBody"></tbody></table>' +
+                    '</div>' +
+                '</div>';
+            ensureEndScreenScaleLayer().appendChild(el);
+            return el;
+        }
         function ensureVictoryButtonContainer() {
             let box = document.getElementById('victoryButtons');
             if (box) return box;
             box = document.createElement('div');
             box.id = 'victoryButtons';
-            box.style.cssText = 'position:absolute;left:960px;top:calc(540px + 170px);transform:translateX(-50%);z-index:650;display:none;flex-direction:column;gap:14px;align-items:center;pointer-events:none';
-            ensureEndScreenScaleLayer().appendChild(box);
+            box.className = 'arcane-buttons';
+            ensureEndScreen().querySelector('.end-content').appendChild(box);
             return box;
         }
         // "Waiting for host..." label shown to the PvP joiner in Play Again's slot (order:1),
@@ -22252,7 +22291,8 @@
             el = document.createElement('div');
             el.id = 'victoryWaitLabel';
             el.textContent = 'Waiting for host...';
-            el.style.cssText = "order:1;display:none;min-width:260px;text-align:center;color:#dfe6f2;font-family:'FF9UI',sans-serif;font-size:18px;opacity:0.85;pointer-events:none";
+            el.className = 'end-wait';
+            el.style.cssText = 'order:1;display:none;pointer-events:none';
             ensureVictoryButtonContainer().appendChild(el);
             return el;
         }
@@ -22263,13 +22303,13 @@
             btn = document.createElement('button');
             btn.id = 'victoryContinueBtn';
             btn.className = 'game-btn menu-btn';
-            btn.textContent = 'Main Menu';
+            btn.innerHTML = '<span class="menu-btn-label">Main Menu</span>';
             // Flex item in #victoryButtons (order:2 → below Play Again). The container handles
             // positioning + scaling (in #hudScaleLayer). pointer-events:auto re-enables clicks
             // (the layer/container are pointer-events:none). Still a <body> descendant, so
             // isAnyMenuOpen()'s gameOver→document.body root + getNavFocusables resolve it for
             // controller nav.
-            btn.style.cssText = 'order:2;display:block;min-width:260px;pointer-events:auto';
+            btn.style.cssText = 'order:2;pointer-events:auto';
             ensureVictoryButtonContainer().appendChild(btn);
             btn.addEventListener('click', () => {
                 // In PvP, leaving the match also DISCONNECTS the peer, so the opponent gets a clean
@@ -22299,10 +22339,10 @@
             btn = document.createElement('button');
             btn.id = 'victoryPlayAgainBtn';
             btn.className = 'game-btn menu-btn';
-            btn.textContent = 'Play Again';
+            btn.innerHTML = '<span class="menu-btn-label">Play Again</span>';
             // Flex item in #victoryButtons (order:1 → on top, above Main Menu). The container
             // handles positioning/scaling; pointer-events:auto re-enables clicks.
-            btn.style.cssText = 'order:1;display:block;min-width:260px;pointer-events:auto';
+            btn.style.cssText = 'order:1;pointer-events:auto';
             ensureVictoryButtonContainer().appendChild(btn);
             btn.addEventListener('click', () => {
                 if (Date.now() < victoryContinueAt) return;  // grace guard
@@ -22386,9 +22426,9 @@
                     window.guiElements.victoryLeaderboard.isVisible = false;
                 }
             }
-            // Hide the DOM victory-button container (Play Again + Main Menu).
-            const btnBox = document.getElementById('victoryButtons');
-            if (btnBox) btnBox.style.display = 'none';
+            // Hide the DOM end screen (title, report, Play Again + Main Menu).
+            const endScreen = document.getElementById('endScreen');
+            if (endScreen) endScreen.classList.remove('visible');
         }
 
         function resetGame() {

@@ -3676,3 +3676,81 @@ body.gp-cursor-hidden * {
    The 3D canvas and the HUD keep their own crisp pixel rendering. */
 .arcane-overlay,
 #loadingScreen { image-rendering: auto; }
+
+/* ---- Victory / Defeat: same language as the menus, over the frozen arena ---- */
+#endScreen {
+    position: absolute;
+    inset: 0;
+    display: none;
+    pointer-events: none;
+    image-rendering: auto;
+}
+#endScreen.visible { display: block; }
+#endScreen .end-scrim {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, rgba(243, 242, 238, 0.96) 0%, rgba(243, 242, 238, 0.9) 30%,
+        rgba(243, 242, 238, 0.55) 46%, rgba(243, 242, 238, 0) 64%);
+    animation: endFade 0.4s ease both;
+}
+#endScreen .end-content {
+    position: absolute;
+    left: 144px;                        /* 7.5% of 1920, the menu column */
+    top: 0;
+    bottom: 0;                          /* centred by flex: menuRise owns transform */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 34px;
+    animation: menuRise 0.6s ease 0.1s both;
+}
+#endScreen .arcane-title { font-size: 128px; margin: 0 0 -6px -4px; }
+#endScreen.is-defeat .arcane-title {
+    background: linear-gradient(180deg, #b7b3c4 0%, #7d7890 50%, #4a4658 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+}
+#endScreen .end-report { padding: 14px 26px 16px; min-width: 460px; }
+#endScreen .end-report table { border-collapse: collapse; width: 100%; }
+#endScreen .end-report th {
+    font-family: 'Cabin', sans-serif;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.16em;
+    color: #9aa0b3;
+    text-align: right;
+    padding: 2px 0 6px 28px;
+}
+#endScreen .end-report td {
+    font-family: 'FF9UI', sans-serif;
+    font-size: 24px;
+    color: #ffe39a;
+    text-shadow: var(--ff9-shadow);
+    text-align: right;
+    padding: 3px 0 3px 28px;
+}
+#endScreen .end-report td.end-name {
+    text-align: left;
+    padding-left: 0;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#endScreen .end-row-blue .end-name { color: #6fb0ff; }
+#endScreen .end-row-red .end-name { color: #e76e55; }
+#endScreen #victoryButtons { opacity: 1; gap: 6px; margin-left: -48px; }
+#endScreen .end-wait {
+    font-family: 'Cabin', sans-serif;
+    font-weight: 700;
+    font-size: 20px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #7d7890;
+    padding: 10px 0 10px 48px;
+}
+@keyframes endFade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+    #endScreen .end-scrim, #endScreen .end-content { animation: none; }
+}
