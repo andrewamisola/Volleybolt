@@ -247,13 +247,6 @@
         }
     }
 
-    // Q again mid-channel: end the Overdrive early. The bar is spent.
-    function simCancelJuice(combatant, ctx) {
-        if (!combatant || !combatant.juiceActive) return;
-        combatant.juiceActive = false; combatant.juiceTimer = 0; combatant.juice = 0; combatant.juiceRamp = 0;
-        if (!ctx.isResimulating && ctx.deps.onJuiceEnd) ctx.deps.onJuiceEnd(combatant);
-    }
-
     // Deterministic Overdrive channel tick — runs INSIDE the sim for caster `c` vs `opp`.
     // Drains the timer, tests lane-match block, ramps damage while connected, applies tower
     // damage. ctx.deps.* are FX-only (never gate STATE changes on isResimulating).
@@ -880,10 +873,9 @@
         if (bi && combatants.rightBack && bi.right) { if (bi.right.parry) tryActivatePvPParry('rightBack', ctx); checkPvPParryHitsForSide('rightBack', bi.right, ctx); }
         D.syncLocalParryUI();
 
-        // Juice input (Q): a full bar starts the Overdrive channel; pressing it AGAIN mid-channel ends
-        // it early (the bar is spent either way). Input-gated, deterministic.
+        // Juice input (Q): a full bar starts the Overdrive channel. Input-gated, deterministic.
         // During a BEAM CLASH the mash is the PARRY button (free while channeling — no parry then), and
-        // juice presses are ignored so a mashing player can't cancel by accident. Each press shoves the
+        // juice presses do nothing (Overdrive can't be cancelled anyway). Each press shoves the
         // collision point toward the other side (clash state lives on the LEFT front: clashT > 0 while
         // clashing, clashPos + = left ahead).
         const clashL = combatants.left && combatants.left.clashT > 0 ? combatants.left : null;
@@ -891,8 +883,10 @@
             if (leftInput.parry)  clashL.clashPos = (clashL.clashPos || 0) + BEAM_CLASH.STEP;
             if (rightInput.parry) clashL.clashPos = (clashL.clashPos || 0) - BEAM_CLASH.STEP;
         } else {
-            if (leftInput.juice  && combatants.left)  { if (combatants.left.juiceActive)  simCancelJuice(combatants.left, ctx);  else simActivateJuice(combatants.left,  ctx); }
-            if (rightInput.juice && combatants.right) { if (combatants.right.juiceActive) simCancelJuice(combatants.right, ctx); else simActivateJuice(combatants.right, ctx); }
+            // Overdrive is a FULL SEND: once started it can't be cancelled (a press mid-channel does nothing —
+            // spamming the key must never throw it away). simActivateJuice already ignores an active channel.
+            if (leftInput.juice  && combatants.left)  simActivateJuice(combatants.left,  ctx);
+            if (rightInput.juice && combatants.right) simActivateJuice(combatants.right, ctx);
         }
 
         // Update cooldowns

@@ -4393,7 +4393,7 @@
                 if (e.code === 'Digit3') {
                     pendingNetInput.thunderstorm = true;
                 }
-                // Juice / Overdrive (Q): start it, press again to end it early. (This branch returns before
+                // Juice / Overdrive (Q): start it — a full send, it can't be cancelled. (This branch returns before
                 // the single-player Q handling below, so without this Q did nothing online.)
                 if (e.code === 'KeyQ') {
                     pendingNetInput.juice = true;
@@ -14164,9 +14164,9 @@
             // driver's right→leftBack→rightBack call order and the online merge's slot-index order
             // (0..3) produce identical per-slot decisions.
             // The AI decides on a reaction-lagged view, so for a few frames after it starts Overdrive that
-            // view still shows a full, unspent bar — and it presses juice again, which the sim reads as
-            // "Q again = cancel". Drop any AI juice press while its own channel is live (checked against the
-            // LIVE state). (Its beam-clash mash is the parry input, so this never blocks that.)
+            // view still shows a full, unspent bar — and it presses juice again. Overdrive can't be cancelled,
+            // so the sim ignores it anyway; dropping it here (checked against the LIVE state) just keeps the
+            // AI's inputs honest. (Its beam-clash mash is the parry input, so this never blocks that.)
             function aiJuiceGuard(inp, slotKey) {
                 const c = combatants[slotKey];
                 if (inp && inp.juice && c && c.juiceActive) inp.juice = false;
