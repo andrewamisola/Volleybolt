@@ -6781,7 +6781,10 @@
                 // Added to the GUI ROOT (not as a child of box) so nothing clips its overhang —
                 // positioned to float just above the box's top-left corner.
                 const titleTab = new G.Rectangle("commandTitleTab");
-                titleTab.width = "150px"; titleTab.height = TITLE_H + "px";
+                // 150px fits COMMAND / JUICE; "JUICE READY" (~111px in FF9UI 16) + the Q badge needs
+                // 172px, so the tab widens for that state (left edge held, see setTitleTabWidth).
+                const TITLE_W = 150, TITLE_W_READY = 172, TITLE_LEFT = CMD_LEFT + TAB_OFF;
+                titleTab.width = TITLE_W + "px"; titleTab.height = TITLE_H + "px";
                 titleTab.background = STEEL; titleTab.color = RIM; titleTab.thickness = 2; titleTab.cornerRadius = 6;
                 titleTab.clipChildren = false;
                 titleTab.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_CENTER;
@@ -6789,7 +6792,16 @@
                 // box bottom edge is 16px above container bottom; box top edge is 16+BOX_H above it.
                 // Float the tab's bottom 4px into the box top (so it reads as "attached").
                 // Tab sits near the box's left edge (TAB_OFF), shifted with the command window.
-                titleTab.left = (CMD_LEFT + TAB_OFF) + "px"; titleTab.top = (-(BOTTOM_PAD + BOX_H - 4)) + "px";
+                titleTab.left = TITLE_LEFT + "px"; titleTab.top = (-(BOTTOM_PAD + BOX_H - 4)) + "px";
+                // The tab is centre-aligned, so widening it grows both sides: shift it right by half
+                // the growth to keep its left edge anchored over the command window.
+                let titleTabW = TITLE_W;   // cached: the GUI's width getter reports the ideal-scaled value
+                const setTitleTabWidth = (w) => {
+                    if (titleTabW === w) return;
+                    titleTabW = w;
+                    titleTab.width = w + "px";
+                    titleTab.left = (TITLE_LEFT + (w - TITLE_W) / 2) + "px";
+                };
                 titleTab.isVisible = false;
                 guiTexture.addControl(titleTab);
                 const titleText = new G.TextBlock();
@@ -7605,6 +7617,7 @@
                         qBadge.isVisible = ready;
                         const goldPulse = (Math.sin(Date.now() / 180) > 0) ? "#ffe89a" : "#f0c050";
                         if (localJ.juiceActive) {
+                            setTitleTabWidth(TITLE_W);
                             titleText.left = "0px";
                             box.color = goldPulse;                                     // pulsing gold command border
                             titleText.text = "JUICE";  titleText.color = goldPulse;  titleTab.color = goldPulse;
@@ -7615,11 +7628,13 @@
                             juiceStrip.color = goldPulse;
                             if (!juiceStrip.isVisible) juiceStrip.isVisible = true;
                         } else if (ready) {
-                            titleText.left = "-14px";
+                            setTitleTabWidth(TITLE_W_READY);
+                            titleText.left = "-17px";          // text in the left 114px, 12px clear of the Q badge
                             titleText.text = "JUICE READY"; titleText.color = goldPulse; titleTab.color = "#f0c050";
                             if (box.color !== RIM) box.color = RIM;
                             if (juiceStrip.isVisible) juiceStrip.isVisible = false;
                         } else {
+                            setTitleTabWidth(TITLE_W);
                             titleText.left = "0px";
                             if (titleText.text !== "COMMAND") { titleText.text = "COMMAND"; titleText.color = "#ffffff"; titleTab.color = RIM; }
                             if (box.color !== RIM) box.color = RIM;
