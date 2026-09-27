@@ -3097,17 +3097,21 @@ body.gp-cursor-hidden * {
 
 
 /* ============================================================
-   DUELING PICKLES title screen (main menu only): left-aligned logo + menu over a blurred,
-   darkened capture of the arena (textures/menu_bg.jpg), fading to dark on the left so the menu
-   reads. Four primary items; How to Play / Credits / Discord are small secondary links (still
-   .menu-btn, so keyboard/gamepad navigation reaches them after Settings).
-   Scoped to #domMenu: the sub-screens keep the shared centred arcane layout.
+   DUELING PICKLES menu system (every .arcane-overlay screen: title, mode select, settings, how to
+   play, credits, career, multiplayer). One look everywhere:
+   - backdrop: a blurred, darkened capture of the arena (textures/menu_bg.jpg), fading to dark on
+     the left where the content sits;
+   - left-aligned content column (7.5% in), headings in the logo's wizard purple;
+   - menu items in muted cream, brightening on hover / keyboard / gamepad focus;
+   - data screens (settings, how to play, credits, career) in FF9 steel windows like the in-game
+     HUD, so the menus and the battle UI read as one game.
+   Overrides the earlier centred FF9 pass above.
    ============================================================ */
-#domMenu {
+.arcane-overlay {
     background: #07080d;
     overflow: hidden;
 }
-#domMenu::before {
+.arcane-overlay::before {
     content: '';
     position: absolute;
     inset: -14px;                       /* hide the blur's soft edge */
@@ -3116,8 +3120,8 @@ body.gp-cursor-hidden * {
     background: url('textures/menu_bg.jpg?v=1') center / cover no-repeat;
     filter: blur(2.5px) brightness(0.62) saturate(0.9);
 }
-#domMenu #domMenuLeftPanel {
-    display: block !important;          /* re-enable the scrim the FF9 pass hid, as the left fade */
+.arcane-overlay > .arcane-scrim {
+    display: block !important;          /* the FF9 pass hid it; it's the left fade now */
     position: absolute;
     inset: 0;
     width: 100%;
@@ -3125,33 +3129,54 @@ body.gp-cursor-hidden * {
     z-index: 1;
     pointer-events: none;
     background: linear-gradient(90deg,
-        rgba(5, 6, 10, 0.94) 0%, rgba(5, 6, 10, 0.86) 28%, rgba(5, 6, 10, 0.45) 55%,
-        rgba(5, 6, 10, 0.15) 80%, rgba(5, 6, 10, 0.3) 100%);
+        rgba(5, 6, 10, 0.94) 0%, rgba(5, 6, 10, 0.86) 30%, rgba(5, 6, 10, 0.5) 58%,
+        rgba(5, 6, 10, 0.18) 82%, rgba(5, 6, 10, 0.3) 100%);
 }
-#domMenu #domMenuContent { position: relative; z-index: 2; }
-#domMenu.visible {
+.arcane-overlay > .arcane-scrim .arcane-embers { display: none !important; }
+.arcane-overlay > .arcane-content { position: relative; z-index: 2; }
+.arcane-overlay.visible {
     align-items: flex-start;
     justify-content: center;
     padding-left: 7.5%;
     box-sizing: border-box;
 }
-#domMenu .arcane-content { align-items: flex-start; gap: 44px; }
-#domMenu .arcane-title-wrap { align-items: flex-start; }
-#domMenu .arcane-title-wrap::before { display: none; }   /* no bloom behind the logo art */
+.arcane-content { align-items: flex-start; gap: 40px; }
+.arcane-title-wrap { align-items: flex-start; }
+.arcane-title-wrap::before { display: none; }       /* no bloom behind titles/logo */
+.arcane-buttons { align-items: flex-start; gap: 2px; }
+
+/* Screen headings: the logo's wizard purple (lilac -> violet), light crisp shadow. */
+.arcane-title {
+    font-family: 'Ferrum', 'FF9UI', serif;
+    font-size: 78px;
+    letter-spacing: 6px;
+    background: linear-gradient(180deg, #e2ceff 0%, #b894f2 45%, #8a5ee0 72%, #5c3aaa 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(2px 3px 0 rgba(0, 0, 0, 0.5));
+}
+
+/* Menu items: muted cream at rest, bright gold when hovered / focused. */
+.arcane-buttons .menu-btn .menu-btn-label { font-size: 42px; color: #bcae8f; }
+.arcane-buttons .menu-btn:hover .menu-btn-label,
+.arcane-buttons .menu-btn.gp-focused .menu-btn-label,
+.arcane-buttons .menu-btn:focus-visible .menu-btn-label { color: #ffe39a; }
+/* Back / Cancel / Leave: secondary weight. */
+.arcane-buttons .menu-btn.menu-btn-ghost .menu-btn-label { font-size: 30px; color: #9aa0b3; }
+.arcane-buttons .menu-btn.menu-btn-ghost { margin-top: 10px; }
+
+/* ---- Title screen (main menu) ---- */
 .menu-logo { margin: 0; line-height: 0; }
 .menu-logo img {
     display: block;
     width: 680px;                       /* design px: .arcane-content scales with --ui-scale */
     height: auto;
     margin-left: -24px;                 /* the art's flourishes overhang; align letters with the items */
-    filter: drop-shadow(2px 3px 0 rgba(0, 0, 0, 0.45));  /* light crisp offset shadow, no blur */
+    filter: drop-shadow(2px 3px 0 rgba(0, 0, 0, 0.45));   /* light crisp offset shadow, no blur */
 }
-#domMenu .arcane-buttons { align-items: flex-start; gap: 2px; }
-#domMenu .arcane-buttons .menu-btn .menu-btn-label { font-size: 42px; color: #bcae8f; }
-#domMenu .arcane-buttons .menu-btn:hover .menu-btn-label,
-#domMenu .arcane-buttons .menu-btn.gp-focused .menu-btn-label,
-#domMenu .arcane-buttons .menu-btn:focus-visible .menu-btn-label { color: #ffe39a; }
-
+#domMenu .arcane-content { gap: 44px; }
 #domMenuLinks {
     display: flex;
     flex-direction: row;
@@ -3173,9 +3198,149 @@ body.gp-cursor-hidden * {
 #domMenu #domMenuLinks .menu-btn + .menu-btn.gp-focused::before,
 #domMenu #domMenuLinks .menu-btn + .menu-btn:focus-visible::before { right: calc(100% - 12px); }
 
-/* Splash: #loadingTitle now holds the logo image; drop the old text-title glow + gradient that
-   would otherwise wrap the image in a soft shadow and gold haze (the img has its own crisp shadow). */
-#loadingTitle { filter: none; background: none; }
+/* ---- FF9 steel window for data screens (same language as the HUD's Command/Status boxes) ---- */
+.arcane-buttons.settings-panel,
+.career-card {
+    background: linear-gradient(180deg, rgba(52, 62, 84, 0.9) 0%, rgba(22, 27, 40, 0.92) 100%);
+    border: 2px solid rgba(224, 230, 240, 0.85);
+    border-radius: 10px;
+    box-shadow: inset 0 0 0 1px rgba(16, 24, 40, 0.7), inset 0 2px 3px rgba(255, 255, 255, 0.12),
+        5px 5px 0 rgba(0, 0, 0, 0.45);
+}
+.arcane-buttons.settings-panel {
+    padding: 18px 30px 16px;
+    align-items: stretch;
+    gap: 4px;
+}
+.settings-panel .menu-btn.menu-btn-ghost { align-self: flex-start; margin-left: -30px; }
+.settings-section-label { color: #c9a8ff; }            /* section headers pick up the logo purple */
+.htp-title { color: #c9a8ff; }
+.htp-section { color: #c9a8ff; }
+.htp-dot.active { background: #c9a8ff; border-color: #c9a8ff; }
+.credits-line { text-align: left; }
+.credits-title { color: #c9a8ff; }
+#settingsScreen .arcane-content { gap: 28px; }
+
+/* ---- Career: category cards in a 2x2 grid, whole record on one screen ---- */
+#careerScreen .arcane-buttons.settings-panel {   /* the cards are the windows; no outer box */
+    background: none; border: none; box-shadow: none; padding: 0;
+}
+.career-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(360px, auto));
+    gap: 16px 18px;
+    max-height: none;
+    overflow: visible;
+}
+.career-card {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 12px 20px 14px;
+}
+.career-card-title {
+    font-family: 'FF9UI', sans-serif;
+    font-size: 22px;
+    letter-spacing: 1px;
+    color: #c9a8ff;
+    text-shadow: var(--ff9-shadow);
+    margin-bottom: 4px;
+}
+.career-row { min-width: 0; font-size: 19px; }
+.career-row > .career-val { color: #ffe39a; }
+#careerScreen .menu-btn.menu-btn-ghost { margin-left: 0; }
+
+/* ---- Multiplayer (1v1 views): left-aligned like every other screen ---- */
+#multiplayerLobby .arcane-buttons > .lobby-view { align-items: flex-start !important; }   /* 1v1 views only; the doubles split stays centred */
+.lobby-code { border-color: rgba(224, 230, 240, 0.85); border-radius: 8px; color: #ffe39a; }
+
+/* The doubles split owns the whole screen: no left fade over the BLUE half. */
+#multiplayerLobby.doubles-fullscreen > .arcane-scrim { display: none !important; }
+
+/* ---- Doubles lobby: the BLUE/RED headers sat half-hidden behind the seat panels ---- */
+.dzone-label {
+    margin-top: 16px;
+    font-size: 30px;
+    letter-spacing: 10px;
+    padding-left: 10px;
+    opacity: 1;
+}
+.dzone-blue { background: linear-gradient(160deg, rgba(32, 64, 116, 0.55) 0%, rgba(10, 16, 28, 0.7) 70%); }
+.dzone-red  { background: linear-gradient(200deg, rgba(122, 46, 36, 0.55) 0%, rgba(28, 10, 8, 0.7) 70%); }
 
 /* Copyright footer: left-aligned with the menu column. */
-#domMenu.arcane-overlay::after { left: 7.5%; width: auto; text-align: left; }
+.arcane-overlay.visible::after { left: 7.5%; width: auto; text-align: left; z-index: 3; }
+
+/* ---- Splash (Click to Start): inside the 16:9 stage, laid out exactly like the title screen ---- */
+#loadingScreen {
+    position: absolute;                 /* was fixed to the whole window */
+    inset: 0;
+    width: auto;
+    height: auto;
+    padding: 0 0 0 7.5%;                /* same column as the menus */
+    box-sizing: border-box;
+    align-items: flex-start;
+    justify-content: center;
+    background: #07080d;
+    overflow: hidden;
+}
+#loadingScreen::before {
+    content: '';
+    position: absolute;
+    inset: -14px;
+    pointer-events: none;
+    background: url('textures/menu_bg.jpg?v=1') center / cover no-repeat;
+    filter: blur(2.5px) brightness(0.62) saturate(0.9);
+}
+#loadingScreen::after {                 /* the menus' left fade */
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(90deg,
+        rgba(5, 6, 10, 0.94) 0%, rgba(5, 6, 10, 0.86) 30%, rgba(5, 6, 10, 0.5) 58%,
+        rgba(5, 6, 10, 0.18) 82%, rgba(5, 6, 10, 0.3) 100%);
+}
+#loadingCard {
+    position: relative;
+    z-index: 1;
+    background: none;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    min-width: 0;
+    align-items: flex-start;
+    gap: 44px;                          /* = #domMenu .arcane-content gap */
+    zoom: var(--ui-scale, 1);           /* scales with the stage like .arcane-content */
+}
+#loadingTitle { filter: none; background: none; margin: 0; line-height: 0; }
+#loadingTitle img {
+    display: block;
+    width: 680px;                       /* = .menu-logo img */
+    max-width: none;                    /* the old splash rule capped it at the card width */
+    height: auto;
+    margin: 0 0 0 -24px;
+    filter: drop-shadow(2px 3px 0 rgba(0, 0, 0, 0.45));
+}
+/* Stands in for the menu items' block, so the logo sits where it will on the title screen. */
+#loadingBody {
+    min-height: 369px;                  /* = the title screen's item block (4 items + links), design px */
+    padding-left: 48px;                 /* = menu item text inset */
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+}
+#loadingBarContainer {
+    width: 360px;
+    height: 4px;
+    margin-top: 18px;
+    border: none;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow: none;
+    overflow: hidden;
+}
+#loadingBar { height: 100%; background: linear-gradient(90deg, #8a5ee0, #c9a8ff); box-shadow: none; }
+#loadingText { text-align: left; font-size: 40px; color: #ffe39a; margin-top: 0; }
+#loadingTip { text-align: left; }

@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=65-pickle-logo">
+    <link rel="stylesheet" href="styles.css?v=69-menus">
 </head>
 <body>
     <!-- Hidden font loader - ensures Esthetique is loaded -->
@@ -45,18 +45,22 @@
         </filter>
     </svg>
 
+    <div id="gameContainer">
+    <!-- Splash (Click to Start): lives INSIDE the 16:9 stage like every other screen, and mirrors the
+         title screen's layout (same backdrop, same logo size + spot), so clicking through just
+         brings the menu items in under a logo that doesn't move. -->
     <div id="loadingScreen">
         <div id="loadingCard">
             <div id="loadingTitle"><img src="textures/logo_dueling_pickles.png?v=5" alt="Dueling Pickles"></div>
-            <div id="loadingBarContainer">
-                <div id="loadingBar"></div>
+            <div id="loadingBody">
+                <div id="loadingBarContainer">
+                    <div id="loadingBar"></div>
+                </div>
+                <div id="loadingText">Loading...</div>
+                <div id="loadingTip">Block spells with your paddle<br>Parry to send them back faster</div>
             </div>
-            <div id="loadingText">Loading...</div>
-            <div id="loadingTip">Block spells with your paddle<br>Parry to send them back faster</div>
         </div>
     </div>
-
-    <div id="gameContainer">
     <canvas id="canvas"></canvas>
 
     <!-- Main Menu (DOM) - Dueling Pickles title screen: left-aligned logo + menu over the arena backdrop (styles.css, end) -->
@@ -280,7 +284,7 @@
             </div>
             <div class="arcane-buttons settings-panel">
                 <div class="credits-line credits-title">Dueling Pickles</div>
-                <div class="credits-line">An arcane volley duel.</div>
+                <div class="credits-line">An arcane pickle duel.</div>
                 <div class="credits-line credits-author">Created by Andrew Amisola</div>
                 <div class="credits-line">Built with Babylon.js, Tone.js &amp; PeerJS.</div>
                 <div class="credits-line">&#169; 2026 Andrew Amisola</div>
@@ -9748,9 +9752,7 @@
                             // Update loading screen to show "Click to Start"
                             document.getElementById('loadingBar').style.width = '100%';
                             document.getElementById('loadingText').textContent = 'Click to Start';
-                            document.getElementById('loadingText').style.color = '#f0c050';
-                            document.getElementById('loadingText').style.cursor = 'pointer';
-                            document.getElementById('loadingText').style.fontSize = '12px';
+                            document.getElementById('loadingText').style.cursor = 'pointer';   // size/colour: styles.css (#loadingText)
                             document.getElementById('loadingTip').style.display = 'none';
                             loadingScreen.style.cursor = 'pointer';   // whole screen is clickable, not just the text
 
@@ -18118,18 +18120,35 @@
         };
 
         // Render the persisted career stats into #careerList (label : value rows).
+        // Career: the stats grouped by category into FF9-window cards laid out in a grid, so the
+        // whole record fits on one screen (it used to be a single scrolling list).
+        const CAREER_GROUPS = [
+            ['match', 'Matches'], ['combat', 'Combat'], ['spells', 'Spells'], ['special', 'Special'],
+        ];
         function populateCareer() {
             const list = document.getElementById('careerList');
             if (!list || !window.StatTracker) return;
             const defs = StatTracker.STAT_DEFINITIONS;
             const career = StatTracker.getAll('career');
             list.innerHTML = '';
-            for (const [key, def] of Object.entries(defs)) {
-                const row = document.createElement('div');
-                row.className = 'career-row';
-                const val = Math.round((career[key] || 0) * 100) / 100;   // freeze_time may be fractional
-                row.innerHTML = '<span>' + def.label + '</span><span class="career-val">' + val + '</span>';
-                list.appendChild(row);
+            for (const [cat, title] of CAREER_GROUPS) {
+                const card = document.createElement('div');
+                card.className = 'career-card';
+                const head = document.createElement('div');
+                head.className = 'career-card-title';
+                head.textContent = title;
+                card.appendChild(head);
+                for (const [key, def] of Object.entries(defs)) {
+                    if (def.category !== cat) continue;
+                    const row = document.createElement('div');
+                    row.className = 'career-row';
+                    const raw = career[key] || 0;
+                    const val = Number.isInteger(raw) ? raw : Math.round(raw * 10) / 10;   // freeze_time is fractional
+                    const label = def.label.replace(/ \(s\)$/, '');
+                    row.innerHTML = '<span>' + label + '</span><span class="career-val">' + val + (/\(s\)$/.test(def.label) ? 's' : '') + '</span>';
+                    card.appendChild(row);
+                }
+                list.appendChild(card);
             }
         }
 
