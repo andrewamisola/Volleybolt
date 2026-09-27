@@ -3385,7 +3385,7 @@ body.gp-cursor-hidden * {
 }
 .arcane-title::before { display: none; }          /* the white shimmer sweep vanishes on white */
 .menu-logo img,
-#loadingTitle img { filter: drop-shadow(0 14px 0 #000); }   /* solid black, straight down, no blur */
+#loadingTitle img { filter: drop-shadow(0 5px 0 #000); }   /* solid black, straight down, no blur */
 
 /* ---- KH menu items ---- */
 .arcane-buttons .menu-btn { padding: 6px 40px 6px 48px; }
