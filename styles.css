@@ -3815,3 +3815,37 @@ body.gp-cursor-hidden * {
 :is(#endScreen, #pauseOverlay) .arcane-buttons .menu-btn:disabled .menu-btn-label { color: #5f5a70; }
 #endScreen .end-wait { color: #a9a3ba; }
 #pauseOverlay .pause-version { color: #6d6880; }
+
+/* ---- Victory cinematic: flash + title slam ---- */
+.cine-flash {
+    position: absolute; inset: 0; pointer-events: none; z-index: 5;
+    background: #fff8e8;
+    animation: cineFlash 180ms ease-out forwards;
+}
+@keyframes cineFlash { from { opacity: 0.85; } to { opacity: 0; } }
+.cine-title {
+    position: absolute; inset: 0; pointer-events: none; z-index: 4;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding-top: 170px; overflow: hidden;
+}
+.cine-title > span {
+    font-family: 'Ferrum', 'FF9UI', serif;
+    font-size: 210px; letter-spacing: 10px; line-height: 1;
+    background: linear-gradient(180deg, #f2e8ff 0%, #c3a4ff 42%, #8a5ee0 100%);
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent; -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 7px 0 #000);
+    animation: cineSlam 520ms cubic-bezier(.2, 1.6, .4, 1) both;
+}
+.cine-title.is-defeat > span {
+    background: linear-gradient(180deg, #e4e0ec 0%, #aaa4bb 50%, #6c6780 100%);
+    -webkit-background-clip: text; background-clip: text;
+    animation: cineSlam 520ms cubic-bezier(.2, 1.6, .4, 1) both, cineDroop 900ms ease-in 900ms forwards;
+}
+.cine-title.leaving > span { animation: cineLeave 320ms ease-in forwards; }
+@keyframes cineSlam { 0% { transform: scale(2.6); opacity: 0; } 60% { opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes cineDroop { to { transform: translateY(26px) rotate(-4deg); } }
+@keyframes cineLeave { to { transform: translateY(-60px) scale(0.9); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+    .cine-title > span, .cine-title.is-defeat > span { animation: none; }
+}

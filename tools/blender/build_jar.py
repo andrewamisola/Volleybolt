@@ -339,6 +339,22 @@ def pickle(m, lying=False):
         xform(m, start, rot, Vector((C.x - 0.25, C.y, TOP_Z + 0.55)))
 
 
+PICKLE_MID = 1.79                                             # half the pickle's length (its centre)
+
+
+def pickle_free(m):
+    """The pickle on its own, centred on the origin and upright: the victory cinematic launches it.
+    Exported as `core_pickle`, parked where the in-jar pickle floats (see main)."""
+    start = len(m.v)
+    prof = [(0.0, 0.0), (0.34, 0.1), (0.6, 0.42), (0.72, 0.95), (0.76, 1.8), (0.7, 2.7),
+            (0.6, 3.15), (0.36, 3.45), (0.0, 3.58)]
+    lathe(m, prof, 9, Vector((0, 0, 0)), 'M_pickle', 'pickle', jitter=0.16, seed=7, smooth=False)
+    for i in range(start, len(m.v)):
+        v = m.v[i]
+        v.x += 0.1 * (v.z - 1.8) ** 2
+        v.z -= PICKLE_MID
+
+
 LID_Z = 6.64                                                  # lid pivot height (rim centre)
 
 
@@ -424,8 +440,8 @@ def posts(m):
 def chains(m, s, tops):
     for i, (a, top) in enumerate(zip(POST_ANGLES, tops)):
         end = cyl_point(a, 5.55, 1.96)
-        if s == 3:
-            # slack stubs hanging off the posts
+        if s >= 3:
+            # slack stubs hanging off the posts (s3 wreck, s4 wreck after the cinematic)
             chain(m, top, top + (end - top).normalized() * 0.4 - Vector((0, 0, 1.6)), 0.2, seed=i)
         elif s == 2 and a == 40:
             chain(m, top, end, 0.35, frac=0.45, seed=i)                        # snapped
@@ -545,7 +561,8 @@ def build_state(s):
             puddle(m, Vector((C.x - 0.9, C.y + 3.9, 0)), 0.5, 1.0, 0.02, 72)
     else:
         shattered_glass(m)
-        pickle(m, lying=True)
+        if s == 3:
+            pickle(m, lying=True)       # s4 = the same wreck after the cinematic carried the pickle away
         puddle(m, Vector((C.x, C.y, 0)), 2.0, 2.35, TOP_Z + 0.01, 73)
         puddle(m, Vector((C.x - 0.8, C.y + 4.2, 0)), 1.2, 2.1, 0.02, 74)
         rot = Matrix.Rotation(math.radians(18), 3, 'X') @ Matrix.Rotation(math.radians(-12), 3, 'Y')
@@ -649,14 +666,18 @@ def main():
     reset_scene()
     mats = build_materials()
     states = []
-    for s in range(4):
+    for s in range(5):              # s4: shattered, pickle gone (after the victory cinematic)
         m = build_state(s)
         states.append(to_object(f'core_s{s}', m, mats, 1000 + s))
         print(f'core_s{s}: {len(m.f)} faces, {sum(len(f) - 2 for f in m.f)} tris', flush=True)
     debris = build_debris(mats)
-    for o in states[1:]:
+    m = MB()
+    pickle_free(m)
+    pk = to_object('core_pickle', m, mats, 1100)
+    pk.location = Vector((C.x - 0.25, C.y, TOP_Z + 0.55 + PICKLE_MID))
+    for o in states[1:] + [pk]:
         o.hide_set(True)
-    export(states + [debris])
+    export(states + [debris, pk])
     print('exported', os.path.join(OUT_DIR, 'core.glb'), flush=True)
 
 
