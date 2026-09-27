@@ -344,11 +344,6 @@
                         <span class="menu-btn-glyph" aria-hidden="true">&#9889;</span>
                         <span class="menu-btn-label">Host Game</span>
                     </button>
-                    <button class="game-btn menu-btn" id="btnHostDoubles">
-                        <span class="menu-btn-accent" aria-hidden="true"></span>
-                        <span class="menu-btn-glyph" aria-hidden="true">&#9733;</span>
-                        <span class="menu-btn-label">Host Doubles (2v2)</span>
-                    </button>
                     <button class="game-btn menu-btn" id="btnJoinGame">
                         <span class="menu-btn-accent" aria-hidden="true"></span>
                         <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
@@ -448,7 +443,11 @@
                     <span class="menu-btn-glyph" aria-hidden="true">&#9112;</span>
                     <span class="menu-btn-label">Copy Code</span>
                 </button>
-                <p class="lobby-status" id="dLobbyStatus">Doubles &mdash; 2 vs 2</p>
+                <!-- Live match-format label (unified Host Game, 2026-09-26): repainted by
+                     renderDoublesLobby on host AND guest from the shared isDuelLineup predicate —
+                     "1v1 Duel" (exactly 2 humans on opposite sides) vs "2v2 Doubles · N AI". -->
+                <p class="lobby-status" id="dLobbyStatus">2v2 Doubles</p>
+                <p class="lobby-status" id="dFormatHint" style="display:none">Host plays Blue in a duel</p>
             </div>
 
             <!-- Court split: BLUE = left half, RED = right half. The zones themselves ARE the
@@ -493,6 +492,7 @@
                     <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
                     <span class="menu-btn-label">Start Match</span>
                 </button>
+                <p class="lobby-status" id="dStartReason" style="display:none"></p>
                 <p class="lobby-status" id="dWaitingHost" style="display:none">Waiting for host to start...</p>
             </div>
 
@@ -1086,6 +1086,12 @@
         // netMode gates the connection lifecycle: the classic 1v1 paths set 'duel', the
         // doubles host lobby (Task 2) sets 'doubles', and cleanupPeer resets 'none'.
         let netMode = 'none';         // 'none' | 'duel' (classic 1v1) | 'doubles'
+        // Unified Host Game (2026-09-26): every host opens the doubles lobby; at Start, a lineup of
+        // exactly 2 humans on OPPOSITE sides is promoted to a genuine 1v1 duel (START_MATCH, the
+        // classic rollback path). GUEST-side latch: set when a START_MATCH arrives while we were in
+        // the doubles lobby, so a stale LOBBY_STATE_D landing after it (unordered channel) can never
+        // flip us back to netMode='doubles' mid-duel (guestApplyLobbyState). Cleared in cleanupPeer.
+        let lobbyPromotedToDuel = false;
         // Host keeps one DataConnection per guest, keyed by guest peerId. Empty (and inert)
         // in 1v1, so every helper below is a no-op on the classic path.
         const guestConns = new Map(); // peerId -> { conn, slot, name, ready, lastPongTime, ping, ackedUpTo, remoteFrame }
@@ -16812,7 +16818,9 @@
                 else if (viewId === 'lobbyHostView') subtitle.textContent = 'Share your room code';
                 else if (viewId === 'lobbyJoinView') subtitle.textContent = 'Enter host code';
                 else if (viewId === 'lobbyConnectedView') subtitle.textContent = 'Connected';
-                else if (viewId === 'lobbyDoublesView') subtitle.textContent = 'Doubles — 2 vs 2';
+                // Unified lobby: the format (1v1 Duel / 2v2 Doubles) is decided by the lineup at
+                // Start and shown live in #dLobbyStatus, so the subtitle stays format-neutral.
+                else if (viewId === 'lobbyDoublesView') subtitle.textContent = 'Pick your side';
             }
         }
 
@@ -16856,14 +16864,30 @@
             if (!btnHost || !btnJoin) return;  // DOM not ready
             lobbyButtonsWired = true;
 
+            // Unified Host Game (2026-09-26, owner): ONE host button. It always opens the 4-slot
+            // doubles lobby; the match FORMAT is decided by the lineup at Start
+            // (window.startDoublesOnlineMatch): exactly 2 humans on opposite sides -> genuine 1v1
+            // duel (host promoted onto the classic single-conn START_MATCH path); anything else ->
+            // 2v2 doubles with AI filling empty seats. (The old separate "Host Doubles (2v2)"
+            // button is gone; the classic lobbyHostView is no longer entered from here.)
             btnHost.addEventListener('click', () => {
                 isHost = true;
-                netMode = 'duel';                 // classic 1v1
                 const code = generateRoomCode();
+                // initializePeer() calls cleanupPeer() FIRST, which resets netMode='none' — so set
+                // 'doubles' AFTER it, else the async peer.on('connection') would take the 1v1 branch.
                 initializePeer(code.toLowerCase());
-                showLobbyView('lobbyHostView');
-                if (hostCode) hostCode.textContent = code;
-                if (hostStatus) hostStatus.textContent = 'Waiting for opponent...';
+                netMode = 'doubles';
+                netSlots = freshNetSlots();
+                spectators = [];        // fresh room: no undecided guests yet
+                mySlot = 0;
+                nextPlayerNumber = 2;   // fresh room: host is P1, guests number from P2 in join order
+                netSlots[0] = { kind: 'human', peerId: 'HOST', name: realLobbyName(window.getPlayerName ? getPlayerName() : '') || 'P1', ready: false };
+                showLobbyView('lobbyDoublesView');
+                const dCode = $('dRoomCode'), dPrompt = $('dRoomPrompt'), btnCopyDLocal = $('btnCopyCodeD');
+                if (dCode) { dCode.textContent = code; dCode.style.display = ''; }
+                if (dPrompt) dPrompt.style.display = '';
+                if (btnCopyDLocal) btnCopyDLocal.style.display = '';
+                renderDoublesLobby();
             });
 
             btnJoin.addEventListener('click', () => {
@@ -16956,44 +16980,20 @@
                 refreshReadyUI();
             });
 
+            // Classic connected-lobby Start (now reached only via a duel's Play Again / REMATCH ->
+            // _returnToConnectedLobby). The body is the shared hostStartDuel(), also used by the
+            // unified lobby's duel branch in window.startDoublesOnlineMatch.
             if (btnStart) btnStart.addEventListener('click', async () => {
                 if (!localReady || !remoteReady) return;
                 await initToneJS();
-                if (isHost && conn && conn.open) {
-                    const sharedSeed = Date.now() % 2147483647;
-                    const upgradeToShare = selectedUpgrade || 'default';
-                    startMultiplayerMatch(sharedSeed, upgradeToShare);
-                    const startHash = (typeof hashStartState === 'function') ? hashStartState() : 0;
-                    conn.send({ type: 'START_MATCH', seed: sharedSeed, upgrade: upgradeToShare, hash: startHash });
-                }
+                hostStartDuel();
             });
 
             // --- Online doubles lobby wiring (Task 2; zone clicks + keyboard added in the
             //     2026-07-14 full-screen redesign — the old Blue/Red/Swap buttons are gone, the
             //     split itself is the interface now) ---
-            const btnHostDoubles = $('btnHostDoubles');
             const btnCopyD = $('btnCopyCodeD');
             const btnReadyD = $('btnReadyD'), btnStartD = $('btnStartD'), btnLeaveD = $('btnLeaveD');
-
-            if (btnHostDoubles) btnHostDoubles.addEventListener('click', () => {
-                isHost = true;
-                const code = generateRoomCode();
-                // initializePeer() calls cleanupPeer() FIRST, which resets netMode='none' — so set
-                // 'doubles' AFTER it, else the async peer.on('connection') would take the 1v1 branch.
-                initializePeer(code.toLowerCase());
-                netMode = 'doubles';
-                netSlots = freshNetSlots();
-                spectators = [];        // fresh room: no undecided guests yet
-                mySlot = 0;
-                nextPlayerNumber = 2;   // fresh room: host is P1, guests number from P2 in join order
-                netSlots[0] = { kind: 'human', peerId: 'HOST', name: realLobbyName(window.getPlayerName ? getPlayerName() : '') || 'P1', ready: false };
-                showLobbyView('lobbyDoublesView');
-                const dCode = $('dRoomCode'), dPrompt = $('dRoomPrompt');
-                if (dCode) { dCode.textContent = code; dCode.style.display = ''; }
-                if (dPrompt) dPrompt.style.display = '';
-                if (btnCopyD) btnCopyD.style.display = '';
-                renderDoublesLobby();
-            });
 
             if (btnCopyD) btnCopyD.addEventListener('click', () => {
                 const dCode = $('dRoomCode');
@@ -17133,6 +17133,25 @@
         }
         function aiSlot() { return { kind: 'ai', peerId: null, name: 'AI', ready: false }; }
 
+        // Unified Host Game (2026-09-26) — THE single format predicate. Used by the host to branch
+        // at Start (window.startDoublesOnlineMatch) AND by both roles for the live lobby label
+        // (renderDoublesLobby), so what players see is exactly what Start will do. A duel is
+        // exactly 2 seated humans, one on BLUE (slots 0-1) and one on RED (slots 2-3), with no
+        // undecided spectators; the host additionally passes guestConns and requires exactly one
+        // connected guest (the conn it will promote). Two humans on the SAME side stay 2v2 co-op
+        // vs 2 AI (owner decision). Pure function of lobby data — never touches sim state.
+        function isDuelLineup(slots, specs, conns) {
+            if (!Array.isArray(slots) || slots.length !== 4) return false;
+            if (Array.isArray(specs) && specs.length > 0) return false;
+            let blue = 0, red = 0;
+            for (let i = 0; i < 4; i++) {
+                if (slots[i] && slots[i].kind === 'human') { if (i < 2) blue++; else red++; }
+            }
+            if (blue !== 1 || red !== 1) return false;
+            if (conns && conns.size !== 1) return false;
+            return true;
+        }
+
         // The player's REAL custom name, or null when unset. Mirrors doublesSlotLabel's unset test
         // (getPlayerName() returns the literal 'Blue' when unset, so treat both '' and 'Blue' as
         // "no custom name") — the lobby must never show the 'Blue' placeholder as a player's name.
@@ -17144,7 +17163,7 @@
         // travels with swaps/picks since names move with slot contents). NEVER recomputed from a
         // slot index — a freed low slot must not hand a later joiner a duplicate P#. Host is P1;
         // the counter never decrements on leave (P3 leaving doesn't renumber P4 — join order is
-        // history). Reset to 2 when a room is created (#btnHostDoubles).
+        // history). Reset to 2 when a room is created (#btnHostGame — the unified host button).
         let nextPlayerNumber = 2;
 
         // Keep guestConns[].slot in sync with netSlots (Task 3 reads it to route inputs).
@@ -17438,6 +17457,10 @@
             // channel a stale broadcast can arrive after START_MATCH_D; adopting it would reassign
             // mySlot mid-match (START_MATCH_D's yourSlot is the ONLY authoritative slot once live).
             if (doublesMatchLive) return;
+            // Unified Host Game: same hazard for a lobby that was promoted to a 1v1 duel. A stale
+            // LOBBY_STATE_D landing after START_MATCH would otherwise flip netMode back to
+            // 'doubles' mid-duel (runPvPGameLoop would then dispatch to the doubles lockstep loop).
+            if (lobbyPromotedToDuel) return;
             const firstTime = (netMode !== 'doubles');
             netMode = 'doubles';
             netSlots = Array.isArray(data.slots) ? data.slots : null;
@@ -17467,6 +17490,17 @@
             // the sliding occupant lines pinned to the panel even if a resize/reflow happened
             // between paints without going through the dedicated resize listener below.
             computeDSlotTargets();
+            // Unified Host Game: live match-format readout from the SAME predicate the host
+            // branches on at Start. Host passes guestConns (must be exactly one connected guest);
+            // a guest evaluates the mirrored netSlots+spectators (its view of the room), which
+            // agrees with the host's whenever every connected guest is seated or spectating.
+            const duelLineup = isDuelLineup(netSlots, spectators, isHost ? guestConns : null);
+            const aiSeats = netSlots.filter(s => s.kind === 'ai').length;
+            const fmtEl = document.getElementById('dLobbyStatus');
+            if (fmtEl) fmtEl.textContent = duelLineup ? '1v1 Duel'
+                : ('2v2 Doubles' + (aiSeats > 0 ? ' · ' + aiSeats + ' AI' : ''));
+            const fmtHint = document.getElementById('dFormatHint');
+            if (fmtHint) fmtHint.style.display = duelLineup ? '' : 'none';
             const layer = document.getElementById('dtagLayer');
             if (layer) {
                 const seen = new Set();
@@ -17495,7 +17529,9 @@
                     tag.classList.toggle('is-cpu', s.kind === 'ai');
                     // '?' fallback is defensive only — no index-derived label may ever render (the
                     // slot's name is always set at seat time to the join-order P#).
-                    tag.querySelector('.dcmd-name').textContent = s.kind === 'ai' ? 'AI' : (s.name || '?');
+                    // Duel format: the empty seats are NOT played by AI (a 1v1 has no back row),
+                    // so render them blank instead of a misleading "AI".
+                    tag.querySelector('.dcmd-name').textContent = s.kind === 'ai' ? (duelLineup ? '' : 'AI') : (s.name || '?');
                 }
                 // Task 8: undecided guests render in the middle lane — the SAME sliding-line
                 // mechanism as seated tags (identity key 'p:'+peerId is shared with the seated
@@ -17536,15 +17572,27 @@
             if (dzoneRed)  dzoneRed.classList.toggle('is-your-zone', mySlot === 2 || mySlot === 3);
             const btnStartD = document.getElementById('btnStartD');
             const waiting = document.getElementById('dWaitingHost');
+            const startReason = document.getElementById('dStartReason');
+            let reasonText = '';
             if (btnStartD) {
                 if (isHost) {
                     btnStartD.style.display = '';
                     const humans = netSlots.filter(s => s.kind === 'human').length;
                     const allReady = netSlots.every(s => s.kind === 'ai' || s.ready);
-                    btnStartD.disabled = !(humans >= 1 && allReady);
+                    // Owner decision (unified Host Game): a connected-but-undecided guest (middle
+                    // lane) BLOCKS Start — the format depends on where they sit. Solo host (1 human
+                    // vs 3 AI) still starts as before.
+                    const undecided = Array.isArray(spectators) && spectators.length > 0;
+                    btnStartD.disabled = !(humans >= 1 && allReady && !undecided);
+                    if (undecided) reasonText = 'Waiting for players to pick a side';
+                    else if (!allReady) reasonText = 'Waiting for everyone to ready up';
                 } else {
                     btnStartD.style.display = 'none';
                 }
+            }
+            if (startReason) {
+                startReason.textContent = reasonText;
+                startReason.style.display = (isHost && reasonText) ? '' : 'none';
             }
             if (waiting) waiting.style.display = isHost ? 'none' : '';
             const btnReadyD = document.getElementById('btnReadyD');
@@ -18091,9 +18139,88 @@
         // the shared seed the SAME way 1v1's btnStart does (Date.now()%2147483647 — agreed pre-match
         // shared state, not sim randomness), broadcast START_MATCH_D, then start locally. hash:null
         // is a reserved placeholder — start-state hash validation arrives with W2's hash task.
+        // ---- Unified Host Game: lobby -> 1v1 duel promotion (2026-09-26) -------------------
+        // Leave the doubles-lobby presentation on this client: drop the identity-keyed name tags
+        // and switch the lobby view off the full-screen doubles split (showLobbyView toggles the
+        // .doubles-fullscreen class off). startMultiplayerMatch then hides the whole lobby. The
+        // classic connected view is the one a duel's Play Again (REMATCH) returns to anyway.
+        function clearDoublesLobbyPresentation() {
+            const layer = document.getElementById('dtagLayer');
+            if (layer) layer.innerHTML = '';
+            dTagEls.clear();
+            showLobbyView('lobbyConnectedView');
+        }
+
+        // HOST: turn the unified lobby's single guest link into THE classic 1v1 `conn`. Transport/
+        // lobby bookkeeping only — no sim state is touched (startMultiplayerMatch does all the
+        // duel resets afterwards, identically on both peers). Returns false (nothing changed) if
+        // there isn't exactly one open guest connection.
+        function hostPromoteLobbyToDuel() {
+            if (!isHost || guestConns.size !== 1) return false;
+            const [pid, g] = guestConns.entries().next().value;
+            if (!g || !g.conn || !g.conn.open) return false;
+            // Forget WITHOUT closing (dropGuest would close it + run netLobbyOnLeave). From here
+            // setupGuestConnection's identity routing sends this link's data/close/error to the
+            // classic handlers (conn === connection).
+            guestConns.delete(pid);
+            conn = g.conn;
+            stopDoublesPingLoop();              // PING_D/PONG_D liveness is doubles-only
+            netMode = 'duel';
+            netSlots = null; mySlot = -1; spectators = [];
+            clearDoublesLobbyPresentation();
+            // Mirror what setupConnection's 'open' handler gives a classic duel host (it never ran
+            // for this link): the PING/PONG heartbeat, ICE diagnostics, fresh ready flags, and the
+            // connected view's host controls (btnStartMatch is display:none by default — needed
+            // later for a Play Again rematch, which returns to the connected view).
+            stopPingMeasurement();
+            startPingMeasurement();
+            attachIceDiagnostics();
+            resetReadyState();
+            const btnStartM = document.getElementById('btnStartMatch');
+            const waitingEl = document.getElementById('waitingForHost');
+            if (btnStartM) btnStartM.style.display = '';
+            if (waitingEl) waitingEl.style.display = 'none';
+            return true;
+        }
+
+        // GUEST: a START_MATCH arrived while we were in the doubles lobby -> the host promoted it
+        // to a duel. Our single `conn` already IS the classic link (guests always join via
+        // setupConnection), so only the lobby-mode state flips. lobbyPromotedToDuel latches out
+        // any stale LOBBY_STATE_D (guestApplyLobbyState) for the rest of this session.
+        function guestPromoteLobbyToDuel() {
+            lobbyPromotedToDuel = true;
+            netMode = 'duel';
+            netSlots = null; mySlot = -1; spectators = [];
+            clearDoublesLobbyPresentation();
+        }
+
+        // HOST: start a classic 1v1 duel over `conn` — the exact former btnStartMatch body
+        // (seed -> local start -> start-state hash -> START_MATCH). Shared by the classic
+        // connected-lobby Start (rematches) and the unified lobby's duel branch below.
+        function hostStartDuel() {
+            if (!(isHost && conn && conn.open)) return;
+            const sharedSeed = Date.now() % 2147483647;
+            const upgradeToShare = selectedUpgrade || 'default';
+            startMultiplayerMatch(sharedSeed, upgradeToShare);
+            const startHash = (typeof hashStartState === 'function') ? hashStartState() : 0;
+            conn.send({ type: 'START_MATCH', seed: sharedSeed, upgrade: upgradeToShare, hash: startHash });
+        }
+
         window.startDoublesOnlineMatch = async function () {
             if (!isHost || netMode !== 'doubles' || !netSlots) return;
+            // Owner decision: an undecided guest blocks Start (the button is disabled too —
+            // renderDoublesLobby; this is defense-in-depth for keyboard/controller paths).
+            if (spectators.length > 0) return;
             await initToneJS();
+            // Re-check after the await: the room may have closed or changed meanwhile.
+            if (!isHost || netMode !== 'doubles' || !netSlots) return;
+            if (spectators.length > 0) return;
+            // Unified Host Game: exactly 2 humans on opposite sides -> a genuine 1v1 duel on the
+            // classic rollback path (START_MATCH), not a doubles match with 2 AI.
+            if (isDuelLineup(netSlots, spectators, guestConns)) {
+                if (hostPromoteLobbyToDuel()) hostStartDuel();
+                return;
+            }
             // The host's slot is ALWAYS re-derived from the 'HOST' sentinel at the moment of
             // consumption — not trusted from the event-driven bookkeeping (broadcastLobbyState's
             // recompute). This pins correctness against every drift class at once: lobby mutations
@@ -18709,9 +18836,24 @@
                 if (!doublesPingInterval) startDoublesPingLoop();
                 if (window.netLobbyOnJoin) { try { window.netLobbyOnJoin(peerId, connection); } catch (e) {} }
             });
-            connection.on('data', (data) => { dispatchGuestData(peerId, data); });
-            connection.on('close', () => { dropGuest(peerId, 'left'); });
-            connection.on('error', () => { dropGuest(peerId, 'left'); });
+            // Unified Host Game: route by IDENTITY. Once hostPromoteLobbyToDuel() makes this
+            // connection THE classic 1v1 `conn` (and removes it from guestConns), it must behave
+            // exactly like a setupConnection() link: data -> handleNetworkMessage (INPUT/SYNC_HASH/
+            // PING/LEAVE/...), close/error -> handleDisconnect. Without this, dispatchGuestData's
+            // guestConns lookup fails (no PONG -> the guest times out) and dropGuest no-ops on
+            // close (the host never learns the opponent left). Un-promoted guests are unchanged.
+            connection.on('data', (data) => {
+                if (conn === connection) { handleNetworkMessage(data); return; }
+                dispatchGuestData(peerId, data);
+            });
+            connection.on('close', () => {
+                if (conn === connection) { handleDisconnect('Opponent disconnected'); return; }
+                dropGuest(peerId, 'left');
+            });
+            connection.on('error', (err) => {
+                if (conn === connection) { console.error('Connection error:', err); handleDisconnect('Connection error'); return; }
+                dropGuest(peerId, 'left');
+            });
         }
 
         // Thin per-guest data dispatcher (host side, doubles). Answers the liveness messages
@@ -18813,6 +18955,7 @@
             guestConns.clear();
             stopDoublesPingLoop();
             netMode = 'none';
+            lobbyPromotedToDuel = false;   // unified Host Game guest latch — fresh per session
             if (conn) {
                 conn.close();
                 conn = null;
@@ -19019,6 +19162,10 @@
                 case 'START_MATCH':
                     // Guest receives start signal
                     if (!isHost) {
+                        // Unified Host Game: the host promoted the (doubles) lobby to a 1v1 duel.
+                        // Leave doubles BEFORE starting, or runPvPGameLoop would dispatch to the
+                        // doubles lockstep loop (netMode==='doubles') with no lockstep state.
+                        if (netMode === 'doubles') guestPromoteLobbyToDuel();
                         startMultiplayerMatch(data.seed, data.upgrade || 'default');
                         // Validate state hash to detect early divergence
                         if (typeof hashStartState === 'function' && typeof data.hash === 'number') {
