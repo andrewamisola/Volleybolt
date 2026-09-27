@@ -3486,3 +3486,187 @@ body.gp-cursor-hidden * {
 /* Prompt bar (Navigate / Select / Back hints) over the light menus: dark labels, not white. Only
    while a light menu screen is up; over the dark pause screen it keeps its light labels. */
 #gameContainer:has(.arcane-overlay.visible) #gamepadPromptBar .gp-prompt-item { color: #5d5870; text-shadow: none; }
+
+/* ---- Doubles lobby, KH2 light ----
+   The split keeps its geometry (the sliding seat names are positioned by measuring the panels), but
+   loses the saturated full-bleed bands and steel slabs: soft tinted team cards, BLUE / RED as title
+   tabs sitting on each seat panel (never clipped behind it), KH menu items for Ready / Start, a small
+   LEAVE link, and the menu art almost hidden (too much going on here for it). */
+#multiplayerLobby.doubles-fullscreen::before { opacity: 0.1; }
+
+#lobbyDoublesView .dlobby-top .lobby-prompt {
+    font-size: 14px; letter-spacing: 3px; text-transform: uppercase; color: #8d889c;
+}
+#lobbyDoublesView #dLobbyStatus {
+    font-family: 'FF9UI', sans-serif; font-size: 18px; letter-spacing: 3px; text-transform: uppercase;
+    color: #6a44c4; margin-top: 2px;
+}
+#lobbyDoublesView #dFormatHint,
+#lobbyDoublesView #dStartReason,
+#lobbyDoublesView #dWaitingHost { font-size: 14px; color: #8d889c; }
+
+/* Team cards: same box on both sides (so the 25% / 75% seat columns don't move), soft tint. */
+#lobbyDoublesView .dzone-blue,
+#lobbyDoublesView .dzone-red {
+    border: 16px solid transparent;
+    background-clip: padding-box;
+    border-radius: 30px;
+    transition: background-color 0.15s ease;
+}
+#lobbyDoublesView .dzone-blue { background: rgba(110, 150, 225, 0.14); }
+#lobbyDoublesView .dzone-red  { background: rgba(230, 120, 100, 0.14); }
+#lobbyDoublesView .dzone:hover { filter: none; }
+#lobbyDoublesView .dzone-blue:hover { background: rgba(110, 150, 225, 0.22); }
+#lobbyDoublesView .dzone-red:hover  { background: rgba(230, 120, 100, 0.22); }
+#lobbyDoublesView .dzone.is-your-zone { box-shadow: inset 0 0 0 2px rgba(138, 94, 224, 0.55); }
+
+/* BLUE / RED: a title tab on top of each seat panel (the panel is centred at 53% and ~88px tall). */
+#lobbyDoublesView .dzone-label {
+    position: absolute;
+    left: 50%;
+    top: calc(53% - 46px);
+    transform: translate(-50%, -100%);
+    margin: 0;
+    padding: 0 0 0 8px;                 /* recentre: letter-spacing trails the last glyph */
+    font-size: 24px;
+    letter-spacing: 8px;
+    opacity: 1;
+    text-shadow: none;
+    z-index: 6;
+}
+#lobbyDoublesView .dzone-blue .dzone-label { color: #3d68c2; }
+#lobbyDoublesView .dzone-red  .dzone-label { color: #c4513d; }
+
+#lobbyDoublesView .dsplit-divider {
+    background: linear-gradient(180deg, transparent 0%, rgba(138, 94, 224, 0.45) 50%, transparent 100%);
+}
+#lobbyDoublesView .dsplit-vs {
+    background: #6a44c4;
+    border: none;
+    border-radius: 999px;
+    color: #fff;
+    padding: 4px 11px;
+    box-shadow: 0 2px 0 rgba(40, 20, 70, 0.25);
+}
+
+/* Ready / Start / Copy Code / Leave: KH menu items, not steel slabs. */
+#lobbyDoublesView .menu-btn {
+    background: none;
+    border: none;
+    box-shadow: none;
+    min-width: 0;
+    animation: none;
+    transform: none;
+    padding: 6px 40px 6px 48px;
+}
+#lobbyDoublesView .menu-btn .menu-btn-glyph,
+#lobbyDoublesView .menu-btn .menu-btn-accent { display: none; }
+#lobbyDoublesView .menu-btn .menu-btn-label {
+    font-family: 'FF9UI', sans-serif;
+    font-size: 34px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: #a3a1ad;
+    text-shadow: none;
+    position: relative;
+    z-index: 1;
+}
+#lobbyDoublesView #btnReadyD .menu-btn-label { color: #6a44c4; }
+#lobbyDoublesView .menu-btn:not(:disabled):hover .menu-btn-label,
+#lobbyDoublesView .menu-btn.gp-focused:not(:disabled) .menu-btn-label,
+#lobbyDoublesView .menu-btn:focus-visible:not(:disabled) .menu-btn-label { color: #3b2a5e; }
+#lobbyDoublesView .menu-btn:disabled { cursor: default; }
+#lobbyDoublesView .menu-btn:disabled .menu-btn-label { color: #cfcdd6; }
+#lobbyDoublesView .menu-btn::after {
+    content: '';
+    position: absolute;
+    left: 30px;
+    top: 4px;
+    bottom: 4px;
+    width: 420px;
+    background: linear-gradient(90deg, rgba(138, 94, 224, 0.4) 0%, rgba(138, 94, 224, 0.16) 55%, rgba(138, 94, 224, 0) 100%);
+    border-left: 3px solid rgba(138, 94, 224, 0.75);
+    opacity: 0;
+    transition: opacity 0.12s ease;
+    pointer-events: none;
+}
+#lobbyDoublesView .menu-btn::before,
+#lobbyDoublesView .menu-btn.gp-focused:not(:disabled)::before,
+#lobbyDoublesView .menu-btn:focus-visible:not(:disabled)::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    transform: translateY(-50%);
+    border: none;
+    border-radius: 2px;
+    background: linear-gradient(135deg, #d8f59a 0%, #8fd14f 55%, #4f9a2a 100%);
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 0 10px 3px rgba(143, 209, 79, 0.75);
+    opacity: 0;
+    color: transparent;
+    font-size: 0;
+    transition: opacity 0.12s ease;
+}
+#lobbyDoublesView .menu-btn:not(:disabled):hover::after,
+#lobbyDoublesView .menu-btn.gp-focused:not(:disabled)::after,
+#lobbyDoublesView .menu-btn:focus-visible:not(:disabled)::after,
+#lobbyDoublesView .menu-btn:not(:disabled):hover::before,
+#lobbyDoublesView .menu-btn.gp-focused:not(:disabled)::before,
+#lobbyDoublesView .menu-btn:focus-visible:not(:disabled)::before { opacity: 1; }
+
+/* Small items: Copy Code under the room code, LEAVE in the top-right corner. */
+#lobbyDoublesView .dlobby-copy,
+#lobbyDoublesView .dlobby-leave { padding: 3px 14px 3px 30px; }
+#lobbyDoublesView .dlobby-copy .menu-btn-label,
+#lobbyDoublesView .dlobby-leave .menu-btn-label { font-size: 16px; letter-spacing: 3px; }
+#lobbyDoublesView .dlobby-copy::after,
+#lobbyDoublesView .dlobby-leave::after { left: 18px; width: 140px; }
+#lobbyDoublesView .dlobby-copy::before,
+#lobbyDoublesView .dlobby-leave::before,
+#lobbyDoublesView .dlobby-copy.gp-focused:not(:disabled)::before,
+#lobbyDoublesView .dlobby-leave.gp-focused:not(:disabled)::before { left: 6px; width: 10px; height: 10px; }
+
+/* ---- Menu typography ----
+   Three fonts, each with one job: Ferrum (display serif) for headings + team names; Cabin bold caps
+   for menu items, buttons and small labels (clean like KH2's menu text, modest tracking); FF9UI
+   (pixel) stays for the in-game HUD and the dark data windows / room code. */
+.arcane-buttons .menu-btn .menu-btn-label,
+#lobbyDoublesView .menu-btn .menu-btn-label {
+    font-family: 'Cabin', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+.arcane-buttons .menu-btn .menu-btn-label { font-size: 38px; }
+.arcane-buttons .menu-btn.menu-btn-ghost .menu-btn-label { font-size: 24px; letter-spacing: 0.1em; }
+#domMenu #domMenuLinks .menu-btn .menu-btn-label { font-size: 17px; letter-spacing: 0.14em; }
+#lobbyDoublesView .menu-btn .menu-btn-label { font-size: 30px; }
+#lobbyDoublesView .dlobby-copy .menu-btn-label,
+#lobbyDoublesView .dlobby-leave .menu-btn-label { font-size: 15px; letter-spacing: 0.14em; }
+
+/* Small labels / captions. */
+.lobby-prompt,
+.lobby-status,
+.lobby-ready-line,
+.lobby-connected-msg,
+.arcane-tagline { font-family: 'Cabin', sans-serif; font-weight: 600; letter-spacing: 0.04em; }
+#lobbyDoublesView .dlobby-top .lobby-prompt { font-size: 13px; letter-spacing: 0.22em; }
+#lobbyDoublesView #dLobbyStatus { font-family: 'Cabin', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 0.16em; }
+#lobbyDoublesView #dFormatHint,
+#lobbyDoublesView #dStartReason,
+#lobbyDoublesView #dWaitingHost { font-size: 14px; letter-spacing: 0.02em; }
+#lobbyDoublesView .dsplit-vs { font-family: 'Cabin', sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 0.12em; }
+.arcane-overlay.visible::after { font-family: 'Cabin', sans-serif; font-weight: 600; font-size: 13px; letter-spacing: 0.16em; }
+
+/* Team names are headings: Ferrum, like the screen titles. */
+#lobbyDoublesView .dzone-label {
+    font-family: 'Ferrum', 'Cinzel', serif;
+    font-size: 30px;
+    letter-spacing: 0.1em;
+    padding-left: 0.1em;
+}
+
+/* Splash. */
+#loadingText { font-family: 'Cabin', sans-serif; font-weight: 700; font-size: 28px; letter-spacing: 0.14em; }
+#loadingTip { font-family: 'Cabin', sans-serif; font-weight: 500; font-size: 16px; letter-spacing: 0.02em; }
