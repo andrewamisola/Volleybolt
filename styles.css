@@ -3849,3 +3849,17 @@ body.gp-cursor-hidden * {
 @media (prefers-reduced-motion: reduce) {
     .cine-title > span, .cine-title.is-defeat > span { animation: none; }
 }
+
+/* Locked mode button (2v2 Doubles while DOUBLES_LOCKED): greyed out with a lock, not selectable —
+   no hover/focus highlight (pointer ignored; gamepad nav already skips [disabled]). */
+.menu-btn.is-locked { opacity: 0.5; filter: grayscale(1); pointer-events: none; }
+.menu-btn.is-locked .menu-btn-label { color: #8e8a99; }
+.menu-btn .menu-btn-lock { margin-left: 0.55em; font-size: 1.05em; vertical-align: -0.05em; }
+
+/* Playtest disclaimer (owner, 2026-09-27): a line above the copyright on every menu screen, so testers
+   know what they're looking at. The copyright stays on the bottom line, where the prompt bar sits. */
+.arcane-overlay.visible::after {
+    content: 'PLAYTEST BUILD \00B7  NOTHING IS FINAL \00B7  SOME THINGS ARE PLACEHOLDERS\A\00A9  2026 DUELING PICKLES';
+    white-space: pre;
+    line-height: 1.8;
+}

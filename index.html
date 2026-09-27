@@ -142,10 +142,13 @@
                     <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
                     <span class="menu-btn-label">1v1 Duel</span>
                 </button>
-                <button class="game-btn menu-btn" id="domBtnDoubles">
+                <!-- Locked for now (DOUBLES_LOCKED): shown so players know it's coming, but disabled —
+                     2v2 needs its own AI + balance pass first. -->
+                <button class="game-btn menu-btn is-locked" id="domBtnDoubles" disabled aria-disabled="true" title="Coming soon">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
                     <span class="menu-btn-glyph" aria-hidden="true">&#9877;</span>
                     <span class="menu-btn-label">2v2 Doubles</span>
+                    <span class="menu-btn-lock" aria-hidden="true">&#128274;</span>
                 </button>
                 <button class="game-btn menu-btn menu-btn-ghost" id="domBtnModeBack">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
@@ -633,7 +636,7 @@
             <div class="ability-key">2</div>
             <!-- Tooltip -->
             <div class="ability-tooltip" id="frostboltTooltip">
-                <div class="tooltip-title">Frostbolt</div>
+                <div class="tooltip-title">Chill Dill</div>
                 <div class="tooltip-stats-row">
                     <div class="tooltip-stats-left">
                         <span class="tooltip-stat-item mana"><span class="icon">*</span><span class="value">2 Mana</span></span>
@@ -642,7 +645,7 @@
                     <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">14s CD</span></span>
                 </div>
                 <div class="tooltip-description">
-                    Launch a <span class="tt-spell">Frostbolt</span> that <span class="tt-frost">Freezes</span> the <span class="tt-enemy">Enemy</span> for <span class="tt-value">1</span> <span class="tt-duration">second</span>. <span class="tt-mechanic">Cancels</span> enemy projectiles on contact. <span class="tt-frost">Freeze</span> stops <span class="tt-mana">Mana</span> regeneration and interrupts <span class="tt-mechanic">Casting</span>.
+                    Launch a <span class="tt-spell">Chill Dill</span> that <span class="tt-frost">Freezes</span> the <span class="tt-enemy">Enemy</span> for <span class="tt-value">1</span> <span class="tt-duration">second</span>. <span class="tt-mechanic">Cancels</span> enemy projectiles on contact. <span class="tt-frost">Freeze</span> stops <span class="tt-mana">Mana</span> regeneration and interrupts <span class="tt-mechanic">Casting</span>.
                 </div>
             </div>
         </div>
@@ -1086,6 +1089,10 @@
         // netMode gates the connection lifecycle: the classic 1v1 paths set 'duel', the
         // doubles host lobby (Task 2) sets 'doubles', and cleanupPeer resets 'none'.
         let netMode = 'none';         // 'none' | 'duel' (classic 1v1) | 'doubles'
+        // 2v2 Doubles is LOCKED for now (owner, 2026-09-27): it needs its own AI + balance pass. The mode
+        // button stays visible (greyed, with a lock) and online hosting uses the classic 1v1 lobby.
+        // Flip to false to bring doubles back (also drop the button's disabled/is-locked in the markup).
+        window.DOUBLES_LOCKED = true;
         // Unified Host Game (2026-09-26): every host opens the doubles lobby; at Start, a lineup of
         // exactly 2 humans on OPPOSITE sides is promoted to a genuine 1v1 duel (START_MATCH, the
         // classic rollback path). GUEST-side latch: set when a START_MATCH arrives while we were in
@@ -1320,6 +1327,23 @@
             }
         }
 
+        // Territory defense — a side's structure is tougher the deeper into its own ground the fight
+        // is: its own core (the relic) 50 HP, its own territory (the gatehouse) 30 HP, anywhere else
+        // (midfield castle, the attacker's catapult/ram) the base 20. Derived only from shared state
+        // (currentStage), so both peers agree. The core never regenerates (see getGateHealthWithRegen).
+        const TERRITORY_HP = 30;
+        const CORE_HP = 50;
+        function isOwnCore(side, stage) { return (side === 'left' || side === 'player') ? stage === 0 : stage === 4; }
+        function stageMaxHealth(side, stage) {
+            if (stage === undefined) stage = currentStage;
+            const own = (side === 'left' || side === 'player');
+            if (stage === (own ? 0 : 4)) return CORE_HP;
+            if (stage === (own ? 1 : 3)) return TERRITORY_HP;
+            return maxTowerHealth;   // base (20)
+        }
+        function stageHealthArray(side) { return [0, 1, 2, 3, 4].map(st => stageMaxHealth(side, st)); }
+        window.stageMaxHealth = stageMaxHealth;
+
         // Legacy compatibility
         const maxMana = 3;  // Base value, use getMaxMana(side) for territorial
         // LEGACY - sync only, read from combatants.left/right.mana/manaRegen
@@ -1340,7 +1364,7 @@
             const STAT_DEFINITIONS = {
                 // === SPELL CASTING ===
                 fireball_casts: { category: 'spells', label: 'Fireballs Cast', default: 0 },
-                frostbolt_casts: { category: 'spells', label: 'Frostbolts Cast', default: 0 },
+                frostbolt_casts: { category: 'spells', label: 'Chill Dills Cast', default: 0 },
                 thunderstorm_casts: { category: 'spells', label: 'Thunderstorm Uses', default: 0 },
 
                 // === COMBAT ===
@@ -1608,11 +1632,11 @@
                 // ========== ICE SPELLS ==========
                 frostbolt: {
                     id: 'frostbolt',
-                    name: 'Frostbolt',
+                    name: 'Chill Dill',
                     element: 'ice',
                     type: SPELL_TYPES.UTILITY,
                     icon: '❄️',
-                    description: 'Launch a <span class="tt-spell">Frostbolt</span> that <span class="tt-frost">Freezes</span> the <span class="tt-enemy">Enemy</span> for <span class="tt-value">1</span> <span class="tt-duration">second</span>. <span class="tt-mechanic">Cancels</span> enemy projectiles on contact. Freeze stops <span class="tt-mana">Mana</span> regeneration and interrupts <span class="tt-mechanic">Casting</span>.',
+                    description: 'Launch a <span class="tt-spell">Chill Dill</span> that <span class="tt-frost">Freezes</span> the <span class="tt-enemy">Enemy</span> for <span class="tt-value">1</span> <span class="tt-duration">second</span>. <span class="tt-mechanic">Cancels</span> enemy projectiles on contact. Freeze stops <span class="tt-mana">Mana</span> regeneration and interrupts <span class="tt-mechanic">Casting</span>.',
                     shortDesc: 'Freeze for 1s',
                     manaCost: 2,
                     cooldown: 14,
@@ -2268,6 +2292,7 @@
         // Does NOT reset: score (match state), cooldowns (done separately), position
         function combatantReset(combatant, isStart = false) {
             if (!combatant) return;
+            combatant.clashT = 0; combatant.clashPos = 0;   // beam clash
             combatant.mana = isStart ? 1 : 0;
             combatant.manaRegen = 0;
             combatant.freezeTime = 0;
@@ -2377,9 +2402,9 @@
             frostbolt: {
                 gameplay: { cooldown: 7, castTime: 0, baseSpeed: 36, maxSpeed: 36, freezeDuration: 1.0, manaCost: 1 },
                 ui: {
-                    name: 'Frostbolt', key: '2', iconClass: 'frostbolt-icon', manaCostLabel: '1',
+                    name: 'Chill Dill', key: '2', iconClass: 'frostbolt-icon', manaCostLabel: '1',
                     castLabel: 'Instant', cooldownLabel: '7s CD',
-                    description: 'Launch a <span class="tt-spell">Frostbolt</span> that <span class="tt-mechanic">Freezes</span> the Enemy for <span class="tt-value">1</span> second. Cancels enemy projectiles on contact. Freeze stops Mana regeneration and interrupts Casting.'
+                    description: 'Launch a <span class="tt-spell">Chill Dill</span> that <span class="tt-mechanic">Freezes</span> the Enemy for <span class="tt-value">1</span> second. Cancels enemy projectiles on contact. Freeze stops Mana regeneration and interrupts Casting.'
                 },
                 behavior: {
                     castType: 'instant',
@@ -2402,7 +2427,7 @@
                             // hits completeCasting (where fireball/thunderstorm show theirs), so do it here.
                             // `combatant` (additive 4th arg, owner rule 2026-07-13): true caster, for
                             // doubles per-wizard anchoring/alpha (see showSpellCastText's own comment).
-                            if (ctx.deps.showSpellCastText) ctx.deps.showSpellCastText(owner === 'player', 'Frostbolt', 'frost', combatant);
+                            if (ctx.deps.showSpellCastText) ctx.deps.showSpellCastText(owner === 'player', 'Chill Dill', 'frost', combatant);
                             // Combat log line (owner rule 2026-07-13, playtest round 4): frostbolt's
                             // live sim path never logged before — mirrors fireFireball's line shape
                             // exactly (same combatLine/spellDisplayName + doublesLogLabel attribution).
@@ -4306,6 +4331,11 @@
             }
         }
 
+        // Losing focus (alt-tab, clicking another pane) swallows the keyups: release everything.
+        window.addEventListener('blur', () => {
+            for (const k in keys) keys[k] = false;
+            pendingNetInput.moveDir = 0;
+        });
         document.addEventListener('keydown', (e) => {
             // Initialize audio context on first interaction (always allowed)
             initAudioContext();
@@ -4349,6 +4379,11 @@
                 if (e.code === 'Digit3') {
                     pendingNetInput.thunderstorm = true;
                 }
+                // Juice / Overdrive (Q): start it, press again to end it early. (This branch returns before
+                // the single-player Q handling below, so without this Q did nothing online.)
+                if (e.code === 'KeyQ') {
+                    pendingNetInput.juice = true;
+                }
                 return;  // Skip single-player logic in PvP mode
             }
 
@@ -4377,7 +4412,10 @@
 
             if (e.code === 'Space') {
                 if (window.pointCmdSlot) window.pointCmdSlot('parry');
-                if (!waitingToServe && !gameOver && !roundTransitioning && canParry && parryCallback) {
+                if (combatants.left && combatants.left.juiceActive) {
+                    // Channeling Overdrive: no parry — the press goes to the sim as the beam-clash mash.
+                    if (!waitingToServe && !gameOver && !roundTransitioning) pendingNetInput.parry = true;
+                } else if (!waitingToServe && !gameOver && !roundTransitioning && canParry && parryCallback) {
                     // Play parry animation on any attempt (3x speed, start at frame 20, lock for 500ms)
                     if (window.playPlayerAnim) {
                         playPlayerAnim('parry', false, 500, 3.0, 20);
@@ -4405,10 +4443,17 @@
             }
         });
         document.addEventListener('keyup', (e) => {
+            // ALWAYS record the release, even outside play: a key held through a round end / menu
+            // and released there used to stay "down" forever — a stuck W/Up then beat S/Down in
+            // buildPlayerInput (up is checked first), so the player couldn't move down.
+            keys[e.code] = false;
+            if (pendingNetInput.moveDir !== 0 && (e.code === 'KeyW' || e.code === 'ArrowUp' || e.code === 'KeyS' || e.code === 'ArrowDown')) {
+                const up = keys['KeyW'] || keys['ArrowUp'], down = keys['KeyS'] || keys['ArrowDown'];
+                if (!up && !down) pendingNetInput.moveDir = 0;
+            }
+
             // Block gameplay input when not playing
             if (gameState !== "playing") return;
-
-            keys[e.code] = false;
 
             // PvP mode - update movement when key released
             if (gameMode === 'pvp') {
@@ -4477,7 +4522,10 @@
         // Parry exactly like the keyboard Space path (same guards + animation).
         function gamepadParry() {
             if (window.pointCmdSlot) window.pointCmdSlot('parry');
-            if (!waitingToServe && !gameOver && !roundTransitioning && canParry && parryCallback) {
+            if (combatants.left && combatants.left.juiceActive) {
+                // Channeling Overdrive: the parry button is the beam-clash mash.
+                if (!waitingToServe && !gameOver && !roundTransitioning) pendingNetInput.parry = true;
+            } else if (!waitingToServe && !gameOver && !roundTransitioning && canParry && parryCallback) {
                 if (window.playPlayerAnim) {
                     playPlayerAnim('parry', false, 500, 3.0, 20);
                     setTimeout(() => playPlayerAnim('idle', true), 500);
@@ -4827,6 +4875,23 @@
             }
         }
         window.updateHudInputHints = updateHudInputHints;
+        // The printed label of an action's CURRENT binding on the last-used device (same tables the HUD and
+        // How-to-Play use): e.g. actionKeyLabel('parry') -> 'Space' on keyboard, 'RB' / 'R1' / 'R' on a pad.
+        window.actionKeyLabel = (action) => {
+            const s = HUD_SLOTS.find(h => h.sel.startsWith('#' + action));
+            if (!s) return '?';
+            const forced = window._hudForceType || null;
+            if (forced || window._lastInputMode === 'pad') {
+                let type = forced;
+                if (!type && navigator.getGamepads) {
+                    const pads = navigator.getGamepads();
+                    for (let i = 0; i < pads.length; i++) { if (pads[i]) { type = detectPadType(pads[i].id); break; } }
+                }
+                const L = PAD_LABELS[type || 'generic'] || PAD_LABELS.generic;
+                return L[s.pad()] || '?';
+            }
+            return s.kbd;
+        };
 
         // ---- Prompt bar: resolves an action name to a keyboard OR pad-glyph label ----
         // Reuses padGlyphHTML for confirm/back (real vendor-colored face-button chips — these
@@ -6767,7 +6832,7 @@
                 const G = BABYLON.GUI, ALN = G.Control;
                 const cmdSlots = [
                     { id: 'fireball',        name: 'Fireball',     key: '1',     mana: 0 },
-                    { id: 'frostbolt',       name: 'Frostbolt',    key: '2',     mana: 0 },
+                    { id: 'frostbolt',       name: 'Chill Dill',   key: '2',     mana: 0 },
                     { id: 'thunderstorm', name: 'Thunderstorm', key: '3',     mana: 0 },
                     { id: 'parry',           name: 'Parry',        key: '␣',     mana: 0 },
                 ];
@@ -7567,7 +7632,7 @@
                 window.spellDisplayName = (id) => {
                     const r = window.ABILITY_REGISTRY && window.ABILITY_REGISTRY[id];
                     return (r && r.ui && r.ui.name) ||
-                        ({ fireball: 'Fireball', frostbolt: 'Frostbolt', thunderstorm: 'Thunderstorm', parry: 'Parry' })[id] || id;
+                        ({ fireball: 'Fireball', frostbolt: 'Chill Dill', thunderstorm: 'Thunderstorm', parry: 'Parry' })[id] || id;
                 };
 
                 function showLog() {
@@ -7671,7 +7736,7 @@
                     const lb = window.combatants && window.combatants.leftBack, rb = window.combatants && window.combatants.rightBack;
                     const setStatus = (refs, c) => {
                         if (!c) return;
-                        const maxHp = maxTowerHealth || 20;
+                        const maxHp = stageMaxHealth(c.side) || 20;
                         const hp = Math.max(0, Math.round(c.towerHealth || 0));
                         refs.hp.text = hp + '/' + maxHp;
                         refs.hpFill.width = (Math.max(0, Math.min(1, hp / maxHp)) * 100) + '%';
@@ -8709,7 +8774,10 @@
             scene.requireLightSorting = true;
             sunLight.renderPriority = 10;
             ambient.renderPriority = 10;
-            for (let i = 0; i < window.LIGHT_CAP - 2; i++) {
+            // LIGHT_CAP + 2 pads (four more than the cap strictly needs): stage lights may be limited to a few
+            // meshes (the core's ram back light + its two pillar lights), and every material must still see
+            // at least LIGHT_CAP lights so its light count — and shader — never changes.
+            for (let i = 0; i < window.LIGHT_CAP + 2; i++) {
                 const pad = new BABYLON.PointLight("lightSlotPad" + i, new BABYLON.Vector3(0, -500, 0), scene);
                 pad.intensity = 0;
                 pad.range = 0.01;
@@ -11653,7 +11721,7 @@
                 core:      { dir: 'models/core/',      file: 'core.glb?v=3' },
                 gatehouse: { dir: 'models/gatehouse/', file: 'gatehouse.glb?v=1' },
                 catapult:  { dir: 'models/catapult/',  file: 'catapult.glb?v=1' },
-                ram:       { dir: 'models/ram/',       file: 'ram.glb?v=1' },
+                ram:       { dir: 'models/ram/',       file: 'ram.glb?v=4' },   // v2: baked occlusion + breach-light shadow in the vertex colours
             };
             // Materials are styled by NAME (the Blender scripts use a shared vocabulary).
             const styleStructMat = (st, mat) => {
@@ -11700,9 +11768,26 @@
                     if (st.pickle) st.pickle.setEnabled(false);
                     st.states.forEach((n, i) => { if (n) n.setEnabled(i === 0); });   // pristine until the first frame syncs
                     res.meshes.forEach(m => { if (m.material) styleStructMat(st, m.material); });
+                    // The ram and the catapult stand ON group-1 floor decals (their blob shadows, the core's light
+                    // spill — group 1 so they sit above the fog); group 1 starts with a cleared depth buffer, so a
+                    // group-0 structure got painted over by them.
+                    if (st.kind === 'ram' || st.kind === 'catapult') res.meshes.forEach(m => { m.renderingGroupId = 1; });
                     const debrisRoot = nodes.find(n => n.name === st.kind + '_debris');
                     if (debrisRoot) {
+                        // The jar's hits chip glass, they don't pop its lid (the model keeps its own lid, so a
+                        // flying one read as a duplicate every round): the lid chunk stays out of the pool, and the
+                        // near-invisible glass shards get a brighter material of their own so the chips read.
+                        let shardMat = null;
                         debrisRoot.getChildMeshes(true).forEach(mesh => {
+                            if (st.kind === 'core' && /^lid/.test(mesh.name)) { mesh.setEnabled(false); return; }
+                            if (st.kind === 'core' && mesh.material && mesh.material.name === 'M_glass') {
+                                if (!shardMat) {
+                                    shardMat = mesh.material.clone('M_glass_chip');
+                                    shardMat.alpha = 0.7;
+                                    shardMat.emissiveColor = new BABYLON.Color3(0.45, 0.6, 0.55);
+                                }
+                                mesh.material = shardMat;
+                            }
                             st.debris.push({ mesh, parent: mesh.parent, home: mesh.position.clone(),
                                              homeRot: mesh.rotationQuaternion ? mesh.rotationQuaternion.clone() : null,
                                              t: -1, vel: new BABYLON.Vector3(), spin: new BABYLON.Vector3(), bounced: false });
@@ -11800,8 +11885,8 @@
             // crumble: loose chunks fall off the castle with a small shake. Round resets and zone
             // changes snap straight to the right state instead.
             // ============================================================
-            const castleStateFor = (hp) => {
-                const f = hp / maxTowerHealth;
+            const castleStateFor = (hp, side) => {
+                const f = hp / stageMaxHealth(side);
                 return f > 0.75 ? 0 : f > 0.5 ? 1 : f > 0.25 ? 2 : 3;
             };
             let crumbleSeed = 7;   // decorative RNG for debris scatter (not sim state)
@@ -11820,6 +11905,15 @@
             ];
             let dressStage = null;
             window.getStructInfo = (side) => { const st = activeStruct(side); return st ? { kind: st.kind, shown: st.shown } : null; };
+            // The ram's meshes (all of them, and the currently shown damage state's) for the core lighting.
+            window.getRamParts = (side) => window.getStructParts(side, 'ram');
+            window.getStructParts = (side, kind) => {
+                const st = castles[side] && castles[side].alts && castles[side].alts[kind];
+                if (!st || !st.ready) return null;
+                const node = st.states[st.shown] || null;
+                return { all: st.root.getChildMeshes(false), shown: st.shown,
+                         shownMeshes: node ? [...(node.getTotalVertices ? [node] : []), ...node.getChildMeshes(false)] : [] };
+            };
             const activeStruct = (side) => {
                 const c = castles[side];
                 if (!c) return null;
@@ -11862,7 +11956,16 @@
             window.castleHit = (isPlayerTower, damage) => {
                 if (typeof isResimulating !== 'undefined' && isResimulating) return;
                 if (window._reduceMotion) return;
-                launchDebris(isPlayerTower ? 'left' : 'right', Math.min(2, damage));
+                const side = isPlayerTower ? 'left' : 'right';
+                launchDebris(side, Math.min(2, damage));
+                // The relic: a generic "that landed" cue too — a small juice-coloured flash on the glass.
+                const st = activeStruct(side);
+                if (st && st.kind === 'core' && window.createImpactFlash) {
+                    const juice = side === 'left' ? new BABYLON.Color3(0.35, 0.6, 1.0) : new BABYLON.Color3(1.0, 0.4, 0.3);
+                    const p = st.root.getAbsolutePosition();
+                    const courtDir = side === 'left' ? 1 : -1;
+                    try { createImpactFlash(new BABYLON.Vector3(p.x + courtDir * 1.2, 3.2, p.z), juice, 1.1); } catch (e) {}
+                }
             };
             // Round reset / zone change: snap to the current HP state, recall flying debris.
             window.syncCastleStates = () => {
@@ -11878,7 +11981,7 @@
             scene.onBeforeRenderObservable.add(() => {
                 const dt = Math.min(scene.getEngine().getDeltaTime() / 1000, 0.05);
                 const tOv = window.guiElements && window.guiElements.transitionOverlay;
-                const black = !!(tOv && tOv.isVisible && tOv.alpha > 0.98);
+                const black = !!(tOv && tOv.isVisible && tOv.alpha > 0.98 && !tOv._sliding);
                 if (dressStage === null || black || !roundTransitioning || gameState !== 'playing') {
                     if (dressStage !== currentStage) {
                         dressStage = currentStage;
@@ -11897,7 +12000,7 @@
                     const comb = combatants[side];
                     if (!c || !c.states.length || !c.states[0] || !comb) continue;
                     const ovr = window._structOverride && window._structOverride[side];
-                    const want = (ovr !== undefined && c.states[ovr]) ? ovr : castleStateFor(comb.towerHealth);
+                    const want = (ovr !== undefined && c.states[ovr]) ? ovr : castleStateFor(comb.towerHealth, side);
                     if (want !== c.shown) {
                         const crumble = ovr === undefined && c.shown >= 0 && want > c.shown && gameState === 'playing' && !roundTransitioning;
                         showCastleState(c, want);
@@ -13469,12 +13572,10 @@
             //   skill-derived lag (front sharper, back slower), clamped ≥1. slotSalt de-correlates the
             //   per-frame RNG per slot (still otherwise unused) AND — since the 2026-07-13 AI parry
             //   humanization — decideAI's per-ball parry timing-bucket hash (profile.slotSalt), so the
-            //   two backs don't whiff/land the same balls in lockstep. teammateSkill fixes the human's
-            //   AI partner at a competent-but-not-perfect level (difficulty scalar governs OPPONENTS only).
+            //   two backs don't whiff/land the same balls in lockstep. Every slot shares AI_PROFILE.
             const DOUBLES_AI = {
                 front: { castK: 7,  reactionDelta: -1 },
                 back:  { castK: 11, reactionDelta: +2 },
-                teammateSkill: 0.6,
                 // 'left' (front-blue) added W3: LOCAL doubles never AI-drives this slot (the sole
                 // local player always sits there), so it had no entry — online doubles has no such
                 // guarantee (any of the 4 seats can be AI from match start, or flip to AI mid-match
@@ -13593,75 +13694,20 @@
 
             const AI_RNG_SEED = 0xA1DE;  // fixed constant; stable seed offset for per-frame RNG
 
-            // ── AI COMPETENCE SEAM ─────────────────────────────────────────────
-            // getAISkill() is the ONLY difficulty input. Returns skill ∈ [0,1].
-            // DYNAMIC (ELO-style): a persistent rating that tracks the player's level. It
-            // rises when the player wins a match and eases when they lose, so the fight
-            // stays fair as the player improves. Adjusted between matches by adaptAISkill().
-            // INVARIANT: this scalar only feeds skillToProfile → COMPETENCE. It must never
-            // grant speed / mana / cooldown / cast-time / damage — see the symmetry banner
-            // on skillToProfile. A sharper AI plays BETTER, never STRONGER.
-            const AI_SKILL_AVERAGE = 0.58;   // fresh-start / default rating (raised 0.45→0.58: too easy
-                                             //   on playtest; stays just under the 0.6 thunderstorm /
-                                             //   save-both thresholds so it's "a bit harder", not a cliff)
-            const AI_SKILL_MIN     = 0.15;   // never fully trivial
-            const AI_SKILL_MAX     = 0.95;   // never literally perfect
-            const AI_SKILL_STEP    = 0.06;   // base per-match adjustment (scaled by margin)
-            const AI_SKILL_KEY     = 'volleybolt_ai_skill';
-
-            function _clampSkill(v) { return Math.max(AI_SKILL_MIN, Math.min(AI_SKILL_MAX, v)); }
-            function _loadAISkill() {
-                try {
-                    const raw = localStorage.getItem(AI_SKILL_KEY);
-                    if (raw != null) { const v = parseFloat(raw); if (isFinite(v)) return _clampSkill(v); }
-                } catch (e) {}
-                return AI_SKILL_AVERAGE;
-            }
-            let aiSkillRating = _loadAISkill();
-            function getAISkill() { return aiSkillRating; }
-
-            // Called once per completed singles match (from endRound). playerWon = the player
-            // took the match; roundMargin = |rounds won − rounds lost| this match (dominance).
-            // Bidirectional + margin-scaled so the rating converges on the player's level.
-            function adaptAISkill(playerWon, roundMargin) {
-                const margin = Math.max(1, roundMargin | 0);
-                const marginFactor = Math.min(1 + (margin - 1) * 0.3, 2.0);   // 1x (close) .. 2x (blowout)
-                const delta = AI_SKILL_STEP * marginFactor * (playerWon ? 1 : -1);
-                aiSkillRating = _clampSkill(aiSkillRating + delta);
-                try { localStorage.setItem(AI_SKILL_KEY, String(aiSkillRating)); } catch (e) {}
-                console.log('%c[AI ELO] match ' + (playerWon ? 'WON by player' : 'LOST by player') +
-                    ' · margin ' + margin + ' → AI skill ' + aiSkillRating.toFixed(3),
-                    'color:#c080ff');
-                return aiSkillRating;
-            }
-            window.adaptAISkill = adaptAISkill;
-            window.getAISkill = getAISkill;   // (re-exported below too; harmless)
-
-            function _aiLerp(a, b, t) { return a + (b - a) * t; }
-
-            // ┌────────────────────────────────────────────────────────────────┐
-            // │ SYMMETRY BANNER — skillToProfile may return ONLY competence      │
-            // │ values: perception lag, tracking tightness, sight windows,       │
-            // │ decision cadence. NEVER speed / mana / cooldown / cast-time /    │
-            // │ damage. Difficulty = how WELL the AI plays, never how STRONG.   │
-            // └────────────────────────────────────────────────────────────────┘
-            // Pure: skill → concrete behavior values consumed by decideAI. This is
-            // the single tuning curve (endpoints are starting guesses; the shape —
-            // monotonic, easiest at skill=0 — is the contract). skill=0 easiest,
-            // skill=1 hardest.
-            function skillToProfile(skill) {
-                const s = Math.max(0, Math.min(1, skill));
-                return {
-                    reactionFrames:    Math.round(_aiLerp(12, 2, s)),  // acts on an older world at low skill
-                    trackDeadzone:     _aiLerp(1.1, 0.34, s),          // tracks loosely at low skill
-                    dodgeSightFrames:  Math.round(_aiLerp(18, 3, s)),  // frames a frostbolt must be seen before dodging
-                    parrySight:        Math.round(_aiLerp(14, 2, s)),  // frames a threat must be seen before parrying
-                    castCadence:       Math.round(_aiLerp(10, 2, s)),  // offensive cast phase-gate period (in think-cycles)
-                    openingSharpness:  _aiLerp(0.3, 1.0, s),          // how aggressively cadence collapses on an open lane (0=dull, 1=instant)
-                    thunderstormSkill: s,                              // gate value: uses thunderstorm well only at high s
-                    multiThreatSkill:  s,                              // gate value: prioritize biggest threat + save-both only at high s
-                };
-            }
+            // ── AI PROFILE ─────────────────────────────────────────────────────
+            // One fixed set of behavior values, shared by every AI slot (singles opponent, doubles
+            // opponents, the player's doubles partner). No difficulty rating, no adaptation. The AI
+            // runs under the player's exact limits (speed, mana, cooldowns, cast times, damage) —
+            // these values only describe how it perceives and reacts.
+            const AI_PROFILE = Object.freeze({
+                reactionFrames:   6,     // acts on the world as it was ~0.1s ago
+                trackDeadzone:    0.65,  // how close to the ball's lane counts as "there"
+                dodgeSightFrames: 9,     // frames a frostbolt must be seen before it dodges instead of blocking
+                parrySight:       7,     // frames a threat must be seen before it can parry
+                castCadence:      5,     // offensive cast rhythm (think-cycles between casts)
+                openingSharpness: 0.7,   // how hard it jumps on an open lane (0 = ignores, 1 = instantly)
+            });
+            try { localStorage.removeItem('volleybolt_ai_skill'); } catch (e) {}   // retired adaptive rating
 
             // Pure AI helpers — no mesh reads, no Math.random, no wall-clock.
 
@@ -13734,9 +13780,8 @@
                 const incoming      = _aiIncomingProjectiles(view);
                 const incomingCount = incoming.length;
 
-                // One threat at a time; a smart (high-skill) AI targets the biggest, else closest.
-                const smartThreat = profile.multiThreatSkill >= 0.6;
-                const threat = _aiPrimaryThreat(view, smartThreat);   // or null
+                // One threat at a time: the biggest (most-rallied), tie-break closest.
+                const threat = _aiPrimaryThreat(view, true);   // or null
 
                 // ---- Movement (every frame) ----
                 let targetZ = null;   // null = no reason to move → hold
@@ -13751,9 +13796,9 @@
                         // Chase where the ball IS (frostbolt seen too late is treated like a
                         // normal ball here → the AI tries to block it and gets frozen).
                         targetZ = threat.z;
-                        // Save-both (smart/high skill only): once already positioned on the
-                        // primary, slide toward a second incoming so both get covered.
-                        if (smartThreat && incomingCount >= 2
+                        // Save-both: once already positioned on the primary, slide toward a
+                        // second incoming so both get covered.
+                        if (incomingCount >= 2
                             && Math.abs(threat.z - s.paddleZ) <= profile.trackDeadzone) {
                             const second = _aiSecondThreat(view, threat);
                             if (second) targetZ = second.z;
@@ -13905,11 +13950,10 @@
                     const oppInFront   = Math.abs(s.paddleZ - view.opp.paddleZ) < FROST_ALIGN;
                     const canFrostbolt = offenseOpen && safe && cd.frostbolt <= 0 && s.mana >= 1
                         && oppInFront && view.projectiles.length < 10 && !s.casting;
-                    // Thunderstorm is a DEFENSIVE panic-clear: a skilled AI recognizes the
-                    // multi-projectile crunch and fires regardless of cadence.
+                    // Thunderstorm is a DEFENSIVE panic-clear (same mana/cooldown as the player's):
+                    // fired the moment two or more shots are incoming.
                     const canThunderstorm = cd.thunderstorm <= 0 && s.mana >= 2
-                        && incomingCount >= 2
-                        && profile.thunderstormSkill >= 0.6;
+                        && incomingCount >= 2;
                     frostbolt    = canFrostbolt;
                     fireball     = canFireball && !frostbolt;
                     thunderstorm = canThunderstorm;
@@ -13931,14 +13975,15 @@
                     && !view.opp.juiceActive
                     && (oppFrozen || beamOpening);
 
-                return { moveDir, parry, fireball, frostbolt, thunderstorm, juice };
+                // Beam clash: mash the parry button — ~6.7 presses/s at 60 Hz, so a player mashing faster wins.
+                const clashMash = !!(s.clashing && s.juiceActive && frame % 9 === 0);
+                return { moveDir, parry: parry || clashMash, fireball, frostbolt, thunderstorm, juice };
             }
 
             // Expose the pure AI pieces so the outer-scope dbg.aiDeterminism oracle can reach them.
             // (decideAI & friends live in this game-setup closure; window.dbg is defined in the outer scope.)
             window.decideAI = decideAI;
-            window.getAISkill = getAISkill;
-            window.skillToProfile = skillToProfile;
+            window.AI_PROFILE = AI_PROFILE;
             window.makeAIRng = makeAIRng;
             window.AI_RNG_SEED = AI_RNG_SEED;
             // updateMatchPresentation lives in THIS inner closure (used by runSinglePlayerFrame),
@@ -13979,6 +14024,7 @@
                         castTime:     cr.castTime    || 0,
                         juice:        cr.juice       || 0,
                         juiceActive:  cr.juiceActive || false,
+                        clashing:     !!(combatants.left && combatants.left.clashT > 0),
                         shieldCharges: (cr.lightningShield && cr.lightningShield.charges) || 0,
                         towerHealth:  (cr.towerHealth != null) ? cr.towerHealth : maxTowerHealth,
                     },
@@ -14047,6 +14093,7 @@
                         castTime:     self.castTime    || 0,
                         juice:        carrier.juice       || 0,
                         juiceActive:  carrier.juiceActive || false,
+                        clashing:     !!(combatants.left && combatants.left.clashT > 0),
                         shieldCharges: (self.lightningShield && self.lightningShield.charges) || 0,
                         towerHealth:  (carrier.towerHealth != null) ? carrier.towerHealth : maxTowerHealth,
                     },
@@ -14102,14 +14149,24 @@
             // buildAIViewForSlot / decideAI only READ shared projectiles/combatants. So the local
             // driver's right→leftBack→rightBack call order and the online merge's slot-index order
             // (0..3) produce identical per-slot decisions.
+            // The AI decides on a reaction-lagged view, so for a few frames after it starts Overdrive that
+            // view still shows a full, unspent bar — and it presses juice again, which the sim reads as
+            // "Q again = cancel". Drop any AI juice press while its own channel is live (checked against the
+            // LIVE state). (Its beam-clash mash is the parry input, so this never blocks that.)
+            function aiJuiceGuard(inp, slotKey) {
+                const c = combatants[slotKey];
+                if (inp && inp.juice && c && c.juiceActive) inp.juice = false;
+                return inp;
+            }
+            window.aiJuiceGuard = aiJuiceGuard;
+
             function computeDoublesAIInput(slotKey, roleKey, frameOverride) {
                 const frame = (frameOverride === undefined) ? spFrameCounter : frameOverride;
                 const st   = aiSlotState[slotKey];
-                // Opponents scale with the difficulty ELO; the human's AI partner (leftBack) is
-                // fixed at a competent level. Per-slot overrides layer the castK cadence on top
+                // Every slot runs AI_PROFILE; per-slot overrides layer the castK cadence on top
                 // (timing diversity only — unified AI, round 4); the reaction ring depth is the
-                // shared skill lag shifted by the slot's reactionDelta (≥1).
-                const base = skillToProfile(slotKey === 'leftBack' ? DOUBLES_AI.teammateSkill : getAISkill());
+                // shared lag shifted by the slot's reactionDelta (≥1).
+                const base = AI_PROFILE;
                 const prof = { ...base, ...DOUBLES_AI[roleKey],
                     reactionFrames: Math.max(1, base.reactionFrames + DOUBLES_AI[roleKey].reactionDelta),
                     // slotSalt de-correlates the parry timing-bucket hash per slot (see decideAI's
@@ -14120,8 +14177,8 @@
                 updateSlotThreatSight(st, slotKey);            // side-derived incoming sight tick
                 st.views.push(buildAIViewForSlot(slotKey));
                 while (st.views.length > prof.reactionFrames + 1) st.views.shift();
-                return decideAI(st.views[0], frame,
-                    makeAIRng(frame ^ AI_RNG_SEED ^ DOUBLES_AI.slotSalt[slotKey]), prof);
+                return aiJuiceGuard(decideAI(st.views[0], frame,
+                    makeAIRng(frame ^ AI_RNG_SEED ^ DOUBLES_AI.slotSalt[slotKey]), prof), slotKey);
             }
             // Exposed so the outer-scope online lockstep merge (host) can fill AI slots — mirrors the
             // window.decideAI / window.updateMatchPresentation exposures (same inner-closure reason).
@@ -14220,14 +14277,14 @@
                 // slotSalt: 0 for the singles right-AI (only one slot; no de-correlation needed —
                 // see doubles' DOUBLES_AI.slotSalt for the multi-slot case). Feeds decideAI's parry
                 // timing-bucket hash; a stable 0 here reproduces the single-slot bucket assignment.
-                const aiProfile  = { ...skillToProfile(getAISkill()), slotSalt: 0 };
+                const aiProfile  = { ...AI_PROFILE, slotSalt: 0 };
                 // Reaction delay: the AI decides on the world it saw `reactionFrames` ago.
                 aiViewHistory.push(buildAISingleView());
                 const lag = (aiProfile.reactionFrames | 0);
                 while (aiViewHistory.length > lag + 1) aiViewHistory.shift();
                 const aiView = aiViewHistory[0];   // oldest retained ≈ `lag` frames old once warmed
                 const rightInput = window._dbgAiOff ? defaultInput()   // dbg.aiOff(): AI stands idle
-                    : decideAI(aiView, spFrameCounter, makeAIRng(spFrameCounter ^ AI_RNG_SEED), aiProfile);
+                    : aiJuiceGuard(decideAI(aiView, spFrameCounter, makeAIRng(spFrameCounter ^ AI_RNG_SEED), aiProfile), 'right');
                 window.VolleyboltSim.simulateNetworkFrame(leftInput, rightInput, dt, buildSimCtx());
                 updateMatchPresentation(dt);
             }
@@ -14631,12 +14688,13 @@
                     // When true: both beams meet at the midpoint; the clash orb replaces normal block FX.
                     const _leftBeamPhase  = !!(leftC  && leftC.juiceActive  && ((OD.DURATION - (leftC.juiceTimer  || 0)) >= OD.WINDUP));
                     const _rightBeamPhase = !!(rightC && rightC.juiceActive && ((OD.DURATION - (rightC.juiceTimer || 0)) >= OD.WINDUP));
-                    const _clashActive    = _leftBeamPhase && _rightBeamPhase &&
-                        (Math.abs((leftC.paddleZ || 0) - (rightC.paddleZ || 0)) <= OD.BLOCK_TOL);
+                    const _clashActive    = !!(leftC && leftC.clashT > 0) || (_leftBeamPhase && _rightBeamPhase &&
+                        (Math.abs((leftC.paddleZ || 0) - (rightC.paddleZ || 0)) <= OD.BLOCK_TOL));
                     // Clash geometry — only valid when _clashActive; otherwise 0 (unused)
+                    // The tug (clashPos: + = blue ahead) slides the meeting point toward the side that's losing.
+                    const _clashLX = playerPaddle ? playerPaddle.position.x : -14, _clashRX = aiPaddle ? aiPaddle.position.x : 14;
                     const _clashMidX = _clashActive
-                        ? ((playerPaddle ? playerPaddle.position.x : -14) +
-                           (aiPaddle     ? aiPaddle.position.x     :  14)) * 0.5
+                        ? (_clashLX + _clashRX) * 0.5 + Math.max(-1, Math.min(1, (leftC && leftC.clashPos) || 0)) * (_clashRX - _clashLX) * 0.4
                         : 0;
                     const _clashAvgZ = _clashActive
                         ? (((leftC.paddleZ || 0) + (rightC.paddleZ || 0)) * 0.5)
@@ -14857,10 +14915,12 @@
                         if (windingUp) {
                             T4.live = false;   // defensive: never let a stale 'live' survive into a windup (review V4 #3)
                             if (root.isEnabled()) root.setEnabled(false);
+                            root._eruptAt = 0;
                             continue;
                         }
 
                         if (!root.isEnabled()) { root.setEnabled(true); root.scaling.setAll(1); }  // reset collapse scale
+                        if (!root._eruptAt) root._eruptAt = performance.now();
 
                         // ---- Endpoint (read-only block test — mirrors sim logic exactly) ----
                         const blocked   = oppC && Math.abs((c.paddleZ || 0) - (oppC.paddleZ || 0)) <= OD.BLOCK_TOL;
@@ -14874,7 +14934,8 @@
                         const fullLength = Math.abs(endpointX - muzzleX);
 
                         // ---- Eruption wipe (first 0.15s after windup ends) ----
-                        const sinceErupt   = (OD.DURATION - c.juiceTimer) - OD.WINDUP;
+                        // Wall-clock since this beam erupted (NOT juiceTimer: a beam clash freezes it).
+                        const sinceErupt   = (performance.now() - root._eruptAt) / 1000;
                         const lengthFactor = Math.min(1, sinceErupt / 0.15);
                         const activeLength = fullLength * lengthFactor;
                         // Beam grows from muzzle toward endpoint
@@ -15154,11 +15215,26 @@
                                 coCrackles.push(_cc);
                             }
 
+                            // Sword-clash slashes: thin blades of light bursting out of the collision — one upright,
+                            // two crossed diagonals — each flashing out long and fading, in turn.
+                            const coRingMat = _odBeamMakeMat('_odClash_slashMat', new BABYLON.Color3(1.0, 0.9, 1.0), 0.9);
+                            const coRings = [0, 1, 2].map(i => {
+                                const r = BABYLON.MeshBuilder.CreateBox('_odClash_slash' + i,
+                                    { width: 0.09, height: 1, depth: 0.09 }, scene);
+                                r.material = coRingMat.clone('_odClash_slashMat' + i);
+                                r.rotation.z = [0, 0.62, -0.62][i];       // upright, then an X of diagonals
+                                r.renderingGroupId = 2; r.isPickable = false; r.alwaysSelectAsActiveMesh = true;
+                                r.setEnabled(false);
+                                return r;
+                            });
+
                             coRoot.setEnabled(false);
                             _odClashOrbState = {
                                 root:       coRoot,
                                 crackles:   coCrackles,
                                 crackFrame: 0,
+                                outerMat:   coOuterMat,
+                                rings:      coRings,
                             };
                         }
 
@@ -15171,12 +15247,31 @@
                             // Position at clash midpoint
                             _cos.root.position.set(_clashMidX, 0.6, _clashAvgZ);
 
-                            // Violent pulse — bigger than the impact blob (base 1.2, amp ±0.35)
+                            // Violent pulse — a big, unmissable collision (base 3.0, amp ±0.55)
                             if (!window._reduceMotion) {
-                                const _clPulse = 1.2 + Math.sin(_clNowMs * 0.025) * 0.35;
+                                const _clPulse = 3.0 + Math.sin(_clNowMs * 0.025) * 0.55;
                                 _cos.root.scaling.setAll(_clPulse);
                             } else {
-                                _cos.root.scaling.setAll(1.2);   // static under Reduce Motion
+                                _cos.root.scaling.setAll(3.0);   // static under Reduce Motion
+                            }
+                            // Tint toward whoever is winning the tug (clashPos: + = blue ahead).
+                            if (_cos.outerMat) {
+                                const _tug = Math.max(-1, Math.min(1, (leftC && leftC.clashPos) || 0));
+                                const _pc = BC.leftMid, _rc = BC.rightMid, _k = Math.abs(_tug) * 0.7;
+                                const _tc = _tug >= 0 ? _pc : _rc;
+                                _cos.outerMat.emissiveColor.set(0.55 + (_tc.r - 0.55) * _k, 0.0 + (_tc.g - 0.0) * _k, 0.9 + (_tc.b - 0.9) * _k);
+                            }
+                            // Slashes: each loops over 0.5s, staggered — snaps out long (ease-out), thins and fades.
+                            if (_cos.rings) {
+                                _cos.rings.forEach((r, i) => {
+                                    if (window._reduceMotion) { if (r.isEnabled()) r.setEnabled(false); return; }
+                                    const t = ((_clNowMs / 500) + i / _cos.rings.length) % 1;
+                                    const grow = 1 - Math.pow(1 - Math.min(1, t / 0.35), 3);
+                                    if (!r.isEnabled()) r.setEnabled(true);
+                                    r.position.set(_clashMidX, 1.1, _clashAvgZ);
+                                    r.scaling.set(1.6 * (1 - t) + 0.4, 2 + grow * (i === 0 ? 9 : 6.5), 1.6 * (1 - t) + 0.4);
+                                    r.material.alpha = 0.95 * (1 - t);
+                                });
                             }
 
                             // Crackle arcs: re-randomize every 3 frames
@@ -15205,10 +15300,57 @@
                             _odClashWasActive = true;
 
                         } else if (_odClashWasActive) {
-                            // Clash just ended — disable orb, reset crackle counter
+                            // Clash just ended — disable orb + rings, reset crackle counter
                             if (_cos.root.isEnabled()) _cos.root.setEnabled(false);
+                            if (_cos.rings) _cos.rings.forEach(r => r.setEnabled(false));
                             _cos.crackFrame = 0;
                             _odClashWasActive = false;
+                        }
+
+                        // Beam-clash action command: the MASH button's keycap (Space, or the pad's parry shoulder
+                        // button) sits right on the collision point and rides it through the tug-of-war, pressing in
+                        // and out so it reads as "hammer this". Presentation only (sim.js tickBeamClash).
+                        let _cp = window._clashPrompt;
+                        if (!_cp && window.guiTexture) {
+                            const anchor = new BABYLON.TransformNode('clashPromptAnchor', scene);
+                            const box = new BABYLON.GUI.Container('clashKey');
+                            box.widthInPixels = 132; box.heightInPixels = 60;
+                            box.isHitTestVisible = false; box.zIndex = 850;
+                            const shadow = new BABYLON.GUI.Rectangle('clashKeyBase');
+                            shadow.widthInPixels = 124; shadow.heightInPixels = 46; shadow.topInPixels = 7;
+                            shadow.cornerRadius = 10; shadow.thickness = 3;
+                            shadow.color = '#1a1024'; shadow.background = '#8a7a58';
+                            const cap = new BABYLON.GUI.Rectangle('clashKeyCap');
+                            cap.widthInPixels = 124; cap.heightInPixels = 46; cap.topInPixels = 0;
+                            cap.cornerRadius = 10; cap.thickness = 3;
+                            cap.color = '#1a1024'; cap.background = '#f4ead0';
+                            const label = new BABYLON.GUI.TextBlock('clashKeyLabel', 'SPACE');
+                            label.fontFamily = "'FF9UI', sans-serif"; label.fontSize = 22; label.color = '#1a1024';
+                            cap.addControl(label);
+                            box.addControl(shadow); box.addControl(cap);
+                            window.guiTexture.addControl(box);
+                            box.linkWithMesh(anchor);
+                            box.linkOffsetY = -118;   // just above the (now big) collision orb
+                            box.isVisible = false;
+                            _cp = window._clashPrompt = { anchor, box, cap, label };
+                        }
+                        if (_cp) {
+                            const on = !!(leftC && leftC.clashT > 0) && gameState === 'playing';
+                            if (_cp.box.isVisible !== on) _cp.box.isVisible = on;
+                            if (on) {
+                                // The mash is the parry action: show its binding on the last-used device.
+                                const txt = (window.actionKeyLabel ? window.actionKeyLabel('parry') : '?').toUpperCase();
+                                if (_cp.label.text !== txt) {
+                                    _cp.label.text = txt;
+                                    const w = Math.max(64, 26 + txt.length * 16);
+                                    _cp.box.widthInPixels = w + 8; _cp.cap.widthInPixels = w; _cp.box.children[0].widthInPixels = w;
+                                }
+                                _cp.anchor.position.set(_clashMidX, 0.6, _clashAvgZ);
+                                // ~4 presses a second: quick press down, release, rest.
+                                const ph = (_clNowMs % 250) / 250;
+                                const down = window._reduceMotion ? 0 : (ph < 0.3 ? ph / 0.3 : ph < 0.55 ? 1 - (ph - 0.3) / 0.25 : 0);
+                                _cp.cap.topInPixels = Math.round(down * 6);
+                            }
                         }
                     }
 
@@ -16046,7 +16188,7 @@
                 };
                 const CORE = {
                     sunI: 1.6, sunCol: new BABYLON.Color3(1.0, 0.8, 0.52),           // warm daylight through the gate
-                    ambI: 0.46, ambCol: new BABYLON.Color3(0.5, 0.4, 0.64), ambGround: new BABYLON.Color3(0.2, 0.15, 0.26),
+                    ambI: 0.5, ambCol: new BABYLON.Color3(0.54, 0.48, 0.58), ambGround: new BABYLON.Color3(0.24, 0.2, 0.26),
                     exposure: 1.08, fogOpacity: 0.48, fog: new BABYLON.Color3(0.22, 0.14, 0.32),
                     backdrop: new BABYLON.Color4(1.18, 1.14, 1.12, 1),   // lift the dark interior painting a touch
                 };
@@ -16056,7 +16198,10 @@
 
                 // Light spill: a warm fan of light on the floor, widening from the breach into the lane.
                 const spillTex = new BABYLON.DynamicTexture('gateSpillTex', { width: 256, height: 256 }, scene, false);
-                {
+                // cut (optional): the core's ram standing in the breach blocks the light — { u0, u1, uFade, v0, v1 }
+                // in texels: dark over [u0, u1] x [v0, v1] (its footprint + its shadow), fading back to light
+                // between u1 and uFade. The light still flows past it on both sides.
+                const paintSpill = (cut) => {
                     const g = spillTex.getContext();
                     g.fillStyle = 'black'; g.fillRect(0, 0, 256, 256);
                     // u (x) runs away from the gate; the fan widens with distance and fades out.
@@ -16070,8 +16215,19 @@
                         grd.addColorStop(1, 'rgba(255,255,255,0)');
                         g.fillStyle = grd; g.fillRect(x, 128 - half, 1, half * 2);
                     }
+                    if (cut) {
+                        g.save();
+                        g.filter = 'blur(9px)';                      // soft shadow edges
+                        g.fillStyle = 'black';
+                        g.fillRect(cut.u0, cut.v0, cut.u1 - cut.u0, cut.v1 - cut.v0);
+                        const h = g.createLinearGradient(cut.u1, 0, cut.uFade, 0);
+                        h.addColorStop(0, 'rgba(0,0,0,1)'); h.addColorStop(1, 'rgba(0,0,0,0)');
+                        g.fillStyle = h; g.fillRect(cut.u1, cut.v0, cut.uFade - cut.u1, cut.v1 - cut.v0);
+                        g.restore();
+                    }
                     spillTex.update();
-                }
+                };
+                paintSpill(null);
                 const spillMat = new BABYLON.StandardMaterial('gateSpillMat', scene);
                 spillMat.disableLighting = true;
                 spillMat.diffuseColor = BABYLON.Color3.Black();
@@ -16167,9 +16323,169 @@
                     return m;
                 };
                 spill.alphaIndex = 1;                                 // spill first, shadows over it
-                const ramShadow = BABYLON.MeshBuilder.CreateGround('ramLongShadow', { width: 1, height: 6.2 }, scene);
-                ramShadow.material = makeShadowMat('ramLongShadowMat', 0.72);
+                // THE RAM — backlit by the breach. It sits on a soft blob shadow the size of its footprint, nudged
+                // toward the court (away from the gate light); drawn over the floor light spill, so no warm light
+                // glows out from underneath it. A modest warm
+                // light behind it lifts its gate side and roof; the baked shading (build_ram.py) darkens the inside
+                // of the shed and whatever the ram itself blocks from the breach.
+                const ramShTex = new BABYLON.DynamicTexture('ramShadowTex', { width: 256, height: 256 }, scene, false);
+                {
+                    const g = ramShTex.getContext();
+                    g.clearRect(0, 0, 256, 256);
+                    // Evenly dark under the whole ram (a soft-edged rounded block, not a radial falloff that
+                    // leaves its back end pale).
+                    g.filter = 'blur(22px)';
+                    g.fillStyle = 'rgba(0,0,0,0.9)';
+                    g.beginPath(); g.roundRect(40, 44, 176, 168, 60); g.fill();
+                    g.filter = 'none';
+                    ramShTex.hasAlpha = true;
+                    ramShTex.update();
+                }
+                const ramShMat = new BABYLON.StandardMaterial('ramShadowMat', scene);
+                ramShMat.disableLighting = true;
+                ramShMat.diffuseColor = BABYLON.Color3.Black(); ramShMat.specularColor = BABYLON.Color3.Black();
+                ramShMat.emissiveColor = new BABYLON.Color3(0.02, 0.0, 0.04);
+                ramShMat.diffuseTexture = ramShTex; ramShMat.useAlphaFromDiffuseTexture = true;
+                ramShMat.alpha = 0.4; ramShMat.fogEnabled = false;
+                const ramShadow = BABYLON.MeshBuilder.CreateGround('ramLongShadow', { width: 1, height: 1 }, scene);
+                ramShadow.material = ramShMat;
                 ramShadow.renderingGroupId = 1; ramShadow.alphaIndex = 2; ramShadow.isPickable = false; ramShadow.setEnabled(false);
+                let ramBaked = null;                                  // 'side:shown' last placed
+                // The ram body's world bounds (the shown damage state), skipping the broken wall chunks on the
+                // rails, which span the whole lane.
+                const ramBodyBounds = (parts) => {
+                    let min = null, max = null;
+                    for (const m of parts.shownMeshes) {
+                        if (!m.getBoundingInfo || !m.isEnabled()) continue;
+                        m.computeWorldMatrix(true);
+                        if (m.refreshBoundingInfo) m.refreshBoundingInfo();
+                        const bb = m.getBoundingInfo().boundingBox;
+                        if (bb.maximumWorld.z - bb.minimumWorld.z > 10) continue;   // rail-to-rail wall chunk
+                        min = min ? BABYLON.Vector3.Minimize(min, bb.minimumWorld) : bb.minimumWorld.clone();
+                        max = max ? BABYLON.Vector3.Maximize(max, bb.maximumWorld) : bb.maximumWorld.clone();
+                    }
+                    return min ? { min, max } : null;
+                };
+                const bakeRamShadow = (parts, dir) => {
+                    const b = ramBodyBounds(parts);
+                    if (!b) return false;
+                    // The shadow runs from the ram's back past its nose by REACH (the breach light is behind it),
+                    // tapering off; the breach light on the floor only fades in where the shadow gives out.
+                    const REACH = 5.5;
+                    const nose = dir > 0 ? b.max.x : b.min.x, back = dir > 0 ? b.min.x : b.max.x;
+                    const tip = nose + dir * REACH;
+                    const back2 = back - dir * 1.5;                     // reach past the back wheels too
+                    const w = Math.abs(tip - back2) * 1.3, h = (b.max.z - b.min.z) * 1.45;   // texture's soft margin
+                    ramShadow.scaling.set(w, 1, h);
+                    ramShadow.position.set((back2 + tip) / 2, 0.34, (b.min.z + b.max.z) / 2 + 0.9);
+                    ramShadow.rotation.y = 0;
+                    // Cut the ram's shadow out of the breach light: its body width (a little extra toward the camera,
+                    // so no light peeks out under the front wheels), from behind it to past its nose, fading out at
+                    // the shadow's tip. Light still flows past it on both sides. World -> spill-local (the spill is
+                    // turned 180° when the gate is on the right, so u still runs away from it) -> texel.
+                    const flip = spill.rotation.y !== 0 ? -1 : 1;
+                    const U = (wx) => (((wx - spill.position.x) * flip) / SPILL_W + 0.5) * 256;
+                    const V = (wz) => (0.5 - ((wz - spill.position.z) * flip) / tableDepth) * 256;
+                    const va = V(b.min.z - 0.4), vb = V(b.max.z + 1.4);
+                    paintSpill({ u0: Math.min(U(back2), U(nose)) - 20, u1: U(nose + dir * REACH * 0.45), uFade: U(tip),
+                                 v0: Math.min(va, vb), v1: Math.max(va, vb) });
+                    return true;
+                };
+                // The back light: a spare pad light, limited to the ram, raised above the other pads so the
+                // per-mesh light sort never drops it.
+                const ramLight = scene.getLightByName('lightSlotPad1');
+                const resyncLights = () => {
+                    scene.sortLightsByPriority();
+                    for (const m of scene.meshes) if (m._resyncLightSources) m._resyncLightSources();
+                };
+                let ramLit = null;                                    // attacker side whose ram is set up
+                // The breach light also catches the gate-facing sides of the two stone pillars flanking the ram
+                // (the wall stubs on the rails): one small warm light behind each, limited to the ram model.
+                const pillarLights = ['lightSlotPad2', 'lightSlotPad3'].map(n => scene.getLightByName(n)).filter(Boolean);
+                const parkLight = (L) => {
+                    L.includedOnlyMeshes = [];
+                    L.intensity = 0; L.range = 0.01; L.renderPriority = -10;
+                    L.position.set(0, -500, 0);
+                };
+                const setRamLighting = (attacker, parts) => {
+                    if (!ramLight) return;
+                    if (!attacker) {
+                        parkLight(ramLight);
+                        pillarLights.forEach(parkLight);
+                        resyncLights();
+                        return;
+                    }
+                    {
+                        let smin = null, smax = null;
+                        for (const m of parts.shownMeshes) {
+                            if (!m.material || !/^M_(wall|stone)/.test(m.material.name)) continue;
+                            m.computeWorldMatrix(true);
+                            const bb = m.getBoundingInfo().boundingBox;
+                            smin = smin ? BABYLON.Vector3.Minimize(smin, bb.minimumWorld) : bb.minimumWorld.clone();
+                            smax = smax ? BABYLON.Vector3.Maximize(smax, bb.maximumWorld) : bb.maximumWorld.clone();
+                        }
+                        const d = attacker === 'left' ? 1 : -1;
+                        pillarLights.forEach((L, i) => {
+                            if (!smin) { parkLight(L); return; }
+                            const behind = (d > 0 ? smin.x : smax.x) - d * 2.7;
+                            L.includedOnlyMeshes = parts.all.slice();
+                            L.position.set(behind, 3.2, (i === 0 ? smax.z : smin.z) * 0.92);
+                            L.diffuse = new BABYLON.Color3(1.0, 0.72, 0.4);
+                            L.specular = BABYLON.Color3.Black();
+                            L.falloffType = BABYLON.Light.FALLOFF_STANDARD;
+                            L.intensity = 8; L.range = 6.5; L.renderPriority = 5;
+                        });
+                    }
+                    let min = null, max = null;
+                    for (const m of parts.shownMeshes) {
+                        if (!m.getBoundingInfo) continue;
+                        m.computeWorldMatrix(true);
+                        if (m.refreshBoundingInfo) m.refreshBoundingInfo();
+                        const bb = m.getBoundingInfo().boundingBox;
+                        min = min ? BABYLON.Vector3.Minimize(min, bb.minimumWorld) : bb.minimumWorld.clone();
+                        max = max ? BABYLON.Vector3.Maximize(max, bb.maximumWorld) : bb.maximumWorld.clone();
+                    }
+                    if (!min) return;
+                    const dir = attacker === 'left' ? 1 : -1;
+                    const backX = dir > 0 ? min.x : max.x;
+                    ramLight.includedOnlyMeshes = parts.all.slice();
+                    ramLight.position.set(backX - dir * 1.5, max.y * 0.95, -2.5);   // -Z = away from the camera
+                    ramLight.diffuse = new BABYLON.Color3(1.0, 0.72, 0.4);
+                    ramLight.specular = BABYLON.Color3.Black();
+                    ramLight.falloffType = BABYLON.Light.FALLOFF_STANDARD;   // linear to range: a readable back-to-front gradient
+                    ramLight.intensity = 3;                                   // a warm lift on the breach side (the bake does the shadowing)
+                    ramLight.range = (max.x - min.x) + 3;
+                    ramLight.renderPriority = 5;
+                    resyncLights();
+                };
+                window._ramLightTune = { ramLight, rebake: () => { ramBaked = null; ramLit = null; } };   // dev tuning
+
+                // The siege catapult (territory stages) sits on the same soft blob.
+                const catShadow = BABYLON.MeshBuilder.CreateGround('catapultShadow', { width: 1, height: 1 }, scene);
+                catShadow.material = ramShMat.clone('catapultShadowMat');
+                catShadow.material.alpha = 0.55;
+                catShadow.renderingGroupId = 1; catShadow.alphaIndex = 2; catShadow.isPickable = false; catShadow.setEnabled(false);
+                let catPlaced = null;
+                scene.onBeforeRenderObservable.add(() => {
+                    let on = false;
+                    for (const side of ['left', 'right']) {
+                        const info = window.getStructInfo ? window.getStructInfo(side) : null;
+                        if (!info || info.kind !== 'catapult') continue;
+                        const parts = window.getStructParts(side, 'catapult');
+                        if (!parts) continue;
+                        const key = side + ':' + parts.shown;
+                        if (key !== catPlaced) {
+                            const b = ramBodyBounds(parts);
+                            if (!b) continue;
+                            const dir = side === 'left' ? 1 : -1;       // a touch toward the court
+                            catShadow.scaling.set((b.max.x - b.min.x) * 1.55, 1, (b.max.z - b.min.z) * 1.5);
+                            catShadow.position.set((b.min.x + b.max.x) / 2 + dir * 0.8, 0.34, (b.min.z + b.max.z) / 2 + 0.5);
+                            catPlaced = key;
+                        }
+                        on = true;
+                    }
+                    catShadow.setEnabled(on);
+                });
                 const wizShadowMat = makeShadowMat('wizLongShadowMat', 1);
                 const wizShadows = [0, 1].map(i => {
                     const m = BABYLON.MeshBuilder.CreateGround('wizLongShadow' + i, { width: 1, height: 1.0 }, scene);
@@ -16181,16 +16497,13 @@
                 scene.onBeforeRenderObservable.add(() => {
                     if (!longShadow) return;
                     const { dir, gateX, attacker } = longShadow;
-                    // Ram: long when standing, short once it's a collapsed wreck.
+                    // Ram: its own silhouette, re-baked when the damage state changes (the wreck casts its own).
                     const info = window.getStructInfo ? window.getStructInfo(attacker) : null;
-                    const ramUp = info && info.kind === 'ram';
-                    ramShadow.setEnabled(!!ramUp);
-                    if (ramUp) {
-                        const L = info.shown === 3 ? 4 : 10;
-                        ramShadow.scaling.x = L;
-                        ramShadow.position.set(gateX + dir * (L / 2 - 0.6), 0.34, 0);
-                        ramShadow.rotation.y = dir > 0 ? 0 : Math.PI;
-                    }
+                    const parts = (info && info.kind === 'ram' && window.getRamParts) ? window.getRamParts(attacker) : null;
+                    if (parts && ramLit !== attacker) { setRamLighting(attacker, parts); ramLit = attacker; }
+                    const key = parts ? attacker + ':' + parts.shown : null;
+                    if (parts && key !== ramBaked) ramBaked = bakeRamShadow(parts, dir) ? key : null;
+                    ramShadow.setEnabled(!!(parts && ramBaked === key));
                     // Wizards: stretched shadows pointing away from the gate, fading deeper into the hall.
                     const blobs = window.blobShadows || [];
                     wizShadows.forEach((m, i) => {
@@ -16235,6 +16548,7 @@
                         jarLight.intensity = core ? 1.6 : 0;
                         jarLight.range = core ? 16 : 0.01;
                         jarLight.renderPriority = core ? 5 : -10;
+                        resyncLights();
                     }
                     window._stageFogColor = core ? CORE.fog : null;
                     if (window.backdropLayer && OUT.backdrop) window.backdropLayer.color = (core ? CORE.backdrop : OUT.backdrop).clone();
@@ -16246,6 +16560,7 @@
                     } else {
                         longShadow = null;
                         ramShadow.setEnabled(false);
+                        if (ramLit) { setRamLighting(null); ramLit = null; }
                         wizShadows.forEach(m => m.setEnabled(false));
                     }
                 };
@@ -17910,6 +18225,16 @@
             btnHost.addEventListener('click', () => {
                 isHost = true;
                 const code = generateRoomCode();
+                if (window.DOUBLES_LOCKED) {
+                    // Doubles is locked: online play is 1v1 only — the classic host lobby (share a code,
+                    // one opponent joins). initializePeer() resets netMode, so set 'duel' after it.
+                    initializePeer(code.toLowerCase());
+                    netMode = 'duel';
+                    showLobbyView('lobbyHostView');
+                    if (hostCode) hostCode.textContent = code;
+                    if (hostStatus) hostStatus.textContent = 'Waiting for opponent...';
+                    return;
+                }
                 // initializePeer() calls cleanupPeer() FIRST, which resets netMode='none' — so set
                 // 'doubles' AFTER it, else the async peer.on('connection') would take the 1v1 branch.
                 initializePeer(code.toLowerCase());
@@ -19405,8 +19730,9 @@
                 startSinglesMatch();
             });
 
-            // 2v2 Doubles — M1: local-only, both back-row wizards are AI.
+            // 2v2 Doubles — M1: local-only, both back-row wizards are AI. Locked for now (see DOUBLES_LOCKED).
             btnDoubles.addEventListener('click', () => {
+                if (window.DOUBLES_LOCKED) return;
                 startDoublesMatch();
             });
 
@@ -20430,6 +20756,7 @@
                 mix(q(c.freezeTime)); mix(q(c.towerHealth)); mix(q(c.castProgress)); mix(q(c.castTime));
                 mix(q(cd.fireball)); mix(q(cd.frostbolt)); mix(q(cd.thunderstorm));
                 mix(q(c.juice)); mix(c.juiceActive ? 1 : 0); mix(q(c.juiceTimer)); mix(q(c.juiceRamp));
+                if (c.clashT) { mix(q(c.clashT)); mix(q(c.clashPos)); }   // only while a beam clash is live
             }
             for (const p of (s.projectiles || [])) {
                 mix(p.id | 0); mix(q(p.x)); mix(q(p.y)); mix(q(p.z));
@@ -20476,6 +20803,7 @@
                 h = mix(h, q(c.towerHealth)); h = mix(h, q(c.castProgress)); h = mix(h, q(c.castTime));
                 h = mix(h, q(cd.fireball)); h = mix(h, q(cd.frostbolt)); h = mix(h, q(cd.thunderstorm));
                 h = mix(h, q(c.juice)); h = mix(h, c.juiceActive ? 1 : 0); h = mix(h, q(c.juiceTimer)); h = mix(h, q(c.juiceRamp));
+                if (c.clashT) { h = mix(h, q(c.clashT)); h = mix(h, q(c.clashPos)); }   // only while a beam clash is live
                 return h >>> 0;
             };
             const sidePaddle = (c) => {
@@ -20739,13 +21067,20 @@
             pause(on) { paused = (on === undefined) ? !paused : !!on; return 'sim ' + (paused ? 'paused' : 'running'); },
             hitboxes(on) { window._dbgHitboxes = (on === undefined) ? !window._dbgHitboxes : !!on; return 'hitboxes ' + (window._dbgHitboxes ? 'shown' : 'hidden'); },
             aiOff(on) { window._dbgAiOff = (on === undefined) ? !window._dbgAiOff : !!on; return 'AI ' + (window._dbgAiOff ? 'idle' : 'active'); },
+            mpJuiceAt(frame) {
+                frame = frame | 0;
+                // Refuse a frame this peer is already at/near: it would miss the injection and desync on purpose.
+                if (frame <= currentFrame + 60) return 'too late: this peer is at frame ' + currentFrame + ' — pick a frame well ahead of BOTH peers';
+                window._mpJuiceAtFrame = frame;
+                return 'both Juice bars fill at sim frame ' + frame + ' (set the same frame in BOTH browsers)';
+            },
             towerHp(side, hp) {
                 const c = combatants[side || 'right'];
                 if (!c) return 'no combatant';
-                c.towerHealth = Math.max(0, Math.min(maxTowerHealth, hp));
+                c.towerHealth = Math.max(0, Math.min(stageMaxHealth(c.side), hp));
                 if (c.side === 'left') playerTowerHealth = c.towerHealth; else aiTowerHealth = c.towerHealth;
                 updateHealthBars();
-                return c.side + ' tower ' + c.towerHealth + '/' + maxTowerHealth;
+                return c.side + ' tower ' + c.towerHealth + '/' + stageMaxHealth(c.side);
             },
             state() { return { mode: gameMode, isHost, localSide: (typeof getLocalSide === 'function' ? getLocalSide() : '?'), frame: currentFrame, confirmed: lastConfirmedRemoteFrame, lag: currentFrame - lastConfirmedRemoteFrame, ping: netPing, rollbacks: mpSync.rollbacks, lastOkFrame: mpSync.lastOkFrame, mismatches: mpSync.mismatches, desync: mpSync.desync, projectiles: projectiles ? projectiles.length : 0 }; },
             hash() { return (hashGameState() >>> 0).toString(16); },
@@ -21123,7 +21458,7 @@
                 let hash = 0;
                 for (let i = 0; i < steps; i++) {
                     const view   = _syntheticView(seed + i);
-                    const result = window.decideAI(view, i, window.makeAIRng((seed + i) ^ window.AI_RNG_SEED), window.skillToProfile(0.45));
+                    const result = window.decideAI(view, i, window.makeAIRng((seed + i) ^ window.AI_RNG_SEED), window.AI_PROFILE);
                     hash = ((hash << 5) - hash + result.moveDir + 1)                 | 0;
                     hash = ((hash << 5) - hash + (result.parry        ? 7  : 0))     | 0;
                     hash = ((hash << 5) - hash + (result.fireball     ? 13 : 0))     | 0;
@@ -21146,7 +21481,7 @@
             // ---- DOUBLES AI determinism oracle (M1) ----
             // Parallel clone of _syntheticView/_foldAI that folds BOTH a front-profile (castK 7) and a
             // back-profile (castK 11) decideAI decision per step into one hash. Pure-function exercise
-            // only — no game loop, no mesh. Profiles layer castK ONLY onto skillToProfile(0.45), exactly
+            // only — no game loop, no mesh. Profiles layer castK ONLY onto AI_PROFILE, exactly
             // as the live doubles driver builds them (DOUBLES_AI.front/back over a skill base).
             //
             // UNIFIED AI (round 4): decideAI has no per-position behavior anymore — front and back run
@@ -21156,8 +21491,8 @@
             // gate-guard movement, manaHold) are DELETED, so their synthetic-view fields are gone too.
             // The synthetic view is built DIRECTLY in decideAI's canonical, ALREADY-X-MIRRORED right-
             // facing frame (velX>0 = incoming, self on +X) — identical to _syntheticView.
-            // Profiles built lazily at CALL time (like the singles oracle) so window.skillToProfile is
-            // guaranteed assigned. skillToProfile(0.45) is the fixed oracle skill; castK layers on top.
+            // Profiles built lazily at CALL time (like the singles oracle) so window.AI_PROFILE is
+            // guaranteed assigned; castK layers on top.
             //   PARRY-BUCKET NOTE (unchanged from ai-parry-buckets): _dblProfiles' profiles carry no
             //   `slotSalt`, so decideAI's `profile.slotSalt || 0` default makes BOTH slots hash id=1
             //   -> EARLY, id=2 -> LATE here (the oracle does not thread DOUBLES_AI.slotSalt). id=2 is
@@ -21165,7 +21500,7 @@
             //   tti sits outside its EARLY window across all 50 steps. The LIVE driver still gets real
             //   per-slot bucket divergence via DOUBLES_AI.slotSalt — this oracle just doesn't exercise it.
             function _dblProfiles() {
-                const base = window.skillToProfile(0.45);
+                const base = window.AI_PROFILE;
                 return {
                     front: { ...base, castK: 7  },
                     back:  { ...base, castK: 11 },
@@ -21708,7 +22043,9 @@
                     juice: combatants.left ? (combatants.left.juice || 0) : 0,
                     juiceActive: combatants.left ? (combatants.left.juiceActive || false) : false,
                     juiceTimer: combatants.left ? (combatants.left.juiceTimer || 0) : 0,
-                    juiceRamp: combatants.left ? (combatants.left.juiceRamp || 0) : 0
+                    juiceRamp: combatants.left ? (combatants.left.juiceRamp || 0) : 0,
+                    clashT: combatants.left ? (combatants.left.clashT || 0) : 0,       // beam clash (sim.js tickBeamClash)
+                    clashPos: combatants.left ? (combatants.left.clashPos || 0) : 0
                 },
                 right: {
                     paddleZ: aiPaddle ? aiPaddle.position.z : 0,
@@ -21853,6 +22190,8 @@
                 combatants.left.juiceActive = state.left.juiceActive || false;
                 combatants.left.juiceTimer = state.left.juiceTimer || 0;
                 combatants.left.juiceRamp = state.left.juiceRamp || 0;
+                combatants.left.clashT = state.left.clashT || 0;
+                combatants.left.clashPos = state.left.clashPos || 0;
             }
 
             // Restore right combatant
@@ -22127,6 +22466,7 @@
                     (localInputHistory[f] || defaultInput());
 
                 // Simulate one frame (lifted to js/sim.js)
+                mpDevInject(f);
                 window.VolleyboltSim.simulateNetworkFrame(leftInput, rightInput, 1 / TICK_RATE, buildSimCtx());
 
                 // Overwrite this re-simulated frame's hash with the settled value
@@ -22605,6 +22945,15 @@
         }
 
         // Process one network frame
+        // DEV-ONLY online test hook: dbg.mpJuiceAt(frame) fills BOTH players' Juice bars right before sim
+        // frame `frame` — on both peers and in every rollback re-sim of that frame — so online Overdrive /
+        // beam-clash tests start from identical state without tripping desync detection (poking the bar
+        // directly would land on a different frame in each browser). Set the SAME frame in both tabs.
+        function mpDevInject(f) {
+            if (window._mpJuiceAtFrame !== f) return;
+            for (const c of [combatants.left, combatants.right]) if (c) c.juice = JUICE.MAX;
+        }
+
         function runNetworkFrame() {
             const dt = 1 / TICK_RATE;
 
@@ -22639,6 +22988,7 @@
             gameStateHistory.push(captureGameState());
 
             // 6. Simulate the frame (lifted to js/sim.js)
+            mpDevInject(currentFrame);
             window.VolleyboltSim.simulateNetworkFrame(leftInput, rightInput, dt, buildSimCtx());
 
             // 6b. Record this frame's settled hash for desync detection (keyed by the frame just simulated)
@@ -22905,6 +23255,20 @@
                 }
             },
             onOverdriveHit: (caster, opp, dmg) => { if (window.showOverdriveHitFX) window.showOverdriveHitFX(caster, opp, dmg); },
+            onBeamClashStart: () => {
+                if (window.logNeutral) window.logNeutral('Beam clash!');
+                if (window.ToneSFX && ToneSFX.boom) try { ToneSFX.boom(); } catch (e) {}
+            },
+            onBeamClashResolve: (winner, loser, dmg) => {
+                if (!winner && window.logNeutral) window.logNeutral('Clash draw! Both beams fizzle.');
+                if (winner && window.showOverdriveHitFX) window.showOverdriveHitFX(winner, loser, dmg);
+                if (winner && window.logCombat && window.combatLine) {
+                    const blue = winner.side === 'left';
+                    window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' wins the clash! ' + dmg + ' DMG!'));
+                }
+                if (window.ToneSFX && ToneSFX.boom) try { ToneSFX.boom(); } catch (e) {}
+                if (window.createImpactFlash && loser && loser.paddle) try { createImpactFlash(loser.paddle.position.clone(), new BABYLON.Color3(1, 0.9, 0.5), 2.2); } catch (e) {}
+            },
             // Beam vaporized a fireball: the standard Cancel! treatment (same as proj-vs-proj)
             onBeamVaporize: (proj) => {
                 const pos = new BABYLON.Vector3(proj.x, 1.2, proj.z);
@@ -23437,7 +23801,7 @@
             // (dim/tint, fog colors, beam/orb/clash meshes, lights, jitter, audio loops)
             if (window.resetOverdrivePresentation) window.resetOverdrivePresentation();
             hideVictoryScreen();
-            resetGame();           // clears gameOver, scores, gates — NOT aiSkillRating
+            resetGame();           // clears gameOver, scores, gates
             startGameInProgress = false;  // clear the double-click guard
             gameState = "menu";    // startGame() guards on gameState==='menu'; reset it here
             startGame();
@@ -23504,9 +23868,9 @@
             currentStage = 2;  // Back to midfield
             stageResults = [null, null, null, null, null];
             // Reset persistent gate health for new match (uses current maxTowerHealth for game mode)
-            playerGateHealthByStage = [maxTowerHealth, maxTowerHealth, maxTowerHealth, maxTowerHealth, maxTowerHealth];
-            aiGateHealthByStage = [maxTowerHealth, maxTowerHealth, maxTowerHealth, maxTowerHealth, maxTowerHealth];
-            console.log('[RESET] Gate health arrays set to', maxTowerHealth);
+            playerGateHealthByStage = stageHealthArray('left');
+            aiGateHealthByStage = stageHealthArray('right');
+            console.log('[RESET] Gate health arrays set to', playerGateHealthByStage, aiGateHealthByStage);
             // Reset gate regeneration tracking
             totalRoundsPlayed = 0;
             lastRoundAtStage = [0, 0, 0, 0, 0];
@@ -23539,14 +23903,15 @@
         // health — NOTHING ever regens above 50%. No per-round scaling, no full heal. Deterministic
         // (derived from shared state only). Applies on stage RETURN (roundsAway > 0); consecutive
         // rounds at the same stage (roundsAway === 0) persist health unchanged.
-        function getGateHealthWithRegen(healthArray, stage, roundsAway) {
+        function getGateHealthWithRegen(healthArray, stage, roundsAway, side) {
             const storedHealth = healthArray[stage];
+            if (isOwnCore(side, stage)) return storedHealth;   // the core relic never regenerates
             const roundsSinceLastVisit = (typeof roundsAway === 'number')
                 ? roundsAway
                 : (totalRoundsPlayed - lastRoundAtStage[stage]);
 
             if (roundsSinceLastVisit > 0) {
-                const floor = Math.floor(GATE_REGEN_FLOOR * maxTowerHealth);   // 50% of max (integer HP)
+                const floor = Math.floor(GATE_REGEN_FLOOR * stageMaxHealth(side, stage));   // 50% of this gate's max (integer HP)
                 const finalHealth = Math.max(storedHealth, floor);            // lift to floor, never above
                 healthArray[stage] = finalHealth;  // Update stored health
                 return finalHealth;
@@ -23590,8 +23955,8 @@
             // On returning to this stage, sub-50% gates lift to the 50% floor; wounded gates
             // at/above 50% stay wounded. Same rule for both gates and both modes.
             const roundsAway = totalRoundsPlayed - lastRoundAtStage[currentStage];
-            const playerGateHealth = getGateHealthWithRegen(playerGateHealthByStage, currentStage, roundsAway);
-            const aiGateHealth = getGateHealthWithRegen(aiGateHealthByStage, currentStage, roundsAway);
+            const playerGateHealth = getGateHealthWithRegen(playerGateHealthByStage, currentStage, roundsAway, 'left');
+            const aiGateHealth = getGateHealthWithRegen(aiGateHealthByStage, currentStage, roundsAway, 'right');
             // Mark regen consumed for this stage (applied equally to both gates)
             lastRoundAtStage[currentStage] = totalRoundsPlayed;
 
@@ -23644,8 +24009,10 @@
             const fromStage = (typeof prevStage === 'number') ? prevStage : currentStage;
             const toStage = (typeof nextStage === 'number') ? nextStage : currentStage;
             const movingRight = toStage > fromStage; // toward enemy side
-            const slideInFrom = movingRight ? "200px" : "-200px";
-            const slideOutTo = movingRight ? "-200px" : "200px";
+            // Everything travels the way the push goes: toward Red (right) the card and the wipe move
+            // left -> right; toward Blue, right -> left.
+            const slideInFrom = movingRight ? "-200px" : "200px";
+            const slideOutTo = movingRight ? "200px" : "-200px";
             const centerPos = "0px";
             const stageColor = (window.getStageColor ? window.getStageColor(toStage) : text.color) || "#f0c050";
 
@@ -23710,8 +24077,27 @@
                 update();
             }
 
-            // Step 1: Fade overlay to black (400ms)
-            animateAlpha(overlay, 0, 1, 400, () => {
+            // Directional wipe (screen %): pushing toward Red, the black sweeps in from the LEFT and off to
+            // the right — the push carries it toward the enemy end; toward Blue, the reverse.
+            // overlay._sliding keeps the stage dressing from swapping until it fully covers.
+            function animateWipe(element, fromPct, toPct, duration, onComplete) {
+                const startTime = performance.now();
+                element._sliding = true;
+                function update() {
+                    const t = Math.min((performance.now() - startTime) / duration, 1);
+                    const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;   // ease in-out
+                    element.left = (fromPct + (toPct - fromPct) * e).toFixed(2) + '%';
+                    if (t < 1) requestAnimationFrame(update);
+                    else { element._sliding = false; if (onComplete) onComplete(); }
+                }
+                update();
+            }
+            const wipeIn = movingRight ? -100 : 100, wipeOut = -wipeIn;
+            overlay.alpha = 1;
+            overlay.left = wipeIn + '%';
+
+            // Step 1: Wipe the black across (450ms)
+            animateWipe(overlay, wipeIn, 0, 450, () => {
                 // Step 2: Reset round while black
                 resetRound();
                 // resetRound clears the flag; keep inputs blocked
@@ -23732,10 +24118,12 @@
                         animateAlpha(text, 1, 0, 400, () => {
                             text.text = "";
 
-                            // Step 6: Fade out overlay to reveal scene (500ms)
-                            animateAlpha(overlay, 1, 0, 500, () => {
-                                // Hide overlay, keep title visible at center
+                            // Step 6: Wipe the black off the far side to reveal the new area (550ms)
+                            animateWipe(overlay, 0, wipeOut, 550, () => {
+                                // Hide overlay (reset for the other fades that reuse it), keep title visible at center
                                 overlay.isVisible = false;
+                                overlay.alpha = 0;
+                                overlay.left = '0%';
                                 // Keep the transition title on-screen; stage label matches color
                                 text.left = centerPos;
                                 text.alpha = 1;
@@ -24888,8 +25276,9 @@
                 remoteHealth = combatants[remoteSide].towerHealth;
             }
 
-            const playerPercent = (localHealth / maxTowerHealth) * 100;
-            const aiPercent = (remoteHealth / maxTowerHealth) * 100;
+            const _localSide = (gameMode === 'pvp' && combatants.left && combatants.right) ? getLocalSide() : 'left';
+            const playerPercent = (localHealth / stageMaxHealth(_localSide)) * 100;
+            const aiPercent = (remoteHealth / stageMaxHealth(_localSide === 'left' ? 'right' : 'left')) * 100;
             // NES.css progress bars use value attribute (HTML fallback)
             document.getElementById('playerHealthBar').value = playerPercent;
             document.getElementById('aiHealthBar').value = aiPercent;
@@ -25557,6 +25946,7 @@
 
             // Winner is whoever destroyed the gate
             const stageName = window.stageNames ? window.stageNames[currentStage] : "Stage";
+            const stageBeforeRound = currentStage;   // the transition slides toward whichever end we moved
             const winnerOwner = winnerSide === 'left' ? 'player' : 'ai';
             const localSide = getLocalSide();
             const localWon = gameMode === 'pvp' ? (winnerSide === localSide) : (winnerOwner === 'player');
@@ -25579,7 +25969,7 @@
                 // Track round stats
                 StatTracker.increment('rounds_won');
                 // Check for perfect round (full health remaining)
-                if (playerHealth === maxTowerHealth) {
+                if (playerHealth === stageMaxHealth('left')) {
                     StatTracker.increment('perfect_rounds');
                 }
 
@@ -25608,10 +25998,6 @@
                     // Track match win and commit stats
                     StatTracker.increment('matches_won');
                     StatTracker.commitMatch();
-                    // Adapt AI competence (ELO): player took the match → AI sharpens next time.
-                    if (gameMode !== 'pvp' && window.adaptAISkill) {
-                        window.adaptAISkill(true, Math.abs(playerScore - aiScore));
-                    }
                     // Show victory screen instantly
                     if (window.playVictoryCinematic) playVictoryCinematic(localWon, winnerSide); else showVictoryScreen(localWon);
                 } else {
@@ -25649,10 +26035,6 @@
                     // Track match loss and commit stats
                     StatTracker.increment('matches_lost');
                     StatTracker.commitMatch();
-                    // Adapt AI competence (ELO): player lost the match → AI eases off next time.
-                    if (gameMode !== 'pvp' && window.adaptAISkill) {
-                        window.adaptAISkill(false, Math.abs(playerScore - aiScore));
-                    }
                     // Show defeat screen instantly
                     if (window.playVictoryCinematic) playVictoryCinematic(localWon, winnerSide); else showVictoryScreen(localWon);
                 } else {
@@ -25681,7 +26063,7 @@
                     hideMessage();
 
                     // Do the step fade transition showing next stage name
-                    const prevStage = currentStage;
+                    const prevStage = stageBeforeRound;
                     doStageTransition(nextStageName, () => {
                         // Auto-start the round after transition
                         startRound();

@@ -72,7 +72,7 @@ worn dirt road flanked by hedges, lit by a dusk that never quite ends.
 | Spell | Color | Reference | Reads as |
 |---|---|---|---|
 | Fireball | `#ffa040` | `spells/fireball.gif` | fast streaking comet + trail |
-| Frostbolt | `#80d0ff` | `spells/frostbolt.gif` | cold shard, crystalline trail |
+| Chill Dill | `#80d0ff` | `spells/frostbolt.gif` | cold shard, crystalline trail |
 | Thunder | `#ffff40` | `spells/thunder.gif` | jagged sky-strike, instant |
 | Parry | team color | `spells/parry.gif` | crescent ward + deflection |
 | Juice (ultimate) | gold #f0c050 | _coming soon_ | big beam — reference art pending |

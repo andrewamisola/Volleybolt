@@ -767,6 +767,66 @@ def shade(co, tag, fr):
     return (min(1, v * (1.0 + 0.03 * warm)), min(1, v), min(1, v * (0.95 - 0.04 * warm)))
 
 
+# Baked light (multiplied into the corner colours). In the core stage the ram stands in the breach,
+# backlit by daylight pouring in from behind it (+X, above, slightly away from the camera), and the
+# game has no shadow maps -- so the shed's own shadowing is baked here: ambient occlusion (short
+# hemisphere rays: the inside of the shed, under the roof, between the wheels go dark) times a
+# shadow ray toward that light (anything the ram itself blocks from the breach goes darker still).
+BAKE_TO_LIGHT = Vector((1.0, -0.3, 0.75)).normalized()
+BAKE_AO_RAYS = 20
+BAKE_AO_DIST = 3.6      # reaches the roof from the deck: the inside of the shed reads enclosed
+BAKE_AO_MIN = 0.3        # fully enclosed -> 30% brightness
+BAKE_SHADOW = 0.55       # blocked from the breach light -> x0.55
+
+
+def bake_light(me, m, cols):
+    from mathutils.bvhtree import BVHTree
+    verts = [Vector(v) for v in m.v]
+    tree = BVHTree.FromPolygons(verts, [list(f) for f in m.f], epsilon=0.0)
+
+    def blocked(o, d, dist):
+        # The model is built from overlapping boxes, so a ray often starts INSIDE a neighbouring
+        # plank/beam. Hitting a face from behind, close by, means exactly that: step through it and go on.
+        for _ in range(6):
+            loc, nrm, _, hd = tree.ray_cast(o, d, dist)
+            if loc is None:
+                return False
+            if nrm.dot(d) < 0 or hd > 0.4:      # a front face, or a back face beyond a plank's thickness
+                return True                     # (single-sided roof sheets seen from inside): occluder
+            o = loc + d * 0.002
+            dist -= hd + 0.002
+            if dist <= 0:
+                return False
+        return False
+    rng = random.Random(4242)
+    dirs = []                                   # fixed cosine-ish hemisphere set around +Z
+    for i in range(BAKE_AO_RAYS):
+        u, v = (i + 0.5) / BAKE_AO_RAYS, rng.random()
+        r, th = math.sqrt(u), TAU * v
+        dirs.append(Vector((r * math.cos(th), r * math.sin(th), math.sqrt(max(0.0, 1 - u)))))
+    ci = 0
+    for poly_ in me.polygons:
+        n = poly_.normal.copy()
+        # Tangent frame so the hemisphere set can be rotated onto this face's normal.
+        t = n.cross(Vector((0, 0, 1)) if abs(n.z) < 0.9 else Vector((1, 0, 0))).normalized()
+        b = n.cross(t)
+        for li in poly_.loop_indices:
+            p = verts[me.loops[li].vertex_index] * 0.97 + poly_.center * 0.03   # nudge off the edge
+            o = p + n * 0.03
+            hits = 0
+            for d in dirs:
+                w = t * d.x + b * d.y + n * d.z
+                if blocked(o, w, BAKE_AO_DIST):
+                    hits += 1
+            k = 1.0 - (1.0 - BAKE_AO_MIN) * (hits / BAKE_AO_RAYS)
+            if n.dot(BAKE_TO_LIGHT) <= 0 or blocked(o, BAKE_TO_LIGHT, 40.0):
+                k *= BAKE_SHADOW
+            cols[ci * 4 + 0] *= k
+            cols[ci * 4 + 1] *= k
+            cols[ci * 4 + 2] *= k
+            ci += 1
+
+
 def to_object(name, m, mats, seed):
     nv = len(m.v)
     assert not [f for f in m.f if any(i < 0 or i >= nv for i in f)], name
@@ -788,6 +848,7 @@ def to_object(name, m, mats, seed):
             uvs += m.uv[pi][j]
             c = shade(m.v[me.loops[li].vertex_index], m.tag[pi], fr)
             cols += (c[0], c[1], c[2], 1.0)
+    bake_light(me, m, cols)
     me.polygons.foreach_set('material_index', m.mat)
     me.polygons.foreach_set('use_smooth', m.smooth)
     me.uv_layers['UVMap'].data.foreach_set('uv', uvs)

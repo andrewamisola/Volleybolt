@@ -199,6 +199,52 @@
         return true;
     }
 
+    // BEAM CLASH — both beams erupted in the same lane. The two meet and push; both channels freeze
+    // (no drain, no damage) while the players mash the parry button. Each press moves the collision
+    // point STEP toward the other side. ALL OR NOTHING: the first to shove it all the way (|clashPos| >= 1)
+    // wins and lands its beam's FULL damage (what the whole beam would have dealt) in one hit. At the
+    // MAX_T timeout it lands wherever it stands: clearly on one side = that side takes the full hit;
+    // inside the centre DRAW band = a draw, both fizzle, no damage. Both channels then end.
+    // State (on the LEFT front, snapshotted + hashed while live): clashT, clashPos.
+    const BEAM_CLASH = { STEP: 0.09, MAX_T: 5, DRAW: 0.15 };
+    function tickBeamClash(L, R, dt, ctx) {
+        if (!L || !R) return;
+        const OD = (ctx && ctx.consts && ctx.consts.overdrive) || { DURATION: 4, WINDUP: 0.6, BLOCK_TOL: 0.9, DMG_START: 0.1667 };
+        const beaming = (c) => c.juiceActive && (OD.DURATION - c.juiceTimer) >= (OD.WINDUP || 0);
+        if (L.clashT > 0) {
+            if (!beaming(L) || !beaming(R)) { L.clashT = 0; L.clashPos = 0; return; }
+            L.clashT += dt;
+            const pos = L.clashPos || 0;
+            if (Math.abs(pos) < 1 && L.clashT < BEAM_CLASH.MAX_T) return;
+            const winner = pos > BEAM_CLASH.DRAW ? L : pos < -BEAM_CLASH.DRAW ? R : null;   // centre band = draw
+            const loser = winner === L ? R : winner === R ? L : null;
+            let dmg = 0;
+            if (winner) {
+                const maxHP = (ctx.consts && typeof ctx.consts.maxTowerHealth === 'number') ? ctx.consts.maxTowerHealth : 20;
+                dmg = Math.round(OD.DMG_START * maxHP * (OD.DURATION - (OD.WINDUP || 0)));
+                loser.towerHealth = Math.max(0, (loser.towerHealth || 0) - dmg);
+            }
+            L.clashT = 0; L.clashPos = 0;
+            for (const c of [L, R]) {
+                c.juiceActive = false; c.juiceTimer = 0; c.juice = 0; c.juiceRamp = 0;
+                if (!ctx.isResimulating && ctx.deps.onJuiceEnd) ctx.deps.onJuiceEnd(c);
+            }
+            if (!ctx.isResimulating && ctx.deps.onBeamClashResolve) ctx.deps.onBeamClashResolve(winner, loser, dmg);
+            return;
+        }
+        if (beaming(L) && beaming(R) && Math.abs((L.paddleZ || 0) - (R.paddleZ || 0)) <= OD.BLOCK_TOL) {
+            L.clashT = 1e-6; L.clashPos = 0;   // live from this frame
+            if (!ctx.isResimulating && ctx.deps.onBeamClashStart) ctx.deps.onBeamClashStart();
+        }
+    }
+
+    // Q again mid-channel: end the Overdrive early. The bar is spent.
+    function simCancelJuice(combatant, ctx) {
+        if (!combatant || !combatant.juiceActive) return;
+        combatant.juiceActive = false; combatant.juiceTimer = 0; combatant.juice = 0; combatant.juiceRamp = 0;
+        if (!ctx.isResimulating && ctx.deps.onJuiceEnd) ctx.deps.onJuiceEnd(combatant);
+    }
+
     // Deterministic Overdrive channel tick — runs INSIDE the sim for caster `c` vs `opp`.
     // Drains the timer, tests lane-match block, ramps damage while connected, applies tower
     // damage. ctx.deps.* are FX-only (never gate STATE changes on isResimulating).
@@ -503,18 +549,6 @@
                             continue projLoop;
                         }
 
-                        // Juice burst: the juiced combatant auto–perfect-parries every incoming
-                        // projectile, ignoring the parry cooldown/timing window (matches SP
-                        // updateGameLogic ~12632). parryProjectile REFLECTS (does not destroy) and
-                        // plays its own parry sound, so there is no toDestroy/extra-sound here.
-                        // aimDir is passed 0 (neutral) for determinism — SP reads keys[]/AI targeting
-                        // here, which is not sim-safe. Team Overdrive lives on the FRONT carrier, so
-                        // this gate reads combatants.left regardless of which rail the arc hit.
-                        if (combatants.left && combatants.left.juiceActive) {
-                            D.parryProjectile(proj, 'player', 0);
-                            continue projLoop;
-                        }
-
                         const hitAbility = ctx.deps.getAbilityDef(proj.type);
                         if (hitAbility && hitAbility.behavior.onPaddleHit) {
                             // railKey (additive 4th arg): the SLOT whose arc actually blocked —
@@ -546,15 +580,6 @@
                             D.useShieldCharge(c);
                             D.parryProjectile(proj, 'ai');
                             if (!isResimulating) D.playSound('parry', px, 0.5);
-                            continue projLoop;
-                        }
-
-                        // Juice burst: symmetric auto–perfect-parry while juiceActive (matches SP
-                        // updateGameLogic ~12712). Reflect, don't destroy; neutral aimDir for
-                        // determinism. Team Overdrive lives on the FRONT carrier — this gate reads
-                        // combatants.right regardless of which rail the arc hit.
-                        if (combatants.right && combatants.right.juiceActive) {
-                            D.parryProjectile(proj, 'ai', 0);
                             continue projLoop;
                         }
 
@@ -611,6 +636,9 @@
         // the lateral paddle-momentum term. When stationary (moveDir 0 or sub-step) prevPaddleZ
         // tracks paddleZ → zero momentum, matching SP feel. Deterministic: both clients run this.
         combatant.prevPaddleZ = combatant.paddleZ;
+        // ROOTED while channeling Overdrive (windup + beam): the beam holds one lane, so the
+        // defender can answer it by stepping into that lane. Drop any sub-step carry too.
+        if (combatant.juiceActive) { combatant.moveAccum = 0; return; }
         if (moveDir === 0) return;
         // NOT rooted while casting: moving during a cast cancels it instead (see cancelCastOnMove,
         // run before this in simulateNetworkFrame), matching single-player feel.
@@ -716,6 +744,7 @@
         const state = pvpParryState[key];
         const combatant = combatants[key];
         if (!combatant || combatant.freezeTime > 0) return;
+        if (combatant.juiceActive) return;   // channeling Overdrive: no parry (a full commitment)
         if (!state.canParry || state.active) return;
 
         state.active = true;
@@ -842,9 +871,20 @@
         if (bi && combatants.rightBack && bi.right) { if (bi.right.parry) tryActivatePvPParry('rightBack', ctx); checkPvPParryHitsForSide('rightBack', bi.right, ctx); }
         D.syncLocalParryUI();
 
-        // Process juice activation inputs (full bar -> burst). Input-gated, deterministic.
-        if (leftInput.juice  && combatants.left)  simActivateJuice(combatants.left,  ctx);
-        if (rightInput.juice && combatants.right) simActivateJuice(combatants.right, ctx);
+        // Juice input (Q): a full bar starts the Overdrive channel; pressing it AGAIN mid-channel ends
+        // it early (the bar is spent either way). Input-gated, deterministic.
+        // During a BEAM CLASH the mash is the PARRY button (free while channeling — no parry then), and
+        // juice presses are ignored so a mashing player can't cancel by accident. Each press shoves the
+        // collision point toward the other side (clash state lives on the LEFT front: clashT > 0 while
+        // clashing, clashPos + = left ahead).
+        const clashL = combatants.left && combatants.left.clashT > 0 ? combatants.left : null;
+        if (clashL) {
+            if (leftInput.parry)  clashL.clashPos = (clashL.clashPos || 0) + BEAM_CLASH.STEP;
+            if (rightInput.parry) clashL.clashPos = (clashL.clashPos || 0) - BEAM_CLASH.STEP;
+        } else {
+            if (leftInput.juice  && combatants.left)  { if (combatants.left.juiceActive)  simCancelJuice(combatants.left, ctx);  else simActivateJuice(combatants.left,  ctx); }
+            if (rightInput.juice && combatants.right) { if (combatants.right.juiceActive) simCancelJuice(combatants.right, ctx); else simActivateJuice(combatants.right, ctx); }
+        }
 
         // Update cooldowns
         for (const c of allCombatants(combatants)) {
@@ -926,8 +966,11 @@
         // Overdrive channel (deterministic; both sides). left's opponent is right and vice-versa.
         // Doubles: fronts are the only Overdrive casters/blockers (provisional front-only rule) —
         // 1v1 pairing stands.
-        tickOverdrive(combatants.left,  combatants.right, dt, ctx);
-        tickOverdrive(combatants.right, combatants.left,  dt, ctx);
+        tickBeamClash(combatants.left, combatants.right, dt, ctx);
+        if (!(combatants.left && combatants.left.clashT > 0)) {   // a clash freezes both channels
+            tickOverdrive(combatants.left,  combatants.right, dt, ctx);
+            tickOverdrive(combatants.right, combatants.left,  dt, ctx);
+        }
 
         // Process ability inputs
         if (leftInput.fireball && combatants.left) tryNetworkCast(combatants.left, 'fireball', ctx);
