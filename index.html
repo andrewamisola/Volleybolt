@@ -20950,6 +20950,7 @@
                     casting: combatants.left ? combatants.left.casting : null,
                     castProgress: combatants.left ? combatants.left.castProgress : 0,
                     castTime: combatants.left ? combatants.left.castTime : 0,
+                    pendingManaCost: combatants.left ? (combatants.left.pendingManaCost || 0) : 0,   // debited at cast COMPLETION (completeCasting) — must roll back with casting/castProgress
                     cooldowns: combatants.left ? { ...combatants.left.cooldowns } : { fireball: 0, frostbolt: 0 },
                     juice: combatants.left ? (combatants.left.juice || 0) : 0,
                     juiceActive: combatants.left ? (combatants.left.juiceActive || false) : false,
@@ -20967,6 +20968,7 @@
                     casting: combatants.right ? combatants.right.casting : null,
                     castProgress: combatants.right ? combatants.right.castProgress : 0,
                     castTime: combatants.right ? combatants.right.castTime : 0,
+                    pendingManaCost: combatants.right ? (combatants.right.pendingManaCost || 0) : 0,
                     cooldowns: combatants.right ? { ...combatants.right.cooldowns } : { fireball: 0, frostbolt: 0 },
                     juice: combatants.right ? (combatants.right.juice || 0) : 0,
                     juiceActive: combatants.right ? (combatants.right.juiceActive || false) : false,
@@ -20989,6 +20991,7 @@
                     casting: combatants.leftBack.casting,
                     castProgress: combatants.leftBack.castProgress,
                     castTime: combatants.leftBack.castTime,
+                    pendingManaCost: combatants.leftBack.pendingManaCost || 0,
                     cooldowns: { ...combatants.leftBack.cooldowns },
                     juice: combatants.leftBack.juice || 0,
                     juiceActive: combatants.leftBack.juiceActive || false,
@@ -21006,6 +21009,7 @@
                     casting: combatants.rightBack.casting,
                     castProgress: combatants.rightBack.castProgress,
                     castTime: combatants.rightBack.castTime,
+                    pendingManaCost: combatants.rightBack.pendingManaCost || 0,
                     cooldowns: { ...combatants.rightBack.cooldowns },
                     juice: combatants.rightBack.juice || 0,
                     juiceActive: combatants.rightBack.juiceActive || false,
@@ -21094,6 +21098,7 @@
                 combatants.left.casting = state.left.casting;
                 combatants.left.castProgress = state.left.castProgress;
                 combatants.left.castTime = state.left.castTime;
+                combatants.left.pendingManaCost = state.left.pendingManaCost || 0;
                 combatants.left.cooldowns = { ...state.left.cooldowns };
                 combatants.left.juice = state.left.juice || 0;
                 combatants.left.juiceActive = state.left.juiceActive || false;
@@ -21111,6 +21116,7 @@
                 combatants.right.casting = state.right.casting;
                 combatants.right.castProgress = state.right.castProgress;
                 combatants.right.castTime = state.right.castTime;
+                combatants.right.pendingManaCost = state.right.pendingManaCost || 0;
                 combatants.right.cooldowns = { ...state.right.cooldowns };
                 combatants.right.juice = state.right.juice || 0;
                 combatants.right.juiceActive = state.right.juiceActive || false;
@@ -21131,6 +21137,7 @@
                 combatants.leftBack.casting = state.leftBack.casting;
                 combatants.leftBack.castProgress = state.leftBack.castProgress;
                 combatants.leftBack.castTime = state.leftBack.castTime;
+                combatants.leftBack.pendingManaCost = state.leftBack.pendingManaCost || 0;
                 combatants.leftBack.cooldowns = { ...state.leftBack.cooldowns };
                 combatants.leftBack.juice = state.leftBack.juice || 0;
                 combatants.leftBack.juiceActive = state.leftBack.juiceActive || false;
@@ -21149,6 +21156,7 @@
                 combatants.rightBack.casting = state.rightBack.casting;
                 combatants.rightBack.castProgress = state.rightBack.castProgress;
                 combatants.rightBack.castTime = state.rightBack.castTime;
+                combatants.rightBack.pendingManaCost = state.rightBack.pendingManaCost || 0;
                 combatants.rightBack.cooldowns = { ...state.rightBack.cooldowns };
                 combatants.rightBack.juice = state.rightBack.juice || 0;
                 combatants.rightBack.juiceActive = state.rightBack.juiceActive || false;
@@ -21251,6 +21259,9 @@
                     existing.isParried = sp.isParried;
                     existing.parriedBy = sp.parriedBy;
                     existing.bounceCount = sp.bounceCount;
+                    // hitboxRadius is a pure function of volleyCount, but only recomputed on a hit —
+                    // re-derive it so a volley on the abandoned timeline can't leave a stale (bigger) hitbox.
+                    if (existing.type === 'fireball' && window.updateFireballScale) window.updateFireballScale(existing);
                 } else {
                     // Need to create this projectile (shouldn't happen often during rollback)
                     // For now, just spawn it at the state position
@@ -21274,9 +21285,18 @@
                         if (newProj.mesh) {
                             newProj.mesh.position.y = sp.y;
                         }
+                        if (newProj.type === 'fireball' && window.updateFireballScale) window.updateFireballScale(newProj);
                     }
                 }
             }
+
+            // Re-spawned projectiles were appended at the END; restore the snapshot's array order.
+            // The sim's collision passes and hashGameState both iterate `projectiles` in order, so a
+            // reordered list folds and resolves collisions differently from the peer. (In-place sort:
+            // buildSimCtx and every other holder keep the same array reference.)
+            const orderById = {};
+            stateProjectiles.forEach((sp, i) => { orderById[sp.id] = i; });
+            projectiles.sort((a, b) => orderById[a.id] - orderById[b.id]);
         }
 
         // Get default input (no buttons pressed)
@@ -22031,7 +22051,10 @@
             getMaxMana: (side) => getMaxMana(side),
             isRooted: (c) => combatantIsRooted(c),   // vestigial: cast-rooting was replaced by cancel-on-move (sim cancelCastOnMove); kept for any legacy reader
             // FX/UI for a cast aborted by movement; the sim clears the authoritative cast state itself.
-            onCastCancelled: (c) => cancelCasting(c.side === 'left' ? 'player' : 'ai', true),
+            // Backs are skipped: cancelCasting resolves 'player'/'ai' to the FRONT (getCombatantLegacy),
+            // so a back moving mid-cast wiped its teammate's cast — on live frames only (this dep is
+            // !isResimulating-gated), which desynced online doubles whenever a rollback replayed it.
+            onCastCancelled: (c) => { if (c.position !== 'back') cancelCasting(c.side === 'left' ? 'player' : 'ai', true); },
             dealDamageToTower: (isPlayerTower, dmg, z) => dealDamageToTower(isPlayerTower, dmg, z),
             destroyProjectile: (p) => window.destroyProjectile(p),
             useShieldCharge: (c) => useShieldCharge(c),
