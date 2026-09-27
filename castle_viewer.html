@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Castle — Damage States</title>
+<style>html,body{margin:0;height:100%;background:#1a1426;overflow:hidden;font:14px monospace;color:#ddd}
+#c{width:100%;height:100%;display:block}#hud{position:absolute;left:12px;top:10px}</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">models/castle/castle.glb — states 0..3 left to right (blue), red mirror at right. ?zoom=N</div>
+<script src="https://cdn.babylonjs.com/babylon.js"></script>
+<script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+<script>
+// Dev viewer for the Blender-built castle (tools/blender/build_castle.py). Same camera as the game:
+// orthographic ArcRotate alpha=-PI/2, beta=PI/3 (30 deg above the ground, looking along +Z).
+const canvas = document.getElementById('c');
+const engine = new BABYLON.Engine(canvas, false);
+const scene = new BABYLON.Scene(engine);
+scene.clearColor = new BABYLON.Color4(0.10, 0.08, 0.15, 1);
+const zoom = parseFloat(new URLSearchParams(location.search).get('zoom') || '1');
+const cam = new BABYLON.ArcRotateCamera('cam', -Math.PI / 2, Math.PI / 3, 60, new BABYLON.Vector3(0, 5, 0), scene);
+cam.mode = BABYLON.Camera.ORTHOGRAPHIC_CAMERA;
+cam.attachControl(canvas, true);
+const fit = () => {
+  const half = 11 / zoom, aspect = engine.getRenderWidth() / engine.getRenderHeight();
+  cam.orthoTop = half; cam.orthoBottom = -half; cam.orthoLeft = -half * aspect; cam.orthoRight = half * aspect;
+};
+fit();
+new BABYLON.HemisphericLight('h', new BABYLON.Vector3(0, 1, 0), scene).intensity = 0.75;
+const sun = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(0.4, -1, 0.6), scene);
+sun.intensity = 0.9; sun.diffuse = new BABYLON.Color3(1.0, 0.92, 0.76);
+const ground = BABYLON.MeshBuilder.CreateGround('g', { width: 120, height: 30 }, scene);
+const gm = new BABYLON.StandardMaterial('gm', scene); gm.diffuseColor = new BABYLON.Color3(0.35, 0.3, 0.22);
+gm.specularColor = BABYLON.Color3.Black(); ground.material = gm;
+
+const TEAM = { blue: new BABYLON.Color3(0.35, 0.5, 1.0), red: new BABYLON.Color3(1.0, 0.42, 0.33) };
+const place = async (x, state, team, mirror) => {
+  const res = await BABYLON.SceneLoader.ImportMeshAsync('', 'models/castle/', 'castle.glb?t=' + Date.now(), scene);
+  const root = res.meshes[0];
+  root.position.x = x;
+  if (mirror) root.scaling.x *= -1;
+  res.transformNodes.concat(res.meshes).forEach(n => {
+    const m = /^castle_s(\d)$/.exec(n.name);
+    if (m) n.setEnabled(+m[1] === state);
+    if (n.name === 'castle_debris') n.setEnabled(false);
+  });
+  res.meshes.forEach(mesh => {
+    const mat = mesh.material; if (!mat) return;
+    const t = mat.clone(mat.name + '_' + team + x); mesh.material = t;
+    t.metallic = 0; t.roughness = 1; t.environmentIntensity = 0;
+    if (t.albedoTexture) t.albedoTexture.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
+    if (/_team$/.test(mat.name)) t.albedoColor = TEAM[team];
+    if (mat.name === 'M_window') t.emissiveColor = new BABYLON.Color3(0.9, 0.55, 0.2);
+  });
+};
+(async () => {
+  for (let s = 0; s < 4; s++) await place(-27 + s * 11, s, 'blue', false);
+  await place(21, 0, 'red', true);
+  await place(31, 3, 'red', true);
+})();
+engine.runRenderLoop(() => scene.render());
+window.addEventListener('resize', () => { engine.resize(); fit(); });
+</script>
+</body>
+</html>
