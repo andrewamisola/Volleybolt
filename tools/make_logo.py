@@ -5,9 +5,9 @@
 The source is black outlines on white. Light regions are labelled, then classified by nesting depth
 across the outline strokes: the background touching the border is depth 0, the letter bodies it
 touches through one stroke are depth 1 (filled), holes inside letters (the counters of D, P, ...) are
-depth 2 (transparent), and so on alternating. DUELING (and the divider) get a vertical gold gradient
-with a dark warm rim; PICKLES (regions below the divider) get a pickle-green skin (gradient, blotches,
-little warts) with a dark green rim. No shadow is baked in (the game adds a crisp offset shadow in CSS).
+depth 2 (transparent), and so on alternating. DUELING (and the divider) get a vertical lilac-to-violet
+gradient (the pickle wizard's hat purple) with a deep violet rim; PICKLES (regions below the divider) get a pickle-green skin (gradient + faint
+blotches) with a dark green rim. No shadow is baked in (the game adds a crisp offset shadow in CSS).
 """
 import sys
 from collections import deque
@@ -16,9 +16,11 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
-GOLD_TOP, GOLD_MID, GOLD_BOT = (255, 238, 170), (240, 190, 80), (178, 112, 34)
-RIM = (38, 20, 8)
-# PICKLES: pickle-skin green, light at the top to deep at the bottom, with blotches and warts.
+# DUELING (+ divider): wizard purple, the pickle wizard's hat/robe colour; lilac at the top so it
+# still reads on dark backgrounds.
+TOP_TOP, TOP_MID, TOP_BOT = (226, 206, 255), (160, 120, 236), (92, 58, 170)
+RIM = (24, 12, 44)
+# PICKLES: pickle-skin green, light at the top to deep at the bottom, with faint blotches.
 PICKLE_TOP, PICKLE_MID, PICKLE_BOT = (196, 226, 110), (122, 176, 58), (58, 104, 30)
 PICKLE_RIM = (20, 34, 10)
 SPLIT = 0.56          # letter regions whose centre sits below this fraction of the art are PICKLES
@@ -76,7 +78,7 @@ def main(src, dst):
     cy = ndimage.center_of_mass(np.ones_like(light), light, fill_ids)
     pickle_ids = [i for i, c in zip(fill_ids, cy) if c[0] > SPLIT * h]
     pickle = np.isin(light, pickle_ids)
-    gold = fill & ~pickle
+    top_word = fill & ~pickle
 
     def lerp(a, b, k):
         return np.array(a)[None, None, :] * (1 - k[..., None]) + np.array(b)[None, None, :] * k[..., None]
@@ -87,25 +89,15 @@ def main(src, dst):
         t = np.broadcast_to(np.clip((np.arange(h) - y0) / max(1, (y1 - y0)), 0, 1)[:, None], (h, w))
         return np.where((t < 0.5)[..., None], lerp(c_top, c_mid, t * 2), lerp(c_mid, c_bot, (t - 0.5) * 2))
 
-    # DUELING (+ divider): gold across its own height.
-    rgb = gradient(gold, GOLD_TOP, GOLD_MID, GOLD_BOT)
-    # PICKLES: green gradient + soft blotchy skin + raised warts (light bump, dark crescent below-right).
+    # DUELING (+ divider): purple across its own height.
+    rgb = gradient(top_word, TOP_TOP, TOP_MID, TOP_BOT)
+    # PICKLES: green gradient + a soft blotchy skin (no bumps: clean shapes read better small).
     green = gradient(pickle, PICKLE_TOP, PICKLE_MID, PICKLE_BOT)
     rng = np.random.default_rng(7)
     blotch = ndimage.gaussian_filter(rng.standard_normal((h, w)), 14)
     green = green * (1 + 0.9 * blotch / (np.abs(blotch).max() + 1e-9) * 0.12)[..., None]
-    ys, xs = np.nonzero(ndimage.binary_erosion(pickle, iterations=10))
-    yy, xx = np.mgrid[0:h, 0:w]
-    for k in rng.choice(len(ys), size=min(70, len(ys)), replace=False):
-        y, x = ys[k], xs[k]
-        r = rng.uniform(4, 8)
-        d_hi = (yy[y-12:y+13, x-12:x+13] - y) ** 2 + (xx[y-12:y+13, x-12:x+13] - x) ** 2
-        d_lo = (yy[y-12:y+13, x-12:x+13] - y - r * 0.45) ** 2 + (xx[y-12:y+13, x-12:x+13] - x - r * 0.35) ** 2
-        patch = green[y-12:y+13, x-12:x+13]
-        patch[(d_lo < r * r) & (d_hi >= (r * 0.8) ** 2)] *= 0.72        # crescent shadow under the bump
-        patch[d_hi < (r * 0.8) ** 2] = patch[d_hi < (r * 0.8) ** 2] * 1.12 + 10   # the bump catches light
     rgb = np.where(pickle[..., None], green, rgb)
-    # Rims: warm dark on the gold word, dark green around PICKLES.
+    # Rims: deep violet on DUELING, dark green around PICKLES.
     near_pickle = ndimage.binary_dilation(pickle, iterations=stroke)
     rim = np.where(near_pickle[..., None], np.array(PICKLE_RIM)[None, None, :], np.array(RIM)[None, None, :])
     rgb = np.where(ink[..., None], rim, rgb)
