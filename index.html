@@ -9160,12 +9160,6 @@
                     window.redBase.scaling.z = baseScaleZ;
                 }
 
-                // Rebuild the center-line dashes at the new depth. Function-hoisted below (defined
-                // later in this same scope) — safe to call here since this whole function only ever
-                // runs later, after the rest of initGame's synchronous body (incl. the dash builder)
-                // has executed.
-                if (window.rebuildCenterDashes) window.rebuildCenterDashes();
-
                 console.log('Stage resized for depth:', depth);
             };
 
@@ -12752,30 +12746,8 @@
             };
 
 
-            // Center line (dashed effect with multiple boxes). Built once at singles depth here;
-            // rebuildCenterDashes() (below) disposes + rebuilds at the CURRENT effective depth,
-            // called from resizeStageForMode() on every singles<->doubles transition. The rebuild
-            // uses the exact same formula (tableDepth swapped for `depth`), so at singles depth
-            // (14) it reproduces the identical dash count/positions as this initial static build.
-            const lineMat = new BABYLON.StandardMaterial("lineMat", scene);
-            lineMat.diffuseColor = new BABYLON.Color3(0.3, 0.3, 0.35);
-            lineMat.emissiveColor = new BABYLON.Color3(0.12, 0.12, 0.15);
-
-            let centerDashes = [];
-            function buildCenterDashes(depth) {
-                centerDashes.forEach(d => d.dispose());
-                centerDashes = [];
-                for (let z = -depth/2 + 0.5; z < depth/2; z += 1.2) {
-                    const dash = BABYLON.MeshBuilder.CreateBox("dash", { width: 0.15, height: 0.02, depth: 0.6 }, scene);
-                    dash.position.set(0, 0.01, z);
-                    dash.material = lineMat;
-                    centerDashes.push(dash);
-                }
-            }
-            buildCenterDashes(tableDepth);
-            window.rebuildCenterDashes = function() {
-                buildCenterDashes(window.getEffectiveTableDepth ? window.getEffectiveTableDepth() : tableDepth);
-            };
+            // (No centre line: the old dashed one sat under the road decal and barely showed, and it
+            // has no gameplay role; the HUD's zone indicator marks midfield.)
 
             // Game constants
             const paddleSpeed = 20;
