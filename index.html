@@ -20083,6 +20083,11 @@
                 try {
                     isResimulating = true;      // suppress sounds / floating text
                     netRngSeed = seed;
+                    // Pin match progress to fresh-match values: getMaxMana (the mana reset below) is
+                    // territorial on currentStage, and hashGameState mixes both scores directly — so
+                    // without this, a run after any round ended folds differently. restoreGameState
+                    // puts the live values back.
+                    currentStage = 2; playerScore = 0; aiScore = 0;
                     for (const c of [combatants.left, combatants.right]) {
                         c.mana = getMaxMana(c.side); c.manaRegen = 0; c.freezeTime = 0;
                         c.casting = null; c.castProgress = 0; c.castTime = 0;
@@ -20153,6 +20158,7 @@
                 try {
                     isResimulating = true;
                     netRngSeed = seed;
+                    currentStage = 2; playerScore = 0; aiScore = 0;   // fresh-match progress (see determinism())
                     for (const c of getAllCombatants()) {
                         c.mana = getMaxMana(c.side); c.manaRegen = 0; c.freezeTime = 0;
                         c.casting = null; c.castProgress = 0; c.castTime = 0;
