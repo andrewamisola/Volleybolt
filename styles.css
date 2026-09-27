@@ -3354,26 +3354,26 @@ body.gp-cursor-hidden * {
    dark FF9 steel boxes (they read well on white and match the in-game HUD).
    ============================================================ */
 .arcane-overlay,
-#loadingScreen { background: #f9f9f6; }   /* = the art's own background, so it has no edge */
+#loadingScreen { background: #f3f2ee; }   /* = the art's own background, so it has no edge */
 .arcane-overlay::before,
 #loadingScreen::before {
     inset: 0;
     /* KH2-style: the art sits back, faded, like the washed-out character art. The art itself is
        composed for the menu (one wizard seen from behind on the right third, left half empty), so it fills the frame. */
-    background: url('textures/menu_art.jpg?v=3') right center / cover no-repeat;
+    background: url('textures/menu_art.jpg?v=5') right center / cover no-repeat;
     opacity: 0.55;
     filter: saturate(0.85);
 }
 /* Title + splash: the art as-is, only a whisper of fade behind the menu column. */
 .arcane-overlay > .arcane-scrim,
 #loadingScreen::after {
-    background: linear-gradient(90deg, rgba(249, 249, 246, 0.9) 0%, rgba(249, 249, 246, 0.6) 26%,
-        rgba(249, 249, 246, 0) 44%);
+    background: linear-gradient(90deg, rgba(243, 242, 238, 0.9) 0%, rgba(243, 242, 238, 0.6) 26%,
+        rgba(243, 242, 238, 0) 44%);
 }
 /* Sub-screens: stronger fade so wider content (settings, career) stays clean. */
 .arcane-overlay:not(#domMenu) > .arcane-scrim {
-    background: linear-gradient(90deg, rgba(249, 249, 246, 0.97) 0%, rgba(249, 249, 246, 0.92) 38%,
-        rgba(249, 249, 246, 0.55) 56%, rgba(249, 249, 246, 0) 72%);
+    background: linear-gradient(90deg, rgba(243, 242, 238, 0.97) 0%, rgba(243, 242, 238, 0.92) 38%,
+        rgba(243, 242, 238, 0.55) 56%, rgba(243, 242, 238, 0) 72%);
 }
 
 /* Headings: deeper purple so they hold on white. */
