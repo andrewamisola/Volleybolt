@@ -100,8 +100,14 @@ def main(src, dst):
     # Rims: deep violet on DUELING, dark green around PICKLES.
     near_pickle = ndimage.binary_dilation(pickle, iterations=stroke)
     rim = np.where(near_pickle[..., None], np.array(PICKLE_RIM)[None, None, :], np.array(RIM)[None, None, :])
-    rgb = np.where(ink[..., None], rim, rgb)
-    alpha = body.astype(np.float64)
+    # Anti-aliased edges: the line art's grey levels give each pixel's stroke coverage (0 = paper,
+    # 1 = full ink). Coverage blends the fill colour into the rim colour across the stroke, and on the
+    # outside / in the counters it becomes the alpha, so every edge gets soft pixels instead of a hard
+    # on/off step (which read as jagged once the logo is scaled down in the menu).
+    cov = np.clip((235.0 - g) / 195.0, 0, 1)
+    cov = np.where(ndimage.binary_dilation(body, iterations=3), cov, 0)
+    rgb = np.where(fill[..., None], rgb * (1 - cov)[..., None] + rim * cov[..., None], rim)
+    alpha = np.maximum(fill.astype(np.float64), cov)
 
     # No baked halo: the game adds a crisp FF9-style offset shadow in CSS where it's needed.
     out_a = alpha

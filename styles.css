@@ -3385,7 +3385,7 @@ body.gp-cursor-hidden * {
 }
 .arcane-title::before { display: none; }          /* the white shimmer sweep vanishes on white */
 .menu-logo img,
-#loadingTitle img { filter: drop-shadow(0 5px 0 #000); }   /* solid black, straight down, no blur */
+#loadingTitle img { filter: drop-shadow(0 14px 0 #000); }   /* solid black, straight down, no blur */
 
 /* ---- KH menu items ---- */
 .arcane-buttons .menu-btn { padding: 6px 40px 6px 48px; }
@@ -3670,3 +3670,9 @@ body.gp-cursor-hidden * {
 /* Splash. */
 #loadingText { font-family: 'Cabin', sans-serif; font-weight: 700; font-size: 28px; letter-spacing: 0.14em; }
 #loadingTip { font-family: 'Cabin', sans-serif; font-weight: 500; font-size: 16px; letter-spacing: 0.02em; }
+
+/* Smooth image scaling on the menus + splash. .crt-screen sets image-rendering: pixelated (inherited),
+   which shrank the 1574px logo and the menu art with nearest-neighbour sampling -> stair-stepped edges.
+   The 3D canvas and the HUD keep their own crisp pixel rendering. */
+.arcane-overlay,
+#loadingScreen { image-rendering: auto; }
