@@ -8780,7 +8780,7 @@
             })();
 
             // === MATERIALS (solid colors for now - add textures later) ===
-            const floorMat = createClassicMaterial("floorMat", "textures/grass_field.png?v=3", 4, 2, new BABYLON.Color3(1.0, 0.98, 0.9));  // Tiling storybook grass ground (real material, not a baked top-down map)
+            const floorMat = createClassicMaterial("floorMat", "textures/grass_field_seamless.png?v=1", 4, 2, new BABYLON.Color3(1.0, 0.98, 0.9));  // Tiling storybook grass ground (real material, not a baked top-down map)
             floorMat.emissiveColor = new BABYLON.Color3(0.16, 0.16, 0.12);  // Gentle black-point lift
 
             // Optional bump/normal map - disabled (created outline artifacts, not D2 style)
@@ -8876,7 +8876,7 @@
             // ============================================================
             (function buildLanePath() {
                 const dirtMat = new BABYLON.StandardMaterial("lanePathMat", scene);
-                const dirtTex = new BABYLON.Texture("textures/dirt_road.png?v=3", scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
+                const dirtTex = new BABYLON.Texture("textures/dirt_road_seamless.png?v=1", scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
                 dirtTex.uScale = 6 * groundRatio;  dirtTex.vScale = 3;   // tile for surface detail
                 dirtMat.diffuseTexture = dirtTex;
                 dirtMat.specularColor = BABYLON.Color3.Black();
