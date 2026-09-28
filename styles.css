@@ -3629,12 +3629,12 @@ body.gp-cursor-hidden * {
 #lobbyDoublesView .dlobby-leave.gp-focused:not(:disabled)::before { left: 6px; width: 10px; height: 10px; }
 
 /* ---- Menu typography ----
-   Three fonts, each with one job: Ferrum (display serif) for headings + team names; Cabin bold caps
+   Three fonts, each with one job: Ferrum (display serif) for headings + team names; Manrope bold caps
    for menu items, buttons and small labels (clean like KH2's menu text, modest tracking); FF9UI
    (pixel) stays for the in-game HUD and the dark data windows / room code. */
 .arcane-buttons .menu-btn .menu-btn-label,
 #lobbyDoublesView .menu-btn .menu-btn-label {
-    font-family: 'Cabin', sans-serif;
+    font-family: 'Manrope', sans-serif;
     font-weight: 700;
     letter-spacing: 0.08em;
 }
@@ -3650,14 +3650,14 @@ body.gp-cursor-hidden * {
 .lobby-status,
 .lobby-ready-line,
 .lobby-connected-msg,
-.arcane-tagline { font-family: 'Cabin', sans-serif; font-weight: 600; letter-spacing: 0.04em; }
+.arcane-tagline { font-family: 'Manrope', sans-serif; font-weight: 600; letter-spacing: 0.04em; }
 #lobbyDoublesView .dlobby-top .lobby-prompt { font-size: 13px; letter-spacing: 0.22em; }
-#lobbyDoublesView #dLobbyStatus { font-family: 'Cabin', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 0.16em; }
+#lobbyDoublesView #dLobbyStatus { font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 0.16em; }
 #lobbyDoublesView #dFormatHint,
 #lobbyDoublesView #dStartReason,
 #lobbyDoublesView #dWaitingHost { font-size: 14px; letter-spacing: 0.02em; }
-#lobbyDoublesView .dsplit-vs { font-family: 'Cabin', sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 0.12em; }
-.arcane-overlay.visible::after { font-family: 'Cabin', sans-serif; font-weight: 600; font-size: 13px; letter-spacing: 0.16em; }
+#lobbyDoublesView .dsplit-vs { font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 0.12em; }
+.arcane-overlay.visible::after { font-family: 'Manrope', sans-serif; font-weight: 600; font-size: 13px; letter-spacing: 0.16em; }
 
 /* Team names are headings: Ferrum, like the screen titles. */
 #lobbyDoublesView .dzone-label {
@@ -3668,8 +3668,8 @@ body.gp-cursor-hidden * {
 }
 
 /* Splash. */
-#loadingText { font-family: 'Cabin', sans-serif; font-weight: 700; font-size: 28px; letter-spacing: 0.14em; }
-#loadingTip { font-family: 'Cabin', sans-serif; font-weight: 500; font-size: 16px; letter-spacing: 0.02em; }
+#loadingText { font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 28px; letter-spacing: 0.14em; }
+#loadingTip { font-family: 'Manrope', sans-serif; font-weight: 500; font-size: 16px; letter-spacing: 0.02em; }
 
 /* Smooth image scaling on the menus + splash. .crt-screen sets image-rendering: pixelated (inherited),
    which shrank the 1574px logo and the menu art with nearest-neighbour sampling -> stair-stepped edges.
@@ -3717,7 +3717,7 @@ body.gp-cursor-hidden * {
 #endScreen .end-report { padding: 14px 26px 16px; min-width: 460px; }
 #endScreen .end-report table { border-collapse: collapse; width: 100%; }
 #endScreen .end-report th {
-    font-family: 'Cabin', sans-serif;
+    font-family: 'Manrope', sans-serif;
     font-weight: 700;
     font-size: 14px;
     letter-spacing: 0.16em;
@@ -3745,7 +3745,7 @@ body.gp-cursor-hidden * {
 #endScreen .end-row-red .end-name { color: #e76e55; }
 #endScreen #victoryButtons { opacity: 1; gap: 6px; margin-left: -48px; }
 #endScreen .end-wait {
-    font-family: 'Cabin', sans-serif;
+    font-family: 'Manrope', sans-serif;
     font-weight: 700;
     font-size: 20px;
     letter-spacing: 0.14em;
@@ -3771,7 +3771,7 @@ body.gp-cursor-hidden * {
 #pauseOverlay .arcane-buttons { opacity: 1; gap: 6px; margin-left: -48px; }
 #pauseOverlay .menu-btn.menu-btn-ghost { margin-top: 18px; }
 #pauseOverlay .pause-version {
-    font-family: 'Cabin', sans-serif;
+    font-family: 'Manrope', sans-serif;
     font-weight: 600;
     font-size: 13px;
     letter-spacing: 0.16em;
