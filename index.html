@@ -24467,8 +24467,16 @@
                         if (k < 1) requestAnimationFrame(shake); else { wipe.top = '0px'; text.top = '0px'; }
                     })();
                 }
-                // settle the lines to a steady stream for the hold
-                setTimeout(() => { if (lines) { lines.alpha = 0.55; linesSpeed = 1.6; } }, 180);
+                // the lines only belong to the motion (the ends, when the silhouettes are on screen):
+                // they die off over the impact and the hold is plain black
+                if (lines) {
+                    const t0 = performance.now();
+                    (function fadeLines() {
+                        const k = Math.min(1, (performance.now() - t0) / 200);
+                        lines.alpha = 1 - k;
+                        if (k < 1) requestAnimationFrame(fadeLines); else lines.isVisible = false;
+                    })();
+                }
             }
             // The band + its pickle bookends sweep together; the leading edge glows in the PUSHING team's colour.
             // (Colourblind-aware: the right team uses the live TEAM_RIGHT colour.)
@@ -24501,7 +24509,7 @@
 
                 // Step 3: hold on the stage name, lines streaming (1.9s)
                 setTimeout(() => {
-                    if (lines) { lines.alpha = 0.95; linesSpeed = 4; }
+                    if (lines) { lines.isVisible = true; lines.alpha = 0.95; linesSpeed = 4; }
                     // Step 4: launch the band (and its title) off the far side to reveal the new area
                     animateWipe(wipe, 0, wipeOut, 420, 2.6, () => {
                         linesOn = false;
