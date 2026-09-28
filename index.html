@@ -5879,19 +5879,11 @@
                 transitionWipe.addControl(img);
                 return img;
             };
-            const mkEdge = (name) => {
-                const r = new BABYLON.GUI.Rectangle(name);
-                r.width = '6px'; r.height = '100%'; r.thickness = 0;
-                r.isVisible = false; r.isHitTestVisible = false;
-                r.zIndex = 901;
-                transitionWipe.addControl(r);
-                return r;
-            };
-            const wipeParts = { front: mkBookend('wipeFront'), back: mkBookend('wipeBack'),
-                                frontEdge: mkEdge('wipeFrontEdge'), backEdge: mkEdge('wipeBackEdge') };
-            // Silhouette halves, rimmed + glowing in a team colour, built once per (direction, colours).
+            // Silhouette halves, rimmed + glowing in a team colour. All four variants (front/back x direction)
+            // are built ONCE when the silhouette loads, each on its own always-ready Image control, so a
+            // transition only moves and shows them: nothing is generated or decoded mid-wipe (that was a
+            // first-use hitch of ~2 frames plus a late pop-in).
             const silImg = new Image();
-            silImg.src = 'textures/pickle_run_silhouette.png?v=1';
             const SIL_CUT = 0.604;          // split point = the silhouette's horizontal mass centre
             const halfCache = {};
             const makeHalf = (front, faceRight, color) => {
@@ -5923,8 +5915,31 @@
                 out.getContext('2d').drawImage(full, x0, 0, w, H, 0, 0, w, H);
                 return (halfCache[key] = { url: out.toDataURL('image/png'), aspect: w / H });
             };
+            window.wipeTeamColors = () => {
+                const TRc = window.TEAM_RIGHT;
+                return { blue: '#3d8bff',
+                         red: TRc ? ('rgb(' + Math.round(TRc.r * 255) + ',' + Math.round(TRc.g * 255) + ',' + Math.round(TRc.b * 255) + ')') : '#ff5540' };
+            };
+            const variants = {};   // 'RF' | 'RB' | 'LF' | 'LB' -> { ctl, aspect, color }
+            const ensureVariant = (movingRight, front, color) => {
+                const key = (movingRight ? 'R' : 'L') + (front ? 'F' : 'B');
+                const want = front ? color : null;              // only the leading (front) half is rimmed
+                let v = variants[key];
+                if (!v) v = variants[key] = { ctl: mkBookend('wipe' + key), aspect: 0, color: undefined };
+                if (!v.aspect || v.color !== want) {
+                    const h = makeHalf(front, movingRight, want);
+                    v.ctl.source = h.url; v.aspect = h.aspect; v.color = want;
+                }
+                return v;
+            };
+            silImg.onload = () => {
+                const c = window.wipeTeamColors();
+                ensureVariant(true, true, c.blue); ensureVariant(true, false, null);     // Blue pushing -> right
+                ensureVariant(false, true, c.red); ensureVariant(false, false, null);    // Red pushing  -> left
+            };
+            silImg.src = 'textures/pickle_run_silhouette.png?v=1';
             // Dress the band for one wipe. movingRight = the push goes toward Red (the band sweeps left->right).
-            // The silhouette is scaled well past screen height so the band's two ends ARE the pickle — one
+            // The silhouette is scaled well past screen height so the band's two ends ARE the pickle: one
             // continuous black shape, no seam. Only the LEADING edge (the front half, facing the direction of
             // travel) is rimmed, in the pushing team's colour; the trailing half (the cape) is plain black.
             // Returns the extra screen % each end needs so the pickle starts and ends fully off-screen.
@@ -5932,9 +5947,10 @@
                 if (!silImg.complete || !silImg.naturalWidth) return { lead: 0, trail: 0 };
                 const sz = guiTexture.getSize();
                 const H_FRAC = 1.5;                                              // bookend height vs the screen
-                const place = (ctl, half, side) => {
-                    const pct = half.aspect * H_FRAC * (sz.height / sz.width) * 100;   // its width, % of screen width
-                    ctl.source = half.url;
+                for (const k in variants) variants[k].ctl.isVisible = false;
+                const place = (v, side) => {
+                    const ctl = v.ctl;
+                    const pct = v.aspect * H_FRAC * (sz.height / sz.width) * 100;   // its width, % of screen width
                     ctl.height = (H_FRAC * 100) + '%';
                     ctl.width = pct.toFixed(3) + '%';
                     ctl.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
@@ -5946,14 +5962,12 @@
                     ctl.isVisible = true;
                     return pct;
                 };
-                wipeParts.frontEdge.isVisible = false;
-                wipeParts.backEdge.isVisible = false;
-                const lead = place(wipeParts.front, makeHalf(true, movingRight, leadColor), movingRight ? 'right' : 'left');
-                const trail = place(wipeParts.back, makeHalf(false, movingRight, null), movingRight ? 'left' : 'right');
+                const lead = place(ensureVariant(movingRight, true, leadColor), movingRight ? 'right' : 'left');
+                const trail = place(ensureVariant(movingRight, false, null), movingRight ? 'left' : 'right');
                 return { lead, trail };
             };
             window.clearWipeBookends = () => {
-                for (const k in wipeParts) wipeParts[k].isVisible = false;
+                for (const k in variants) variants[k].ctl.isVisible = false;
                 transitionWipe.left = '0%';
             };
             window.guiElements.transitionWipe = transitionWipe;
@@ -24351,12 +24365,14 @@
             // Directional wipe (screen %): pushing toward Red, the black sweeps in from the LEFT and off to
             // the right — the push carries it toward the enemy end; toward Blue, the reverse.
             // overlay._sliding keeps the stage dressing from swapping until it fully covers.
-            function animateWipe(element, fromPct, toPct, duration, onComplete) {
+            // Snappy, Persona-style motion: the band slams in fast and settles (ease-out), then launches out
+            // (ease-in). (An ease-in-out read sluggish at both ends and smeared in the middle.)
+            function animateWipe(element, fromPct, toPct, duration, onComplete, easeIn) {
                 const startTime = performance.now();
                 element._sliding = true; overlay._sliding = true;
                 function update() {
                     const t = Math.min((performance.now() - startTime) / duration, 1);
-                    const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;   // ease in-out
+                    const e = easeIn ? t * t * t : 1 - Math.pow(1 - t, 3);
                     element.left = (fromPct + (toPct - fromPct) * e).toFixed(2) + '%';
                     if (t < 1) requestAnimationFrame(update);
                     else { element._sliding = false; overlay._sliding = false; if (onComplete) onComplete(); }
@@ -24366,11 +24382,9 @@
             // The band + its pickle bookends sweep together; the leading edge glows in the PUSHING team's colour.
             // (Colourblind-aware: the right team uses the live TEAM_RIGHT colour.)
             const wipe = window.guiElements.transitionWipe || overlay;
-            const blueCol = '#3d8bff';
-            const TRc = window.TEAM_RIGHT;
-            const redCol = TRc ? ('rgb(' + Math.round(TRc.r * 255) + ',' + Math.round(TRc.g * 255) + ',' + Math.round(TRc.b * 255) + ')') : '#ff5540';
+            const wc = window.wipeTeamColors ? window.wipeTeamColors() : { blue: '#3d8bff', red: '#ff5540' };
             const ends = window.setupWipeBookends
-                ? window.setupWipeBookends(movingRight, movingRight ? blueCol : redCol)
+                ? window.setupWipeBookends(movingRight, movingRight ? wc.blue : wc.red)
                 : { lead: 0, trail: 0 };
             const wipeIn = movingRight ? -(100 + ends.lead) : (100 + ends.lead);
             const wipeOut = movingRight ? (100 + ends.trail) : -(100 + ends.trail);
@@ -24379,7 +24393,7 @@
             wipe.left = wipeIn + '%';
 
             // Step 1: Wipe the black across (450ms)
-            animateWipe(wipe, wipeIn, 0, 520, () => {
+            animateWipe(wipe, wipeIn, 0, 420, () => {
                 // Step 2: Reset round while black
                 resetRound();
                 // resetRound clears the flag; keep inputs blocked
@@ -24401,7 +24415,7 @@
                             text.text = "";
 
                             // Step 6: Wipe the black off the far side to reveal the new area (550ms)
-                            animateWipe(wipe, 0, wipeOut, 620, () => {
+                            animateWipe(wipe, 0, wipeOut, 460, () => {
                                 // Hide overlay (reset for the other fades that reuse it), keep title visible at center
                                 overlay.isVisible = false;
                                 overlay.alpha = 0;
@@ -24424,7 +24438,7 @@
                                     // Unlock inputs after the transition and callback complete
                                     roundTransitioning = false;
                                 }, 1500);
-                            });
+                            }, true);   // ease-in: the band launches out
                         });
                     }, 2000);
                 });
