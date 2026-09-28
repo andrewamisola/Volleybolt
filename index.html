@@ -24445,18 +24445,21 @@
             // Anime/Persona motion: the band RAMPS UP and slams in (accelerating to a hard stop -> impact frame),
             // then launches out accelerating. The stage title is anchored to the band's middle and rides with it.
             const wipe = window.guiElements.transitionWipe || overlay;
-            function animateWipe(element, fromPct, toPct, duration, power, onComplete) {
+            // v0 = starting speed as a share of the move: 0 = pure ramp-up from rest (fine for the entry, whose
+            // slow start is off-screen); the exit starts IN view, where a from-rest creep read as a hiccup
+            // (~100ms barely moving, then a lurch), so it leaves with a kick and still accelerates hard.
+            function animateWipe(element, fromPct, toPct, duration, power, onComplete, v0 = 0) {
                 const startTime = performance.now();
                 let blurLvl = 0;
                 element._sliding = true; overlay._sliding = true;
                 function update() {
                     const t = Math.min((performance.now() - startTime) / duration, 1);
-                    const e = Math.pow(t, power);                           // accelerating (ramp-up)
+                    const e = v0 * t + (1 - v0) * Math.pow(t, power);       // accelerating (ramp-up)
                     element.left = (fromPct + (toPct - fromPct) * e).toFixed(2) + '%';
                     text.left = element.left;                               // the title rides the band
                     // motion blur follows the speed (d/dt of t^p, normalised to its peak): sharp when slow and
                     // at the slam, smeared at full tilt
-                    const v = Math.pow(t, power - 1);
+                    const v = (v0 + (1 - v0) * power * Math.pow(t, power - 1)) / (v0 + (1 - v0) * power);
                     const lvl = (t >= 1 || window._reduceMotion) ? 0 : v > 0.6 ? 2 : v > 0.25 ? 1 : 0;
                     if (lvl !== blurLvl && window.setWipeBlur) { blurLvl = lvl; window.setWipeBlur(lvl); }
                     if (t < 1) requestAnimationFrame(update);
@@ -24512,7 +24515,7 @@
                 // Step 3: hold on the stage name, lines streaming (1.9s)
                 setTimeout(() => {
                     // Step 4: launch the band (and its title) off the far side to reveal the new area
-                    animateWipe(wipe, 0, wipeOut, 420, 2.6, () => {
+                    animateWipe(wipe, 0, wipeOut, 400, 3, () => {
                         // Hide overlay (reset for the other fades that reuse it) and park the title
                         overlay.isVisible = false;
                         overlay.alpha = 0;
@@ -24536,7 +24539,7 @@
                             // Unlock inputs after the transition and callback complete
                             roundTransitioning = false;
                         }, 1500);
-                    });
+                    }, 0.25);                                               // leave with a kick, no creep
                 }, 1900);
             });
         }
