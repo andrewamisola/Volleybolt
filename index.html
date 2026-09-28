@@ -2482,17 +2482,15 @@
                         // legacy 3-arg caller.)
                         const c = ctx.combatants[railKey || side] || ctx.combatants[side];
                         c.freezeTime = ctx.abilities.frostbolt.freezeDuration;
-                        // Frostbolt landing during the WINDUP (before the beam erupts) cancels the channel entirely.
-                        // After eruption, the freeze lands but only PINS the beam's aim — the frozen paddle can't
-                        // move, so tickOverdrive keeps firing at the frozen Z, but the channel continues.
-                        // (Boundary note: tickOverdrive drains the timer BEFORE this projectile-loop code runs, so
-                        // a frostbolt arriving on the exact eruption frame is judged post-drain = beaming ->
-                        // freeze lands, channel continues. Deterministic, one frame, same on both peers.)
+                        // Chill Dill is THE counter to Overdrive: freezing a channeling caster ends the channel
+                        // outright, at any point — charge-up or beam (owner, 2026-09-28; it used to cancel only
+                        // during the windup, and after eruption merely pinned the beam's aim). The bar is spent.
+                        // A frozen caster in a beam clash drops it too (tickBeamClash sees them stop beaming).
                         // Doubles note: this check is freeze-ADJACENT (the cancel is caused by the
                         // channeler being frozen), so it correctly follows the blocker — team juice
                         // lives on the FRONT carrier, so a frozen BACK never cancels the channel
                         // (backs always have juiceActive false).
-                        if (c.juiceActive && (OVERDRIVE.DURATION - c.juiceTimer) < OVERDRIVE.WINDUP) {
+                        if (c.juiceActive) {
                             c.juiceActive = false; c.juiceTimer = 0; c.juice = 0; c.juiceRamp = 0;
                             if (ctx.deps && !ctx.isResimulating && ctx.deps.onJuiceEnd) ctx.deps.onJuiceEnd(c);
                         }
@@ -9984,6 +9982,14 @@
                 aiFillMat.diffuseColor = new BABYLON.Color3(0.9, 0.2, 0.15);
                 aiFillMat.emissiveColor = new BABYLON.Color3(0.6, 0.1, 0.05);
                 aiFillMat.specularColor = BABYLON.Color3.Black();
+                // THE "BLANK CAST BAR" BUG (July playtest + 2026-09-28): the fill's front face sits only 0.005
+                // in front of the dark track's, but the scene renders into the ps1Dither post-process target
+                // whose depth buffer can't resolve that over the camera's 1..10000 range — the two faces
+                // z-fought and the TRACK usually won, so the bar looked empty while the cast ran fine.
+                // Measured with screen-pixel reads: 6/7 casts blank before, 0/10 after. A polygon depth
+                // offset makes the fill always win, whatever the depth precision.
+                playerFillMat.zOffset = -4;
+                aiFillMat.zOffset = -4;
 
                 // === PLAYER CAST BAR ===
                 player3DCastBar = BABYLON.MeshBuilder.CreateBox("player3DCastBar", {
@@ -11919,6 +11925,26 @@
             ];
             let dressStage = null;
             window.getStructInfo = (side) => { const st = activeStruct(side); return st ? { kind: st.kind, shown: st.shown } : null; };
+            // HUD HP labels name the structure you're actually hitting (owner, 2026-09-28: "not everything is
+            // a tower anymore"): Castle / Gatehouse / Catapult / Ram / Pickle Jar, prefixed as before (your
+            // name on your side, Blue / Red otherwise). Follows the DISPLAYED structure (activeStruct), so it
+            // swaps with the scenery during the stage wipe, not early. Cheap: writes only on change.
+            const STRUCT_LABEL = { castle: 'Castle', gatehouse: 'Gatehouse', catapult: 'Catapult', ram: 'Ram', core: 'Pickle Jar' };
+            const hudLabelPrefix = (side) => {
+                const c = combatants[side];
+                const mine = (typeof gameMode !== 'undefined' && gameMode === 'pvp') ? !!(c && c.isLocalPlayer) : side === 'left';
+                return mine && window.getPlayerName ? window.getPlayerName() : (side === 'left' ? 'Blue' : 'Red');
+            };
+            scene.onBeforeRenderObservable.add(() => {
+                const g = window.guiElements;
+                if (!g) return;
+                for (const [side, lbl] of [['left', g.playerHealthLabel], ['right', g.aiHealthLabel]]) {
+                    if (!lbl) continue;
+                    const info = window.getStructInfo(side);
+                    const text = hudLabelPrefix(side) + ' ' + (STRUCT_LABEL[info && info.kind] || 'Castle');
+                    if (lbl.text !== text) lbl.text = text;
+                }
+            });
             // The ram's meshes (all of them, and the currently shown damage state's) for the core lighting.
             window.getRamParts = (side) => window.getStructParts(side, 'ram');
             window.getStructParts = (side, kind) => {
@@ -14640,25 +14666,25 @@
                         if (side === 'left') {
                             const domLabel = document.getElementById('castBarLabel');
                             const domBar   = document.getElementById('castBarProgress');
-                            if (domLabel) domLabel.textContent = 'Overdrive';
+                            if (domLabel) domLabel.textContent = 'Juice';
                             if (domBar)   domBar.value = prog * 100;
                             if (window.guiElements) {
-                                if (window.guiElements.playerCastLabel) window.guiElements.playerCastLabel.text = 'Overdrive';
+                                if (window.guiElements.playerCastLabel) window.guiElements.playerCastLabel.text = 'Juice';
                                 if (window.guiElements.playerCastFill)  window.guiElements.playerCastFill.width = (prog * 100) + '%';
                                 const htmlLabel = document.getElementById('playerCastLabelHtml');
-                                if (htmlLabel) { htmlLabel.textContent = 'Overdrive'; htmlLabel.classList.add('visible'); }
+                                if (htmlLabel) { htmlLabel.textContent = 'Juice'; htmlLabel.classList.add('visible'); }
                             }
                             showCastBar(true);
                         } else {
                             const domLabel = document.getElementById('aiCastBarLabel');
                             const domBar   = document.getElementById('aiCastBarProgress');
-                            if (domLabel) domLabel.textContent = 'Overdrive';
+                            if (domLabel) domLabel.textContent = 'Juice';
                             if (domBar)   domBar.value = prog * 100;
                             if (window.guiElements) {
-                                if (window.guiElements.aiCastLabel) window.guiElements.aiCastLabel.text = 'Overdrive';
+                                if (window.guiElements.aiCastLabel) window.guiElements.aiCastLabel.text = 'Juice';
                                 if (window.guiElements.aiCastFill)  window.guiElements.aiCastFill.width = (prog * 100) + '%';
                                 const htmlLabel = document.getElementById('aiCastLabelHtml');
-                                if (htmlLabel) { htmlLabel.textContent = 'Overdrive'; htmlLabel.classList.add('visible'); }
+                                if (htmlLabel) { htmlLabel.textContent = 'Juice'; htmlLabel.classList.add('visible'); }
                             }
                             showAICastBar(true);
                         }
@@ -14696,6 +14722,36 @@
                     const TR = window.TEAM_RIGHT || _BEAM_TR_FALLBACK;
                     BC.rightMid.set(TR.r, TR.g, TR.b);
                     BC.rightGlow.set(TR.r * 0.66, TR.g * 0.15, TR.b * 0.04);
+
+                    // ---- Chill Dill piercing a beam: the counter must READ. A Chill Dill inside a live beam's lane
+                    // (beams don't stop it — sim.js only vaporizes fireballs) is lifted to the top render group so
+                    // the additive beam can't wash it out, and throws icy sparks as it cuts through. ----
+                    {
+                        const _nowP = performance.now();
+                        for (const p of projectiles) {
+                            if (p.type !== 'frostbolt' || !p.mesh || p.mesh.isDisposed()) continue;
+                            let inBeam = false;
+                            for (const bc of [leftC, rightC]) {
+                                if (bc && bc.juiceActive && ((OD.DURATION - (bc.juiceTimer || 0)) >= OD.WINDUP)
+                                    // anything that can still reach the caster's shield (band spans ±BAND_LEN/2) is
+                                    // travelling through the beam's glow on its way in
+                                    && Math.abs((p.z || 0) - (bc.paddleZ || 0)) <= BLOCK_ARC.BAND_LEN * 0.5 + 0.3) { inBeam = true; break; }
+                            }
+                            const g = inBeam ? 3 : PROJECTILE_RENDER_GROUP;
+                            if (p._rg !== g) {
+                                p._rg = g;
+                                p.mesh.renderingGroupId = g;
+                                for (const m of p.mesh.getChildMeshes(false)) m.renderingGroupId = g;
+                                // ...and swell it 1.6x while it's inside the beam, so the small bolt reads against it.
+                                if (!p._baseScale) p._baseScale = p.mesh.scaling.clone();
+                                p.mesh.scaling.copyFrom(inBeam ? p._baseScale.scale(1.6) : p._baseScale);
+                            }
+                            if (inBeam && !window._reduceMotion && window.createImpactFlash && (_nowP - (p._pierceFx || 0)) > 90) {
+                                p._pierceFx = _nowP;
+                                window.createImpactFlash(p.mesh.position.clone(), new BABYLON.Color3(0.55, 0.85, 1.0), 0.9);
+                            }
+                        }
+                    }
 
                     // ---- CLASH detection (both past windup AND mutually within BLOCK_TOL) ----
                     // Mirrors the sim's own block test; reads paddleZ from combatants (sim-authoritative).
@@ -14942,7 +14998,9 @@
                         const endpointX = _clashActive
                             ? _clashMidX                                                // clash: both beams converge at midpoint
                             : blocked
-                                ? (oppPad ? oppPad.position.x : muzzleX + dir * 0.5)  // short: stops at blocker
+                                // short: stops ON the blocker's shield face (band centre paddleX - dir·(FWD+R), plus
+                                // half its thickness toward the caster) — not the paddle centre behind it
+                                ? (oppPad ? oppPad.position.x - dir * (BLOCK_ARC.FWD + BLOCK_ARC.R + BLOCK_ARC.BAND_W * 0.5) : muzzleX + dir * 0.5)
                                 : (dir > 0 ? BEAM_GOAL_X : -BEAM_GOAL_X);             // full: opponent gate line
 
                         const fullLength = Math.abs(endpointX - muzzleX);
@@ -15129,13 +15187,15 @@
                                         // Positional jitter on shield VISUAL (barrier obs applies it this frame)
                                         _blocker.beamJitX = (Math.random() * 2 - 1) * 0.07;
                                         _blocker.beamJitZ = (Math.random() * 2 - 1) * 0.04;
-                                        // Perpendicular spark spray (throttled ~8Hz — brightened)
-                                        if ((_nowMs - T4.lastBlockSparkTime) > 80 && window.createImpactFlash) {
+                                        // Contact splash where the beam meets the shield face (endpointX, in the beam's own
+                                        // lane): the beam's colour, alternating with a white-hot core, ~14Hz.
+                                        if ((_nowMs - T4.lastBlockSparkTime) > 70 && window.createImpactFlash) {
                                             T4.lastBlockSparkTime = _nowMs;
-                                            const _bkCol = sd.isLeft ? BC.rightMid : BC.leftMid;
+                                            T4.blockSparkFlip = !T4.blockSparkFlip;
                                             window.createImpactFlash(
-                                                new BABYLON.Vector3(_blocker.pad.position.x, 0.5, _blocker.pad.position.z),
-                                                _bkCol.clone(), 0.7);
+                                                new BABYLON.Vector3(endpointX, 0.55, _casterZ),
+                                                T4.blockSparkFlip ? midCol.clone() : new BABYLON.Color3(1, 0.97, 0.9),
+                                                T4.blockSparkFlip ? 1.5 : 1.0);
                                         }
                                     } else {
                                         // Reduce Motion: steady bright shield glow instead of chromatic/jitter
@@ -15360,6 +15420,7 @@
                                     _cp.box.widthInPixels = w + 8; _cp.cap.widthInPixels = w; _cp.box.children[0].widthInPixels = w;
                                 }
                                 _cp.anchor.position.set(_clashMidX, 0.6, _clashAvgZ);
+                                window._lastClashX = _clashMidX; window._lastClashZ = _clashAvgZ;   // for the resolve payoff
                                 // ~4 presses a second: quick press down, release, rest.
                                 const ph = (_clNowMs % 250) / 250;
                                 const down = window._reduceMotion ? 0 : (ph < 0.3 ? ph / 0.3 : ph < 0.55 ? 1 - (ph - 0.3) / 0.25 : 0);
@@ -23331,15 +23392,51 @@
                 if (window.logNeutral) window.logNeutral('Beam clash!');
                 if (window.ToneSFX && ToneSFX.boom) try { ToneSFX.boom(); } catch (e) {}
             },
+            // Clash won: an unmissable two-beat payoff (presentation only — the damage already landed in the
+            // sim). 1) the collision point bursts white-hot with the fireball explosion; 2) a chain of blasts in
+            // the winner's colour races down the lane and detonates on the loser's tower (burn mark, big
+            // shake, explosion + deep boom, damage number).
             onBeamClashResolve: (winner, loser, dmg) => {
-                if (!winner && window.logNeutral) window.logNeutral('Clash draw! Both beams fizzle.');
-                if (winner && window.showOverdriveHitFX) window.showOverdriveHitFX(winner, loser, dmg);
-                if (winner && window.logCombat && window.combatLine) {
-                    const blue = winner.side === 'left';
-                    window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' wins the clash! ' + dmg + ' DMG!'));
+                const cx = (typeof window._lastClashX === 'number') ? window._lastClashX : 0;
+                const cz = (typeof window._lastClashZ === 'number') ? window._lastClashZ : 0;
+                const hit = (p, col, size) => { if (window.createImpactFlash) try { createImpactFlash(p, col, size); } catch (e) {} };
+                if (!winner) {
+                    if (window.logNeutral) window.logNeutral('Clash draw! Both beams fizzle.');
+                    hit(new BABYLON.Vector3(cx, 0.8, cz), new BABYLON.Color3(0.8, 0.6, 1), 3.5);
+                    playSound('cancel', cx, 0.9);
+                    return;
                 }
-                if (window.ToneSFX && ToneSFX.boom) try { ToneSFX.boom(); } catch (e) {}
-                if (window.createImpactFlash && loser && loser.paddle) try { createImpactFlash(loser.paddle.position.clone(), new BABYLON.Color3(1, 0.9, 0.5), 2.2); } catch (e) {}
+                const blue = winner.side === 'left';
+                const col = blue ? new BABYLON.Color3(0.35, 0.62, 1.0) : new BABYLON.Color3(1.0, 0.42, 0.3);
+                const white = new BABYLON.Color3(1, 0.95, 0.85);
+                // Beat 1: the collision point bursts.
+                hit(new BABYLON.Vector3(cx, 0.9, cz), white, 5.5);
+                hit(new BABYLON.Vector3(cx, 0.9, cz), col, 4);
+                playSound('gateDamage', cx, 1);
+                if (window.showCombatTextAt) try { showCombatTextAt(new BABYLON.Vector3(cx, 1.5, cz), 'Clash Won!', 'cancel'); } catch (e) {}
+                if (window.logCombat && window.combatLine) window.logCombat(blue ? 'blue' : 'red', window.combatLine(blue, ' wins the clash! ' + dmg + ' DMG!'));
+                if (window.screenShake && !window._reduceMotion) window.screenShake(0.35, 0.2);
+                // Beat 2: blasts race down the lane to the loser's tower, then it detonates.
+                const gateX = loser && loser.side === 'left' ? -13.9 : 13.9;
+                const STEPS = 6, STEP_MS = 55;
+                for (let i = 1; i <= STEPS; i++) {
+                    setTimeout(() => {
+                        const t = i / STEPS;
+                        hit(new BABYLON.Vector3(cx + (gateX - cx) * t, 0.8, cz), col, 2.2 + t * 2);
+                    }, i * STEP_MS);
+                }
+                setTimeout(() => {
+                    const gp = new BABYLON.Vector3(gateX, 1.0, cz);
+                    hit(gp, white, 5);
+                    hit(gp, col, 7.5);
+                    setTimeout(() => hit(new BABYLON.Vector3(gateX, 2.2, cz + 1.2), col, 4.5), 90);
+                    setTimeout(() => hit(new BABYLON.Vector3(gateX, 1.4, cz - 1.4), col, 4), 170);
+                    if (window.createImpactDecal) try { createImpactDecal({ x: gateX, z: cz }, 'burn'); } catch (e) {}
+                    playSound('gateDamage', gateX, 1);
+                    if (window.ToneSFX && ToneSFX.boom) try { ToneSFX.boom(); } catch (e) {}
+                    if (window.screenShake && !window._reduceMotion) window.screenShake(0.7, 0.45);
+                    if (window.showOverdriveHitFX) try { window.showOverdriveHitFX(winner, loser, dmg); } catch (e) {}
+                }, (STEPS + 1) * STEP_MS);
             },
             // Beam vaporized a fireball: the standard Cancel! treatment (same as proj-vs-proj)
             onBeamVaporize: (proj) => {
