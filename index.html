@@ -11927,7 +11927,7 @@
             // a tower anymore"): Castle / Gatehouse / Catapult / Ram / Pickle Jar, prefixed as before (your
             // name on your side, Blue / Red otherwise). Follows the DISPLAYED structure (activeStruct), so it
             // swaps with the scenery during the stage wipe, not early. Cheap: writes only on change.
-            const STRUCT_LABEL = { castle: 'Tower', gatehouse: 'Gatehouse', catapult: 'Catapult', ram: 'Ram', core: 'Pickle Jar' };   // midfield castles read as the classic 'Tower'
+            const STRUCT_LABEL = { castle: 'Tower', gatehouse: 'Gate', catapult: 'Catapult', ram: 'Ram', core: 'Pickle Jar' };   // midfield castles read as the classic 'Tower'
             const hudLabelPrefix = (side) => {
                 const c = combatants[side];
                 const mine = (typeof gameMode !== 'undefined' && gameMode === 'pvp') ? !!(c && c.isLocalPlayer) : side === 'left';
