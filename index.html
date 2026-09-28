@@ -917,6 +917,25 @@
         const MAX_FRAME_TIME = 0.1;     // Cap renderDt to 100ms
         let gameAccumulator = 0;
 
+        // PRESENTATION CLOCK: one tick per fixed 60Hz step of stepFixedSim, for the between-round sequence
+        // (results pause, stage wipe, hold, prep). Timed in FRAMES, not wall-clock ms: every machine
+        // shows the same frame counts, and a hitch (a stage rebuild, a shader compile) advances it at most
+        // MAX_STEPS_PER_FRAME ticks, so a slow load can't eat a hold. It stops with the sim (pause, menu).
+        // presNow() adds the accumulator fraction so on-screen motion interpolates between ticks.
+        let presFrame = 0;
+        const presTimers = [];                  // { at, fn }, sorted by `at` (FIFO within a frame)
+        function presTick() {
+            presFrame++;
+            while (presTimers.length && presTimers[0].at <= presFrame) presTimers.shift().fn();
+        }
+        function afterFrames(n, fn) {
+            const t = { at: presFrame + Math.max(1, Math.round(n)), fn };
+            let i = presTimers.length;
+            while (i > 0 && presTimers[i - 1].at > t.at) i--;
+            presTimers.splice(i, 0, t);
+        }
+        function presNow() { return presFrame + gameAccumulator / FIXED_DT; }
+
         // Distance-based trail sampling (FPS-independent trails)
         const TRAIL_SAMPLE_SPACING = 0.2;  // Distance between trail samples
 
@@ -16731,6 +16750,9 @@
                 // The siege catapult (territory stages) sits on the same soft blob.
                 const catShadow = BABYLON.MeshBuilder.CreateGround('catapultShadow', { width: 1, height: 1 }, scene);
                 catShadow.material = ramShMat.clone('catapultShadowMat');
+                // share the blob texture: clone() deep-copied the DynamicTexture into a blank one that is never
+                // drawn, so it never reported ready and Babylon never drew this shadow at all
+                catShadow.material.diffuseTexture = ramShTex;
                 catShadow.material.alpha = 0.55;
                 catShadow.renderingGroupId = 1; catShadow.alphaIndex = 2; catShadow.isPickable = false; catShadow.setEnabled(false);
                 let catPlaced = null;
@@ -17484,6 +17506,7 @@
                     runSinglePlayerFrame(FIXED_DT);   // Always exactly 1/60s
                     if (window.updateJuice) window.updateJuice(FIXED_DT);   // drive the juice aura + white-hot tint
                     gameAccumulator -= FIXED_DT;
+                    presTick();                       // between-round presentation timeline (frame-counted)
                     steps++;
                 }
                 if (steps >= MAX_STEPS_PER_FRAME) gameAccumulator = 0;  // drain excess, accept time loss
@@ -24223,6 +24246,8 @@
         }
 
         function resetGame() {
+            presTimers.length = 0;              // an abandoned stage transition's frames never fire into this match
+            if (window.clearWipeBookends) window.clearWipeBookends();
             playerScore = 0;
             aiScore = 0;
             gameOver = false;
@@ -24445,25 +24470,35 @@
             // Anime/Persona motion: the band RAMPS UP and slams in (accelerating to a hard stop -> impact frame),
             // then launches out accelerating. The stage title is anchored to the band's middle and rides with it.
             const wipe = window.guiElements.transitionWipe || overlay;
+            // Frame timeline (60Hz presentation ticks; see presTick). ~0.38s in, a 2.4s hold on the slate (after the reset), 0.4s out,
+            // 1.5s of the new area before the serve.
+            const WIPE_IN_F = 23, HOLD_F = 144, WIPE_OUT_F = 24, PREP_F = 90;
+            const READY_WAIT_MAX_F = 60;            // extra hold (at most) if the new stage is still compiling
             // v0 = starting speed as a share of the move: 0 = pure ramp-up from rest (fine for the entry, whose
             // slow start is off-screen); the exit starts IN view, where a from-rest creep read as a hiccup
             // (~100ms barely moving, then a lurch), so it leaves with a kick and still accelerates hard.
-            function animateWipe(element, fromPct, toPct, duration, power, onComplete, v0 = 0) {
-                const startTime = performance.now();
+            // Driven per rendered frame from the presentation clock (interpolated), so the motion is smooth
+            // at any refresh rate while its length is a fixed number of frames.
+            function animateWipe(element, fromPct, toPct, frames, power, onComplete, v0 = 0) {
+                const start = presNow();
                 let blurLvl = 0;
                 element._sliding = true; overlay._sliding = true;
+                const obs = scene.onBeforeRenderObservable.add(update);
                 function update() {
-                    const t = Math.min((performance.now() - startTime) / duration, 1);
+                    const t = Math.min(Math.max((presNow() - start) / frames, 0), 1);
                     const e = v0 * t + (1 - v0) * Math.pow(t, power);       // accelerating (ramp-up)
                     element.left = (fromPct + (toPct - fromPct) * e).toFixed(2) + '%';
                     text.left = element.left;                               // the title rides the band
-                    // motion blur follows the speed (d/dt of t^p, normalised to its peak): sharp when slow and
-                    // at the slam, smeared at full tilt
+                    // motion blur follows the speed (d/dt of the curve, normalised to its peak): sharp when slow
+                    // and at the slam, smeared at full tilt
                     const v = (v0 + (1 - v0) * power * Math.pow(t, power - 1)) / (v0 + (1 - v0) * power);
                     const lvl = (t >= 1 || window._reduceMotion) ? 0 : v > 0.6 ? 2 : v > 0.25 ? 1 : 0;
                     if (lvl !== blurLvl && window.setWipeBlur) { blurLvl = lvl; window.setWipeBlur(lvl); }
-                    if (t < 1) requestAnimationFrame(update);
-                    else { element._sliding = false; overlay._sliding = false; if (onComplete) onComplete(); }
+                    if (t >= 1) {
+                        scene.onBeforeRenderObservable.remove(obs);
+                        element._sliding = false; overlay._sliding = false;
+                        if (onComplete) onComplete();
+                    }
                 }
                 update();
             }
@@ -24483,11 +24518,11 @@
             text.left = wipe.left;
 
             // Step 1: the band ramps up and slams in
-            animateWipe(wipe, wipeIn, 0, 380, 2.2, () => {
-                // Step 2: Reset round while black. Deferred two frames so the fully-black slate is on screen
-                // first: resetRound rebuilds the stage (~70ms) and, run on the landing frame, it froze the
-                // band just short of covering (a visible pop). The hitch now lands on black.
-                requestAnimationFrame(() => requestAnimationFrame(() => {
+            animateWipe(wipe, wipeIn, 0, WIPE_IN_F, 2.2, () => {
+                // Step 2: reset the round under the black. One frame later, so the fully-black slate is already
+                // on screen: resetRound rebuilds the stage (a ~70ms hitch) and, on the landing frame, it froze
+                // the band just short of covering. All the loading happens here, on black.
+                afterFrames(1, () => {
                     resetRound();
                     // resetRound clears the flag; keep inputs blocked
                     roundTransitioning = true;
@@ -24496,38 +24531,50 @@
                     // transition card announces the stage; without this the message text
                     // lingers over the scene after the reveal (doReadyGoTransition does the same).
                     hideMessage();
-                }));
 
-                // Step 3: hold on the stage name (1.9s)
-                setTimeout(() => {
-                    // Step 4: launch the band (and its title) off the far side to reveal the new area
-                    animateWipe(wipe, 0, wipeOut, 400, 3, () => {
-                        // Hide overlay (reset for the other fades that reuse it) and park the title
-                        overlay.isVisible = false;
-                        overlay.alpha = 0;
-                        overlay.left = '0%';
-                        if (window.clearWipeBookends) window.clearWipeBookends();
-                        text.text = "";
-                        text.left = centerPos;
-                        text.top = '0px';
-                        text.alpha = 1;
-                        text.isVisible = true;
-                        if (window.guiElements?.stageNameText) {
-                            window.guiElements.stageNameText.text = stageName;
-                            if (window.getStageColor) {
-                                window.guiElements.stageNameText.color = window.getStageColor(toStage);
-                            }
-                            window.guiElements.stageNameText.isVisible = (gameState !== 'menu');
-                        }
-                        // Step 5: Let scene show for prep time (1500ms)
-                        setTimeout(() => {
-                            if (callback) callback();
-                            // Unlock inputs after the transition and callback complete
-                            roundTransitioning = false;
-                        }, 1500);
-                    }, 0.25);                                               // leave with a kick, no creep
-                }, 1900);
+                    // Step 3: hold on the stage name. Counted from AFTER the reset, in frames, so the load
+                    // can't shorten it; then, if the new stage still has materials compiling, hold a little
+                    // longer (capped) so the reveal isn't the frame they compile on.
+                    // (not scene.isReady(): the glow layers keep that false for good)
+                    const stageReady = () => scene.getEngine().areAllEffectsReady() &&
+                        scene.meshes.every(m => !m.isEnabled() || !m.isVisible || m.isReady(true));
+                    let waited = 0;
+                    const tryExit = () => {
+                        if (stageReady() || waited >= READY_WAIT_MAX_F) exitWipe();
+                        else { waited++; afterFrames(1, tryExit); }
+                    };
+                    afterFrames(HOLD_F, tryExit);
+                });
             });
+
+            // Step 4: launch the band (and its title) off the far side to reveal the new area
+            function exitWipe() {
+                animateWipe(wipe, 0, wipeOut, WIPE_OUT_F, 3, () => {
+                    // Hide overlay (reset for the other fades that reuse it) and park the title
+                    overlay.isVisible = false;
+                    overlay.alpha = 0;
+                    overlay.left = '0%';
+                    if (window.clearWipeBookends) window.clearWipeBookends();
+                    text.text = "";
+                    text.left = centerPos;
+                    text.top = '0px';
+                    text.alpha = 1;
+                    text.isVisible = true;
+                    if (window.guiElements?.stageNameText) {
+                        window.guiElements.stageNameText.text = stageName;
+                        if (window.getStageColor) {
+                            window.guiElements.stageNameText.color = window.getStageColor(toStage);
+                        }
+                        window.guiElements.stageNameText.isVisible = (gameState !== 'menu');
+                    }
+                    // Step 5: let the new area show before the serve
+                    afterFrames(PREP_F, () => {
+                        if (callback) callback();
+                        // Unlock inputs after the transition and callback complete
+                        roundTransitioning = false;
+                    });
+                }, 0.25);                                                   // leave with a kick, no creep
+            }
         }
 
         function updateCooldownUI() {
@@ -26440,7 +26487,7 @@
             } else {
                 // After win/lose message, do step fade transition to next stage
                 const nextStageName = window.stageNames ? window.stageNames[currentStage] : "Stage";
-                setTimeout(() => {
+                afterFrames(150, () => {                // 2.5s of result message, counted in frames
                     // Hide the current message before transition
                     hideMessage();
 
@@ -26450,7 +26497,7 @@
                         // Auto-start the round after transition
                         startRound();
                     }, prevStage, currentStage);
-                }, 2500);
+                });
             }
         }
 
