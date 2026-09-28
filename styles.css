@@ -3635,7 +3635,7 @@ body.gp-cursor-hidden * {
 .arcane-buttons .menu-btn .menu-btn-label,
 #lobbyDoublesView .menu-btn .menu-btn-label {
     font-family: 'Manrope', sans-serif;
-    font-weight: 700;
+    font-weight: 800;
     letter-spacing: 0.08em;
 }
 .arcane-buttons .menu-btn .menu-btn-label { font-size: 38px; }
@@ -3650,14 +3650,14 @@ body.gp-cursor-hidden * {
 .lobby-status,
 .lobby-ready-line,
 .lobby-connected-msg,
-.arcane-tagline { font-family: 'Manrope', sans-serif; font-weight: 600; letter-spacing: 0.04em; }
+.arcane-tagline { font-family: 'Manrope', sans-serif; font-weight: 700; letter-spacing: 0.04em; }
 #lobbyDoublesView .dlobby-top .lobby-prompt { font-size: 13px; letter-spacing: 0.22em; }
-#lobbyDoublesView #dLobbyStatus { font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 0.16em; }
+#lobbyDoublesView #dLobbyStatus { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 16px; letter-spacing: 0.16em; }
 #lobbyDoublesView #dFormatHint,
 #lobbyDoublesView #dStartReason,
 #lobbyDoublesView #dWaitingHost { font-size: 14px; letter-spacing: 0.02em; }
-#lobbyDoublesView .dsplit-vs { font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 0.12em; }
-.arcane-overlay.visible::after { font-family: 'Manrope', sans-serif; font-weight: 600; font-size: 13px; letter-spacing: 0.16em; }
+#lobbyDoublesView .dsplit-vs { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 12px; letter-spacing: 0.12em; }
+.arcane-overlay.visible::after { font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 13px; letter-spacing: 0.16em; }
 
 /* Team names are headings: Ferrum, like the screen titles. */
 #lobbyDoublesView .dzone-label {
@@ -3668,8 +3668,8 @@ body.gp-cursor-hidden * {
 }
 
 /* Splash. */
-#loadingText { font-family: 'Manrope', sans-serif; font-weight: 700; font-size: 28px; letter-spacing: 0.14em; }
-#loadingTip { font-family: 'Manrope', sans-serif; font-weight: 500; font-size: 16px; letter-spacing: 0.02em; }
+#loadingText { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 28px; letter-spacing: 0.14em; }
+#loadingTip { font-family: 'Manrope', sans-serif; font-weight: 600; font-size: 16px; letter-spacing: 0.02em; }
 
 /* Smooth image scaling on the menus + splash. .crt-screen sets image-rendering: pixelated (inherited),
    which shrank the 1574px logo and the menu art with nearest-neighbour sampling -> stair-stepped edges.
@@ -3718,7 +3718,7 @@ body.gp-cursor-hidden * {
 #endScreen .end-report table { border-collapse: collapse; width: 100%; }
 #endScreen .end-report th {
     font-family: 'Manrope', sans-serif;
-    font-weight: 700;
+    font-weight: 800;
     font-size: 14px;
     letter-spacing: 0.16em;
     color: #9aa0b3;
@@ -3746,7 +3746,7 @@ body.gp-cursor-hidden * {
 #endScreen #victoryButtons { opacity: 1; gap: 6px; margin-left: -48px; }
 #endScreen .end-wait {
     font-family: 'Manrope', sans-serif;
-    font-weight: 700;
+    font-weight: 800;
     font-size: 20px;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -3772,7 +3772,7 @@ body.gp-cursor-hidden * {
 #pauseOverlay .menu-btn.menu-btn-ghost { margin-top: 18px; }
 #pauseOverlay .pause-version {
     font-family: 'Manrope', sans-serif;
-    font-weight: 600;
+    font-weight: 700;
     font-size: 13px;
     letter-spacing: 0.16em;
     color: #a3a1ad;
