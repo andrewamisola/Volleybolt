@@ -5889,13 +5889,38 @@
             transitionWipe.zIndex = 900;
             guiTexture.addControl(transitionWipe);
             transitionWipe.addControl(transitionOverlay);
-            const mkBookend = (name) => {
-                const img = new BABYLON.GUI.Image(name);
-                img.stretch = BABYLON.GUI.Image.STRETCH_FILL;
-                img.isVisible = false;
-                img.isHitTestVisible = false;
-                img.zIndex = 901;                   // over the band, so the rim glow overlaps its edge
-                transitionWipe.addControl(img);
+            // THE WIPE IS HTML, NOT BABYLON GUI. The GUI is one full-resolution 2D canvas that is redrawn on the
+            // CPU and re-uploaded to the GPU on every frame anything in it moves; a full-screen band plus two
+            // 150%-tall bookend images (two of them cross-fading while blurred) sliding across it made each wipe
+            // frame expensive at real screen sizes, so the motion came out uneven. Here the band, the bookends
+            // and the title are their own GPU layers and only transform/opacity change per frame. Same 1920x1080
+            // reference + --ui-scale zoom as #hudScaleLayer, so it maps exactly onto the 16:9 view (and
+            // #gameContainer clips it). The GUI transitionOverlay still goes black under it once it covers, so
+            // the stage-dressing swap and every other fade work as before.
+            const REF_W = 1920, REF_H = 1080;
+            const wipeEl = document.createElement('div');
+            wipeEl.id = 'stageWipe';
+            wipeEl.style.cssText = 'position:absolute;top:0;left:0;width:1920px;height:1080px;zoom:var(--ui-scale,1);' +
+                'pointer-events:none;z-index:190;overflow:hidden;display:none';   // over the HUD (150), under menus (200+)
+            const wipeTrack = document.createElement('div');
+            wipeTrack.style.cssText = 'position:absolute;left:0;top:0;width:1920px;height:1080px;will-change:transform';
+            const wipeBand = document.createElement('div');
+            wipeBand.style.cssText = 'position:absolute;left:0;top:0;width:1920px;height:1080px;background:#000;will-change:transform';
+            const wipeTitle = document.createElement('div');
+            wipeTitle.style.cssText = "position:absolute;left:0;top:0;width:1920px;height:1080px;display:flex;align-items:center;" +
+                "justify-content:center;font-family:'Ferrum',serif;font-size:52px;color:#f0c050;text-shadow:3px 3px 0 #000;white-space:nowrap";
+            wipeTrack.append(wipeBand, wipeTitle);
+            wipeEl.appendChild(wipeTrack);
+            {
+                const hud = document.getElementById('hudScaleLayer');
+                if (hud && hud.parentNode) hud.parentNode.insertBefore(wipeEl, hud.nextSibling);
+                else document.body.appendChild(wipeEl);
+            }
+            const mkBookend = () => {
+                const img = document.createElement('img');
+                img.alt = '';
+                img.style.cssText = 'position:absolute;left:0;top:0;display:none;opacity:0;will-change:opacity';
+                wipeTrack.insertBefore(img, wipeTitle);           // over the band (rim glow overlaps its edge), under the title
                 return img;
             };
             // Silhouette halves, rimmed + glowing in a team colour. All four variants (front/back x direction)
@@ -5989,16 +6014,19 @@
                 return { blue: '#3d8bff',
                          red: TRc ? ('rgb(' + Math.round(TRc.r * 255) + ',' + Math.round(TRc.g * 255) + ',' + Math.round(TRc.b * 255) + ')') : '#ff5540' };
             };
-            const variants = {};   // 'RF' | 'RB' | 'LF' | 'LB' -> { ctls: [one per blur level], aspect, colors }
+            const variants = {};   // 'RF' | 'RB' | 'LF' | 'LB' -> { imgs: [one per blur level], aspect, colors }
             const vKey = (movingRight, front) => (movingRight ? 'R' : 'L') + (front ? 'F' : 'B');
             const ensureLevel = (movingRight, front, color, lvl) => {
                 const key = vKey(movingRight, front);
                 const want = front ? color : null;              // only the leading (front) half is rimmed
                 let v = variants[key];
-                if (!v) v = variants[key] = { ctls: BLUR_LEVELS.map((_, i) => mkBookend('wipe' + key + i)), aspect: 0, colors: [] };
+                if (!v) v = variants[key] = { imgs: BLUR_LEVELS.map(() => mkBookend()), aspect: 0, colors: [] };
                 if (v.colors[lvl] !== want) {
                     const h = makeHalf(front, movingRight, want, BLUR_LEVELS[lvl]);
-                    v.ctls[lvl].source = h.url; v.aspect = h.aspect; v.extFrac = h.extFrac; v.hPx = h.hPx; v.colors[lvl] = want;
+                    const img = v.imgs[lvl];
+                    img.src = h.url;
+                    if (img.decode) img.decode().catch(() => {});      // decoded now, not on the wipe's first frame
+                    v.aspect = h.aspect; v.extFrac = h.extFrac; v.hPx = h.hPx; v.colors[lvl] = want;
                 }
                 return v;
             };
@@ -6017,19 +6045,26 @@
                 const run = () => { const j = jobs.shift(); if (!j) return; ensureLevel(...j); setTimeout(run, 16); };
                 run();
             };
-            let activeWipe = [], bandInsetPct = [];
+            let activeWipe = [], bandInsetPx = [];
             // b is a continuous blur amount, 0..BLUR_LEVELS.length-1: the level below b stays opaque and the level
             // above fades in on top by the fraction, so the smear grows smoothly instead of popping between steps.
             window.setWipeBlur = (b) => {
                 b = Math.max(0, Math.min(BLUR_LEVELS.length - 1, b));
                 const lo = Math.floor(b), f = b - lo;
-                for (const v of activeWipe) v.ctls.forEach((c, i) => {
-                    if (i === lo) { c.isVisible = true; c.alpha = 1; }
-                    else if (i === lo + 1 && f > 0.02) { c.isVisible = true; c.alpha = f; }
-                    else c.isVisible = false;
+                for (const v of activeWipe) v.imgs.forEach((img, i) => {
+                    img.style.opacity = i === lo ? '1' : (i === lo + 1 && f > 0.02) ? f.toFixed(3) : '0';
                 });
                 // tuck the band's hard edge a blur-radius under the (opaque) smeared strip
-                transitionOverlay.width = activeWipe.length && bandInsetPct[lo] ? (100 - 2 * bandInsetPct[lo]).toFixed(3) + '%' : '100%';
+                const inset = (activeWipe.length && bandInsetPx[lo]) || 0;
+                wipeBand.style.transform = inset ? 'scaleX(' + ((REF_W - 2 * inset) / REF_W).toFixed(4) + ')' : 'none';
+            };
+            // band position in % of the screen width (0 = covering)
+            window.setWipePos = (pct) => {
+                wipeTrack.style.transform = 'translate3d(' + (pct / 100 * REF_W).toFixed(1) + 'px,0,0)';
+            };
+            window.setWipeTitle = (text, color) => {
+                wipeTitle.textContent = text || '';
+                if (color) wipeTitle.style.color = color;
             };
             silImg.src = 'textures/pickle_run_silhouette.png?v=1';
             // Dress the band for one wipe. movingRight = the push goes toward Red (the band sweeps left->right).
@@ -6038,39 +6073,41 @@
             // travel) is rimmed, in the pushing team's colour; the trailing half (the cape) is plain black.
             // Returns the extra screen % each end needs so the pickle starts and ends fully off-screen.
             window.setupWipeBookends = (movingRight, leadColor) => {
+                for (const k in variants) variants[k].imgs.forEach(img => { img.style.display = 'none'; });
+                activeWipe = []; bandInsetPx = [];
+                wipeBand.style.transform = 'none';
+                wipeEl.style.display = 'block';
                 if (!silImg.complete || !silImg.naturalWidth) return { lead: 0, trail: 0 };
-                const sz = guiTexture.getSize();
                 const H_FRAC = 1.5;                                              // bookend height vs the screen
-                for (const k in variants) variants[k].ctls.forEach(c => { c.isVisible = false; });
-                const pxToPct = (px, v) => px / v.hPx * H_FRAC * (sz.height / sz.width) * 100;
+                const H = REF_H * H_FRAC, top = (REF_H - H) / 2 + 0.08 * REF_H;
                 const place = (v, side) => {
-                    const pct = v.aspect * H_FRAC * (sz.height / sz.width) * 100;   // its width, % of screen width
-                    const ovl = v.extFrac * H_FRAC * (sz.height / sz.width) * 100;  // the band strip it carries
-                    v.ctls.forEach((ctl, i) => {
-                        ctl.height = (H_FRAC * 100) + '%';
-                        ctl.width = pct.toFixed(3) + '%';
-                        ctl.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
-                        ctl.top = '8%';
-                        ctl.horizontalAlignment = side === 'right' ? BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT
-                                                                   : BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-                        // hang outside the band, its band strip lying over the band's end
-                        ctl.left = (side === 'right' ? pct - ovl : -(pct - ovl)).toFixed(3) + '%';
-                        ctl.isVisible = (i === 0);
+                    const w = v.aspect * H;                                      // its width, reference px
+                    const ovl = v.extFrac * H;                                   // the band strip it carries
+                    // hang outside the band, its band strip lying over the band's end
+                    const left = side === 'right' ? REF_W - ovl : -(w - ovl);
+                    v.imgs.forEach((img, i) => {
+                        img.style.width = w.toFixed(1) + 'px';
+                        img.style.height = H + 'px';
+                        img.style.top = top.toFixed(1) + 'px';
+                        img.style.left = left.toFixed(1) + 'px';
+                        img.style.opacity = i === 0 ? '1' : '0';
+                        img.style.display = 'block';
                     });
-                    return pct - ovl;                                            // how far it sticks out
+                    return (w - ovl) / REF_W * 100;                              // how far it sticks out, % of width
                 };
                 const leadV = ensureVariant(movingRight, true, leadColor), trailV = ensureVariant(movingRight, false, null);
                 activeWipe = [leadV, trailV];
-                bandInsetPct = BLUR_LEVELS.map(r => pxToPct(r, leadV));
-                transitionOverlay.width = '100%';
+                bandInsetPx = BLUR_LEVELS.map(r => r / leadV.hPx * H);
                 const lead = place(leadV, movingRight ? 'right' : 'left');
                 const trail = place(trailV, movingRight ? 'left' : 'right');
                 return { lead, trail };
             };
             window.clearWipeBookends = () => {
-                for (const k in variants) variants[k].ctls.forEach(c => { c.isVisible = false; });
-                activeWipe = [];
-                transitionOverlay.width = '100%';
+                wipeEl.style.display = 'none';
+                for (const k in variants) variants[k].imgs.forEach(img => { img.style.display = 'none'; });
+                activeWipe = []; bandInsetPx = [];
+                wipeBand.style.transform = 'none';
+                wipeTrack.style.transform = 'none';
                 transitionWipe.left = '0%';
                 transitionWipe.top = '0px';
             };
@@ -24477,7 +24514,6 @@
             // overlay._sliding keeps the stage dressing from swapping until it fully covers.
             // Anime/Persona motion: the band RAMPS UP and slams in (accelerating to a hard stop -> impact frame),
             // then launches out accelerating. The stage title is anchored to the band's middle and rides with it.
-            const wipe = window.guiElements.transitionWipe || overlay;
             // Frame timeline (60Hz presentation ticks; see presTick). ~0.38s in, a 2.0s hold on the slate (after the reset), 0.4s out,
             // 1.5s of the new area before the serve.
             const WIPE_IN_F = 23, HOLD_F = 120, WIPE_OUT_F = 24, PREP_F = 90;
@@ -24488,16 +24524,15 @@
             // Driven per rendered frame from the presentation clock (interpolated), so the motion is smooth
             // at any refresh rate while its length is a fixed number of frames.
             // blur = { max, from }: blur grows smoothly from 0 at speed `from` (share of peak) to `max` at peak speed.
-            function animateWipe(element, fromPct, toPct, frames, power, onComplete, v0 = 0, blur = { max: 2, from: 0.2 }) {
+            function animateWipe(fromPct, toPct, frames, power, onComplete, v0 = 0, blur = { max: 2, from: 0.2 }) {
                 const start = presNow();
                 let blurB = 0;
-                element._sliding = true; overlay._sliding = true;
+                overlay._sliding = true;
                 const obs = scene.onBeforeRenderObservable.add(update);
                 function update() {
                     const t = Math.min(Math.max((presNow() - start) / frames, 0), 1);
                     const e = v0 * t + (1 - v0) * Math.pow(t, power);       // accelerating (ramp-up)
-                    element.left = (fromPct + (toPct - fromPct) * e).toFixed(2) + '%';
-                    text.left = element.left;                               // the title rides the band
+                    window.setWipePos(fromPct + (toPct - fromPct) * e);     // band, bookends and title move as one
                     // motion blur follows the speed (d/dt of the curve, normalised to its peak): sharp when slow
                     // and at the slam, smeared at full tilt
                     const v = (v0 + (1 - v0) * power * Math.pow(t, power - 1)) / (v0 + (1 - v0) * power);
@@ -24506,7 +24541,7 @@
                     if (Math.abs(b - blurB) > 0.01 && window.setWipeBlur) { blurB = b; window.setWipeBlur(b); }
                     if (t >= 1) {
                         scene.onBeforeRenderObservable.remove(obs);
-                        element._sliding = false; overlay._sliding = false;
+                        overlay._sliding = false;
                         if (onComplete) onComplete();
                     }
                 }
@@ -24520,15 +24555,17 @@
                 : { lead: 0, trail: 0 };
             const wipeIn = movingRight ? -(100 + ends.lead) : (100 + ends.lead);
             const wipeOut = movingRight ? (100 + ends.trail) : -(100 + ends.trail);
-            overlay.alpha = 1;
+            // The GUI black stays clear until the HTML band covers the screen (it goes up under it on landing,
+            // which is what lets the stage dressing swap), and the title rides the HTML band.
+            overlay.alpha = 0;
             overlay.left = '0%';
-            wipe.left = wipeIn + '%';
-            text.text = stageName;
-            text.alpha = 1;
-            text.left = wipe.left;
+            text.text = '';
+            if (window.setWipeTitle) window.setWipeTitle(stageName, stageColor);
+            window.setWipePos(wipeIn);
 
             // Step 1: the band ramps up and slams in
-            animateWipe(wipe, wipeIn, 0, WIPE_IN_F, 2.2, () => {
+            animateWipe(wipeIn, 0, WIPE_IN_F, 2.2, () => {
+                overlay.alpha = 1;                  // covered: the GUI black goes up under the band
                 // Step 2: reset the round under the black. One frame later, so the fully-black slate is already
                 // on screen: resetRound rebuilds the stage (a ~70ms hitch) and, on the landing frame, it froze
                 // the band just short of covering. All the loading happens here, on black.
@@ -24559,7 +24596,8 @@
 
             // Step 4: launch the band (and its title) off the far side to reveal the new area
             function exitWipe() {
-                animateWipe(wipe, 0, wipeOut, WIPE_OUT_F, 3, () => {
+                overlay.alpha = 0;                  // the HTML band still covers; take the GUI black down under it
+                animateWipe(0, wipeOut, WIPE_OUT_F, 3, () => {
                     // Hide overlay (reset for the other fades that reuse it) and park the title
                     overlay.isVisible = false;
                     overlay.alpha = 0;
