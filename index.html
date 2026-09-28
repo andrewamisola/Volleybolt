@@ -6018,10 +6018,18 @@
                 run();
             };
             let activeWipe = [], bandInsetPct = [];
-            window.setWipeBlur = (lvl) => {
-                for (const v of activeWipe) v.ctls.forEach((c, i) => { c.isVisible = (i === lvl); });
-                // tuck the band's hard edge a blur-radius under the smeared strip
-                transitionOverlay.width = activeWipe.length && bandInsetPct[lvl] ? (100 - 2 * bandInsetPct[lvl]).toFixed(3) + '%' : '100%';
+            // b is a continuous blur amount, 0..BLUR_LEVELS.length-1: the level below b stays opaque and the level
+            // above fades in on top by the fraction, so the smear grows smoothly instead of popping between steps.
+            window.setWipeBlur = (b) => {
+                b = Math.max(0, Math.min(BLUR_LEVELS.length - 1, b));
+                const lo = Math.floor(b), f = b - lo;
+                for (const v of activeWipe) v.ctls.forEach((c, i) => {
+                    if (i === lo) { c.isVisible = true; c.alpha = 1; }
+                    else if (i === lo + 1 && f > 0.02) { c.isVisible = true; c.alpha = f; }
+                    else c.isVisible = false;
+                });
+                // tuck the band's hard edge a blur-radius under the (opaque) smeared strip
+                transitionOverlay.width = activeWipe.length && bandInsetPct[lo] ? (100 - 2 * bandInsetPct[lo]).toFixed(3) + '%' : '100%';
             };
             silImg.src = 'textures/pickle_run_silhouette.png?v=1';
             // Dress the band for one wipe. movingRight = the push goes toward Red (the band sweeps left->right).
@@ -24470,18 +24478,19 @@
             // Anime/Persona motion: the band RAMPS UP and slams in (accelerating to a hard stop -> impact frame),
             // then launches out accelerating. The stage title is anchored to the band's middle and rides with it.
             const wipe = window.guiElements.transitionWipe || overlay;
-            // Frame timeline (60Hz presentation ticks; see presTick). ~0.38s in, a 2.4s hold on the slate (after the reset), 0.4s out,
+            // Frame timeline (60Hz presentation ticks; see presTick). ~0.38s in, a 2.0s hold on the slate (after the reset), 0.4s out,
             // 1.5s of the new area before the serve.
-            const WIPE_IN_F = 23, HOLD_F = 144, WIPE_OUT_F = 24, PREP_F = 90;
+            const WIPE_IN_F = 23, HOLD_F = 120, WIPE_OUT_F = 24, PREP_F = 90;
             const READY_WAIT_MAX_F = 60;            // extra hold (at most) if the new stage is still compiling
             // v0 = starting speed as a share of the move: 0 = pure ramp-up from rest (fine for the entry, whose
             // slow start is off-screen); the exit starts IN view, where a from-rest creep read as a hiccup
             // (~100ms barely moving, then a lurch), so it leaves with a kick and still accelerates hard.
             // Driven per rendered frame from the presentation clock (interpolated), so the motion is smooth
             // at any refresh rate while its length is a fixed number of frames.
-            function animateWipe(element, fromPct, toPct, frames, power, onComplete, v0 = 0) {
+            // blur = { max, from }: blur grows smoothly from 0 at speed `from` (share of peak) to `max` at peak speed.
+            function animateWipe(element, fromPct, toPct, frames, power, onComplete, v0 = 0, blur = { max: 2, from: 0.2 }) {
                 const start = presNow();
-                let blurLvl = 0;
+                let blurB = 0;
                 element._sliding = true; overlay._sliding = true;
                 const obs = scene.onBeforeRenderObservable.add(update);
                 function update() {
@@ -24492,8 +24501,9 @@
                     // motion blur follows the speed (d/dt of the curve, normalised to its peak): sharp when slow
                     // and at the slam, smeared at full tilt
                     const v = (v0 + (1 - v0) * power * Math.pow(t, power - 1)) / (v0 + (1 - v0) * power);
-                    const lvl = (t >= 1 || window._reduceMotion) ? 0 : v > 0.6 ? 2 : v > 0.25 ? 1 : 0;
-                    if (lvl !== blurLvl && window.setWipeBlur) { blurLvl = lvl; window.setWipeBlur(lvl); }
+                    const k = Math.min(1, Math.max(0, (v - blur.from) / (1 - blur.from)));
+                    const b = (t >= 1 || window._reduceMotion) ? 0 : blur.max * k * k * (3 - 2 * k);   // smoothstep
+                    if (Math.abs(b - blurB) > 0.01 && window.setWipeBlur) { blurB = b; window.setWipeBlur(b); }
                     if (t >= 1) {
                         scene.onBeforeRenderObservable.remove(obs);
                         element._sliding = false; overlay._sliding = false;
@@ -24573,7 +24583,7 @@
                         // Unlock inputs after the transition and callback complete
                         roundTransitioning = false;
                     });
-                }, 0.25);                                                   // leave with a kick, no creep
+                }, 0.25, { max: 1, from: 0.45 });                          // leave with a kick; lighter, later blur
             }
         }
 
