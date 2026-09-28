@@ -6035,7 +6035,7 @@
             const vKey = (movingRight, front) => (movingRight ? 'R' : 'L') + (front ? 'F' : 'B');
             const ensureLevel = (movingRight, front, color, lvl) => {
                 const key = vKey(movingRight, front);
-                const want = front ? color : null;              // only the leading (front) half is rimmed
+                const want = color;                             // each end is rimmed in its own team's colour
                 let v = variants[key];
                 if (!v) v = variants[key] = { imgs: BLUR_LEVELS.map(() => mkBookend()), aspect: 0, colors: [] };
                 if (v.colors[lvl] !== want) {
@@ -6056,8 +6056,9 @@
                 const c = window.wipeTeamColors();
                 const jobs = [];
                 for (let l = 0; l < BLUR_LEVELS.length; l++) {
-                    jobs.push([true, true, c.blue, l], [true, false, null, l],     // Blue pushing -> right
-                              [false, true, c.red, l], [false, false, null, l]);   // Red pushing  -> left
+                    // Blue pushing -> right: Red falls back in front, Blue chases behind; Red pushing -> left: the reverse
+                    jobs.push([true, true, c.red, l], [true, false, c.blue, l],
+                              [false, true, c.blue, l], [false, false, c.red, l]);
                 }
                 const run = () => { const j = jobs.shift(); if (!j) return; ensureLevel(...j); setTimeout(run, 16); };
                 run();
@@ -6086,10 +6087,11 @@
             silImg.src = 'textures/pickle_run_silhouette.png?v=1';
             // Dress the band for one wipe. movingRight = the push goes toward Red (the band sweeps left->right).
             // The silhouette is scaled well past screen height so the band's two ends ARE the pickle: one
-            // continuous black shape, no seam. Only the LEADING edge (the front half, facing the direction of
-            // travel) is rimmed, in the pushing team's colour; the trailing half (the cape) is plain black.
+            // continuous black shape, no seam. Both ends are rimmed in a team colour: the LEADING end (the front
+            // half, facing the direction of travel) in the team FALLING BACK, the trailing end (the cape) in the
+            // team PUSHING, chasing it. E.g. Blue wins midfield -> the band runs right, Red in front, Blue behind.
             // Returns the extra screen % each end needs so the pickle starts and ends fully off-screen.
-            window.setupWipeBookends = (movingRight, leadColor) => {
+            window.setupWipeBookends = (movingRight, leadColor, trailColor) => {
                 for (const k in variants) variants[k].imgs.forEach(img => { img.style.display = 'none'; });
                 activeWipe = []; bandInsetPx = [];
                 wipeBand.style.transform = 'none';
@@ -6112,7 +6114,7 @@
                     });
                     return (w - ovl) / REF_W * 100;                              // how far it sticks out, % of width
                 };
-                const leadV = ensureVariant(movingRight, true, leadColor), trailV = ensureVariant(movingRight, false, null);
+                const leadV = ensureVariant(movingRight, true, leadColor), trailV = ensureVariant(movingRight, false, trailColor);
                 activeWipe = [leadV, trailV];
                 bandInsetPx = BLUR_LEVELS.map(r => r / leadV.hPx * H);
                 const lead = place(leadV, movingRight ? 'right' : 'left');
@@ -24564,11 +24566,12 @@
                 }
                 update();
             }
-            // The band + its pickle bookends sweep together; the leading edge glows in the PUSHING team's colour.
+            // The band + its pickle bookends sweep together: the team falling back runs in front (leading edge),
+            // the team pushing chases behind (trailing edge), each end glowing in its team's colour.
             // (Colourblind-aware: the right team uses the live TEAM_RIGHT colour.)
             const wc = window.wipeTeamColors ? window.wipeTeamColors() : { blue: '#3d8bff', red: '#ff5540' };
             const ends = window.setupWipeBookends
-                ? window.setupWipeBookends(movingRight, movingRight ? wc.blue : wc.red)
+                ? window.setupWipeBookends(movingRight, movingRight ? wc.red : wc.blue, movingRight ? wc.blue : wc.red)
                 : { lead: 0, trail: 0 };
             const wipeIn = movingRight ? -(100 + ends.lead) : (100 + ends.lead);
             const wipeOut = movingRight ? (100 + ends.trail) : -(100 + ends.trail);
