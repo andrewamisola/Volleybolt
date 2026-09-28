@@ -5886,11 +5886,16 @@
             const silImg = new Image();
             const SIL_CUT = 0.604;          // split point = the silhouette's horizontal mass centre
             const halfCache = {};
-            const makeHalf = (front, faceRight, color) => {
-                const key = [front, faceRight, color].join('|');
+            // PERSONA MOTION BLUR: each half also exists pre-smeared horizontally at two strengths
+            // (BLUR_LEVELS, in silhouette-canvas px, each way). The wipe swaps to the smeared copies as the
+            // band picks up speed and back to the sharp one as it slams to a stop. All baked at load, so
+            // the per-frame cost is one visibility toggle.
+            const BLUR_LEVELS = [0, 45, 110];
+            const makeHalf = (front, faceRight, color, blurR = 0) => {
+                const key = [front, faceRight, color, blurR].join('|');
                 if (halfCache[key]) return halfCache[key];
-                const W0 = silImg.naturalWidth, H0 = silImg.naturalHeight, P = 30;
-                const W = W0 + 2 * P, H = H0 + 2 * P;
+                const W0 = silImg.naturalWidth, H0 = silImg.naturalHeight, P = 30 + BLUR_LEVELS[BLUR_LEVELS.length - 1], PY = 30;   // extra x room for the smear
+                const W = W0 + 2 * P, H = H0 + 2 * PY;
                 // tinted copy of the silhouette for the rim
                 const tint = document.createElement('canvas'); tint.width = W0; tint.height = H0;
                 const tg = tint.getContext('2d');
@@ -5902,11 +5907,11 @@
                     g.shadowColor = color; g.shadowBlur = 22;                   // glow
                     for (let k = 0; k < 16; k++) {                               // rim: dilate by ~7px
                         const a = k / 16 * Math.PI * 2;
-                        g.drawImage(tint, P + Math.cos(a) * 7, P + Math.sin(a) * 7);
+                        g.drawImage(tint, P + Math.cos(a) * 7, PY + Math.sin(a) * 7);
                     }
                     g.shadowBlur = 0;
                 }
-                g.drawImage(silImg, P, P);                                       // the black silhouette
+                g.drawImage(silImg, P, PY);                                       // the black silhouette
                 // ANIME SPEED LINES on the pickle itself (the band stays plain black): glowing white horizontal
                 // streaks, tapered at both ends, clipped to the black body so the rim stays clean.
                 const lc = document.createElement('canvas'); lc.width = W; lc.height = H;
@@ -5932,38 +5937,72 @@
                 lg.shadowBlur = 0;
                 lg.globalCompositeOperation = 'destination-in';                 // keep only inside the body
                 if (!faceRight) { lg.translate(W, 0); lg.scale(-1, 1); }
-                lg.drawImage(silImg, P, P);
+                lg.drawImage(silImg, P, PY);
                 g.setTransform(1, 0, 0, 1, 0, 0);
                 g.drawImage(lc, 0, 0);
                 const cutRaw = P + SIL_CUT * W0;
                 const cut = Math.round(faceRight ? cutRaw : W - cutRaw);
                 const takeRight = (front === faceRight);                         // front of a right-runner = its right part
-                const x0 = takeRight ? cut : 0, w = takeRight ? W - cut : cut;
+                // Each half carries a strip of the band itself (EXT px, plain black) on its cut side and hangs
+                // that far over the band. Blurred together, the pickle and the band's edge smear as one piece;
+                // the real band rectangle pulls its hard edge back under the strip while blurred (setWipeBlur).
+                const EXT = 2 * BLUR_LEVELS[BLUR_LEVELS.length - 1] + 20;
+                g.fillStyle = '#000';                                            // everything band-side of the cut is band
+                g.fillRect(takeRight ? 0 : cut, 0, takeRight ? cut : W - cut, H);
+                const x0 = takeRight ? cut - EXT : 0, w = takeRight ? W - cut + EXT : cut + EXT;
                 const out = document.createElement('canvas'); out.width = w; out.height = H;
-                out.getContext('2d').drawImage(full, x0, 0, w, H, 0, 0, w, H);
-                return (halfCache[key] = { url: out.toDataURL('image/png'), aspect: w / H });
+                let src = full;
+                if (blurR > 0) {
+                    // box blur along x: 16 shifted copies averaged ('lighter' at 1/16 each sums back to opaque).
+                    // Blurred BEFORE the cut, so the cut edge (under the band) stays solid.
+                    const bf = document.createElement('canvas'); bf.width = W; bf.height = H;
+                    const bg = bf.getContext('2d');
+                    bg.globalCompositeOperation = 'lighter';
+                    const N = 16; bg.globalAlpha = 1 / N;
+                    for (let k = 0; k < N; k++) bg.drawImage(full, -blurR + 2 * blurR * k / (N - 1), 0);
+                    src = bf;
+                }
+                out.getContext('2d').drawImage(src, x0, 0, w, H, 0, 0, w, H);
+                return (halfCache[key] = { url: out.toDataURL('image/png'), aspect: w / H, extFrac: EXT / H, hPx: H });
             };
             window.wipeTeamColors = () => {
                 const TRc = window.TEAM_RIGHT;
                 return { blue: '#3d8bff',
                          red: TRc ? ('rgb(' + Math.round(TRc.r * 255) + ',' + Math.round(TRc.g * 255) + ',' + Math.round(TRc.b * 255) + ')') : '#ff5540' };
             };
-            const variants = {};   // 'RF' | 'RB' | 'LF' | 'LB' -> { ctl, aspect, color }
-            const ensureVariant = (movingRight, front, color) => {
-                const key = (movingRight ? 'R' : 'L') + (front ? 'F' : 'B');
+            const variants = {};   // 'RF' | 'RB' | 'LF' | 'LB' -> { ctls: [one per blur level], aspect, colors }
+            const vKey = (movingRight, front) => (movingRight ? 'R' : 'L') + (front ? 'F' : 'B');
+            const ensureLevel = (movingRight, front, color, lvl) => {
+                const key = vKey(movingRight, front);
                 const want = front ? color : null;              // only the leading (front) half is rimmed
                 let v = variants[key];
-                if (!v) v = variants[key] = { ctl: mkBookend('wipe' + key), aspect: 0, color: undefined };
-                if (!v.aspect || v.color !== want) {
-                    const h = makeHalf(front, movingRight, want);
-                    v.ctl.source = h.url; v.aspect = h.aspect; v.color = want;
+                if (!v) v = variants[key] = { ctls: BLUR_LEVELS.map((_, i) => mkBookend('wipe' + key + i)), aspect: 0, colors: [] };
+                if (v.colors[lvl] !== want) {
+                    const h = makeHalf(front, movingRight, want, BLUR_LEVELS[lvl]);
+                    v.ctls[lvl].source = h.url; v.aspect = h.aspect; v.extFrac = h.extFrac; v.hPx = h.hPx; v.colors[lvl] = want;
                 }
                 return v;
             };
+            const ensureVariant = (movingRight, front, color) => {
+                for (let l = 0; l < BLUR_LEVELS.length; l++) ensureLevel(movingRight, front, color, l);
+                return variants[vKey(movingRight, front)];
+            };
             silImg.onload = () => {
+                // 12 images (4 halves x 3 blur levels): bake one per tick so loading never hitches
                 const c = window.wipeTeamColors();
-                ensureVariant(true, true, c.blue); ensureVariant(true, false, null);     // Blue pushing -> right
-                ensureVariant(false, true, c.red); ensureVariant(false, false, null);    // Red pushing  -> left
+                const jobs = [];
+                for (let l = 0; l < BLUR_LEVELS.length; l++) {
+                    jobs.push([true, true, c.blue, l], [true, false, null, l],     // Blue pushing -> right
+                              [false, true, c.red, l], [false, false, null, l]);   // Red pushing  -> left
+                }
+                const run = () => { const j = jobs.shift(); if (!j) return; ensureLevel(...j); setTimeout(run, 16); };
+                run();
+            };
+            let activeWipe = [], bandInsetPct = [];
+            window.setWipeBlur = (lvl) => {
+                for (const v of activeWipe) v.ctls.forEach((c, i) => { c.isVisible = (i === lvl); });
+                // tuck the band's hard edge a blur-radius under the smeared strip
+                transitionOverlay.width = activeWipe.length && bandInsetPct[lvl] ? (100 - 2 * bandInsetPct[lvl]).toFixed(3) + '%' : '100%';
             };
             silImg.src = 'textures/pickle_run_silhouette.png?v=1';
             // Dress the band for one wipe. movingRight = the push goes toward Red (the band sweeps left->right).
@@ -5975,27 +6014,36 @@
                 if (!silImg.complete || !silImg.naturalWidth) return { lead: 0, trail: 0 };
                 const sz = guiTexture.getSize();
                 const H_FRAC = 1.5;                                              // bookend height vs the screen
-                for (const k in variants) variants[k].ctl.isVisible = false;
+                for (const k in variants) variants[k].ctls.forEach(c => { c.isVisible = false; });
+                const pxToPct = (px, v) => px / v.hPx * H_FRAC * (sz.height / sz.width) * 100;
                 const place = (v, side) => {
-                    const ctl = v.ctl;
                     const pct = v.aspect * H_FRAC * (sz.height / sz.width) * 100;   // its width, % of screen width
-                    ctl.height = (H_FRAC * 100) + '%';
-                    ctl.width = pct.toFixed(3) + '%';
-                    ctl.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
-                    ctl.top = '8%';
-                    ctl.horizontalAlignment = side === 'right' ? BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT
-                                                               : BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-                    // hang outside the band, overlapping it by a hair so there's no seam
-                    ctl.left = (side === 'right' ? pct - 0.2 : -(pct - 0.2)).toFixed(3) + '%';
-                    ctl.isVisible = true;
-                    return pct;
+                    const ovl = v.extFrac * H_FRAC * (sz.height / sz.width) * 100;  // the band strip it carries
+                    v.ctls.forEach((ctl, i) => {
+                        ctl.height = (H_FRAC * 100) + '%';
+                        ctl.width = pct.toFixed(3) + '%';
+                        ctl.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
+                        ctl.top = '8%';
+                        ctl.horizontalAlignment = side === 'right' ? BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT
+                                                                   : BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+                        // hang outside the band, its band strip lying over the band's end
+                        ctl.left = (side === 'right' ? pct - ovl : -(pct - ovl)).toFixed(3) + '%';
+                        ctl.isVisible = (i === 0);
+                    });
+                    return pct - ovl;                                            // how far it sticks out
                 };
-                const lead = place(ensureVariant(movingRight, true, leadColor), movingRight ? 'right' : 'left');
-                const trail = place(ensureVariant(movingRight, false, null), movingRight ? 'left' : 'right');
+                const leadV = ensureVariant(movingRight, true, leadColor), trailV = ensureVariant(movingRight, false, null);
+                activeWipe = [leadV, trailV];
+                bandInsetPct = BLUR_LEVELS.map(r => pxToPct(r, leadV));
+                transitionOverlay.width = '100%';
+                const lead = place(leadV, movingRight ? 'right' : 'left');
+                const trail = place(trailV, movingRight ? 'left' : 'right');
                 return { lead, trail };
             };
             window.clearWipeBookends = () => {
-                for (const k in variants) variants[k].ctl.isVisible = false;
+                for (const k in variants) variants[k].ctls.forEach(c => { c.isVisible = false; });
+                activeWipe = [];
+                transitionOverlay.width = '100%';
                 transitionWipe.left = '0%';
                 transitionWipe.top = '0px';
                 if (window.guiElements.wipeImpactFlash) { window.guiElements.wipeImpactFlash.isVisible = false; window.guiElements.wipeImpactFlash.alpha = 0; }
@@ -24408,12 +24456,18 @@
             const flash = window.guiElements.wipeImpactFlash;
             function animateWipe(element, fromPct, toPct, duration, power, onComplete) {
                 const startTime = performance.now();
+                let blurLvl = 0;
                 element._sliding = true; overlay._sliding = true;
                 function update() {
                     const t = Math.min((performance.now() - startTime) / duration, 1);
                     const e = Math.pow(t, power);                           // accelerating (ramp-up)
                     element.left = (fromPct + (toPct - fromPct) * e).toFixed(2) + '%';
                     text.left = element.left;                               // the title rides the band
+                    // motion blur follows the speed (d/dt of t^p, normalised to its peak): sharp when slow and
+                    // at the slam, smeared at full tilt
+                    const v = Math.pow(t, power - 1);
+                    const lvl = (t >= 1 || window._reduceMotion) ? 0 : v > 0.6 ? 2 : v > 0.25 ? 1 : 0;
+                    if (lvl !== blurLvl && window.setWipeBlur) { blurLvl = lvl; window.setWipeBlur(lvl); }
                     if (t < 1) requestAnimationFrame(update);
                     else { element._sliding = false; overlay._sliding = false; if (onComplete) onComplete(); }
                 }
