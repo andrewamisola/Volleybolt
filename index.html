@@ -6046,15 +6046,7 @@
                 transitionOverlay.width = '100%';
                 transitionWipe.left = '0%';
                 transitionWipe.top = '0px';
-                if (window.guiElements.wipeImpactFlash) { window.guiElements.wipeImpactFlash.isVisible = false; window.guiElements.wipeImpactFlash.alpha = 0; }
             };
-            // IMPACT FLASH for the frame the band slams to a stop.
-            const impactFlash = new BABYLON.GUI.Rectangle('wipeImpactFlash');
-            impactFlash.width = '100%'; impactFlash.height = '100%'; impactFlash.thickness = 0;
-            impactFlash.background = '#ffffff'; impactFlash.alpha = 0; impactFlash.isVisible = false;
-            impactFlash.isHitTestVisible = false; impactFlash.zIndex = 900.6;
-            transitionWipe.addControl(impactFlash);
-            window.guiElements.wipeImpactFlash = impactFlash;
             window.guiElements.transitionWipe = transitionWipe;
             window.guiElements.transitionOverlay = transitionOverlay;
 
@@ -24453,7 +24445,6 @@
             // Anime/Persona motion: the band RAMPS UP and slams in (accelerating to a hard stop -> impact frame),
             // then launches out accelerating. The stage title is anchored to the band's middle and rides with it.
             const wipe = window.guiElements.transitionWipe || overlay;
-            const flash = window.guiElements.wipeImpactFlash;
             function animateWipe(element, fromPct, toPct, duration, power, onComplete) {
                 const startTime = performance.now();
                 let blurLvl = 0;
@@ -24474,24 +24465,15 @@
                 update();
             }
             function impactFrame() {
-                if (flash && !window._reduceMotion) {
-                    flash.isVisible = true; flash.alpha = 0.85;
-                    const t0 = performance.now();
-                    (function fade() {
-                        const k = Math.min(1, (performance.now() - t0) / 160);
-                        flash.alpha = 0.85 * (1 - k);
-                        if (k < 1) requestAnimationFrame(fade); else flash.isVisible = false;
-                    })();
-                }
-                // a short shake of the band (and its title)
+                // the slam: a short shake of the title (only the title: shaking the full-screen band just
+                // exposed slivers of the game at the screen edges)
                 if (!window._reduceMotion) {
                     const t0 = performance.now();
                     (function shake() {
                         const k = (performance.now() - t0) / 220;
                         const amp = k < 1 ? (1 - k) * 10 : 0;
-                        wipe.top = (Math.sin(k * 60) * amp).toFixed(1) + 'px';
-                        text.top = wipe.top;
-                        if (k < 1) requestAnimationFrame(shake); else { wipe.top = '0px'; text.top = '0px'; }
+                        text.top = (Math.sin(k * 60) * amp).toFixed(1) + 'px';
+                        if (k < 1) requestAnimationFrame(shake); else text.top = '0px';
                     })();
                 }
             }
@@ -24512,16 +24494,20 @@
 
             // Step 1: the band ramps up and slams in (then the impact frame)
             animateWipe(wipe, wipeIn, 0, 380, 2.2, () => {
-                impactFrame();
-                // Step 2: Reset round while black
-                resetRound();
-                // resetRound clears the flag; keep inputs blocked
-                roundTransitioning = true;
+                // Step 2: Reset round while black. Deferred two frames so the fully-black slate is on screen
+                // first: resetRound rebuilds the stage (~70ms) and, run on the landing frame, it froze the
+                // band just short of covering (a visible pop). The hitch now lands on black, then the shake.
+                requestAnimationFrame(() => requestAnimationFrame(() => {
+                    resetRound();
+                    // resetRound clears the flag; keep inputs blocked
+                    roundTransitioning = true;
 
-                // Hide the floating stage-name center message resetRound shows — the
-                // transition card announces the stage; without this the message text
-                // lingers over the scene after the reveal (doReadyGoTransition does the same).
-                hideMessage();
+                    // Hide the floating stage-name center message resetRound shows — the
+                    // transition card announces the stage; without this the message text
+                    // lingers over the scene after the reveal (doReadyGoTransition does the same).
+                    hideMessage();
+                    impactFrame();
+                }));
 
                 // Step 3: hold on the stage name, lines streaming (1.9s)
                 setTimeout(() => {
