@@ -5902,16 +5902,18 @@
                 // tinted copy of the silhouette for the rim
                 const tint = document.createElement('canvas'); tint.width = W0; tint.height = H0;
                 const tg = tint.getContext('2d');
-                tg.drawImage(silImg, 0, 0); tg.globalCompositeOperation = 'source-in'; tg.fillStyle = color; tg.fillRect(0, 0, W0, H0);
+                tg.drawImage(silImg, 0, 0); tg.globalCompositeOperation = 'source-in'; tg.fillStyle = color || '#000'; tg.fillRect(0, 0, W0, H0);
                 const full = document.createElement('canvas'); full.width = W; full.height = H;
                 const g = full.getContext('2d');
                 if (!faceRight) { g.translate(W, 0); g.scale(-1, 1); }
-                g.shadowColor = color; g.shadowBlur = 22;                       // glow
-                for (let k = 0; k < 16; k++) {                                   // rim: dilate by ~7px
-                    const a = k / 16 * Math.PI * 2;
-                    g.drawImage(tint, P + Math.cos(a) * 7, P + Math.sin(a) * 7);
+                if (color) {
+                    g.shadowColor = color; g.shadowBlur = 22;                   // glow
+                    for (let k = 0; k < 16; k++) {                               // rim: dilate by ~7px
+                        const a = k / 16 * Math.PI * 2;
+                        g.drawImage(tint, P + Math.cos(a) * 7, P + Math.sin(a) * 7);
+                    }
+                    g.shadowBlur = 0;
                 }
-                g.shadowBlur = 0;
                 g.drawImage(silImg, P, P);                                       // the black silhouette
                 const cutRaw = P + SIL_CUT * W0;
                 const cut = Math.round(faceRight ? cutRaw : W - cutRaw);
@@ -5922,33 +5924,32 @@
                 return (halfCache[key] = { url: out.toDataURL('image/png'), aspect: w / H });
             };
             // Dress the band for one wipe. movingRight = the push goes toward Red (the band sweeps left->right).
+            // The silhouette is scaled well past screen height so the band's two ends ARE the pickle — one
+            // continuous black shape, no seam. Only the LEADING edge (the front half, facing the direction of
+            // travel) is rimmed, in the pushing team's colour; the trailing half (the cape) is plain black.
             // Returns the extra screen % each end needs so the pickle starts and ends fully off-screen.
-            window.setupWipeBookends = (movingRight, runnerColor, chaserColor) => {
+            window.setupWipeBookends = (movingRight, leadColor) => {
                 if (!silImg.complete || !silImg.naturalWidth) return { lead: 0, trail: 0 };
                 const sz = guiTexture.getSize();
-                const H_FRAC = 0.9;                                              // bookend height vs the screen
-                const place = (ctl, edge, half, color, side) => {
+                const H_FRAC = 1.5;                                              // bookend height vs the screen
+                const place = (ctl, half, side) => {
                     const pct = half.aspect * H_FRAC * (sz.height / sz.width) * 100;   // its width, % of screen width
                     ctl.source = half.url;
                     ctl.height = (H_FRAC * 100) + '%';
                     ctl.width = pct.toFixed(3) + '%';
                     ctl.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
-                    ctl.top = '3%';
+                    ctl.top = '8%';
                     ctl.horizontalAlignment = side === 'right' ? BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT
                                                                : BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-                    ctl.left = (side === 'right' ? pct : -pct).toFixed(3) + '%';   // hang just outside the band
+                    // hang outside the band, overlapping it by a hair so there's no seam
+                    ctl.left = (side === 'right' ? pct - 0.2 : -(pct - 0.2)).toFixed(3) + '%';
                     ctl.isVisible = true;
-                    edge.background = color;
-                    edge.horizontalAlignment = ctl.horizontalAlignment;
-                    edge.left = side === 'right' ? '3px' : '-3px';
-                    edge.shadowColor = color; edge.shadowBlur = 16;
-                    edge.isVisible = true;
                     return pct;
                 };
-                const lead = place(wipeParts.front, wipeParts.frontEdge, makeHalf(true, movingRight, runnerColor), runnerColor,
-                                   movingRight ? 'right' : 'left');
-                const trail = place(wipeParts.back, wipeParts.backEdge, makeHalf(false, movingRight, chaserColor), chaserColor,
-                                    movingRight ? 'left' : 'right');
+                wipeParts.frontEdge.isVisible = false;
+                wipeParts.backEdge.isVisible = false;
+                const lead = place(wipeParts.front, makeHalf(true, movingRight, leadColor), movingRight ? 'right' : 'left');
+                const trail = place(wipeParts.back, makeHalf(false, movingRight, null), movingRight ? 'left' : 'right');
                 return { lead, trail };
             };
             window.clearWipeBookends = () => {
@@ -24362,14 +24363,14 @@
                 }
                 update();
             }
-            // The band + its pickle bookends sweep together. The team being driven back runs in FRONT; the team
-            // pushing chases BEHIND. (Colourblind-aware: the right team uses the live TEAM_RIGHT colour.)
+            // The band + its pickle bookends sweep together; the leading edge glows in the PUSHING team's colour.
+            // (Colourblind-aware: the right team uses the live TEAM_RIGHT colour.)
             const wipe = window.guiElements.transitionWipe || overlay;
             const blueCol = '#3d8bff';
             const TRc = window.TEAM_RIGHT;
             const redCol = TRc ? ('rgb(' + Math.round(TRc.r * 255) + ',' + Math.round(TRc.g * 255) + ',' + Math.round(TRc.b * 255) + ')') : '#ff5540';
             const ends = window.setupWipeBookends
-                ? window.setupWipeBookends(movingRight, movingRight ? redCol : blueCol, movingRight ? blueCol : redCol)
+                ? window.setupWipeBookends(movingRight, movingRight ? blueCol : redCol)
                 : { lead: 0, trail: 0 };
             const wipeIn = movingRight ? -(100 + ends.lead) : (100 + ends.lead);
             const wipeOut = movingRight ? (100 + ends.trail) : -(100 + ends.trail);
