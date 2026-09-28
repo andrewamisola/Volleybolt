@@ -24467,19 +24467,6 @@
                 }
                 update();
             }
-            function impactFrame() {
-                // the slam: a short shake of the title (only the title: shaking the full-screen band just
-                // exposed slivers of the game at the screen edges)
-                if (!window._reduceMotion) {
-                    const t0 = performance.now();
-                    (function shake() {
-                        const k = (performance.now() - t0) / 220;
-                        const amp = k < 1 ? (1 - k) * 10 : 0;
-                        text.top = (Math.sin(k * 60) * amp).toFixed(1) + 'px';
-                        if (k < 1) requestAnimationFrame(shake); else text.top = '0px';
-                    })();
-                }
-            }
             // The band + its pickle bookends sweep together; the leading edge glows in the PUSHING team's colour.
             // (Colourblind-aware: the right team uses the live TEAM_RIGHT colour.)
             const wc = window.wipeTeamColors ? window.wipeTeamColors() : { blue: '#3d8bff', red: '#ff5540' };
@@ -24495,11 +24482,11 @@
             text.alpha = 1;
             text.left = wipe.left;
 
-            // Step 1: the band ramps up and slams in (then the impact frame)
+            // Step 1: the band ramps up and slams in
             animateWipe(wipe, wipeIn, 0, 380, 2.2, () => {
                 // Step 2: Reset round while black. Deferred two frames so the fully-black slate is on screen
                 // first: resetRound rebuilds the stage (~70ms) and, run on the landing frame, it froze the
-                // band just short of covering (a visible pop). The hitch now lands on black, then the shake.
+                // band just short of covering (a visible pop). The hitch now lands on black.
                 requestAnimationFrame(() => requestAnimationFrame(() => {
                     resetRound();
                     // resetRound clears the flag; keep inputs blocked
@@ -24509,10 +24496,9 @@
                     // transition card announces the stage; without this the message text
                     // lingers over the scene after the reveal (doReadyGoTransition does the same).
                     hideMessage();
-                    impactFrame();
                 }));
 
-                // Step 3: hold on the stage name, lines streaming (1.9s)
+                // Step 3: hold on the stage name (1.9s)
                 setTimeout(() => {
                     // Step 4: launch the band (and its title) off the far side to reveal the new area
                     animateWipe(wipe, 0, wipeOut, 400, 3, () => {
