@@ -2,14 +2,6 @@
    RETRO 90s/2000s GAME UI - WoW Classic / Diablo 2 / HL1 vibe
    ============================================================ */
 
-/* Esthetique font for headers/titles */
-@font-face {
-    font-family: 'Esthetique';
-    src: url('fonts/esthetique.otf') format('opentype');
-    font-weight: normal;
-    font-style: normal;
-}
-
 /* FF9-style UI font (from user's Drive) */
 @font-face {
     font-family: 'FF9UI';
@@ -3661,7 +3653,7 @@ body.gp-cursor-hidden * {
 
 /* Team names are headings: Ferrum, like the screen titles. */
 #lobbyDoublesView .dzone-label {
-    font-family: 'Ferrum', 'Cinzel', serif;
+    font-family: 'Ferrum', serif;
     font-size: 30px;
     letter-spacing: 0.1em;
     padding-left: 0.1em;
@@ -3863,3 +3855,37 @@ body.gp-cursor-hidden * {
     white-space: pre;
     line-height: 1.8;
 }
+
+
+/* ================================================================================================
+   TYPE HIERARCHY (owner, 2026-09-28) — one job per face, split by context:
+     Logo (image)      the brand mark only.
+     Ferrum (CC0)      screen titles — one per screen.
+     Manrope           everything you read or click OUTSIDE a match: menus, settings, lobby, how-to-play,
+                       credits, career, prompt bar, pause/end-screen chrome.
+     FF9UI (pixel)     INSIDE a match only: HUD, command/status/log windows, damage + cast text, the
+                       stage card, the Battle Report table. (FF9UI is "Alexandria" by Teaito, a
+                       FontStruct NON-COMMERCIAL FF9 recreation — replace it before any paid release.)
+   Later rules below win over the older per-screen pixel-font rules above (same specificity).
+   ================================================================================================ */
+.arcane-overlay,
+.game-btn, .game-btn-small,
+.lobby-title, .lobby-subtitle, .lobby-prompt, .lobby-code, .lobby-status, .lobby-input,
+.lobby-connected-msg, .lobby-ready-line,
+.dzone-label, .dsplit-vs, .dcmd-row-label, .dcmd-line,
+.settings-section-label, .settings-row, .fps-arrow, .fps-val, .settings-input,
+.htp-row, .htp-section, .htp-note,
+.credits-line, .career-row, .career-card-title,
+#gamepadPromptBar .gp-prompt-item {
+    font-family: 'Manrope', sans-serif;
+}
+/* Readable labels and values at Manrope's heavier weights; the room code stays chunky and spaced. */
+.settings-section-label, .htp-section, .career-card-title, .lobby-title { font-weight: 800; }
+.settings-row, .fps-val, .htp-row, .htp-note, .credits-line, .career-row, .lobby-prompt, .lobby-status,
+.lobby-connected-msg, .lobby-ready-line, #gamepadPromptBar .gp-prompt-item { font-weight: 700; }
+.lobby-code { font-weight: 800; letter-spacing: 0.18em; }
+/* In-match data windows keep the pixel face even though they sit in .arcane-overlay screens. */
+#endScreen .end-report td { font-family: 'FF9UI', monospace; }
+/* Prompt-bar key chips: always light text on their dark chip (on the light menus the item colour is
+   darkened, and the chips inherited that — grey on navy, unreadable). */
+#gamepadPromptBar .gp-prompt-glyph { color: #f1ecff; font-family: 'Manrope', sans-serif; font-weight: 800; }
