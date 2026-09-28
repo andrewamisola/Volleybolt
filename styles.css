@@ -2,12 +2,17 @@
    RETRO 90s/2000s GAME UI - WoW Classic / Diablo 2 / HL1 vibe
    ============================================================ */
 
-/* FF9-style UI font (from user's Drive) */
+/* In-match pixel font: Tiny5 (SIL Open Font License, fonts/Tiny5-OFL.txt) — replaced "Alexandria"
+   (FF9UI), a FontStruct NON-COMMERCIAL Final Fantasy IX recreation that couldn't ship in a paid game.
+   size-adjust 123% matches the old cap height (measured: 16px caps at 20px, both fonts), so every
+   existing font-size keeps its look; Tiny5 runs ~7% narrower, so nothing overflows. Applies to the
+   Babylon GUI canvas text as well as DOM text. */
 @font-face {
-    font-family: 'FF9UI';
-    src: url('fonts/ff9ui.ttf') format('truetype');
+    font-family: 'Tiny5';
+    src: url('fonts/Tiny5-Regular.ttf') format('truetype');
     font-weight: normal;
     font-style: normal;
+    size-adjust: 123%;
 }
 
 /* Ferrum display font (FF-style, for the title screen) */
@@ -65,7 +70,7 @@ html, body {
     height: 100%;
     overflow: hidden;
     background: #15121b;  /* Warm dusk letterbox bars (was dead black) */
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     -webkit-font-smoothing: auto;
     -moz-osx-font-smoothing: auto;
     display: flex;
@@ -188,7 +193,7 @@ body.hud-hidden #hudScaleLayer {
 /* Tower labels */
 .tower-label {
     display: none;   /* HTML duplicate hidden - GUI tower label is the visible one (stops double-render shimmer) */
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 26px;
     font-weight: 700;
     color: var(--ff9-gold);
@@ -211,7 +216,7 @@ body.hud-hidden #hudScaleLayer {
     top: 22px;
     left: 50%;
     transform: translateX(-50%);
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 48px;
     font-weight: 700;
     color: var(--ff9-gold);
@@ -223,7 +228,7 @@ body.hud-hidden #hudScaleLayer {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-family: 'Ferrum', 'FF9UI', serif;
+    font-family: 'Ferrum', 'Tiny5', serif;
     font-size: 56px;
     font-weight: 700;
     color: #f0c050;
@@ -245,7 +250,7 @@ body.hud-hidden #hudScaleLayer {
 /* NES-styled floating combat text - unified system for all text types */
 .combat-text {
     position: absolute;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 18px;          /* unified body-UI size (matches command menu / HUD labels) */
     font-weight: 400;
     color: #fff;
@@ -311,7 +316,7 @@ body.hud-hidden #hudScaleLayer {
     left: 50%;
     transform: translateX(-50%);
     color: var(--ff9-gold);
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 24px;
     text-shadow: var(--ff9-shadow);  /* Simple pixel shadow */
     pointer-events: none;
@@ -337,7 +342,7 @@ body.hud-hidden #hudScaleLayer {
     left: 50%;
     transform: translate(-50%, -50%);
     color: var(--gold-light);
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 28px;
     text-shadow: 3px 3px 0px #000, -1px -1px 0px var(--gold-dark);
     pointer-events: none;
@@ -351,7 +356,7 @@ body.hud-hidden #hudScaleLayer {
     left: 50%;
     transform: translateX(-50%);
     color: var(--parchment-dark);
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 18px;
     letter-spacing: 2px;
     pointer-events: none;
@@ -393,7 +398,7 @@ body.hud-hidden #hudScaleLayer {
 
 .health-label {
     color: var(--ff9-gold);
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 9px;
     margin-bottom: 6px;
     text-shadow: 1px 1px 0px #000;
@@ -402,7 +407,7 @@ body.hud-hidden #hudScaleLayer {
 /* Damage numbers - same format as combat text */
 .damage-number {
     position: absolute;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 48px;             /* MASSIVE */
     font-weight: 700;
     color: #fff;                 /* white text */
@@ -445,7 +450,7 @@ body.hud-hidden #hudScaleLayer {
 .frozen-text {
     position: absolute;
     color: #80d0ff;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 64px;
     font-weight: bold;
     text-shadow: 3px 3px 0px #000, 4px 4px 0px #000;
@@ -605,7 +610,7 @@ body.hud-hidden #hudScaleLayer {
     text-align: center;
     padding: 3px;
     box-sizing: border-box;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 15px;
     font-weight: normal;
     line-height: 1.12;
@@ -659,7 +664,7 @@ body.hud-hidden #hudScaleLayer {
 }
 
 .cooldown-text {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 36px;
     font-weight: bold;
     color: #ffffff;
@@ -711,7 +716,7 @@ body.hud-hidden #hudScaleLayer {
     transform: translateX(-50%);
     background: linear-gradient(180deg, #3a3230 0%, #252220 100%);
     color: #6a5a4a;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 14px;
     padding: 2px 6px;
     border: 1px solid #3a3430;
@@ -779,7 +784,7 @@ body.hud-hidden #hudScaleLayer {
     right: -6px;
     background: linear-gradient(180deg, #1a2a3a 0%, #0a1520 100%);
     color: #6ac0ff;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 16px;
     font-weight: bold;
     padding: 2px 6px;
@@ -840,7 +845,7 @@ body.hud-hidden #hudScaleLayer {
 
 /* Title row */
 .tooltip-title {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 18px;
     color: var(--ff9-gold);
     margin-bottom: 10px;
@@ -852,7 +857,7 @@ body.hud-hidden #hudScaleLayer {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 16px;
     margin-bottom: 8px;
     padding-bottom: 8px;
@@ -887,7 +892,7 @@ body.hud-hidden #hudScaleLayer {
 
 /* Description */
 .tooltip-description {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 16px;
     color: var(--parchment);
     line-height: 1.4;
@@ -980,7 +985,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 #castBarLabel {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 8px;
     color: #fff;
     text-align: left;
@@ -1008,7 +1013,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 #aiCastBarLabel {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 8px;
     color: #fff;
     text-align: right;
@@ -1265,7 +1270,7 @@ body.flipped-view #aiCastBarContainer {
     font-size: 20px;
 }
 .upgrade-points-value {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 20px;
     font-weight: 700;
     color: #ffd700;
@@ -1308,14 +1313,14 @@ body.flipped-view #aiCastBarContainer {
     font-size: 28px;
 }
 .talent-panel-title {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 20px;
     font-weight: 700;
     color: #ffd866;
     flex: 1;
 }
 .talent-panel-tier {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 12px;
     padding: 4px 10px;
     background: rgba(100, 150, 255, 0.2);
@@ -1339,7 +1344,7 @@ body.flipped-view #aiCastBarContainer {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 14px;
     font-weight: 700;
     transition: all 0.3s ease;
@@ -1407,7 +1412,7 @@ body.flipped-view #aiCastBarContainer {
     display: block;
 }
 .talent-choice-name {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 14px;
     font-weight: 400;
     color: #fff;
@@ -1428,7 +1433,7 @@ body.flipped-view #aiCastBarContainer {
     text-align: center;
 }
 .talent-points-display {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 12px;
     color: rgba(255, 255, 255, 0.7);
 }
@@ -1456,7 +1461,7 @@ body.flipped-view #aiCastBarContainer {
 /* Floating notification text */
 .floating-notification {
     position: fixed;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 24px;
     font-weight: 700;
     color: #ffd700;
@@ -1529,7 +1534,7 @@ body.flipped-view #aiCastBarContainer {
 }
 #loadingTitle {
     /* Match the title-screen logo: Ferrum display font + clipped gold gradient. */
-    font-family: 'Ferrum', 'FF9UI', serif;
+    font-family: 'Ferrum', 'Tiny5', serif;
     font-size: 72px;
     font-weight: 700;
     letter-spacing: 8px;
@@ -1562,7 +1567,7 @@ body.flipped-view #aiCastBarContainer {
     transition: width 0.15s steps(8);
 }
 #loadingText {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 18px;
     font-weight: 700;
     color: #eaf0ff;
@@ -1571,7 +1576,7 @@ body.flipped-view #aiCastBarContainer {
     text-shadow: 2px 2px 0 rgba(8,12,26,0.85);
 }
 #loadingTip {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 14px;
     color: #cfc5b0;
     margin-top: 32px;
@@ -1615,7 +1620,7 @@ body.flipped-view #aiCastBarContainer {
 /* Start Battle Button - D2 Style */
 #startBattleBtn {
     margin-top: 30px;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 14px;
     padding: 12px 30px;
     background: linear-gradient(180deg, var(--brown) 0%, var(--brown-dark) 100%);
@@ -1664,7 +1669,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 #multiplayerBtn {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 14px;
     padding: 12px 30px;
     background: linear-gradient(180deg, #203040 0%, #101820 100%);
@@ -1715,7 +1720,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 #stageTransitionText {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 42px;
     color: var(--gold-light);
     text-shadow: 0 0 30px rgba(212, 168, 73, 0.6),
@@ -1740,7 +1745,7 @@ body.flipped-view #aiCastBarContainer {
     display: inline-block;
     min-width: 220px;
     padding: 14px 32px;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 22px;
     letter-spacing: 2px;
     color: #eef2fa;                          /* FF9 cream-white */
@@ -1834,7 +1839,7 @@ body.flipped-view #aiCastBarContainer {
     min-width: 140px;
     padding: 8px 20px;
     font-size: 16px;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
 }
 
 .game-btn-ghost {
@@ -1873,7 +1878,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-title {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 48px;
     color: var(--gold-light);
     text-shadow: 3px 3px 0 #000, -1px -1px 0 var(--gold-dark);
@@ -1882,7 +1887,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-subtitle {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 18px;
     color: var(--parchment-dark);
     margin: 0 0 28px 0;
@@ -1898,7 +1903,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-prompt {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 20px;
     color: var(--parchment);
     text-shadow: 2px 2px 0 #000;
@@ -1906,7 +1911,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-code {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 56px;
     font-weight: 700;
     letter-spacing: 10px;
@@ -1919,7 +1924,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-status {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 16px;
     color: var(--parchment-dark);
     margin: 4px 0;
@@ -2007,7 +2012,7 @@ body.flipped-view #aiCastBarContainer {
    the label band ends well above that. */
 .dzone-label {
     margin-top: 30px;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 46px;
     letter-spacing: 14px;
     padding-left: 14px;   /* recenters: letter-spacing trails the last glyph by one full gap */
@@ -2036,7 +2041,7 @@ body.flipped-view #aiCastBarContainer {
     background: #0c0805;
     border: 2px solid var(--brown-light);
     color: var(--gold-light);
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 14px;
     letter-spacing: 3px;
     padding: 5px 10px;
@@ -2089,7 +2094,7 @@ body.flipped-view #aiCastBarContainer {
     padding: 0 14px;
 }
 .dcmd-row-label {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 11px;
     letter-spacing: 2px;
     color: rgba(223,230,242,0.55);
@@ -2116,7 +2121,7 @@ body.flipped-view #aiCastBarContainer {
                 top 0.28s cubic-bezier(0.3, 0, 0.2, 1),
                 opacity 0.2s ease;
     white-space: nowrap;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 15px;
     color: #f4f7ff;               /* command menu's default row text (TXT/READY_TXT) */
     text-shadow: var(--ff9-shadow);
@@ -2208,7 +2213,7 @@ body.flipped-view #aiCastBarContainer {
 .lobby-input {
     width: 280px;
     height: 56px;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 32px;
     font-weight: 600;
     letter-spacing: 8px;
@@ -2232,7 +2237,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-connected-msg {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 28px;
     color: #6ad26a;
     text-shadow: 2px 2px 0 #000;
@@ -2240,7 +2245,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-ready-line {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 18px;
     margin: 2px 0;
     text-shadow: 1px 1px 0 #000;
@@ -2349,7 +2354,7 @@ body.flipped-view #aiCastBarContainer {
 
 .arcane-title {
     position: relative;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 84px;
     font-weight: 700;
     letter-spacing: 6px;
@@ -2396,7 +2401,7 @@ body.flipped-view #aiCastBarContainer {
 @keyframes dividerGrow { to { width: 340px; } }
 
 .arcane-tagline {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 16px;
     letter-spacing: 7px;
     text-transform: none;   /* FF9: first-letter capitalization, no all-caps */
@@ -2633,7 +2638,7 @@ body.flipped-view #aiCastBarContainer {
     flex: 0 1 auto;
     justify-content: flex-start;
     text-align: left;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 21px;   /* bigger: FF9UI is smaller than the old fonts */
     color: #f4f7ff;
     text-shadow: var(--ff9-shadow);
@@ -2674,7 +2679,7 @@ body.flipped-view #aiCastBarContainer {
     background: rgba(16,24,40,0.55);
     border: 1px solid rgba(206,214,230,0.4);
     border-radius: 4px;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 11px;
     color: #cdd8ef;
     text-shadow: var(--ff9-shadow);
@@ -2771,7 +2776,7 @@ body.flipped-view #aiCastBarContainer {
     left: 0;
     width: 100%;
     text-align: center;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 14px;
     letter-spacing: 2px;
     color: #aab2c4;
@@ -2789,7 +2794,7 @@ body.flipped-view #aiCastBarContainer {
 
 /* --- Title logo: Ferrum display font + light bloom behind it --- */
 .arcane-title {
-    font-family: 'Ferrum', 'FF9UI', serif;
+    font-family: 'Ferrum', 'Tiny5', serif;
     font-size: 108px;
     font-weight: 700;
     letter-spacing: 8px;
@@ -2823,7 +2828,7 @@ body.flipped-view #aiCastBarContainer {
 
 /* --- Menu items: FF9UI with a crisp black stroke for readability (no soft glow) --- */
 .arcane-buttons .menu-btn .menu-btn-label {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 46px;   /* bigger: FF9UI is smaller than the old Cormorant */
     font-weight: 600;
     letter-spacing: 2px;
@@ -2838,7 +2843,7 @@ body.flipped-view #aiCastBarContainer {
 /* ---- Settings screen rows ---- */
 .settings-panel { gap: 4px; align-items: stretch; min-width: 420px; }
 .settings-section-label {
-    font-family: 'FF9UI', sans-serif; font-size: 22px; color: var(--ff9-gold);
+    font-family: 'Tiny5', sans-serif; font-size: 22px; color: var(--ff9-gold);
     text-shadow: var(--ff9-shadow); margin-top: 12px; letter-spacing: 1px; text-align: left;
 }
 /* Settings is the tallest menu: at the default rhythm (88px title gap, 10px row gap) it filled
@@ -2850,7 +2855,7 @@ body.flipped-view #aiCastBarContainer {
 #settingsScreen .arcane-content { gap: 48px; }
 .settings-row {
     display: flex; align-items: center; justify-content: space-between; gap: 16px;
-    font-family: 'FF9UI', sans-serif; font-size: 22px; color: #e7ecf6;
+    font-family: 'Tiny5', sans-serif; font-size: 22px; color: #e7ecf6;
     text-shadow: var(--ff9-shadow); padding: 2px 4px;
 }
 .settings-row > span { min-width: 110px; text-align: left; }
@@ -2952,7 +2957,7 @@ body.flipped-view #aiCastBarContainer {
     padding: 0;
     min-width: 0;
     font-size: 13px;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     color: #e7ecf6;
     background:
         repeating-linear-gradient(118deg, rgba(255,255,255,0.032) 0px, rgba(255,255,255,0.032) 1px, rgba(0,0,0,0.05) 1px, rgba(0,0,0,0.05) 2px, transparent 2px, transparent 4px),
@@ -2967,7 +2972,7 @@ body.flipped-view #aiCastBarContainer {
 .fps-arrow:hover:not(:disabled) { border-color: var(--ff9-gold); color: #fff4c2; }
 .fps-arrow:active:not(:disabled) { transform: translateY(1px); }
 .fps-val {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 20px;
     color: var(--ff9-gold);
     text-shadow: var(--ff9-shadow);
@@ -2977,7 +2982,7 @@ body.flipped-view #aiCastBarContainer {
 }
 .settings-input {
     flex: 1; min-width: 0; max-width: 220px;
-    font-family: 'FF9UI', sans-serif; font-size: 20px; color: #fff;
+    font-family: 'Tiny5', sans-serif; font-size: 20px; color: #fff;
     background: rgba(8,12,22,0.7); border: 1px solid var(--ff9-gold);
     border-radius: 4px; padding: 4px 10px; outline: none; text-align: left;
 }
@@ -2988,18 +2993,18 @@ body.flipped-view #aiCastBarContainer {
 /* ---- How to Play rows ---- */
 .htp-row {
     display: flex; align-items: baseline; gap: 18px;
-    font-family: 'FF9UI', sans-serif; font-size: 22px; color: #e7ecf6;
+    font-family: 'Tiny5', sans-serif; font-size: 22px; color: #e7ecf6;
     text-shadow: var(--ff9-shadow); text-align: left;
 }
 .htp-key { min-width: 130px; color: var(--ff9-gold); font-weight: 600; }
 .htp-objective { display: block; margin-top: 10px; max-width: 520px; line-height: 1.5; }
 .htp-panel { min-width: 460px; max-width: 560px; }
 .htp-section {
-    font-family: 'FF9UI', sans-serif; font-size: 20px; color: var(--ff9-gold);
+    font-family: 'Tiny5', sans-serif; font-size: 20px; color: var(--ff9-gold);
     text-shadow: var(--ff9-shadow); text-align: left; letter-spacing: 1px; margin-top: 10px;
 }
 .htp-note {
-    font-family: 'FF9UI', sans-serif; font-size: 22px; color: #e7ecf6;
+    font-family: 'Tiny5', sans-serif; font-size: 22px; color: #e7ecf6;
     text-shadow: var(--ff9-shadow); text-align: left; line-height: 1.4;
 }
 
@@ -3007,7 +3012,7 @@ body.flipped-view #aiCastBarContainer {
 .htp-page { display: none; flex-direction: column; gap: 10px; min-height: 240px; }
 .htp-page.active { display: flex; }
 .htp-title {
-    font-family: 'Ferrum', 'FF9UI', serif; font-size: 34px; color: var(--ff9-gold);
+    font-family: 'Ferrum', 'Tiny5', serif; font-size: 34px; color: var(--ff9-gold);
     text-shadow: var(--ff9-shadow); text-align: left; margin-bottom: 8px;
 }
 .htp-nav {
@@ -3025,7 +3030,7 @@ body.flipped-view #aiCastBarContainer {
 
 /* ---- Credits ---- */
 .credits-line {
-    font-family: 'FF9UI', sans-serif; font-size: 22px; color: #e7ecf6;
+    font-family: 'Tiny5', sans-serif; font-size: 22px; color: #e7ecf6;
     text-shadow: var(--ff9-shadow); text-align: center;
 }
 .credits-title { font-size: 30px; color: var(--ff9-gold); margin-bottom: 6px; }
@@ -3035,7 +3040,7 @@ body.flipped-view #aiCastBarContainer {
 .career-list { display: flex; flex-direction: column; gap: 4px; max-height: 46vh; overflow-y: auto; }
 .career-row {
     display: flex; justify-content: space-between; gap: 24px; min-width: 420px;
-    font-family: 'FF9UI', sans-serif; font-size: 20px; color: #e7ecf6; text-shadow: var(--ff9-shadow);
+    font-family: 'Tiny5', sans-serif; font-size: 20px; color: #e7ecf6; text-shadow: var(--ff9-shadow);
 }
 .career-row > .career-val { color: var(--ff9-gold); }
 
@@ -3056,7 +3061,7 @@ body.flipped-view #aiCastBarContainer {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 14px;
     color: #dfe6f2;
     text-shadow: var(--ff9-shadow, 2px 2px 0 #000);
@@ -3139,7 +3144,7 @@ body.gp-cursor-hidden * {
 
 /* Screen headings: the logo's wizard purple (lilac -> violet), light crisp shadow. */
 .arcane-title {
-    font-family: 'Ferrum', 'FF9UI', serif;
+    font-family: 'Ferrum', 'Tiny5', serif;
     font-size: 78px;
     letter-spacing: 6px;
     background: linear-gradient(180deg, #e2ceff 0%, #b894f2 45%, #8a5ee0 72%, #5c3aaa 100%);
@@ -3231,7 +3236,7 @@ body.gp-cursor-hidden * {
     padding: 12px 20px 14px;
 }
 .career-card-title {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 22px;
     letter-spacing: 1px;
     color: #c9a8ff;
@@ -3490,7 +3495,7 @@ body.gp-cursor-hidden * {
     font-size: 14px; letter-spacing: 3px; text-transform: uppercase; color: #8d889c;
 }
 #lobbyDoublesView #dLobbyStatus {
-    font-family: 'FF9UI', sans-serif; font-size: 18px; letter-spacing: 3px; text-transform: uppercase;
+    font-family: 'Tiny5', sans-serif; font-size: 18px; letter-spacing: 3px; text-transform: uppercase;
     color: #6a44c4; margin-top: 2px;
 }
 #lobbyDoublesView #dFormatHint,
@@ -3554,7 +3559,7 @@ body.gp-cursor-hidden * {
 #lobbyDoublesView .menu-btn .menu-btn-glyph,
 #lobbyDoublesView .menu-btn .menu-btn-accent { display: none; }
 #lobbyDoublesView .menu-btn .menu-btn-label {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 34px;
     letter-spacing: 4px;
     text-transform: uppercase;
@@ -3718,7 +3723,7 @@ body.gp-cursor-hidden * {
     padding: 2px 0 6px 28px;
 }
 #endScreen .end-report td {
-    font-family: 'FF9UI', sans-serif;
+    font-family: 'Tiny5', sans-serif;
     font-size: 24px;
     color: #ffe39a;
     text-shadow: var(--ff9-shadow);
@@ -3821,7 +3826,7 @@ body.gp-cursor-hidden * {
     padding-top: 170px; overflow: hidden;
 }
 .cine-title > span {
-    font-family: 'Ferrum', 'FF9UI', serif;
+    font-family: 'Ferrum', 'Tiny5', serif;
     font-size: 210px; letter-spacing: 10px; line-height: 1;
     background: linear-gradient(180deg, #f2e8ff 0%, #c3a4ff 42%, #8a5ee0 100%);
     -webkit-background-clip: text; background-clip: text;
@@ -3863,9 +3868,8 @@ body.gp-cursor-hidden * {
      Ferrum (CC0)      screen titles — one per screen.
      Manrope           everything you read or click OUTSIDE a match: menus, settings, lobby, how-to-play,
                        credits, career, prompt bar, pause/end-screen chrome.
-     FF9UI (pixel)     INSIDE a match only: HUD, command/status/log windows, damage + cast text, the
-                       stage card, the Battle Report table. (FF9UI is "Alexandria" by Teaito, a
-                       FontStruct NON-COMMERCIAL FF9 recreation — replace it before any paid release.)
+     Tiny5 (pixel)     INSIDE a match only: HUD, command/status/log windows, damage + cast text, the
+                       stage card, the Battle Report table. (OFL; replaced the non-commercial FF9UI.)
    Later rules below win over the older per-screen pixel-font rules above (same specificity).
    ================================================================================================ */
 .arcane-overlay,
@@ -3885,7 +3889,7 @@ body.gp-cursor-hidden * {
 .lobby-connected-msg, .lobby-ready-line, #gamepadPromptBar .gp-prompt-item { font-weight: 700; }
 .lobby-code { font-weight: 800; letter-spacing: 0.18em; }
 /* In-match data windows keep the pixel face even though they sit in .arcane-overlay screens. */
-#endScreen .end-report td { font-family: 'FF9UI', monospace; }
+#endScreen .end-report td { font-family: 'Tiny5', monospace; }
 /* Prompt-bar key chips: always light text on their dark chip (on the light menus the item colour is
    darkened, and the chips inherited that — grey on navy, unreadable). */
 #gamepadPromptBar .gp-prompt-glyph { color: #f1ecff; font-family: 'Manrope', sans-serif; font-weight: 800; }
