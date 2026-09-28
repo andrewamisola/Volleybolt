@@ -2833,7 +2833,7 @@
         window.fitPlayerName = function (tb, maxW, baseSize, labelOverride) {
             const base = baseSize || 16, ctx = window._nameMeasCtx;
             const name = (labelOverride != null) ? labelOverride : window.getPlayerName();
-            tb.fontSize = base; ctx.font = "600 " + base + "px 'Manrope UI', sans-serif";
+            tb.fontSize = base; ctx.font = "600 " + base + "px 'FF9UI', sans-serif";
             if (ctx.measureText(name).width <= maxW) { tb.text = name; return; }
             let s = name;
             while (s.length > 1 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1);
@@ -2875,7 +2875,7 @@
         // 2026-07-13): when non-null, used verbatim instead of getPlayerName()/'Red'. Omitted
         // (undefined/null) by every singles/PvP caller, so those lines are byte-identical.
         window.fitLogName = function (isBlue, reservedW, labelOverride) {
-            const ctx = window._nameMeasCtx; ctx.font = "600 16px 'Manrope UI', sans-serif";
+            const ctx = window._nameMeasCtx; ctx.font = "600 16px 'FF9UI', sans-serif";
             const avail = (window._combatLogWidth - 6) - (reservedW || 0);   // 6px safety margin
             const base = (labelOverride != null) ? labelOverride : (isBlue ? window.getPlayerName() : 'Red');
             if (ctx.measureText(base).width <= avail) return base;
@@ -2884,7 +2884,7 @@
             return s + '…';
         };
         window.combatLine = function (isBlue, suffix, labelOverride) {
-            const ctx = window._nameMeasCtx; ctx.font = "600 16px 'Manrope UI', sans-serif";
+            const ctx = window._nameMeasCtx; ctx.font = "600 16px 'FF9UI', sans-serif";
             return window.fitLogName(isBlue, ctx.measureText(suffix).width, labelOverride) + suffix;
         };
 
@@ -5550,7 +5550,7 @@
             playerHealthLabel.text = window.getPlayerName() + " Tower";
             playerHealthLabel.color = "#f0c050";
             playerHealthLabel.fontSize = 16;
-            playerHealthLabel.fontFamily = "'Manrope UI', sans-serif";
+            playerHealthLabel.fontFamily = "'FF9UI', sans-serif";
             playerHealthLabel.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             playerHealthLabel.shadowColor = "#000";  // black pixel shadow -- match the command menu / other gold text
             playerHealthLabel.shadowBlur = 0;  // Pixel shadow, no blur
@@ -5605,7 +5605,7 @@
             playerHealthPercent.text = "100%";
             playerHealthPercent.color = "#209cee";
             playerHealthPercent.fontSize = 16;
-            playerHealthPercent.fontFamily = "'Manrope UI', sans-serif";
+            playerHealthPercent.fontFamily = "'FF9UI', sans-serif";
             playerHealthPercent.width = "100px";
             playerHealthPercent.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
             playerHealthPercent.paddingLeft = "8px";
@@ -5629,7 +5629,7 @@
             aiHealthLabel.text = "Red Tower";
             aiHealthLabel.color = "#f0c050";
             aiHealthLabel.fontSize = 16;
-            aiHealthLabel.fontFamily = "'Manrope UI', sans-serif";
+            aiHealthLabel.fontFamily = "'FF9UI', sans-serif";
             aiHealthLabel.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             aiHealthLabel.shadowColor = "#000";  // black pixel shadow -- match the command menu / other gold text
             aiHealthLabel.shadowBlur = 0;  // Pixel shadow, no blur
@@ -5653,7 +5653,7 @@
             aiHealthPercent.text = "100%";
             aiHealthPercent.color = "#e76e55";
             aiHealthPercent.fontSize = 16;
-            aiHealthPercent.fontFamily = "'Manrope UI', sans-serif";
+            aiHealthPercent.fontFamily = "'FF9UI', sans-serif";
             aiHealthPercent.width = "100px";
             aiHealthPercent.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
             aiHealthPercent.paddingRight = "8px";
@@ -5711,7 +5711,7 @@
             scoreText.text = "0 - 0";
             scoreText.color = "#f0c050";
             scoreText.fontSize = 42;
-            scoreText.fontFamily = "'Manrope UI', sans-serif";
+            scoreText.fontFamily = "'FF9UI', sans-serif";
             scoreText.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             scoreText.alpha = 0;  // Start hidden (menu state)
             scorePanel.addControl(scoreText);
@@ -5769,7 +5769,7 @@
             stageNameText.text = stageNames[currentStage];
             stageNameText.color = window.getStageColor ? window.getStageColor(currentStage) : "#f0c050";
             stageNameText.fontSize = "18px";
-            stageNameText.fontFamily = "'Manrope UI', sans-serif";
+            stageNameText.fontFamily = "'FF9UI', sans-serif";
             stageNameText.top = "120px";
             stageNameText.height = "24px";
             stageNameText.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
@@ -5865,7 +5865,7 @@
             transitionText.text = "";
             transitionText.color = "#f0c050";
             transitionText.fontSize = 52;
-            transitionText.fontFamily = "'Ferrum', 'Manrope UI', serif";
+            transitionText.fontFamily = "'Ferrum', 'FF9UI', serif";
             transitionText.fontWeight = "400";
             // GUI text draws to a canvas: make sure the webfont is decoded before first use
             // (the DOM title screen loads it at boot; this is a belt-and-braces preload).
@@ -5889,7 +5889,7 @@
             messageText.text = "";
             messageText.color = "#f0c050";
             messageText.fontSize = 52;
-            messageText.fontFamily = "'Ferrum', 'Manrope UI', serif";
+            messageText.fontFamily = "'Ferrum', 'FF9UI', serif";
             messageText.fontWeight = "400";
             messageText.shadowColor = "#000";
             messageText.shadowBlur = 0;  // Pixel shadow
@@ -5920,7 +5920,7 @@
             victoryTitle.text = "Victory!";
             victoryTitle.color = "#ffd700";  // Gold
             victoryTitle.fontSize = 96;
-            victoryTitle.fontFamily = "'Ferrum', 'Manrope UI', serif";   // FF display font, like the transition cards
+            victoryTitle.fontFamily = "'Ferrum', 'FF9UI', serif";   // FF display font, like the transition cards
             victoryTitle.fontWeight = "400";
             victoryTitle.shadowColor = "#000";
             victoryTitle.shadowBlur = 0;
@@ -5937,7 +5937,7 @@
             victorySubtitle.text = "You have conquered the arena!";
             victorySubtitle.color = "#e0d0a0";
             victorySubtitle.fontSize = 24;
-            victorySubtitle.fontFamily = "'Manrope UI', sans-serif";
+            victorySubtitle.fontFamily = "'FF9UI', sans-serif";
             victorySubtitle.fontWeight = "400";
             victorySubtitle.shadowColor = "#000";
             victorySubtitle.shadowBlur = 0;
@@ -5967,7 +5967,7 @@
             const lbCell = (txt, color, leftPx, topPx, alignRight, weight) => {
                 const tb = new BABYLON.GUI.TextBlock();
                 tb.text = txt; tb.color = color; tb.fontSize = 20;
-                tb.fontFamily = "'Manrope UI', sans-serif"; if (weight) tb.fontWeight = weight;
+                tb.fontFamily = "'FF9UI', sans-serif"; if (weight) tb.fontWeight = weight;
                 tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
                 tb.resizeToFit = true;
                 tb.horizontalAlignment = alignRight ? AL.HORIZONTAL_ALIGNMENT_RIGHT : AL.HORIZONTAL_ALIGNMENT_LEFT;
@@ -5979,7 +5979,7 @@
             };
             const lbTitle = new BABYLON.GUI.TextBlock();
             lbTitle.text = "Battle Report"; lbTitle.color = "#f0c050"; lbTitle.fontSize = 20;
-            lbTitle.fontFamily = "'Manrope UI', sans-serif"; lbTitle.fontWeight = "600";
+            lbTitle.fontFamily = "'FF9UI', sans-serif"; lbTitle.fontWeight = "600";
             lbTitle.shadowColor = "#000"; lbTitle.shadowBlur = 0; lbTitle.shadowOffsetX = 2; lbTitle.shadowOffsetY = 2;
             lbTitle.resizeToFit = true;
             lbTitle.horizontalAlignment = AL.HORIZONTAL_ALIGNMENT_CENTER;
@@ -6011,7 +6011,7 @@
             continueBtn.height = "60px";
             continueBtn.color = "#d4c4a0";
             continueBtn.fontSize = 24;
-            continueBtn.fontFamily = "'Manrope UI', sans-serif";
+            continueBtn.fontFamily = "'FF9UI', sans-serif";
             continueBtn.background = "#3d3528";
             continueBtn.cornerRadius = 6;
             continueBtn.thickness = 3;
@@ -6068,7 +6068,7 @@
             menuTitle.text = "Dueling Pickles";
             menuTitle.color = "#f0c050";
             menuTitle.fontSize = 72;
-            menuTitle.fontFamily = "'Manrope UI', sans-serif";
+            menuTitle.fontFamily = "'FF9UI', sans-serif";
             menuTitle.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             menuTitle.shadowColor = "#000";
             menuTitle.shadowBlur = 0;
@@ -6110,7 +6110,7 @@
                 btn.height = "90px";
                 btn.color = "#000000b3";  // 70% black text
                 btn.fontSize = 40;
-                btn.fontFamily = "'Manrope UI', sans-serif";
+                btn.fontFamily = "'FF9UI', sans-serif";
                 btn.fontWeight = "900";
                 btn.textBlock.lineSpacing = "8px";
                 btn.textBlock.letterSpacing = "2px";
@@ -6235,7 +6235,7 @@
             const modeSelectTitle = new BABYLON.GUI.TextBlock();
             modeSelectTitle.text = "Select Mode";
             modeSelectTitle.color = "#d8c278";
-            modeSelectTitle.fontFamily = "'Manrope UI', sans-serif";
+            modeSelectTitle.fontFamily = "'FF9UI', sans-serif";
             modeSelectTitle.fontSize = 48;
             modeSelectTitle.fontWeight = "800";
             modeSelectTitle.height = "60px";
@@ -6251,7 +6251,7 @@
                 btn.height = "80px";
                 btn.color = "#000000b3";
                 btn.fontSize = 28;
-                btn.fontFamily = "'Manrope UI', sans-serif";
+                btn.fontFamily = "'FF9UI', sans-serif";
                 btn.fontWeight = "900";
                 btn.thickness = 0;
                 btn.background = "#3d3528";
@@ -6403,7 +6403,7 @@
             const netStatusText = new BABYLON.GUI.TextBlock();
             netStatusText.text = "";
             netStatusText.color = "#6ad26a";
-            netStatusText.fontFamily = "'Manrope UI', sans-serif";
+            netStatusText.fontFamily = "'FF9UI', sans-serif";
             netStatusText.fontSize = 16;
             netStatusText.height = "22px";
             netStatusText.width = "120px";
@@ -6428,7 +6428,7 @@
             const spectatingText = new BABYLON.GUI.TextBlock();
             spectatingText.text = "SPECTATING";
             spectatingText.color = "#f0c050";
-            spectatingText.fontFamily = "'Manrope UI', sans-serif";
+            spectatingText.fontFamily = "'FF9UI', sans-serif";
             spectatingText.fontSize = 20;
             spectatingText.height = "30px";
             spectatingText.width = "260px";
@@ -6495,7 +6495,7 @@
             const dcTitle = new BABYLON.GUI.TextBlock();
             dcTitle.text = "OPPONENT DISCONNECTED";
             dcTitle.color = "#e74c4c";
-            dcTitle.fontFamily = "'Manrope UI', sans-serif";
+            dcTitle.fontFamily = "'FF9UI', sans-serif";
             dcTitle.fontSize = 42;
             dcTitle.height = "60px";
             dcTitle.shadowColor = "#000";
@@ -6506,7 +6506,7 @@
             const dcReason = new BABYLON.GUI.TextBlock();
             dcReason.text = "";
             dcReason.color = "#cfc5b0";
-            dcReason.fontFamily = "'Manrope UI', sans-serif";
+            dcReason.fontFamily = "'FF9UI', sans-serif";
             dcReason.fontSize = 20;
             dcReason.height = "30px";
             dcStack.addControl(dcReason);
@@ -6518,7 +6518,7 @@
             dcBtn.background = "#3d3528";
             dcBtn.cornerRadius = 6;
             dcBtn.thickness = 2;
-            dcBtn.fontFamily = "'Manrope UI', sans-serif";
+            dcBtn.fontFamily = "'FF9UI', sans-serif";
             dcBtn.fontSize = 22;
             dcStack.addControl(dcBtn);
 
@@ -6625,7 +6625,7 @@
             playerCastLabel.text = "Fireball";
             playerCastLabel.color = "#f0c050";
             playerCastLabel.fontSize = 16;
-            playerCastLabel.fontFamily = "'Manrope UI', sans-serif";
+            playerCastLabel.fontFamily = "'FF9UI', sans-serif";
             playerCastLabel.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             playerCastLabel.shadowColor = "#000";
             playerCastLabel.shadowBlur = 0;  // Pixel shadow
@@ -6681,7 +6681,7 @@
             aiCastLabel.text = "Fireball";
             aiCastLabel.color = "#e76e55";
             aiCastLabel.fontSize = 16;
-            aiCastLabel.fontFamily = "'Manrope UI', sans-serif";
+            aiCastLabel.fontFamily = "'FF9UI', sans-serif";
             aiCastLabel.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             aiCastLabel.shadowColor = "#000";
             aiCastLabel.shadowBlur = 0;  // Pixel shadow
@@ -6895,7 +6895,7 @@
 
                     const name = new G.TextBlock();
                     name.text = s.name; name.color = TXT; name.fontSize = 16;
-                    name.fontFamily = "'Manrope UI', sans-serif"; name.fontWeight = "600";
+                    name.fontFamily = "'FF9UI', sans-serif"; name.fontWeight = "600";
                     name.shadowColor = "#000"; name.shadowBlur = 0; name.shadowOffsetX = 2; name.shadowOffsetY = 2;
                     name.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
                     name.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
@@ -6917,7 +6917,7 @@
                     // Cooldown countdown — shown in place of the mana orbs while on CD.
                     const cd = new G.TextBlock();
                     cd.text = ""; cd.color = "#9aa6bd"; cd.fontSize = 16;
-                    cd.fontFamily = "'Manrope UI', sans-serif";
+                    cd.fontFamily = "'FF9UI', sans-serif";
                     cd.shadowColor = "#000"; cd.shadowBlur = 0; cd.shadowOffsetX = 2; cd.shadowOffsetY = 2;
                     cd.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT;
                     cd.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -6933,7 +6933,7 @@
                     row.addControl(keyBadge);
                     const keyText = new G.TextBlock();
                     keyText.text = s.key; keyText.color = "#cdd8ef"; keyText.fontSize = 16;
-                    keyText.fontFamily = "'Manrope UI', sans-serif";
+                    keyText.fontFamily = "'FF9UI', sans-serif";
                     keyText.shadowColor = "#000"; keyText.shadowBlur = 0; keyText.shadowOffsetX = 1; keyText.shadowOffsetY = 1;
                     // The '␣' open-box space glyph renders low (bottom of the em box) — lift it
                     // so it reads vertically centered in the key badge like the number keys.
@@ -6973,7 +6973,7 @@
                 guiTexture.addControl(titleTab);
                 const titleText = new G.TextBlock();
                 titleText.text = "COMMAND"; titleText.color = "#ffffff"; titleText.fontSize = 16;
-                titleText.fontFamily = "'Manrope UI', sans-serif"; titleText.fontWeight = "600";
+                titleText.fontFamily = "'FF9UI', sans-serif"; titleText.fontWeight = "600";
                 titleText.outlineWidth = 2.5;titleText.outlineColor = "#000000";   // crisp black stroke
                 titleText.shadowColor = "#000"; titleText.shadowBlur = 0; titleText.shadowOffsetX = 2; titleText.shadowOffsetY = 2;  // + drop shadow
                 titleText.top = "-3px";   // FF9UI glyphs sit low; nudge up to optically center in the tab
@@ -6990,7 +6990,7 @@
                 titleTab.addControl(qBadge);
                 const qText = new G.TextBlock();
                 qText.text = "Q"; qText.color = "#cdd8ef"; qText.fontSize = 14; qText.fontWeight = "600";
-                qText.fontFamily = "'Manrope UI', sans-serif"; qText.top = "-2px";
+                qText.fontFamily = "'FF9UI', sans-serif"; qText.top = "-2px";
                 qBadge.addControl(qText);
 
                 // Apply a visual state to one slot. mode: 'castable' | 'noMana' | 'cooldown' | 'active'.
@@ -7105,7 +7105,7 @@
                     // the gaps (e.g. "1Mana1s Cast4s CD").
                     const tb = new G.TextBlock();
                     tb.text = str || ""; tb.resizeToFit = true; tb.fontSize = 16;
-                    tb.fontFamily = "'Manrope UI', sans-serif"; tb.color = "#ffffff";
+                    tb.fontFamily = "'FF9UI', sans-serif"; tb.color = "#ffffff";
                     tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
                     tb.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
                     tb.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
@@ -7114,7 +7114,7 @@
 
                 const detailDesc = new G.TextBlock();
                 detailDesc.color = "#eef2fb"; detailDesc.fontSize = 16;
-                detailDesc.fontFamily = "'Manrope UI', sans-serif";
+                detailDesc.fontFamily = "'FF9UI', sans-serif";
                 detailDesc.shadowColor = "#000"; detailDesc.shadowBlur = 0; detailDesc.shadowOffsetX = 2; detailDesc.shadowOffsetY = 2;
                 detailDesc.textWrapping = true; detailDesc.lineSpacing = "7px";
                 detailDesc.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
@@ -7137,7 +7137,7 @@
                 guiTexture.addControl(detailTab);
                 const detailTabText = new G.TextBlock();
                 detailTabText.text = ""; detailTabText.color = "#ffffff"; detailTabText.fontSize = 16;
-                detailTabText.fontFamily = "'Manrope UI', sans-serif"; detailTabText.fontWeight = "600";
+                detailTabText.fontFamily = "'FF9UI', sans-serif"; detailTabText.fontWeight = "600";
                 detailTabText.outlineWidth = 2.5;detailTabText.outlineColor = "#000000";   // crisp black stroke
                 detailTabText.shadowColor = "#000"; detailTabText.shadowBlur = 0; detailTabText.shadowOffsetX = 2; detailTabText.shadowOffsetY = 2;  // + drop shadow
                 detailTabText.top = "-3px";   // optical center (FF9UI low baseline)
@@ -7188,7 +7188,7 @@
                             if (ti > 0) tipSpacer(5);
                             const tb = new G.TextBlock();
                             tb.text = tok; tb.color = tipStatColor(tok); tb.fontSize = 16;
-                            tb.fontFamily = "'Manrope UI', sans-serif"; tb.resizeToFit = true;
+                            tb.fontFamily = "'FF9UI', sans-serif"; tb.resizeToFit = true;
                             tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
                             tb.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
                             tipStats.addControl(tb);
@@ -7231,7 +7231,7 @@
                 tipBox.addControl(tipDesc);
                 function setTipDesc(html) {
                     tipDesc.clearControls();
-                    _descMeasCtx.font = "16px 'Manrope UI', sans-serif";
+                    _descMeasCtx.font = "16px 'FF9UI', sans-serif";
                     const spaceW = _descMeasCtx.measureText(' ').width || 5;
                     // Flatten spans into colored words.
                     const words = [];
@@ -7263,7 +7263,7 @@
                             }
                             const tb = new G.TextBlock();
                             tb.text = word.w; tb.color = word.color; tb.fontSize = 16;
-                            tb.fontFamily = "'Manrope UI', sans-serif"; tb.resizeToFit = true;
+                            tb.fontFamily = "'FF9UI', sans-serif"; tb.resizeToFit = true;
                             tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
                             tb.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
                             row.addControl(tb);
@@ -7285,7 +7285,7 @@
                 guiTexture.addControl(tipTab);
                 const tipTabText = new G.TextBlock();
                 tipTabText.text = ""; tipTabText.color = "#ffffff"; tipTabText.fontSize = 16;   // spell name header
-                tipTabText.fontFamily = "'Manrope UI', sans-serif"; tipTabText.fontWeight = "600";
+                tipTabText.fontFamily = "'FF9UI', sans-serif"; tipTabText.fontWeight = "600";
                 tipTabText.outlineWidth = 2.5;tipTabText.outlineColor = "#000000";              // crisp black stroke
                 tipTabText.shadowColor = "#000"; tipTabText.shadowBlur = 0; tipTabText.shadowOffsetX = 2; tipTabText.shadowOffsetY = 2;  // + drop shadow for extra pop
                 tipTabText.verticalAlignment = ALN.VERTICAL_ALIGNMENT_CENTER;                  // center in the tab (don't hug the bottom)
@@ -7300,7 +7300,7 @@
                     tipTabText.text = tabLabel;
                     // Grow the tab horizontally to fit the spell name (min = default 150px), keeping
                     // its LEFT edge anchored near the tooltip's left edge as it widens rightward.
-                    _descMeasCtx.font = "600 16px 'Manrope UI', sans-serif";
+                    _descMeasCtx.font = "600 16px 'FF9UI', sans-serif";
                     const tabW = Math.max(150, Math.ceil(_descMeasCtx.measureText(tabLabel).width) + 48);
                     tipTab.width = tabW + "px";
                     tipTab.left = (-TIP_W / 2 + 16 + tabW / 2) + "px";
@@ -7345,7 +7345,7 @@
                 guiTexture.addControl(statsTab);
                 const statsTabText = new G.TextBlock();
                 statsTabText.text = "STATUS"; statsTabText.color = "#ffffff"; statsTabText.fontSize = 16;
-                statsTabText.fontFamily = "'Manrope UI', sans-serif"; statsTabText.fontWeight = "600";
+                statsTabText.fontFamily = "'FF9UI', sans-serif"; statsTabText.fontWeight = "600";
                 statsTabText.outlineWidth = 2.5;statsTabText.outlineColor = "#000000";   // crisp black stroke
                 statsTabText.shadowColor = "#000"; statsTabText.shadowBlur = 0; statsTabText.shadowOffsetX = 2; statsTabText.shadowOffsetY = 2;  // + drop shadow
                 statsTabText.top = "-3px";   // optical center (FF9UI low baseline)
@@ -7369,7 +7369,7 @@
                 function statusText(txt, color, leftPx, topPx, size, weight) {
                     const tb = new G.TextBlock();
                     tb.text = txt; tb.color = color; tb.fontSize = size || 18;
-                    tb.fontFamily = "'Manrope UI', sans-serif"; if (weight) tb.fontWeight = weight;
+                    tb.fontFamily = "'FF9UI', sans-serif"; if (weight) tb.fontWeight = weight;
                     tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
                     tb.resizeToFit = true;
                     tb.horizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
@@ -7552,7 +7552,7 @@
                     const tb = new G.TextBlock();
                     tb.text = run.text; tb.color = run.color; tb.fontSize = 16;
                     tb.resizeToFit = true; tb.height = "25px";
-                    tb.fontFamily = "'Manrope UI', sans-serif"; tb.fontWeight = "600";
+                    tb.fontFamily = "'FF9UI', sans-serif"; tb.fontWeight = "600";
                     tb.shadowColor = "#000"; tb.shadowBlur = 0; tb.shadowOffsetX = 2; tb.shadowOffsetY = 2;
                     tb.textHorizontalAlignment = ALN.HORIZONTAL_ALIGNMENT_LEFT;
                     return tb;
@@ -7597,7 +7597,7 @@
                 window.logNeutral = (text) => pushLine([{ text, color: '#f0c050' }]);
                 window.logDamage = (side, amount) => {
                     const numTxt = '' + Math.round(amount);
-                    const ctx = window._nameMeasCtx; ctx.font = "600 16px 'Manrope UI', sans-serif";
+                    const ctx = window._nameMeasCtx; ctx.font = "600 16px 'FF9UI', sans-serif";
                     // Reserve room for the rest of the line so the name truncates, not the number.
                     const reserved = ctx.measureText(' does').width + 10 + ctx.measureText(numTxt).width + ctx.measureText('DMG!').width;
                     const nm = window.fitLogName(side !== 'red', reserved);
@@ -7611,7 +7611,7 @@
                 // (#ffff40 — matches the .combat-text.lightning floating text).
                 window.logZap = (side, count) => {
                     const tail = 'Zaps ' + count + '!';
-                    const ctx = window._nameMeasCtx; ctx.font = "600 16px 'Manrope UI', sans-serif";
+                    const ctx = window._nameMeasCtx; ctx.font = "600 16px 'FF9UI', sans-serif";
                     const nm = window.fitLogName(side !== 'red', ctx.measureText(' ' + tail).width);
                     pushLine([
                         { text: nm, color: sideColor(side) },
@@ -7621,7 +7621,7 @@
                 // Juice (ultimate) activation: "<name> activates Juice!" — name + verb in side
                 // color, "Juice!" in bright gold so the ult stands out from ordinary action lines.
                 window.logJuice = (side) => {
-                    const ctx = window._nameMeasCtx; ctx.font = "600 16px 'Manrope UI', sans-serif";
+                    const ctx = window._nameMeasCtx; ctx.font = "600 16px 'FF9UI', sans-serif";
                     const nm = window.fitLogName(side !== 'red', ctx.measureText(' activates Juice!').width);
                     pushLine([
                         { text: nm + ' activates', color: sideColor(side) },
@@ -7631,7 +7631,7 @@
                 // Frozen: "<name> is Frozen!" — name + verb in side color, "Frozen!" in frost blue
                 // (#8fd0ff, matching the floating Frozen text).
                 window.logFrozen = (side) => {
-                    const ctx = window._nameMeasCtx; ctx.font = "600 16px 'Manrope UI', sans-serif";
+                    const ctx = window._nameMeasCtx; ctx.font = "600 16px 'FF9UI', sans-serif";
                     const nm = window.fitLogName(side !== 'red', ctx.measureText(' is Frozen!').width);
                     pushLine([
                         { text: nm + ' is', color: sideColor(side) },
@@ -7894,7 +7894,7 @@
                 cooldownText.text = "";
                 cooldownText.color = "white";
                 cooldownText.fontSize = 32;
-                cooldownText.fontFamily = "'Manrope UI', sans-serif";
+                cooldownText.fontFamily = "'FF9UI', sans-serif";
                 cooldownText.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
                 cooldownText.shadowColor = "#000";
                 cooldownText.shadowBlur = 0;  // Pixel shadow
@@ -7918,7 +7918,7 @@
                 keyText.text = keyLabel;
                 keyText.color = "#ccc";
                 keyText.fontSize = 16;
-                keyText.fontFamily = "'Manrope UI', sans-serif";
+                keyText.fontFamily = "'FF9UI', sans-serif";
                 keyText.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
                 keyText.shadowColor = "#000";
                 keyText.shadowBlur = 0;  // Pixel shadow
@@ -8039,7 +8039,7 @@
             parryKeyText.text = "SPC";
             parryKeyText.color = "#ccc";
             parryKeyText.fontSize = 16;
-            parryKeyText.fontFamily = "'Manrope UI', sans-serif";
+            parryKeyText.fontFamily = "'FF9UI', sans-serif";
             parryKeyText.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
             parryKeyText.shadowColor = "#000";
             parryKeyText.shadowBlur = 0;  // Pixel shadow
@@ -11927,7 +11927,7 @@
             // a tower anymore"): Castle / Gatehouse / Catapult / Ram / Pickle Jar, prefixed as before (your
             // name on your side, Blue / Red otherwise). Follows the DISPLAYED structure (activeStruct), so it
             // swaps with the scenery during the stage wipe, not early. Cheap: writes only on change.
-            const STRUCT_LABEL = { castle: 'Castle', gatehouse: 'Gatehouse', catapult: 'Catapult', ram: 'Ram', core: 'Pickle Jar' };
+            const STRUCT_LABEL = { castle: 'Tower', gatehouse: 'Gatehouse', catapult: 'Catapult', ram: 'Ram', core: 'Pickle Jar' };   // midfield castles read as the classic 'Tower'
             const hudLabelPrefix = (side) => {
                 const c = combatants[side];
                 const mine = (typeof gameMode !== 'undefined' && gameMode === 'pvp') ? !!(c && c.isLocalPlayer) : side === 'left';
@@ -11941,6 +11941,9 @@
                     const info = window.getStructInfo(side);
                     const text = hudLabelPrefix(side) + ' ' + (STRUCT_LABEL[info && info.kind] || 'Castle');
                     if (lbl.text !== text) lbl.text = text;
+                    // Health-bar headers use the display face (Ferrum). It's a condensed small-caps font, so it
+                    // needs ~1.5x the old pixel-font size to read at the same presence.
+                    if (lbl.fontFamily !== "'Ferrum', serif") { lbl.fontFamily = "'Ferrum', serif"; lbl.fontSize = '36px'; }
                 }
             });
             // The ram's meshes (all of them, and the currently shown damage state's) for the core lighting.
@@ -15397,7 +15400,7 @@
                             cap.cornerRadius = 10; cap.thickness = 3;
                             cap.color = '#1a1024'; cap.background = '#f4ead0';
                             const label = new BABYLON.GUI.TextBlock('clashKeyLabel', 'SPACE');
-                            label.fontFamily = "'Manrope UI', sans-serif"; label.fontSize = 22; label.color = '#1a1024';
+                            label.fontFamily = "'FF9UI', sans-serif"; label.fontSize = 22; label.color = '#1a1024';
                             cap.addControl(label);
                             box.addControl(shadow); box.addControl(cap);
                             window.guiTexture.addControl(box);
@@ -19142,7 +19145,7 @@
             const tb = new BABYLON.GUI.TextBlock();
             tb.text = doublesSlotLabel(slotIndex, isLocalHuman);
             tb.color = color;
-            tb.fontFamily = "'Manrope UI', sans-serif";
+            tb.fontFamily = "'FF9UI', sans-serif";
             tb.fontSize = 14;
             tb.fontWeight = "600";
             tb.resizeToFit = true;   // small, content-sized — no fixed box to overlap other HUD elements
@@ -20502,7 +20505,7 @@
                 el.id = 'opponentAwayOverlay';
                 el.style.cssText = 'position:fixed;inset:0;z-index:99998;display:none;align-items:center;' +
                     'justify-content:center;background:rgba(8,10,16,0.5);pointer-events:none;' +
-                    "font-family:'Manrope UI',system-ui,sans-serif";
+                    "font-family:'FF9UI',system-ui,sans-serif";
                 el.innerHTML =
                     '<div style="background:rgba(20,22,30,0.96);border:1px solid #6fb0ff;border-radius:10px;' +
                     'padding:20px 28px;color:#eef2ff;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,0.6)">' +

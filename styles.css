@@ -2,6 +2,17 @@
    RETRO 90s/2000s GAME UI - WoW Classic / Diablo 2 / HL1 vibe
    ============================================================ */
 
+/* In-match font: FF9UI — "Alexandria" by Teaito (FontStruct). RESTORED 2026-09-28 while the owner decides
+   whether to buy commercial/web permission: its license is Non-Commercial and forbids web-font hosting
+   (clauses 2.2 + 2.6) without the designer's written permission. Replacements are ready below and unused
+   until then: Pixelify Sans (OFL, semibold) and "Manrope UI" (OFL). */
+@font-face {
+    font-family: 'FF9UI';
+    src: url('fonts/ff9ui.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+}
+
 /* In-match pixel font: Pixelify Sans (SIL Open Font License, fonts/PixelifySans-OFL.txt) — replaced
    "Alexandria" (FF9UI), a FontStruct NON-COMMERCIAL Final Fantasy IX recreation that couldn't ship in a
    paid game. (Tiny5 was tried first and read too thin.) For legibility "normal" is a baked SEMIBOLD
@@ -98,7 +109,7 @@ html, body {
     height: 100%;
     overflow: hidden;
     background: #15121b;  /* Warm dusk letterbox bars (was dead black) */
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     -webkit-font-smoothing: auto;
     -moz-osx-font-smoothing: auto;
     display: flex;
@@ -221,7 +232,7 @@ body.hud-hidden #hudScaleLayer {
 /* Tower labels */
 .tower-label {
     display: none;   /* HTML duplicate hidden - GUI tower label is the visible one (stops double-render shimmer) */
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 26px;
     font-weight: 700;
     color: var(--ff9-gold);
@@ -244,7 +255,7 @@ body.hud-hidden #hudScaleLayer {
     top: 22px;
     left: 50%;
     transform: translateX(-50%);
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 48px;
     font-weight: 700;
     color: var(--ff9-gold);
@@ -278,7 +289,7 @@ body.hud-hidden #hudScaleLayer {
 /* NES-styled floating combat text - unified system for all text types */
 .combat-text {
     position: absolute;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 18px;          /* unified body-UI size (matches command menu / HUD labels) */
     font-weight: 400;
     color: #fff;
@@ -344,7 +355,7 @@ body.hud-hidden #hudScaleLayer {
     left: 50%;
     transform: translateX(-50%);
     color: var(--ff9-gold);
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 24px;
     text-shadow: var(--ff9-shadow);  /* Simple pixel shadow */
     pointer-events: none;
@@ -370,7 +381,7 @@ body.hud-hidden #hudScaleLayer {
     left: 50%;
     transform: translate(-50%, -50%);
     color: var(--gold-light);
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 28px;
     text-shadow: 3px 3px 0px #000, -1px -1px 0px var(--gold-dark);
     pointer-events: none;
@@ -384,7 +395,7 @@ body.hud-hidden #hudScaleLayer {
     left: 50%;
     transform: translateX(-50%);
     color: var(--parchment-dark);
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 18px;
     letter-spacing: 2px;
     pointer-events: none;
@@ -426,7 +437,7 @@ body.hud-hidden #hudScaleLayer {
 
 .health-label {
     color: var(--ff9-gold);
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 9px;
     margin-bottom: 6px;
     text-shadow: 1px 1px 0px #000;
@@ -435,7 +446,7 @@ body.hud-hidden #hudScaleLayer {
 /* Damage numbers - same format as combat text */
 .damage-number {
     position: absolute;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 48px;             /* MASSIVE */
     font-weight: 700;
     color: #fff;                 /* white text */
@@ -478,7 +489,7 @@ body.hud-hidden #hudScaleLayer {
 .frozen-text {
     position: absolute;
     color: #80d0ff;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 64px;
     font-weight: bold;
     text-shadow: 3px 3px 0px #000, 4px 4px 0px #000;
@@ -638,7 +649,7 @@ body.hud-hidden #hudScaleLayer {
     text-align: center;
     padding: 3px;
     box-sizing: border-box;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 15px;
     font-weight: normal;
     line-height: 1.12;
@@ -692,7 +703,7 @@ body.hud-hidden #hudScaleLayer {
 }
 
 .cooldown-text {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 36px;
     font-weight: bold;
     color: #ffffff;
@@ -744,7 +755,7 @@ body.hud-hidden #hudScaleLayer {
     transform: translateX(-50%);
     background: linear-gradient(180deg, #3a3230 0%, #252220 100%);
     color: #6a5a4a;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 14px;
     padding: 2px 6px;
     border: 1px solid #3a3430;
@@ -812,7 +823,7 @@ body.hud-hidden #hudScaleLayer {
     right: -6px;
     background: linear-gradient(180deg, #1a2a3a 0%, #0a1520 100%);
     color: #6ac0ff;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 16px;
     font-weight: bold;
     padding: 2px 6px;
@@ -873,7 +884,7 @@ body.hud-hidden #hudScaleLayer {
 
 /* Title row */
 .tooltip-title {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 18px;
     color: var(--ff9-gold);
     margin-bottom: 10px;
@@ -885,7 +896,7 @@ body.hud-hidden #hudScaleLayer {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 16px;
     margin-bottom: 8px;
     padding-bottom: 8px;
@@ -920,7 +931,7 @@ body.hud-hidden #hudScaleLayer {
 
 /* Description */
 .tooltip-description {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 16px;
     color: var(--parchment);
     line-height: 1.4;
@@ -1013,7 +1024,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 #castBarLabel {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 8px;
     color: #fff;
     text-align: left;
@@ -1041,7 +1052,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 #aiCastBarLabel {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 8px;
     color: #fff;
     text-align: right;
@@ -1298,7 +1309,7 @@ body.flipped-view #aiCastBarContainer {
     font-size: 20px;
 }
 .upgrade-points-value {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 20px;
     font-weight: 700;
     color: #ffd700;
@@ -1341,14 +1352,14 @@ body.flipped-view #aiCastBarContainer {
     font-size: 28px;
 }
 .talent-panel-title {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 20px;
     font-weight: 700;
     color: #ffd866;
     flex: 1;
 }
 .talent-panel-tier {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 12px;
     padding: 4px 10px;
     background: rgba(100, 150, 255, 0.2);
@@ -1372,7 +1383,7 @@ body.flipped-view #aiCastBarContainer {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 14px;
     font-weight: 700;
     transition: all 0.3s ease;
@@ -1440,7 +1451,7 @@ body.flipped-view #aiCastBarContainer {
     display: block;
 }
 .talent-choice-name {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 14px;
     font-weight: 400;
     color: #fff;
@@ -1461,7 +1472,7 @@ body.flipped-view #aiCastBarContainer {
     text-align: center;
 }
 .talent-points-display {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 12px;
     color: rgba(255, 255, 255, 0.7);
 }
@@ -1489,7 +1500,7 @@ body.flipped-view #aiCastBarContainer {
 /* Floating notification text */
 .floating-notification {
     position: fixed;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 24px;
     font-weight: 700;
     color: #ffd700;
@@ -1595,7 +1606,7 @@ body.flipped-view #aiCastBarContainer {
     transition: width 0.15s steps(8);
 }
 #loadingText {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 18px;
     font-weight: 700;
     color: #eaf0ff;
@@ -1604,7 +1615,7 @@ body.flipped-view #aiCastBarContainer {
     text-shadow: 2px 2px 0 rgba(8,12,26,0.85);
 }
 #loadingTip {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 14px;
     color: #cfc5b0;
     margin-top: 32px;
@@ -1648,7 +1659,7 @@ body.flipped-view #aiCastBarContainer {
 /* Start Battle Button - D2 Style */
 #startBattleBtn {
     margin-top: 30px;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 14px;
     padding: 12px 30px;
     background: linear-gradient(180deg, var(--brown) 0%, var(--brown-dark) 100%);
@@ -1697,7 +1708,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 #multiplayerBtn {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 14px;
     padding: 12px 30px;
     background: linear-gradient(180deg, #203040 0%, #101820 100%);
@@ -1748,7 +1759,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 #stageTransitionText {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 42px;
     color: var(--gold-light);
     text-shadow: 0 0 30px rgba(212, 168, 73, 0.6),
@@ -1773,7 +1784,7 @@ body.flipped-view #aiCastBarContainer {
     display: inline-block;
     min-width: 220px;
     padding: 14px 32px;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 22px;
     letter-spacing: 2px;
     color: #eef2fa;                          /* FF9 cream-white */
@@ -1867,7 +1878,7 @@ body.flipped-view #aiCastBarContainer {
     min-width: 140px;
     padding: 8px 20px;
     font-size: 16px;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
 }
 
 .game-btn-ghost {
@@ -1906,7 +1917,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-title {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 48px;
     color: var(--gold-light);
     text-shadow: 3px 3px 0 #000, -1px -1px 0 var(--gold-dark);
@@ -1915,7 +1926,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-subtitle {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 18px;
     color: var(--parchment-dark);
     margin: 0 0 28px 0;
@@ -1931,7 +1942,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-prompt {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 20px;
     color: var(--parchment);
     text-shadow: 2px 2px 0 #000;
@@ -1939,7 +1950,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-code {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 56px;
     font-weight: 700;
     letter-spacing: 10px;
@@ -1952,7 +1963,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-status {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 16px;
     color: var(--parchment-dark);
     margin: 4px 0;
@@ -2040,7 +2051,7 @@ body.flipped-view #aiCastBarContainer {
    the label band ends well above that. */
 .dzone-label {
     margin-top: 30px;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 46px;
     letter-spacing: 14px;
     padding-left: 14px;   /* recenters: letter-spacing trails the last glyph by one full gap */
@@ -2069,7 +2080,7 @@ body.flipped-view #aiCastBarContainer {
     background: #0c0805;
     border: 2px solid var(--brown-light);
     color: var(--gold-light);
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 14px;
     letter-spacing: 3px;
     padding: 5px 10px;
@@ -2122,7 +2133,7 @@ body.flipped-view #aiCastBarContainer {
     padding: 0 14px;
 }
 .dcmd-row-label {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 11px;
     letter-spacing: 2px;
     color: rgba(223,230,242,0.55);
@@ -2149,7 +2160,7 @@ body.flipped-view #aiCastBarContainer {
                 top 0.28s cubic-bezier(0.3, 0, 0.2, 1),
                 opacity 0.2s ease;
     white-space: nowrap;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 15px;
     color: #f4f7ff;               /* command menu's default row text (TXT/READY_TXT) */
     text-shadow: var(--ff9-shadow);
@@ -2241,7 +2252,7 @@ body.flipped-view #aiCastBarContainer {
 .lobby-input {
     width: 280px;
     height: 56px;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 32px;
     font-weight: 600;
     letter-spacing: 8px;
@@ -2265,7 +2276,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-connected-msg {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 28px;
     color: #6ad26a;
     text-shadow: 2px 2px 0 #000;
@@ -2273,7 +2284,7 @@ body.flipped-view #aiCastBarContainer {
 }
 
 .lobby-ready-line {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 18px;
     margin: 2px 0;
     text-shadow: 1px 1px 0 #000;
@@ -2382,7 +2393,7 @@ body.flipped-view #aiCastBarContainer {
 
 .arcane-title {
     position: relative;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 84px;
     font-weight: 700;
     letter-spacing: 6px;
@@ -2429,7 +2440,7 @@ body.flipped-view #aiCastBarContainer {
 @keyframes dividerGrow { to { width: 340px; } }
 
 .arcane-tagline {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 16px;
     letter-spacing: 7px;
     text-transform: none;   /* FF9: first-letter capitalization, no all-caps */
@@ -2666,7 +2677,7 @@ body.flipped-view #aiCastBarContainer {
     flex: 0 1 auto;
     justify-content: flex-start;
     text-align: left;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 21px;   /* bigger: FF9UI is smaller than the old fonts */
     color: #f4f7ff;
     text-shadow: var(--ff9-shadow);
@@ -2707,7 +2718,7 @@ body.flipped-view #aiCastBarContainer {
     background: rgba(16,24,40,0.55);
     border: 1px solid rgba(206,214,230,0.4);
     border-radius: 4px;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 11px;
     color: #cdd8ef;
     text-shadow: var(--ff9-shadow);
@@ -2804,7 +2815,7 @@ body.flipped-view #aiCastBarContainer {
     left: 0;
     width: 100%;
     text-align: center;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 14px;
     letter-spacing: 2px;
     color: #aab2c4;
@@ -2856,7 +2867,7 @@ body.flipped-view #aiCastBarContainer {
 
 /* --- Menu items: FF9UI with a crisp black stroke for readability (no soft glow) --- */
 .arcane-buttons .menu-btn .menu-btn-label {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 46px;   /* bigger: FF9UI is smaller than the old Cormorant */
     font-weight: 600;
     letter-spacing: 2px;
@@ -2871,7 +2882,7 @@ body.flipped-view #aiCastBarContainer {
 /* ---- Settings screen rows ---- */
 .settings-panel { gap: 4px; align-items: stretch; min-width: 420px; }
 .settings-section-label {
-    font-family: 'Manrope UI', sans-serif; font-size: 22px; color: var(--ff9-gold);
+    font-family: 'FF9UI', sans-serif; font-size: 22px; color: var(--ff9-gold);
     text-shadow: var(--ff9-shadow); margin-top: 12px; letter-spacing: 1px; text-align: left;
 }
 /* Settings is the tallest menu: at the default rhythm (88px title gap, 10px row gap) it filled
@@ -2883,7 +2894,7 @@ body.flipped-view #aiCastBarContainer {
 #settingsScreen .arcane-content { gap: 48px; }
 .settings-row {
     display: flex; align-items: center; justify-content: space-between; gap: 16px;
-    font-family: 'Manrope UI', sans-serif; font-size: 22px; color: #e7ecf6;
+    font-family: 'FF9UI', sans-serif; font-size: 22px; color: #e7ecf6;
     text-shadow: var(--ff9-shadow); padding: 2px 4px;
 }
 .settings-row > span { min-width: 110px; text-align: left; }
@@ -2985,7 +2996,7 @@ body.flipped-view #aiCastBarContainer {
     padding: 0;
     min-width: 0;
     font-size: 13px;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     color: #e7ecf6;
     background:
         repeating-linear-gradient(118deg, rgba(255,255,255,0.032) 0px, rgba(255,255,255,0.032) 1px, rgba(0,0,0,0.05) 1px, rgba(0,0,0,0.05) 2px, transparent 2px, transparent 4px),
@@ -3000,7 +3011,7 @@ body.flipped-view #aiCastBarContainer {
 .fps-arrow:hover:not(:disabled) { border-color: var(--ff9-gold); color: #fff4c2; }
 .fps-arrow:active:not(:disabled) { transform: translateY(1px); }
 .fps-val {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 20px;
     color: var(--ff9-gold);
     text-shadow: var(--ff9-shadow);
@@ -3010,7 +3021,7 @@ body.flipped-view #aiCastBarContainer {
 }
 .settings-input {
     flex: 1; min-width: 0; max-width: 220px;
-    font-family: 'Manrope UI', sans-serif; font-size: 20px; color: #fff;
+    font-family: 'FF9UI', sans-serif; font-size: 20px; color: #fff;
     background: rgba(8,12,22,0.7); border: 1px solid var(--ff9-gold);
     border-radius: 4px; padding: 4px 10px; outline: none; text-align: left;
 }
@@ -3021,18 +3032,18 @@ body.flipped-view #aiCastBarContainer {
 /* ---- How to Play rows ---- */
 .htp-row {
     display: flex; align-items: baseline; gap: 18px;
-    font-family: 'Manrope UI', sans-serif; font-size: 22px; color: #e7ecf6;
+    font-family: 'FF9UI', sans-serif; font-size: 22px; color: #e7ecf6;
     text-shadow: var(--ff9-shadow); text-align: left;
 }
 .htp-key { min-width: 130px; color: var(--ff9-gold); font-weight: 600; }
 .htp-objective { display: block; margin-top: 10px; max-width: 520px; line-height: 1.5; }
 .htp-panel { min-width: 460px; max-width: 560px; }
 .htp-section {
-    font-family: 'Manrope UI', sans-serif; font-size: 20px; color: var(--ff9-gold);
+    font-family: 'FF9UI', sans-serif; font-size: 20px; color: var(--ff9-gold);
     text-shadow: var(--ff9-shadow); text-align: left; letter-spacing: 1px; margin-top: 10px;
 }
 .htp-note {
-    font-family: 'Manrope UI', sans-serif; font-size: 22px; color: #e7ecf6;
+    font-family: 'FF9UI', sans-serif; font-size: 22px; color: #e7ecf6;
     text-shadow: var(--ff9-shadow); text-align: left; line-height: 1.4;
 }
 
@@ -3058,7 +3069,7 @@ body.flipped-view #aiCastBarContainer {
 
 /* ---- Credits ---- */
 .credits-line {
-    font-family: 'Manrope UI', sans-serif; font-size: 22px; color: #e7ecf6;
+    font-family: 'FF9UI', sans-serif; font-size: 22px; color: #e7ecf6;
     text-shadow: var(--ff9-shadow); text-align: center;
 }
 .credits-title { font-size: 30px; color: var(--ff9-gold); margin-bottom: 6px; }
@@ -3068,7 +3079,7 @@ body.flipped-view #aiCastBarContainer {
 .career-list { display: flex; flex-direction: column; gap: 4px; max-height: 46vh; overflow-y: auto; }
 .career-row {
     display: flex; justify-content: space-between; gap: 24px; min-width: 420px;
-    font-family: 'Manrope UI', sans-serif; font-size: 20px; color: #e7ecf6; text-shadow: var(--ff9-shadow);
+    font-family: 'FF9UI', sans-serif; font-size: 20px; color: #e7ecf6; text-shadow: var(--ff9-shadow);
 }
 .career-row > .career-val { color: var(--ff9-gold); }
 
@@ -3089,7 +3100,7 @@ body.flipped-view #aiCastBarContainer {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 14px;
     color: #dfe6f2;
     text-shadow: var(--ff9-shadow, 2px 2px 0 #000);
@@ -3264,7 +3275,7 @@ body.gp-cursor-hidden * {
     padding: 12px 20px 14px;
 }
 .career-card-title {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 22px;
     letter-spacing: 1px;
     color: #c9a8ff;
@@ -3523,7 +3534,7 @@ body.gp-cursor-hidden * {
     font-size: 14px; letter-spacing: 3px; text-transform: uppercase; color: #8d889c;
 }
 #lobbyDoublesView #dLobbyStatus {
-    font-family: 'Manrope UI', sans-serif; font-size: 18px; letter-spacing: 3px; text-transform: uppercase;
+    font-family: 'FF9UI', sans-serif; font-size: 18px; letter-spacing: 3px; text-transform: uppercase;
     color: #6a44c4; margin-top: 2px;
 }
 #lobbyDoublesView #dFormatHint,
@@ -3587,7 +3598,7 @@ body.gp-cursor-hidden * {
 #lobbyDoublesView .menu-btn .menu-btn-glyph,
 #lobbyDoublesView .menu-btn .menu-btn-accent { display: none; }
 #lobbyDoublesView .menu-btn .menu-btn-label {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 34px;
     letter-spacing: 4px;
     text-transform: uppercase;
@@ -3751,7 +3762,7 @@ body.gp-cursor-hidden * {
     padding: 2px 0 6px 28px;
 }
 #endScreen .end-report td {
-    font-family: 'Manrope UI', sans-serif;
+    font-family: 'FF9UI', sans-serif;
     font-size: 24px;
     color: #ffe39a;
     text-shadow: var(--ff9-shadow);
@@ -3918,11 +3929,11 @@ body.gp-cursor-hidden * {
 .lobby-connected-msg, .lobby-ready-line, #gamepadPromptBar .gp-prompt-item { font-weight: 700; }
 .lobby-code { font-weight: 800; letter-spacing: 0.18em; }
 /* In-match data windows keep the pixel face even though they sit in .arcane-overlay screens. */
-#endScreen .end-report td { font-family: 'Manrope UI', monospace; }
+#endScreen .end-report td { font-family: 'FF9UI', monospace; }
 /* Prompt-bar key chips: always light text on their dark chip (on the light menus the item colour is
    darkened, and the chips inherited that — grey on navy, unreadable). */
 #gamepadPromptBar .gp-prompt-glyph { color: #f1ecff; font-family: 'Manrope', sans-serif; font-weight: 800; }
 
 /* The pixel face is kept ONLY for what pops up in the arena: floating damage numbers and the combat
    dialogue over the wizards' heads (cast speech bubbles, "Frozen!", "Cancel!"...). */
-.damage-number, .combat-text, .frozen-text { font-family: 'Pixelify Sans', monospace; }
+.damage-number, .combat-text, .frozen-text { font-family: 'FF9UI', monospace; }
