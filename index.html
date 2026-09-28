@@ -5947,13 +5947,19 @@
                 const full = document.createElement('canvas'); full.width = W; full.height = H;
                 const g = full.getContext('2d');
                 if (!faceRight) { g.translate(W, 0); g.scale(-1, 1); }
+                // the team-colour rim + glow, on its own canvas so the blurred copies can lay it back on crisp
+                let rimC = null, rg = null;
                 if (color) {
-                    g.shadowColor = color; g.shadowBlur = 22;                   // glow
+                    rimC = document.createElement('canvas'); rimC.width = W; rimC.height = H;
+                    rg = rimC.getContext('2d');
+                    if (!faceRight) { rg.translate(W, 0); rg.scale(-1, 1); }
+                    rg.shadowColor = color; rg.shadowBlur = 22;                  // glow
                     for (let k = 0; k < 16; k++) {                               // rim: dilate by ~7px
                         const a = k / 16 * Math.PI * 2;
-                        g.drawImage(tint, P + Math.cos(a) * 7, PY + Math.sin(a) * 7);
+                        rg.drawImage(tint, P + Math.cos(a) * 7, PY + Math.sin(a) * 7);
                     }
-                    g.shadowBlur = 0;
+                    rg.shadowBlur = 0;
+                    g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(rimC, 0, 0); g.restore();
                 }
                 g.drawImage(silImg, P, PY);                                       // the black silhouette
                 // ANIME SPEED LINES on the pickle itself (the band stays plain black): glowing white horizontal
@@ -6004,6 +6010,17 @@
                     bg.globalCompositeOperation = 'lighter';
                     const N = 16; bg.globalAlpha = 1 / N;
                     for (let k = 0; k < N; k++) bg.drawImage(full, -blurR + 2 * blurR * k / (N - 1), 0);
+                    // The smear would spread the thin rim to nothing (a 7px edge over ~2x blurR px), and the
+                    // team-colour leading edge is the read, so lay it back on crisp: the rim ring (body punched
+                    // out, nothing on the band side) over the smeared body and lines.
+                    if (rimC) {
+                        rg.globalCompositeOperation = 'destination-out';
+                        rg.drawImage(silImg, P, PY);
+                        rg.setTransform(1, 0, 0, 1, 0, 0);
+                        rg.clearRect(takeRight ? 0 : cut, 0, takeRight ? cut : W - cut, H);
+                        bg.globalCompositeOperation = 'source-over'; bg.globalAlpha = 1;
+                        bg.drawImage(rimC, 0, 0);
+                    }
                     src = bf;
                 }
                 out.getContext('2d').drawImage(src, x0, 0, w, H, 0, 0, w, H);
