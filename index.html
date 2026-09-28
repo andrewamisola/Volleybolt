@@ -5969,7 +5969,61 @@
             window.clearWipeBookends = () => {
                 for (const k in variants) variants[k].ctl.isVisible = false;
                 transitionWipe.left = '0%';
+                transitionWipe.top = '0px';
+                if (window.guiElements.wipeSpeedLines) window.guiElements.wipeSpeedLines.isVisible = false;
+                if (window.guiElements.wipeImpactFlash) { window.guiElements.wipeImpactFlash.isVisible = false; window.guiElements.wipeImpactFlash.alpha = 0; }
             };
+            // ANIME SPEED LINES across the black band (like a manga speed-line panel): glowing white horizontal
+            // streaks, tapered at both ends, drawn ONCE into a canvas that tiles horizontally (period = one screen),
+            // shown on an Image 2 screens wide so it can scroll seamlessly. Plus a white IMPACT FLASH for the
+            // frame the band slams to a stop.
+            const speedLines = new BABYLON.GUI.Image('wipeSpeedLines');
+            {
+                const PW = 1440, PH = 810;                       // one period (ideal GUI units, 16:9)
+                const cv = document.createElement('canvas'); cv.width = PW * 2; cv.height = PH;
+                const g = cv.getContext('2d');
+                let seed = 1337;
+                const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+                g.globalCompositeOperation = 'lighter';
+                for (let i = 0; i < 46; i++) {
+                    const y = rnd() * PH;
+                    const th = rnd() < 0.18 ? 3 + rnd() * 4 : 0.8 + rnd() * 2.2;       // a few heavy, many fine
+                    const len = PW * (0.25 + rnd() * 0.85);
+                    const x0 = rnd() * PW;
+                    const a = 0.25 + rnd() * 0.75;
+                    for (const dx of [0, PW, -PW]) {                                    // periodic in x
+                        const sx = x0 + dx;
+                        const grd = g.createLinearGradient(sx, 0, sx + len, 0);
+                        grd.addColorStop(0, 'rgba(255,255,255,0)');
+                        grd.addColorStop(0.25 + rnd() * 0.2, `rgba(255,255,255,${a.toFixed(2)})`);
+                        grd.addColorStop(0.75, `rgba(255,255,255,${(a * 0.8).toFixed(2)})`);
+                        grd.addColorStop(1, 'rgba(255,255,255,0)');
+                        g.shadowColor = 'rgba(255,255,255,0.9)'; g.shadowBlur = th * 3;
+                        g.fillStyle = grd;
+                        g.fillRect(sx, y - th / 2, len, th);
+                    }
+                }
+                speedLines.source = cv.toDataURL('image/png');
+            }
+            speedLines.stretch = BABYLON.GUI.Image.STRETCH_FILL;
+            speedLines.width = '200%'; speedLines.height = '100%';
+            speedLines.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+            speedLines.isHitTestVisible = false;
+            speedLines.isVisible = false;
+            // clipped to the band itself (the wipe container doesn't clip, so the bookends can hang outside it)
+            const linesClip = new BABYLON.GUI.Container('wipeLinesClip');
+            linesClip.width = '100%'; linesClip.height = '100%';
+            linesClip.clipChildren = true; linesClip.clipContent = true;
+            linesClip.isHitTestVisible = false; linesClip.zIndex = 900.5;
+            transitionWipe.addControl(linesClip);
+            linesClip.addControl(speedLines);
+            const impactFlash = new BABYLON.GUI.Rectangle('wipeImpactFlash');
+            impactFlash.width = '100%'; impactFlash.height = '100%'; impactFlash.thickness = 0;
+            impactFlash.background = '#ffffff'; impactFlash.alpha = 0; impactFlash.isVisible = false;
+            impactFlash.isHitTestVisible = false; impactFlash.zIndex = 900.6;
+            transitionWipe.addControl(impactFlash);
+            window.guiElements.wipeSpeedLines = speedLines;
+            window.guiElements.wipeImpactFlash = impactFlash;
             window.guiElements.transitionWipe = transitionWipe;
             window.guiElements.transitionOverlay = transitionOverlay;
 
@@ -24365,23 +24419,59 @@
             // Directional wipe (screen %): pushing toward Red, the black sweeps in from the LEFT and off to
             // the right — the push carries it toward the enemy end; toward Blue, the reverse.
             // overlay._sliding keeps the stage dressing from swapping until it fully covers.
-            // Snappy, Persona-style motion: the band slams in fast and settles (ease-out), then launches out
-            // (ease-in). (An ease-in-out read sluggish at both ends and smeared in the middle.)
-            function animateWipe(element, fromPct, toPct, duration, onComplete, easeIn) {
+            // Anime/Persona motion: the band RAMPS UP and slams in (accelerating to a hard stop -> impact frame),
+            // then launches out accelerating. The stage title is anchored to the band's middle and rides with it.
+            const wipe = window.guiElements.transitionWipe || overlay;
+            const lines = window.guiElements.wipeSpeedLines, flash = window.guiElements.wipeImpactFlash;
+            function animateWipe(element, fromPct, toPct, duration, power, onComplete) {
                 const startTime = performance.now();
                 element._sliding = true; overlay._sliding = true;
                 function update() {
                     const t = Math.min((performance.now() - startTime) / duration, 1);
-                    const e = easeIn ? t * t * t : 1 - Math.pow(1 - t, 3);
+                    const e = Math.pow(t, power);                           // accelerating (ramp-up)
                     element.left = (fromPct + (toPct - fromPct) * e).toFixed(2) + '%';
+                    text.left = element.left;                               // the title rides the band
                     if (t < 1) requestAnimationFrame(update);
                     else { element._sliding = false; overlay._sliding = false; if (onComplete) onComplete(); }
                 }
                 update();
             }
+            // Speed lines stream past AGAINST the direction of travel; faster while the band moves.
+            let linesOn = true, linesOffset = 0, linesSpeed = 3.2, lastLinesT = performance.now();
+            function streamLines() {
+                if (!linesOn || !lines) return;
+                const now = performance.now(), dt = Math.min(0.05, (now - lastLinesT) / 1000); lastLinesT = now;
+                linesOffset = (linesOffset + (movingRight ? -1 : 1) * linesSpeed * 100 * dt) % 100;
+                lines.left = (linesOffset > 0 ? linesOffset - 100 : linesOffset).toFixed(2) + '%';
+                requestAnimationFrame(streamLines);
+            }
+            function impactFrame() {
+                if (flash && !window._reduceMotion) {
+                    flash.isVisible = true; flash.alpha = 0.85;
+                    const t0 = performance.now();
+                    (function fade() {
+                        const k = Math.min(1, (performance.now() - t0) / 160);
+                        flash.alpha = 0.85 * (1 - k);
+                        if (k < 1) requestAnimationFrame(fade); else flash.isVisible = false;
+                    })();
+                }
+                if (lines) { lines.alpha = 1; linesSpeed = 5; }
+                // a short shake of the band (and its title)
+                if (!window._reduceMotion) {
+                    const t0 = performance.now();
+                    (function shake() {
+                        const k = (performance.now() - t0) / 220;
+                        const amp = k < 1 ? (1 - k) * 10 : 0;
+                        wipe.top = (Math.sin(k * 60) * amp).toFixed(1) + 'px';
+                        text.top = wipe.top;
+                        if (k < 1) requestAnimationFrame(shake); else { wipe.top = '0px'; text.top = '0px'; }
+                    })();
+                }
+                // settle the lines to a steady stream for the hold
+                setTimeout(() => { if (lines) { lines.alpha = 0.55; linesSpeed = 1.6; } }, 180);
+            }
             // The band + its pickle bookends sweep together; the leading edge glows in the PUSHING team's colour.
             // (Colourblind-aware: the right team uses the live TEAM_RIGHT colour.)
-            const wipe = window.guiElements.transitionWipe || overlay;
             const wc = window.wipeTeamColors ? window.wipeTeamColors() : { blue: '#3d8bff', red: '#ff5540' };
             const ends = window.setupWipeBookends
                 ? window.setupWipeBookends(movingRight, movingRight ? wc.blue : wc.red)
@@ -24391,9 +24481,14 @@
             overlay.alpha = 1;
             overlay.left = '0%';
             wipe.left = wipeIn + '%';
+            text.text = stageName;
+            text.alpha = 1;
+            text.left = wipe.left;
+            if (lines) { lines.isVisible = true; lines.alpha = 0.9; linesSpeed = 3.2; requestAnimationFrame(streamLines); }
 
-            // Step 1: Wipe the black across (450ms)
-            animateWipe(wipe, wipeIn, 0, 420, () => {
+            // Step 1: the band ramps up and slams in (then the impact frame)
+            animateWipe(wipe, wipeIn, 0, 380, 2.2, () => {
+                impactFrame();
                 // Step 2: Reset round while black
                 resetRound();
                 // resetRound clears the flag; keep inputs blocked
@@ -24404,44 +24499,37 @@
                 // lingers over the scene after the reveal (doReadyGoTransition does the same).
                 hideMessage();
 
-                // Step 3: Set text and fade it in (400ms)
-                text.text = stageName;
-                animateLeft(text, slideInFrom, centerPos, 400);
-                animateAlpha(text, 0, 1, 400, () => {
-                    // Step 4: Hold with text visible (2000ms)
-                    setTimeout(() => {
-                        // Step 5: Fade out text (400ms)
-                        animateAlpha(text, 1, 0, 400, () => {
-                            text.text = "";
-
-                            // Step 6: Wipe the black off the far side to reveal the new area (550ms)
-                            animateWipe(wipe, 0, wipeOut, 460, () => {
-                                // Hide overlay (reset for the other fades that reuse it), keep title visible at center
-                                overlay.isVisible = false;
-                                overlay.alpha = 0;
-                                overlay.left = '0%';
-                                if (window.clearWipeBookends) window.clearWipeBookends();
-                                // Keep the transition title on-screen; stage label matches color
-                                text.left = centerPos;
-                                text.alpha = 1;
-                                text.isVisible = true;
-                                if (window.guiElements?.stageNameText) {
-                                    window.guiElements.stageNameText.text = stageName;
-                                    if (window.getStageColor) {
-                                        window.guiElements.stageNameText.color = window.getStageColor(toStage);
-                                    }
-                                    window.guiElements.stageNameText.isVisible = (gameState !== 'menu');
-                                }
-                                // Step 7: Let scene show for prep time (1500ms)
-                                setTimeout(() => {
-                                    if (callback) callback();
-                                    // Unlock inputs after the transition and callback complete
-                                    roundTransitioning = false;
-                                }, 1500);
-                            }, true);   // ease-in: the band launches out
-                        });
-                    }, 2000);
-                });
+                // Step 3: hold on the stage name, lines streaming (1.9s)
+                setTimeout(() => {
+                    if (lines) { lines.alpha = 0.95; linesSpeed = 4; }
+                    // Step 4: launch the band (and its title) off the far side to reveal the new area
+                    animateWipe(wipe, 0, wipeOut, 420, 2.6, () => {
+                        linesOn = false;
+                        // Hide overlay (reset for the other fades that reuse it) and park the title
+                        overlay.isVisible = false;
+                        overlay.alpha = 0;
+                        overlay.left = '0%';
+                        if (window.clearWipeBookends) window.clearWipeBookends();
+                        text.text = "";
+                        text.left = centerPos;
+                        text.top = '0px';
+                        text.alpha = 1;
+                        text.isVisible = true;
+                        if (window.guiElements?.stageNameText) {
+                            window.guiElements.stageNameText.text = stageName;
+                            if (window.getStageColor) {
+                                window.guiElements.stageNameText.color = window.getStageColor(toStage);
+                            }
+                            window.guiElements.stageNameText.isVisible = (gameState !== 'menu');
+                        }
+                        // Step 5: Let scene show for prep time (1500ms)
+                        setTimeout(() => {
+                            if (callback) callback();
+                            // Unlock inputs after the transition and callback complete
+                            roundTransitioning = false;
+                        }, 1500);
+                    });
+                }, 1900);
             });
         }
 
