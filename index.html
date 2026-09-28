@@ -5907,6 +5907,34 @@
                     g.shadowBlur = 0;
                 }
                 g.drawImage(silImg, P, P);                                       // the black silhouette
+                // ANIME SPEED LINES on the pickle itself (the band stays plain black): glowing white horizontal
+                // streaks, tapered at both ends, clipped to the black body so the rim stays clean.
+                const lc = document.createElement('canvas'); lc.width = W; lc.height = H;
+                const lg = lc.getContext('2d');
+                let seed = 1337;
+                const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+                lg.globalCompositeOperation = 'lighter';
+                for (let i = 0; i < 42; i++) {
+                    const y = rnd() * H;
+                    const th = rnd() < 0.18 ? 2.5 + rnd() * 3 : 0.7 + rnd() * 1.6;    // a few heavy, many fine
+                    const len = W * (0.3 + rnd() * 0.7);
+                    const sx = -0.2 * W + rnd() * W;
+                    const a = 0.3 + rnd() * 0.7;
+                    const grd = lg.createLinearGradient(sx, 0, sx + len, 0);
+                    grd.addColorStop(0, 'rgba(255,255,255,0)');
+                    grd.addColorStop(0.25 + rnd() * 0.2, `rgba(255,255,255,${a.toFixed(2)})`);
+                    grd.addColorStop(0.75, `rgba(255,255,255,${(a * 0.8).toFixed(2)})`);
+                    grd.addColorStop(1, 'rgba(255,255,255,0)');
+                    lg.shadowColor = 'rgba(255,255,255,0.9)'; lg.shadowBlur = th * 3;
+                    lg.fillStyle = grd;
+                    lg.fillRect(sx, y - th / 2, len, th);
+                }
+                lg.shadowBlur = 0;
+                lg.globalCompositeOperation = 'destination-in';                 // keep only inside the body
+                if (!faceRight) { lg.translate(W, 0); lg.scale(-1, 1); }
+                lg.drawImage(silImg, P, P);
+                g.setTransform(1, 0, 0, 1, 0, 0);
+                g.drawImage(lc, 0, 0);
                 const cutRaw = P + SIL_CUT * W0;
                 const cut = Math.round(faceRight ? cutRaw : W - cutRaw);
                 const takeRight = (front === faceRight);                         // front of a right-runner = its right part
@@ -5970,59 +5998,14 @@
                 for (const k in variants) variants[k].ctl.isVisible = false;
                 transitionWipe.left = '0%';
                 transitionWipe.top = '0px';
-                if (window.guiElements.wipeSpeedLines) window.guiElements.wipeSpeedLines.isVisible = false;
                 if (window.guiElements.wipeImpactFlash) { window.guiElements.wipeImpactFlash.isVisible = false; window.guiElements.wipeImpactFlash.alpha = 0; }
             };
-            // ANIME SPEED LINES across the black band (like a manga speed-line panel): glowing white horizontal
-            // streaks, tapered at both ends, drawn ONCE into a canvas that tiles horizontally (period = one screen),
-            // shown on an Image 2 screens wide so it can scroll seamlessly. Plus a white IMPACT FLASH for the
-            // frame the band slams to a stop.
-            const speedLines = new BABYLON.GUI.Image('wipeSpeedLines');
-            {
-                const PW = 1440, PH = 810;                       // one period (ideal GUI units, 16:9)
-                const cv = document.createElement('canvas'); cv.width = PW * 2; cv.height = PH;
-                const g = cv.getContext('2d');
-                let seed = 1337;
-                const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-                g.globalCompositeOperation = 'lighter';
-                for (let i = 0; i < 46; i++) {
-                    const y = rnd() * PH;
-                    const th = rnd() < 0.18 ? 3 + rnd() * 4 : 0.8 + rnd() * 2.2;       // a few heavy, many fine
-                    const len = PW * (0.25 + rnd() * 0.85);
-                    const x0 = rnd() * PW;
-                    const a = 0.25 + rnd() * 0.75;
-                    for (const dx of [0, PW, -PW]) {                                    // periodic in x
-                        const sx = x0 + dx;
-                        const grd = g.createLinearGradient(sx, 0, sx + len, 0);
-                        grd.addColorStop(0, 'rgba(255,255,255,0)');
-                        grd.addColorStop(0.25 + rnd() * 0.2, `rgba(255,255,255,${a.toFixed(2)})`);
-                        grd.addColorStop(0.75, `rgba(255,255,255,${(a * 0.8).toFixed(2)})`);
-                        grd.addColorStop(1, 'rgba(255,255,255,0)');
-                        g.shadowColor = 'rgba(255,255,255,0.9)'; g.shadowBlur = th * 3;
-                        g.fillStyle = grd;
-                        g.fillRect(sx, y - th / 2, len, th);
-                    }
-                }
-                speedLines.source = cv.toDataURL('image/png');
-            }
-            speedLines.stretch = BABYLON.GUI.Image.STRETCH_FILL;
-            speedLines.width = '200%'; speedLines.height = '100%';
-            speedLines.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-            speedLines.isHitTestVisible = false;
-            speedLines.isVisible = false;
-            // clipped to the band itself (the wipe container doesn't clip, so the bookends can hang outside it)
-            const linesClip = new BABYLON.GUI.Container('wipeLinesClip');
-            linesClip.width = '100%'; linesClip.height = '100%';
-            linesClip.clipChildren = true; linesClip.clipContent = true;
-            linesClip.isHitTestVisible = false; linesClip.zIndex = 900.5;
-            transitionWipe.addControl(linesClip);
-            linesClip.addControl(speedLines);
+            // IMPACT FLASH for the frame the band slams to a stop.
             const impactFlash = new BABYLON.GUI.Rectangle('wipeImpactFlash');
             impactFlash.width = '100%'; impactFlash.height = '100%'; impactFlash.thickness = 0;
             impactFlash.background = '#ffffff'; impactFlash.alpha = 0; impactFlash.isVisible = false;
             impactFlash.isHitTestVisible = false; impactFlash.zIndex = 900.6;
             transitionWipe.addControl(impactFlash);
-            window.guiElements.wipeSpeedLines = speedLines;
             window.guiElements.wipeImpactFlash = impactFlash;
             window.guiElements.transitionWipe = transitionWipe;
             window.guiElements.transitionOverlay = transitionOverlay;
@@ -24422,7 +24405,7 @@
             // Anime/Persona motion: the band RAMPS UP and slams in (accelerating to a hard stop -> impact frame),
             // then launches out accelerating. The stage title is anchored to the band's middle and rides with it.
             const wipe = window.guiElements.transitionWipe || overlay;
-            const lines = window.guiElements.wipeSpeedLines, flash = window.guiElements.wipeImpactFlash;
+            const flash = window.guiElements.wipeImpactFlash;
             function animateWipe(element, fromPct, toPct, duration, power, onComplete) {
                 const startTime = performance.now();
                 element._sliding = true; overlay._sliding = true;
@@ -24436,15 +24419,6 @@
                 }
                 update();
             }
-            // Speed lines stream past AGAINST the direction of travel; faster while the band moves.
-            let linesOn = true, linesOffset = 0, linesSpeed = 3.2, lastLinesT = performance.now();
-            function streamLines() {
-                if (!linesOn || !lines) return;
-                const now = performance.now(), dt = Math.min(0.05, (now - lastLinesT) / 1000); lastLinesT = now;
-                linesOffset = (linesOffset + (movingRight ? -1 : 1) * linesSpeed * 100 * dt) % 100;
-                lines.left = (linesOffset > 0 ? linesOffset - 100 : linesOffset).toFixed(2) + '%';
-                requestAnimationFrame(streamLines);
-            }
             function impactFrame() {
                 if (flash && !window._reduceMotion) {
                     flash.isVisible = true; flash.alpha = 0.85;
@@ -24455,7 +24429,6 @@
                         if (k < 1) requestAnimationFrame(fade); else flash.isVisible = false;
                     })();
                 }
-                if (lines) { lines.alpha = 1; linesSpeed = 5; }
                 // a short shake of the band (and its title)
                 if (!window._reduceMotion) {
                     const t0 = performance.now();
@@ -24465,16 +24438,6 @@
                         wipe.top = (Math.sin(k * 60) * amp).toFixed(1) + 'px';
                         text.top = wipe.top;
                         if (k < 1) requestAnimationFrame(shake); else { wipe.top = '0px'; text.top = '0px'; }
-                    })();
-                }
-                // the lines only belong to the motion (the ends, when the silhouettes are on screen):
-                // they die off over the impact and the hold is plain black
-                if (lines) {
-                    const t0 = performance.now();
-                    (function fadeLines() {
-                        const k = Math.min(1, (performance.now() - t0) / 200);
-                        lines.alpha = 1 - k;
-                        if (k < 1) requestAnimationFrame(fadeLines); else lines.isVisible = false;
                     })();
                 }
             }
@@ -24492,7 +24455,6 @@
             text.text = stageName;
             text.alpha = 1;
             text.left = wipe.left;
-            if (lines) { lines.isVisible = true; lines.alpha = 0.9; linesSpeed = 3.2; requestAnimationFrame(streamLines); }
 
             // Step 1: the band ramps up and slams in (then the impact frame)
             animateWipe(wipe, wipeIn, 0, 380, 2.2, () => {
@@ -24509,10 +24471,8 @@
 
                 // Step 3: hold on the stage name, lines streaming (1.9s)
                 setTimeout(() => {
-                    if (lines) { lines.isVisible = true; lines.alpha = 0.95; linesSpeed = 4; }
                     // Step 4: launch the band (and its title) off the far side to reveal the new area
                     animateWipe(wipe, 0, wipeOut, 420, 2.6, () => {
-                        linesOn = false;
                         // Hide overlay (reset for the other fades that reuse it) and park the title
                         overlay.isVisible = false;
                         overlay.alpha = 0;
