@@ -3797,6 +3797,88 @@ body.gp-cursor-hidden * {
 #endScreen .end-row-blue .end-name { color: #6fb0ff; }
 #endScreen .end-row-red .end-name { color: #e76e55; }
 #endScreen #victoryButtons { opacity: 1; gap: 6px; margin-left: -48px; }
+
+/* ---- End screen: TV-tennis MATCH SUMMARY, centred (only #endScreen; the pause overlay keeps the shared
+   left-column layout). Title, result banner, round scoreboard, centre-out stat bars, names in the corners. ---- */
+#endScreen .end-scrim {
+    background:
+        linear-gradient(90deg, rgba(60, 120, 255, 0.16) 0%, rgba(60, 120, 255, 0) 30%,
+                               rgba(255, 90, 60, 0) 70%, rgba(255, 90, 60, 0.16) 100%),
+        linear-gradient(180deg, rgba(14, 14, 42, 0.80) 0%, rgba(14, 14, 42, 0.86) 70%, rgba(8, 8, 26, 0.96) 100%);
+}
+#endScreen .end-content { left: 0; right: 0; top: 60px; bottom: 150px; align-items: center; justify-content: flex-start; gap: 26px; }
+#endScreen .arcane-title { font-size: 120px; margin: 0 0 -4px; }
+#endScreen .ms-banner {
+    width: 1920px;
+    text-align: center;
+    padding: 10px 0 9px;
+    font-family: 'Manrope UI', 'Manrope', sans-serif;
+    font-weight: 800;
+    font-size: 30px;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    color: #14122a;
+    background: linear-gradient(90deg, rgba(240, 192, 80, 0) 12%, #f0c050 34%, #f0c050 66%, rgba(240, 192, 80, 0) 88%);
+}
+#endScreen .ms-board { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+#endScreen .ms-board-row { display: flex; align-items: center; gap: 5px; }
+#endScreen .ms-board-name {
+    width: 170px; margin-right: 12px; text-align: right;
+    font-family: 'Manrope UI', 'Manrope', sans-serif; font-weight: 800; font-size: 22px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#endScreen .ms-board-row.blue .ms-board-name { color: #6fb0ff; }
+#endScreen .ms-board-row.red .ms-board-name { color: #e76e55; }
+#endScreen .ms-board-more { color: #8f88a6; font: 800 18px 'Manrope', sans-serif; width: 20px; text-align: center; }
+#endScreen .ms-box {
+    width: 32px; height: 32px; border-radius: 5px;
+    background: rgba(255, 255, 255, 0.07);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+    font-family: 'Manrope UI', 'Manrope', sans-serif; font-weight: 800; font-size: 18px;
+    line-height: 32px; text-align: center; color: #10131c;
+}
+#endScreen .ms-board-row.blue .ms-box.won { background: #6fb0ff; box-shadow: none; }
+#endScreen .ms-board-row.red .ms-box.won { background: #e76e55; box-shadow: none; }
+#endScreen .ms-board-total {
+    min-width: 60px; margin-left: 14px; padding-left: 16px;
+    border-left: 2px solid rgba(255, 255, 255, 0.16);
+    font-family: 'Manrope UI', 'Manrope', sans-serif; font-weight: 800; font-size: 40px; line-height: 40px;
+    color: #ffffff;
+}
+#endScreen .ms-stats { display: flex; flex-direction: column; gap: 16px; margin-top: 6px; }
+#endScreen .ms-stat { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+#endScreen .ms-label {
+    font-family: 'Manrope UI', 'Manrope', sans-serif; font-weight: 800; font-size: 24px;
+    letter-spacing: 0.12em; text-transform: uppercase; color: #ffffff;
+}
+/* two halves meeting at the centre; each value sits right at its bar's outer end */
+#endScreen .ms-bars { display: flex; gap: 16px; }
+#endScreen .ms-half { width: 500px; display: flex; align-items: center; gap: 16px; }
+#endScreen .ms-half.l { justify-content: flex-end; }
+#endScreen .ms-half.r { justify-content: flex-start; }
+#endScreen .ms-bar { display: block; height: 46px; flex: none; }
+#endScreen .ms-bar.l { background: #6fb0ff; }
+#endScreen .ms-bar.r { background: #e76e55; }
+#endScreen .ms-val {
+    font-family: 'Manrope UI', 'Manrope', sans-serif; font-weight: 800; font-size: 44px; line-height: 1;
+    color: #ffffff;
+}
+#endScreen .ms-val.l.lead { color: #6fb0ff; }
+#endScreen .ms-val.r.lead { color: #e76e55; }
+#endScreen .ms-name {
+    position: absolute; bottom: 44px;
+    font-family: 'Ferrum', serif; font-size: 96px; line-height: 1;
+    text-shadow: 0 5px 0 #000;
+    max-width: 640px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    animation: endFade 0.4s ease both;
+}
+#endScreen .ms-left { left: 110px; color: #6fb0ff; }
+#endScreen .ms-right { right: 110px; color: #e76e55; text-align: right; }
+#endScreen #victoryButtons {
+    position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%);
+    flex-direction: row; gap: 40px; margin-left: 0;
+}
+
 #endScreen .end-wait {
     font-family: 'Manrope', sans-serif;
     font-weight: 800;

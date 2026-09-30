@@ -835,6 +835,9 @@
         // Game state
         let playerScore = 0;
         let aiScore = 0;
+        // Round-by-round winners ('left' | 'right') for the end screen's tennis-style scoreboard.
+        // Presentation only (not snapshotted/hashed; round ends are confirmed-only online).
+        let roundLog = [];
         const winningScore = 5;
         let gameOver = false;
         let waitingToServe = true;
@@ -24064,18 +24067,72 @@
                     { cls: 'blue', name: isDoubles ? 'Blue Team' : window.getPlayerName(), s: team(cb.left, cb.leftBack) },
                     { cls: 'red',  name: isDoubles ? 'Red Team' : 'Red', s: team(cb.right, cb.rightBack) },
                 ];
-                const tbody = document.getElementById('endReportBody');
-                tbody.textContent = '';
-                for (const r of rows) {
-                    const tr = document.createElement('tr');
-                    tr.className = 'end-row-' + r.cls;
-                    for (const [v, c] of [[r.name, 'end-name'], [r.s.cast], [r.s.parry], [r.s.dmg]]) {
-                        const td = document.createElement('td');
-                        td.textContent = '' + v;
-                        if (c) td.className = c;
-                        tr.appendChild(td);
+                // MATCH SUMMARY. roundLog is the source of truth for the score (fallback: the running
+                // scores). A tug-of-war match is won from 3 rounds up, so the winner has more rounds.
+                const [L, R] = rows;
+                const wins = { left: 0, right: 0 };
+                for (const w of roundLog) wins[w]++;
+                if (!roundLog.length) { wins.left = playerScore; wins.right = aiScore; }
+                const leftWon = wins.left >= wins.right;
+                const W = leftWon ? L : R;
+                document.getElementById('msBanner').textContent =
+                    W.name + ' won ' + (leftWon ? wins.left + '-' + wins.right : wins.right + '-' + wins.left);
+                document.getElementById('msBanner').className = 'ms-banner ' + (leftWon ? 'blue' : 'red');
+                document.getElementById('msNameL').textContent = L.name;
+                document.getElementById('msNameR').textContent = R.name;
+
+                // Scoreboard (tennis-style): a box per round, filled in the winner's colour with that team's
+                // running score, then the totals. Long matches show the last BOARD_MAX rounds.
+                const board = document.getElementById('msBoard');
+                board.textContent = '';
+                const BOARD_MAX = 16;
+                const run = { left: 0, right: 0 };
+                const cells = roundLog.map(w => { run[w]++; return { w, n: run[w] }; });
+                const shown = cells.slice(-BOARD_MAX), clipped = cells.length > shown.length;
+                for (const [side, r] of [['left', L], ['right', R]]) {
+                    const row = document.createElement('div');
+                    row.className = 'ms-board-row ' + r.cls;
+                    const nm = document.createElement('span');
+                    nm.className = 'ms-board-name'; nm.textContent = r.name;
+                    row.appendChild(nm);
+                    if (clipped) {
+                        const more = document.createElement('span');
+                        more.className = 'ms-board-more'; more.textContent = '\u2026';
+                        row.appendChild(more);
                     }
-                    tbody.appendChild(tr);
+                    for (const c of shown) {
+                        const b = document.createElement('span');
+                        b.className = 'ms-box' + (c.w === side ? ' won' : '');
+                        b.textContent = c.w === side ? '' + c.n : '';
+                        row.appendChild(b);
+                    }
+                    const tot = document.createElement('span');
+                    tot.className = 'ms-board-total'; tot.textContent = '' + wins[side];
+                    row.appendChild(tot);
+                    board.appendChild(row);
+                }
+
+                // Head-to-head stats: label centred, each team's bar grows out from the centre
+                // (length relative to the larger of the pair), value at the bar's end.
+                const stats = document.getElementById('msStats');
+                stats.textContent = '';
+                const BAR_MAX = 330;   // design px
+                for (const [label, a, b] of [['Casts', L.s.cast, R.s.cast], ['Parries', L.s.parry, R.s.parry], ['Damage', L.s.dmg, R.s.dmg]]) {
+                    const max = Math.max(a, b, 1);
+                    const st = document.createElement('div');
+                    st.className = 'ms-stat';
+                    st.innerHTML =
+                        '<div class="ms-label"></div>' +
+                        '<div class="ms-bars">' +
+                            '<div class="ms-half l"><span class="ms-val l' + (a > b ? ' lead' : '') + '"></span><i class="ms-bar l"></i></div>' +
+                            '<div class="ms-half r"><i class="ms-bar r"></i><span class="ms-val r' + (b > a ? ' lead' : '') + '"></span></div>' +
+                        '</div>';
+                    st.querySelector('.ms-label').textContent = label;
+                    st.querySelector('.ms-val.l').textContent = '' + a;
+                    st.querySelector('.ms-val.r').textContent = '' + b;
+                    st.querySelector('.ms-bar.l').style.width = Math.round(a / max * BAR_MAX) + 'px';
+                    st.querySelector('.ms-bar.r').style.width = Math.round(b / max * BAR_MAX) + 'px';
+                    stats.appendChild(st);
                 }
             }
             const lbRefs = window.guiElements.victoryLeaderboardRefs;
@@ -24154,12 +24211,14 @@
                 '<div class="end-scrim"></div>' +
                 '<div class="end-content">' +
                     '<h1 class="arcane-title" id="endScreenTitle" data-text="Victory">Victory</h1>' +
-                    '<div class="career-card end-report">' +
-                        '<div class="career-card-title">Battle Report</div>' +
-                        '<table><thead><tr><th></th><th>CAS</th><th>PAR</th><th>DMG</th></tr></thead>' +
-                        '<tbody id="endReportBody"></tbody></table>' +
-                    '</div>' +
-                '</div>';
+                    // Match summary, TV-tennis style: result banner, the round-by-round scoreboard, then
+                    // head-to-head stat bars growing out from the centre; team names in the bottom corners.
+                    '<div class="ms-banner" id="msBanner"></div>' +
+                    '<div class="ms-board" id="msBoard"></div>' +
+                    '<div class="ms-stats" id="msStats"></div>' +
+                '</div>' +
+                '<div class="ms-name ms-left" id="msNameL"></div>' +
+                '<div class="ms-name ms-right" id="msNameR"></div>';
             ensureEndScreenScaleLayer().appendChild(el);
             return el;
         }
@@ -24322,6 +24381,7 @@
         }
 
         function resetGame() {
+            roundLog = [];
             presTimers.length = 0;              // an abandoned stage transition's frames never fire into this match
             if (window.clearWipeBookends) window.clearWipeBookends();
             playerScore = 0;
@@ -26462,6 +26522,7 @@
 
             // Track rounds for gate regeneration system
             totalRoundsPlayed++;
+            roundLog.push(winnerSide === 'left' ? 'left' : 'right');
             // Record when we're leaving this stage (for regen calculation on return)
             lastRoundAtStage[currentStage] = totalRoundsPlayed;
 
