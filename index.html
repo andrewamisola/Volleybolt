@@ -8019,8 +8019,10 @@
                 scene.onBeforeRenderObservable.add(() => {
                     const inGame = ((typeof gameState === 'undefined') || (gameState !== 'menu' && gameState !== 'lobby'))
                         && !window.hudHidden;   // debug hide-HUD hides the command/stats windows too
-                    if (box.isVisible !== inGame) box.isVisible = inGame;
-                    if (titleTab.isVisible !== inGame) titleTab.isVisible = inGame;
+                    // Spectating: nothing to command — hide the COMMAND window (Combat Log + Status stay).
+                    const showCmd = inGame && !(window.isSpectating && window.isSpectating());
+                    if (box.isVisible !== showCmd) box.isVisible = showCmd;
+                    if (titleTab.isVisible !== showCmd) titleTab.isVisible = showCmd;
                     if (!inGame) {
                         if (detailBox.isVisible) hideDetail();
                         hideTip();
@@ -12414,7 +12416,7 @@
                 const titleCard = (isVictory, winnerSide) => {
                     const el = document.createElement('div');
                     const spec = window.isSpectating && window.isSpectating();
-                    el.className = 'cine-title ' + (isVictory || spec ? 'is-victory' : 'is-defeat') + ' team-' + winnerSide;
+                    el.className = 'cine-title ' + (isVictory || spec ? 'is-victory' : 'is-defeat') + (spec ? ' is-spectate' : '') + ' team-' + winnerSide;
                     el.innerHTML = '<span>' + (spec ? (winnerSide === 'left' ? 'Blue' : 'Red') + ' Wins'
                                                     : (isVictory ? 'Victory' : 'Defeat')) + '</span>';
                     layer().appendChild(el);
@@ -24106,10 +24108,11 @@
             const endScreen = ensureEndScreen();
             const endTitle = document.getElementById('endScreenTitle');
             // Spectating: nobody "won" or "lost" from the viewer's seat, so name the winning team instead.
-            const specWin = spectating ? ((isVictory ? 'Blue' : 'Red') + ' Wins') : null;
+            const specWin = spectating ? ((matchTotals().wins.left > matchTotals().wins.right ? 'Blue' : 'Red') + ' Wins') : null;
             endTitle.textContent = specWin || (isVictory ? 'Victory' : 'Defeat');
             endTitle.setAttribute('data-text', endTitle.textContent);
             endScreen.classList.toggle('is-defeat', !isVictory && !spectating);
+            endScreen.classList.toggle('is-spectate', spectating);   // gold title (no side to be purple for)
 
             // Hide the regular message
             hideMessage();
@@ -26696,6 +26699,11 @@
             const winnerOwner = winnerSide === 'left' ? 'player' : 'ai';
             const localSide = getLocalSide();
             const localWon = gameMode === 'pvp' ? (winnerSide === localSide) : (winnerOwner === 'player');
+            // Spectating: the viewer has no side, so every ending gets the WIN presentation (victory
+            // fanfare, no defeat styling; the title names the winning team) and stage messages name who took it.
+            const presWon = spectating || localWon;
+            const stageMsg = spectating ? ((winnerSide === 'left' ? 'Blue' : 'Red') + ' takes ' + stageName + '!')
+                                        : (localWon ? (stageName + " Won!") : (stageName + " Lost!"));
 
             // Track rounds for gate regeneration system
             totalRoundsPlayed++;
@@ -26746,9 +26754,9 @@
                     StatTracker.increment('matches_won');
                     StatTracker.commitMatch();
                     // Show victory screen instantly
-                    if (window.playVictoryCinematic) playVictoryCinematic(localWon, winnerSide); else showVictoryScreen(localWon);
+                    if (window.playVictoryCinematic) playVictoryCinematic(presWon, winnerSide); else showVictoryScreen(presWon);
                 } else {
-                    showMessage(localWon ? (stageName + " Won!") : (stageName + " Lost!"));
+                    showMessage(stageMsg);
                     currentStage++;
                 }
             } else {
@@ -26783,9 +26791,9 @@
                     StatTracker.increment('matches_lost');
                     StatTracker.commitMatch();
                     // Show defeat screen instantly
-                    if (window.playVictoryCinematic) playVictoryCinematic(localWon, winnerSide); else showVictoryScreen(localWon);
+                    if (window.playVictoryCinematic) playVictoryCinematic(presWon, winnerSide); else showVictoryScreen(presWon);
                 } else {
-                    showMessage(localWon ? (stageName + " Won!") : (stageName + " Lost!"));
+                    showMessage(stageMsg);
                     currentStage--;
                 }
             }

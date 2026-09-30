@@ -4088,3 +4088,11 @@ body.gp-cursor-hidden * {
 #liveStats .ls-pip { width: 16px; height: 16px; border-radius: 3px; }
 #liveStats .ls-pip.blue { background: #6fb0ff; }
 #liveStats .ls-pip.red { background: #e76e55; }
+
+/* Spectate endings: no side to be purple for, so the title is gold (the banner's colour). */
+#endScreen.is-spectate .arcane-title,
+.cine-title.is-spectate > span {
+    background: linear-gradient(180deg, #fff3c4 0%, #f5cf63 45%, #c98f22 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+}
