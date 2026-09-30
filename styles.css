@@ -3822,8 +3822,9 @@ body.gp-cursor-hidden * {
 }
 #endScreen .ms-board { display: flex; flex-direction: column; gap: 6px; align-items: center; }
 #endScreen .ms-board-row { display: flex; align-items: center; gap: 5px; }
+/* name and total columns are the SAME width (150px + 12px gap) so the round boxes sit on the centre line */
 #endScreen .ms-board-name {
-    width: 170px; margin-right: 12px; text-align: right;
+    width: 150px; margin-right: 12px; text-align: right;
     font-family: 'Manrope UI', 'Manrope', sans-serif; font-weight: 800; font-size: 22px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
@@ -3840,11 +3841,12 @@ body.gp-cursor-hidden * {
 #endScreen .ms-board-row.blue .ms-box.won { background: #6fb0ff; box-shadow: none; }
 #endScreen .ms-board-row.red .ms-box.won { background: #e76e55; box-shadow: none; }
 #endScreen .ms-board-total {
-    min-width: 60px; margin-left: 14px; padding-left: 16px;
+    box-sizing: border-box; width: 150px; margin-left: 12px; padding-left: 16px;
     border-left: 2px solid rgba(255, 255, 255, 0.16);
     font-family: 'Manrope UI', 'Manrope', sans-serif; font-weight: 800; font-size: 40px; line-height: 40px;
-    color: #ffffff;
+    color: #7f7a96;
 }
+#endScreen .ms-board-total.lead { color: #ffffff; }
 #endScreen .ms-stats { display: flex; flex-direction: column; gap: 16px; margin-top: 6px; }
 #endScreen .ms-stat { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 #endScreen .ms-label {
@@ -3859,12 +3861,12 @@ body.gp-cursor-hidden * {
 #endScreen .ms-bar { display: block; height: 46px; flex: none; }
 #endScreen .ms-bar.l { background: #6fb0ff; }
 #endScreen .ms-bar.r { background: #e76e55; }
+/* the category winner's number is the bright white one; the other is muted (a tie: both bright) */
 #endScreen .ms-val {
     font-family: 'Manrope UI', 'Manrope', sans-serif; font-weight: 800; font-size: 44px; line-height: 1;
-    color: #ffffff;
+    color: #7f7a96;
 }
-#endScreen .ms-val.l.lead { color: #6fb0ff; }
-#endScreen .ms-val.r.lead { color: #e76e55; }
+#endScreen .ms-val.lead { color: #ffffff; }
 #endScreen .ms-name {
     position: absolute; bottom: 44px;
     font-family: 'Ferrum', serif; font-size: 96px; line-height: 1;

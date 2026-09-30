@@ -24107,7 +24107,9 @@
                         row.appendChild(b);
                     }
                     const tot = document.createElement('span');
-                    tot.className = 'ms-board-total'; tot.textContent = '' + wins[side];
+                    const other = side === 'left' ? 'right' : 'left';
+                    tot.className = 'ms-board-total' + (wins[side] >= wins[other] ? ' lead' : '');
+                    tot.textContent = '' + wins[side];
                     row.appendChild(tot);
                     board.appendChild(row);
                 }
@@ -24124,8 +24126,8 @@
                     st.innerHTML =
                         '<div class="ms-label"></div>' +
                         '<div class="ms-bars">' +
-                            '<div class="ms-half l"><span class="ms-val l' + (a > b ? ' lead' : '') + '"></span><i class="ms-bar l"></i></div>' +
-                            '<div class="ms-half r"><i class="ms-bar r"></i><span class="ms-val r' + (b > a ? ' lead' : '') + '"></span></div>' +
+                            '<div class="ms-half l"><span class="ms-val l' + (a >= b ? ' lead' : '') + '"></span><i class="ms-bar l"></i></div>' +
+                            '<div class="ms-half r"><i class="ms-bar r"></i><span class="ms-val r' + (b >= a ? ' lead' : '') + '"></span></div>' +
                         '</div>';
                     st.querySelector('.ms-label').textContent = label;
                     st.querySelector('.ms-val.l').textContent = '' + a;
