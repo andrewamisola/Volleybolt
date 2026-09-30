@@ -944,7 +944,14 @@
 
 
         // New parry system - window-based
-        const parryWindow = 0.5;          // 0.5 second active window after pressing
+        // PARRY WINDOW IN FRAMES (Elden-Ring style, at the fixed 60Hz sim step). No startup: the parry is
+        // live from the frame it's pressed for PARRY_ACTIVE_FRAMES frames. 30 -> 20 frames (a third smaller,
+        // 2026-09-30 playtest: player parries 67 vs the AI's 26). Same for everyone; the AI presses within
+        // ~15 frames of real impact (PARRY_LEAD_TIME 0.35s minus its 0.1s reaction lag), so this tightens
+        // human timing, not the AI's odds. The sim ticks the timer by dt = 1/60, so it starts half a frame
+        // short: float error can never stretch it into an extra frame.
+        const PARRY_ACTIVE_FRAMES = 20;
+        const parryWindow = (PARRY_ACTIVE_FRAMES - 0.5) / 60;
         const parrySuccessCooldown = 0.2; // Quick refresh on successful parry
         const parryFailCooldown = 3.0;    // Punishment for whiffing
         const parryHitboxExtend = 2.5;    // Extended hitbox range during parry window
@@ -14175,7 +14182,7 @@
                 // based policies — a frostbolt bucket is exactly as fickle as a fireball's).
                 const PARRY_RANGE = 2.5;
                 // PARRY_LEAD_TIME (tunable, seconds): the PERFECT bucket's window — press only when
-                // the ball will reach us within this window. The active parry lasts 0.5s
+                // the ball will reach us within this window. The active parry lasts 1/3s (was 0.5s)
                 // (consts.parryWindow) and whiffing burns a 3s fail-cooldown, so pressing early
                 // (ball still ~18-20u out) expired the window and the cooldown then blanketed the
                 // real arrival — the AI could never reactive-parry. 0.35 keeps the press inside the
@@ -14188,7 +14195,7 @@
                 // means NEVER press for this ball. Named + tunable independently of PARRY_LEAD_TIME.
                 //   PERFECT (0): press at tti in (0, 0.35) — today's window, the "does it right"
                 //                third.
-                //   EARLY   (1): press at tti in [0.60, 0.90) — the 0.5s parry window expires
+                //   EARLY   (1): press at tti in [0.60, 0.90) — the 1/3s parry window expires
                 //                0.10-0.40s BEFORE the ball arrives -> the press whiffs early and
                 //                the AI eats its own 3s fail-cooldown, exactly like an early-
                 //                flinching human. (Frostbolt caveat at low/mid skill: sightFrames
@@ -14504,7 +14511,9 @@
                 updateSlotThreatSight(st, slotKey);            // side-derived incoming sight tick
                 st.views.push(buildAIViewForSlot(slotKey));
                 while (st.views.length > prof.reactionFrames + 1) st.views.shift();
-                return aiJuiceGuard(decideAI(st.views[0], frame,
+                // lagged world, current self (see the singles driver: a lagged self made the AI shimmy)
+                const _view = { ...st.views[0], self: st.views[st.views.length - 1].self };
+                return aiJuiceGuard(decideAI(_view, frame,
                     makeAIRng(frame ^ AI_RNG_SEED ^ DOUBLES_AI.slotSalt[slotKey]), prof), slotKey);
             }
             // Exposed so the outer-scope online lockstep merge (host) can fill AI slots — mirrors the
@@ -14609,7 +14618,11 @@
                 aiViewHistory.push(buildAISingleView());
                 const lag = (aiProfile.reactionFrames | 0);
                 while (aiViewHistory.length > lag + 1) aiViewHistory.shift();
-                const aiView = aiViewHistory[0];   // oldest retained ≈ `lag` frames old once warmed
+                // The WORLD is `lag` frames old, but the AI knows where its OWN paddle is right now (a player
+                // does). With a lagged self it saw itself ~2u behind at full speed (> the 0.65 deadzone), so it
+                // overshot, reversed and overshot again: a permanent shimmy on a fixed target like a beam's
+                // lane, which let the beam connect in and out.
+                const aiView = { ...aiViewHistory[0], self: aiViewHistory[aiViewHistory.length - 1].self };
                 const rightInput = window._dbgAiOff ? defaultInput()   // dbg.aiOff(): AI stands idle
                     : aiJuiceGuard(decideAI(aiView, spFrameCounter, makeAIRng(spFrameCounter ^ AI_RNG_SEED), aiProfile), 'right');
                 window.VolleyboltSim.simulateNetworkFrame(leftInput, rightInput, dt, buildSimCtx());
@@ -15141,8 +15154,16 @@
                                     _T4c.live            = false;
                                     _T4c.eruptKicked     = false;
                                     _T4c.prevWindingUp   = true;
+                                    // Flush what the beam dealt since its last beat (rounded) so no beam damage
+                                    // ends up unreported, then clear the pool for the next channel.
+                                    {
+                                        const _key = sd.isLeft ? 'left' : 'right';
+                                        const _rest = Math.round((_T4c.dmgAcc || 0) + ((window._odBeamDmg && window._odBeamDmg[_key]) || 0));
+                                        if (window._odBeamDmg) window._odBeamDmg[_key] = 0;
+                                        if (_rest >= 1 && window.showDamageNumber) showDamageNumber(_rest, !sd.isLeft, (c && c.paddleZ) || 0);
+                                    }
                                     _T4c.dmgAcc          = 0;
-                                    _T4c.prevOppHealth   = 0;  // reset so inter-channel damage (fireballs during the NEXT windup) can't attribute to the next beam's first beat
+                                    _T4c.prevOppHealth   = 0;
                                     if (window.updateHealthBars) updateHealthBars();  // final repaint: the last sub-chunk of beam drain must not linger unpainted
                                     if (_T4c.beamLights) for (let _li = 0; _li < _T4c.beamLights.length; _li++) _T4c.beamLights[_li].setEnabled(false);
                                     if (_T4c.orbLight)   _T4c.orbLight.setEnabled(false);
@@ -15415,20 +15436,20 @@
                             // showDamageNumber helper. The health bar is also repainted here — the beam
                             // bypasses dealDamageToTower (sim-side direct drain), so nothing else calls
                             // updateHealthBars during a channel and the bar looked frozen = "no damage".)
-                            if (!blocked && oppC) {
-                                const _oppHP = oppC.towerHealth || 0;
-                                const _drop  = T4.prevOppHealth - _oppHP;
-                                if (_drop > 0) {
-                                    T4.dmgAcc += _drop;
+                            {
+                                const _pend = window._odBeamDmg ? window._odBeamDmg[_sideKey4] : 0;
+                                if (_pend > 0) {
+                                    window._odBeamDmg[_sideKey4] = 0;
+                                    T4.dmgAcc += _pend;
                                     // Repaint the HP bars (throttled ~10Hz) so the drain is visible live
                                     if (window.updateHealthBars && (_nowMs - (T4.lastHbPaint || 0)) > 100) {
                                         T4.lastHbPaint = _nowMs;
                                         updateHealthBars();
                                     }
                                 }
-                                T4.prevOppHealth = _oppHP;
                                 // Beat cadence 300ms (owner tuning: fast −1 ticks — at 3.33 HP/s each
-                                // 0.3s accumulates ~1.0 HP, so beats flush −1 rapid-fire)
+                                // 0.3s accumulates ~1.0 HP, so beats flush −1 rapid-fire). A partial chunk is
+                                // never discarded: blocked frames add nothing, and it carries to the next beat.
                                 if (T4.dmgAcc >= 1 && (_nowMs - T4.lastBeatTime) > 300) {
                                     T4.lastBeatTime = _nowMs;
                                     const _chunk = Math.floor(T4.dmgAcc);
@@ -15454,10 +15475,6 @@
                                     // Audio hook (Task 5 wires this up)
                                     if (window.onOverdriveBeat) window.onOverdriveBeat(_sideKey4, _chunk);
                                 }
-                            } else {
-                                // Block or no opp: reset accumulator
-                                T4.dmgAcc = 0;
-                                if (oppC) T4.prevOppHealth = oppC.towerHealth || 0;
                             }
 
                             // 4f. Chromatic block on the blocker's shield + scatter stubs + blocker waver
@@ -25439,8 +25456,15 @@
         // Damage is to the GATE, not the opponent's body; effects at the paddle read as nonsense.
         // The SIM_DEPS onOverdriveHit hook (line ~17314) stays wired; per-tick damage beats are now
         // driven by the presentation-side accumulator inside the beam IIFE (Task 4 §4e).
+        // It now feeds the damage-number beats: the sim reports the beam's EXACT damage every connected
+        // tick here (never during rollback resim), per caster side. The beat flush in the beam block
+        // (§4e) drains it. (It used to infer damage from HP drops only while the beam looked connected
+        // and threw the pool away on every blocked frame, so a blocker shimmying in and out of the lane
+        // lost HP with no number ever shown.)
+        window._odBeamDmg = { left: 0, right: 0 };
         window.showOverdriveHitFX = function showOverdriveHitFX(caster, opp, dmg) {
-            /* no-op — v1 yellow paddle flash replaced by Task 4 gate-endpoint damage beat FX */
+            if (!caster || !(dmg > 0)) return;
+            window._odBeamDmg[caster.side === 'right' ? 'right' : 'left'] += dmg;
         };
 
         // Legacy function stubs for compatibility
