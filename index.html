@@ -8015,14 +8015,25 @@
                     return lc;
                 }
 
+                let hudTrioShift = 0;   // px the Combat Log + Status pair is slid left (spectating: Command hidden)
                 // Per-frame: visibility + live spell states (parry is driven by updateParryButtonGUI).
                 scene.onBeforeRenderObservable.add(() => {
                     const inGame = ((typeof gameState === 'undefined') || (gameState !== 'menu' && gameState !== 'lobby'))
                         && !window.hudHidden;   // debug hide-HUD hides the command/stats windows too
-                    // Spectating: nothing to command — hide the COMMAND window (Combat Log + Status stay).
-                    const showCmd = inGame && !(window.isSpectating && window.isSpectating());
+                    // Spectating: nothing to command — hide the COMMAND window and slide Combat Log + Status
+                    // left by half its slot so the pair sits centred instead of leaving a hole.
+                    const spec = !!(window.isSpectating && window.isSpectating());
+                    const showCmd = inGame && !spec;
                     if (box.isVisible !== showCmd) box.isVisible = showCmd;
                     if (titleTab.isVisible !== showCmd) titleTab.isVisible = showCmd;
+                    const trioShift = spec ? (CMD_W + GAP) / 2 : 0;
+                    if (trioShift !== hudTrioShift) {
+                        hudTrioShift = trioShift;
+                        detailBox.left = (DET_LEFT - trioShift) + "px";
+                        detailTab.left = (DET_LEFT + tabOff(DET_W) - trioShift) + "px";
+                        statsBox.left  = (STAT_LEFT - trioShift) + "px";
+                        statsTab.left  = (STAT_LEFT + tabOff(STAT_W) - trioShift) + "px";
+                    }
                     if (!inGame) {
                         if (detailBox.isVisible) hideDetail();
                         hideTip();
@@ -14348,10 +14359,20 @@
                 //    connecting the moment it erupts and they have to cross the court to block)
                 const oppFrozen  = (view.opp.freezeTime || 0) > 0.5;   // enough freeze left to matter
                 const beamOpening = Math.abs(view.opp.paddleZ - s.paddleZ) > BLOCK_TOL + 0.5;
-                const juice = s.juice >= JUICE.MAX && !s.juiceActive && !s.casting
+                // CLASH PLAY (owner 2026-09-30: a clash win pays off big, so play for it):
+                //  - COUNTER-CLASH: the opponent fires Juice while ours is full -> the beam-block movement
+                //    already puts us in their lane; once lined up, fire back to force a beam clash (we then
+                //    mash parry, below).
+                //  - SAVE IT: while the opponent has Juice banked too, don't spend ours on an opening; hold
+                //    it to answer theirs. (Unless they're frozen: they can't answer, so it's a free beam.)
+                const juiceReady = s.juice >= JUICE.MAX && !s.juiceActive && !s.casting;
+                const oppBanked  = (view.opp.juice || 0) >= JUICE.MAX && !view.opp.juiceActive;
+                const counterClash = juiceReady && view.opp.juiceActive
+                    && Math.abs(view.opp.paddleZ - s.paddleZ) <= ((window.OVERDRIVE && window.OVERDRIVE.BLOCK_TOL) || 0.9) * 0.8;   // the beam's lane, not the projectile BLOCK_TOL
+                const juice = counterClash || (juiceReady
                     && incomingCount === 0
                     && !view.opp.juiceActive
-                    && (oppFrozen || beamOpening);
+                    && (oppFrozen || (beamOpening && !oppBanked)));
 
                 // Beam clash: mash the parry button — ~6.7 presses/s at 60 Hz, so a player mashing faster wins.
                 const clashMash = !!(s.clashing && s.juiceActive && frame % 9 === 0);
@@ -14419,6 +14440,7 @@
                         paddleZ:     combatants.left.paddleZ,
                         towerHealth: (combatants.left.towerHealth != null) ? combatants.left.towerHealth : maxTowerHealth,
                         juiceActive: combatants.left.juiceActive || false,   // beam-block: the AI reacts to a channeling opponent
+                        juice:       combatants.left.juice || 0,              // clash play: is their Juice banked?
                         freezeTime:  combatants.left.freezeTime  || 0,       // ult timing: a frozen opponent = free connect window
                     },
                     geom: {
@@ -14489,6 +14511,7 @@
                         paddleZ:     oppFront.paddleZ,
                         towerHealth: (oppFront.towerHealth != null) ? oppFront.towerHealth : maxTowerHealth,
                         juiceActive: oppFront.juiceActive || false,         // beam-block read
+                        juice:       oppFront.juice || 0,                   // clash play: is their Juice banked?
                         freezeTime:  oppFront.freezeTime  || 0,             // ult-timing read
                         casting:     oppFront.casting     || null,          // adjacent to juiceActive for beam-block consistency
                     },
