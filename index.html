@@ -14204,10 +14204,14 @@
                 //                at all: the ball resolves via the normal passive arc block —
                 //                visually a wizard who didn't commit in time, which is exactly
                 //                the owner's "too late" intent.
+                // SHARE (playtest 2026-09-30): at one-third PERFECT the AI parried ~5 times to the
+                // player's 33 in a full match (the EARLY whiffs' 3s fail-cooldown also blanketed later
+                // PERFECT balls), so PERFECT now owns HALF the hash space: [P, P, EARLY, LATE].
                 const PARRY_BUCKETS = [
                     { lo: 0,    hi: PARRY_LEAD_TIME },  // PERFECT
-                    { lo: 0.60, hi: 0.90 },              // EARLY
-                    null,                                 // LATE — never press (see block comment)
+                    { lo: 0,    hi: PARRY_LEAD_TIME },  // PERFECT (second quarter -> 1 in 2 overall)
+                    { lo: 0.60, hi: 0.90 },              // EARLY  (1 in 4)
+                    null,                                 // LATE — never press (see block comment) (1 in 4)
                 ];
                 const tti = (threat && threat.velX !== 0) ? (s.paddleX - threat.x) / threat.velX : Infinity;
                 let parryBucketOK = false;
@@ -14216,7 +14220,11 @@
                     // Knuth multiplicative constant 2654435761 spread small sequential ids well;
                     // >>> 0 keeps it unsigned before the modulo. No RNG, no wall-clock: same ball
                     // seen by the same slot always lands in the same third.
-                    const bucket = (Math.imul((threat.id + 1) ^ (profile.slotSalt || 0), 2654435761) >>> 0) % 3;
+                    // Bucket from the hash's TOP bits (Knuth multiplicative hashing): with 4 buckets a
+                    // `% 4` would read only the id's low 2 bits (the multiplier is odd), i.e. a fixed,
+                    // learnable P,P,E,L cycle over consecutive balls.
+                    const h = Math.imul((threat.id + 1) ^ (profile.slotSalt || 0), 2654435761) >>> 0;
+                    const bucket = Math.floor(h / 4294967296 * PARRY_BUCKETS.length);
                     const win = PARRY_BUCKETS[bucket];
                     parryBucketOK = !!win && tti > win.lo && tti < win.hi;
                 }
@@ -21750,6 +21758,10 @@
         // ---- AI determinism oracle (Phase 2.1) ----
         // Folds decideAI outputs over a scripted synthetic view sequence into a 32-bit hex hash.
         // No mesh reads, no game loop — pure function exercise only.
+        // AI_GOLDEN current value (2026-09-30, in-browser x2): "a795845f". The older "e6fdfae9" pin below had
+        // already gone stale with the 2026 AI simplification (one fixed AI_PROFILE, no skill rating); the
+        // 1-in-2 PERFECT parry split of 2026-09-30 does NOT move it (verified on the pre-change build too:
+        // the synthetic oracle never reaches the parry press, see the notes below).
         // AI_GOLDEN (dbg.aiDeterminism(50,42).fold) = "e6fdfae9" — PINNED 2026-07-13 (in-browser
         // ×2, owner-delegated ceremony; matched the Node-extracted candidate exactly).
         // Re-pin chain: 549f5f05 -> e6fdfae9, parry fix 2026-07-13: decideAI gates the parry press
