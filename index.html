@@ -12359,6 +12359,7 @@
             ];
             let dressStage = null;
             window.getStructInfo = (side) => { const st = activeStruct(side); return st ? { kind: st.kind, shown: st.shown } : null; };
+            window.getStructRoot = (side) => { const st = activeStruct(side); return st ? st.root : null; };   // spectate TV cutaway
             // HUD HP labels name the structure you're actually hitting (owner, 2026-09-28: "not everything is
             // a tower anymore"): Castle / Gatehouse / Catapult / Ram / Pickle Jar, prefixed as before (your
             // name on your side, Blue / Red otherwise). Follows the DISPLAYED structure (activeStruct), so it
@@ -17469,6 +17470,61 @@
                 const FREE = { yawMax: 35 * Math.PI / 180, tiltDown: -10 * Math.PI / 180, tiltUp: 15 * Math.PI / 180,
                                zoomMin: 0.55, zoomMax: 1 };
                 const free = { yaw: 0, tilt: 0, zoom: 1 };        // targets (input writes these)
+                // TV cam: the classic broadcast tennis shot from behind Blue's baseline, looking down the court at
+                // Red, through a tele-ish PERSPECTIVE lens. Fixed numbers: the TV backdrop painting (and its plate,
+                // exportTVPlate) are made for exactly this camera. The distance fog (tuned for the game camera at
+                // radius 34) is shifted by the extra distance so it keeps its look; Blue's near structure fades to
+                // a see-through cutaway, like walking into a building in a game. No backdrop until its own painting
+                // exists (the arena painting only works for the arena angle).
+                const TV_CAMERA = { alpha: Math.PI, beta: 0.95, radius: 62, fov: 0.5 };
+                const TV_FADE = 0.18;
+                let tvOn = false, tvSaved = null;
+                const tvFaded = new Map();                       // mesh -> current visibility (cutaway)
+                // The structures' PBR materials are forced OPAQUE (transparencyMode 0), which ignores mesh
+                // visibility. During the cutaway their mode goes to automatic (null): a mesh blends only while its
+                // visibility < 1, so the same shared materials still draw Red's castle opaque. Restored on exit.
+                const tvMatModes = new Map();                    // material -> original transparencyMode
+                const tvAutoAlpha = (m) => {
+                    const mat = m.material;
+                    if (mat && 'transparencyMode' in mat && !tvMatModes.has(mat)) { tvMatModes.set(mat, mat.transparencyMode); mat.transparencyMode = null; }
+                };
+                const enterTV = () => {
+                    tvOn = true;
+                    tvSaved = { fogStart: scene.fogStart, fogEnd: scene.fogEnd, radius: camera.radius, fov: camera.fov };
+                    const shift = TV_CAMERA.radius - GAME_CAMERA.radius;
+                    scene.fogStart = tvSaved.fogStart + shift; scene.fogEnd = tvSaved.fogEnd + shift;
+                    camera.mode = BABYLON.Camera.PERSPECTIVE_CAMERA;
+                    camera.fov = TV_CAMERA.fov;
+                    if (window.setBackdropProxyEnabled) setBackdropProxyEnabled(false);
+                    if (window.backdropLayer) backdropLayer.isEnabled = false;
+                };
+                const exitTV = () => {
+                    if (!tvOn) return;
+                    tvOn = false;
+                    if (tvSaved) { scene.fogStart = tvSaved.fogStart; scene.fogEnd = tvSaved.fogEnd; camera.fov = tvSaved.fov; }
+                    camera.mode = BABYLON.Camera.ORTHOGRAPHIC_CAMERA;
+                    camera.alpha = GAME_CAMERA.alpha; camera.beta = GAME_CAMERA.beta; camera.radius = GAME_CAMERA.radius;
+                    for (const [m] of tvFaded) if (!m.isDisposed()) m.visibility = 1;
+                    tvFaded.clear();
+                    for (const [mat, mode] of tvMatModes) mat.transparencyMode = mode;
+                    tvMatModes.clear();
+                    if (window.setBackdropProxyEnabled) setBackdropProxyEnabled(true);
+                    if (window.backdropLayer) backdropLayer.isEnabled = true;
+                };
+                // Blue's near structure eases to see-through (and back); follows the structure swap at stage changes.
+                const updateCutaway = (dt, on) => {
+                    const root = on && window.getStructRoot ? getStructRoot('left') : null;
+                    const want = new Set(root ? root.getChildMeshes(false).filter(m => !/debris/i.test(m.name)) : []);
+                    const k = Math.min(1, dt * 5);
+                    for (const m of want) if (!tvFaded.has(m)) { tvFaded.set(m, m.visibility); tvAutoAlpha(m); }
+                    for (const [m, v] of tvFaded) {
+                        if (m.isDisposed()) { tvFaded.delete(m); continue; }
+                        const target = want.has(m) ? TV_FADE : 1;
+                        const nv = v + (target - v) * k;
+                        if (target === 1 && nv > 0.995) { m.visibility = 1; tvFaded.delete(m); continue; }
+                        m.visibility = nv; tvFaded.set(m, nv);
+                    }
+                };
                 let specZoom = 1, curYaw = 0, curTilt = 0;        // eased values actually applied
                 const clampFree = () => {
                     free.yaw  = Math.max(-FREE.yawMax, Math.min(FREE.yawMax, free.yaw));
@@ -17477,6 +17533,7 @@
                 };
                 window.spectateFreeReset = () => { free.yaw = 0; free.tilt = 0; free.zoom = 1; };
                 window.spectateCamReset = () => {
+                    exitTV();
                     window._specCam = 'arena';
                     specZoom = 1; curYaw = 0; curTilt = 0;
                     window.spectateFreeReset();
@@ -17517,6 +17574,15 @@
                 scene.onBeforeRenderObservable.add(() => {
                     if (!(window.isSpectating && window.isSpectating()) || gameState !== 'playing' || gameOver) return;
                     const mode = window._specCam;
+                    const dtTV = Math.min(engine.getDeltaTime() / 1000, 0.05);
+                    if (mode === 'tv') {
+                        if (!tvOn) enterTV();
+                        camera.alpha = TV_CAMERA.alpha; camera.beta = TV_CAMERA.beta; camera.radius = TV_CAMERA.radius;
+                        updateCutaway(dtTV, true);
+                        return;
+                    }
+                    if (tvOn) { exitTV(); specZoom = 1; curYaw = 0; curTilt = 0; }
+                    if (tvFaded.size) updateCutaway(dtTV, false);
                     const follow = mode === 'follow', isFree = mode === 'free';
                     if (mode === 'arena' && specZoom > 0.999 && Math.abs(curYaw) < 1e-4 && Math.abs(curTilt) < 1e-4
                         && Math.abs(cameraBasePosition.x) < 1e-3 && Math.abs(cameraBasePosition.z) < 1e-3) return;
@@ -24683,7 +24749,7 @@
             const set = (id, txt) => { const v = el.querySelector('[data-val="' + id + '"]'); if (v) v.textContent = txt; };
             set('speed', (sp === 0.5 ? '\u00bd' : sp) + '\u00d7');
             set('pause', specPaused ? 'On' : 'Off');
-            set('camera', { arena: 'Arena', follow: 'Follow', free: 'Free' }[window._specCam] || 'Arena');
+            set('camera', { arena: 'Arena', follow: 'Follow', free: 'Free', tv: 'TV' }[window._specCam] || 'Arena');
             el.classList.toggle('free', spectating && window._specCam === 'free');
             set('hud', '');
         }
@@ -24702,7 +24768,7 @@
             } else if (act === 'pause') {
                 specPaused = !specPaused;
             } else if (act === 'camera') {
-                const order = ['arena', 'follow', 'free'];
+                const order = ['arena', 'follow', 'free', 'tv'];
                 window._specCam = order[(order.indexOf(window._specCam) + 1) % order.length];
                 if (window._specCam === 'free' && window.spectateFreeReset) spectateFreeReset();
             } else if (act === 'freeReset') {
