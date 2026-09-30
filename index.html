@@ -18063,6 +18063,8 @@
 
         // Switch to menu state
         function showMainMenu(instantCamera = false) {
+            readyGoGen++;                     // cancel any Ready/Go intro still running
+            startGameInProgress = false;      // ...and the start guard it would have cleared
             if (spectating && window.spectateCamReset) spectateCamReset();
             spectating = false; specPaused = false; specSpeedIdx = 1;
             if (scene) scene.animationTimeScale = 1;
@@ -18551,9 +18553,17 @@
         }
 
         // "Ready... Go!" transition for starting a new game
+        // Each Ready/Go intro carries a generation; returning to the Main Menu bumps it, so an intro still
+        // running when the player quits stops at its next step (and its fades stop touching the screen)
+        // instead of flipping the game to 'playing' behind the menu, which then blocked the next match
+        // from starting (blank screen: quit a Duel during Ready/Go, then start Spectate).
+        let readyGoGen = 0;
+        window.cancelReadyGo = () => { readyGoGen++; };
         function doReadyGoTransition(callback) {
             const overlay = window.guiElements?.transitionOverlay;
             const text = window.guiElements?.transitionText;
+            const gen = ++readyGoGen;
+            const live = () => gen === readyGoGen;
 
             if (!overlay || !text) {
                 if (callback) callback();
@@ -18571,6 +18581,7 @@
             function animateAlpha(element, from, to, duration, onComplete) {
                 const startTime = performance.now();
                 function update() {
+                    if (!live()) return;   // intro cancelled (Main Menu): stop touching the screen
                     const elapsed = performance.now() - startTime;
                     const t = Math.min(elapsed / duration, 1);
                     element.alpha = from + (to - from) * t;
@@ -18624,6 +18635,7 @@
                 animateAlpha(overlay, 1, 0, 1000, () => {
                     // Arena fully visible - hold "Ready" a beat so the player orients
                     setTimeout(() => {
+                        if (!live()) return;
                         // Step 4: Fade out "Ready"
                         animateAlpha(text, 1, 0, 250, () => {
                             // Step 5: "GO!" - the actual start
@@ -18631,6 +18643,7 @@
                             animateAlpha(text, 0, 1, 250, () => {
                                 // Step 6: hold "GO!" then fade it out
                                 setTimeout(() => {
+                                    if (!live()) return;
                                     animateAlpha(text, 1, 0, 400, () => {
                                         text.text = "";
                                         overlay.isVisible = false;
