@@ -945,12 +945,12 @@
 
         // New parry system - window-based
         // PARRY WINDOW IN FRAMES (Elden-Ring style, at the fixed 60Hz sim step). No startup: the parry is
-        // live from the frame it's pressed for PARRY_ACTIVE_FRAMES frames. 30 -> 20 frames (a third smaller,
+        // live from the frame it's pressed for PARRY_ACTIVE_FRAMES frames. 30 -> 20 -> 15 frames (0.25s;
         // 2026-09-30 playtest: player parries 67 vs the AI's 26). Same for everyone; the AI presses within
-        // ~15 frames of real impact (PARRY_LEAD_TIME 0.35s minus its 0.1s reaction lag), so this tightens
+        // ~12 frames of real impact (PARRY_LEAD_TIME 0.30s minus its 0.1s reaction lag), so this tightens
         // human timing, not the AI's odds. The sim ticks the timer by dt = 1/60, so it starts half a frame
         // short: float error can never stretch it into an extra frame.
-        const PARRY_ACTIVE_FRAMES = 20;
+        const PARRY_ACTIVE_FRAMES = 15;
         const parryWindow = (PARRY_ACTIVE_FRAMES - 0.5) / 60;
         const parrySuccessCooldown = 0.2; // Quick refresh on successful parry
         const parryFailCooldown = 3.0;    // Punishment for whiffing
@@ -14073,6 +14073,15 @@
                 return _aiClosestIncoming(rest, view.self.paddleX);
             }
 
+            // Which way to send a return (+1 / -1 in Z): away from the opponent's paddle; when they stand
+            // near the middle, alternate by the per-return hash so returns don't all go the same way.
+            // Pure (no RNG / wall-clock).
+            function aimAwayZ(view, h) {
+                const oz = (view.opp && view.opp.paddleZ) || 0;
+                if (Math.abs(oz) < 0.6) return (h >>> 31) ? 1 : -1;
+                return oz > 0 ? -1 : 1;
+            }
+
             function _aiFindOpenTarget(view) {
                 // Aim at the lane away from the opponent paddle.
                 const oppZ     = view.opp.paddleZ;
@@ -14111,6 +14120,7 @@
 
                 // ---- Movement (every frame) ----
                 let targetZ = null;   // null = no reason to move → hold
+                let awayZ = 0;        // return direction chosen for the current threat (see AIMED RETURNS)
                 if (threat) {
                     const dodging = threat.type === 'frostbolt'
                         && (threat.sightFrames || 0) >= profile.dodgeSightFrames;
@@ -14121,7 +14131,20 @@
                     } else {
                         // Chase where the ball IS (frostbolt seen too late is treated like a
                         // normal ball here → the AI tries to block it and gets frozen).
-                        targetZ = threat.z;
+                        // AIMED RETURNS (playtest 2026-09-30: dead-centre + standing still = every return
+                        // came straight back, a silly back-and-forth). Like a Pong player it catches the
+                        // ball OFF-CENTRE so the paddle's segment angle (onPaddleHit: hitOffset * 0.7 rad)
+                        // sends it away from the opponent's paddle, toward the open side. How far off-centre
+                        // varies per ball via a stable id hash (same idiom as the parry buckets: no RNG,
+                        // rollback-safe): small / medium / sharp (~10/20/30 deg via the 1.25 divisor). The
+                        // largest 0.9u + the 0.65 deadzone = 1.55u stays inside the shield strip's +-1.6u
+                        // (BLOCK_ARC.BAND_LEN 3.2), so an aimed catch is still a block.
+                        const AIM_OFFSETS = [0.3, 0.6, 0.9];
+                        // Keyed on the ball AND its volley count, so every return of a long rally re-rolls.
+                        const _ah = Math.imul(((threat.id * 8 + (threat.volleyCount || 0)) + 7) ^ (profile.slotSalt || 0), 2654435761) >>> 0;
+                        const aimOff = AIM_OFFSETS[Math.floor(_ah / 4294967296 * AIM_OFFSETS.length)];
+                        awayZ = aimAwayZ(view, _ah);
+                        targetZ = threat.z - awayZ * aimOff;                         // ball lands on the `awayZ` half of the paddle
                         // Save-both: once already positioned on the primary, slide toward a
                         // second incoming so both get covered.
                         if (incomingCount >= 2
@@ -14185,15 +14208,16 @@
                 // the ball will reach us within this window. The active parry lasts 1/3s (was 0.5s)
                 // (consts.parryWindow) and whiffing burns a 3s fail-cooldown, so pressing early
                 // (ball still ~18-20u out) expired the window and the cooldown then blanketed the
-                // real arrival — the AI could never reactive-parry. 0.35 keeps the press inside the
-                // 0.5s window with margin for the reaction lag. The view is mirrored so incoming
+                // real arrival — the AI could never reactive-parry. 0.30 (was 0.35) keeps the press inside the
+                // 15-frame window with margin for the reaction lag. The view is mirrored so incoming
                 // threats always have velX>0 with self on +X (matches the s.casting timeToImpact
                 // above), so tti = (paddleX - x)/velX holds for every slot.
-                const PARRY_LEAD_TIME = 0.35;
+                const PARRY_LEAD_TIME = 0.30;   // (0.35 with the old 30/20-frame windows; 15 frames = 0.25s needs
+                                                // the press to land <= ~12 frames before real impact)
                 // PARRY_BUCKETS: [PERFECT, EARLY, LATE] press policies, indexed by the per-ball
                 // hash below. A non-null entry is a tti press window (seconds-to-impact); null
                 // means NEVER press for this ball. Named + tunable independently of PARRY_LEAD_TIME.
-                //   PERFECT (0): press at tti in (0, 0.35) — today's window, the "does it right"
+                //   PERFECT (0): press at tti in (0, 0.30) — today's window, the "does it right"
                 //                third.
                 //   EARLY   (1): press at tti in [0.60, 0.90) — the 1/3s parry window expires
                 //                0.10-0.40s BEFORE the ball arrives -> the press whiffs early and
@@ -14311,6 +14335,14 @@
 
                 // Beam clash: mash the parry button — ~6.7 presses/s at 60 Hz, so a player mashing faster wins.
                 const clashMash = !!(s.clashing && s.juiceActive && frame % 9 === 0);
+                // PARRY AIM: a parry's return angle comes from the direction HELD on the catch frame (sim:
+                // aimDir = moveDir), exactly as for the player (hold W/S while parrying). Standing still sent
+                // every AI parry straight back; while its parry is live the AI now holds the way away from
+                // the opponent. (Not while blocking a beam: that needs the paddle to hold the lane.)
+                if (threat && s.parryActive && !(view.opp && view.opp.juiceActive)) {
+                    if (!awayZ) awayZ = aimAwayZ(view, Math.imul(((threat.id * 8 + (threat.volleyCount || 0)) + 7) ^ (profile.slotSalt || 0), 2654435761) >>> 0);
+                    moveDir = awayZ;
+                }
                 return { moveDir, parry: parry || clashMash, fireball, frostbolt, thunderstorm, juice };
             }
 
@@ -14346,6 +14378,7 @@
                     self: {
                         paddleX:      cr.paddleX,
                         paddleZ:      cr.paddleZ,
+                        parryActive:  !!(pvpParryState.right && pvpParryState.right.active),
                         mana:         cr.mana,
                         cooldowns: {
                             fireball:    cr.cooldowns.fireball    || 0,
@@ -14415,6 +14448,7 @@
                     self: {
                         paddleX:      self.paddleX * mir,
                         paddleZ:      self.paddleZ,
+                        parryActive:  !!(pvpParryState[slotKey] && pvpParryState[slotKey].active),
                         mana:         self.mana,                             // per-wizard pool (playtest round 2): each slot reads its OWN mana (front slot's self === carrier)
                         cooldowns: {
                             fireball:     self.cooldowns.fireball     || 0,
@@ -24067,93 +24101,9 @@
             const parryButton = document.getElementById('parryButton');
             if (parryButton) parryButton.style.display = 'none';
 
-            // Populate + show the end-of-match leaderboard from the final per-combatant stats
+            // Populate the end-of-match summary from the final per-combatant stats
             // (matchStats are still intact here; resetGame() clears them on Continue).
-            // DOM report: team totals (doubles adds the back wizard's numbers to its side).
-            {
-                const zero = { spellsCast: 0, parries: 0, damageDealt: 0 };
-                const cb = window.combatants || {};
-                const team = (a, b) => {
-                    const x = (a && a.matchStats) || zero, y = (b && b.matchStats) || zero;
-                    return { cast: (x.spellsCast || 0) + (y.spellsCast || 0),
-                             parry: (x.parries || 0) + (y.parries || 0),
-                             dmg: Math.round((x.damageDealt || 0) + (y.damageDealt || 0)) };
-                };
-                const isDoubles = !!(cb.leftBack || cb.rightBack);
-                const rows = [
-                    { cls: 'blue', name: isDoubles ? 'Blue Team' : window.getPlayerName(), s: team(cb.left, cb.leftBack) },
-                    { cls: 'red',  name: isDoubles ? 'Red Team' : 'Red', s: team(cb.right, cb.rightBack) },
-                ];
-                // MATCH SUMMARY. roundLog is the source of truth for the score (fallback: the running
-                // scores). A tug-of-war match is won from 3 rounds up, so the winner has more rounds.
-                const [L, R] = rows;
-                const wins = { left: 0, right: 0 };
-                for (const w of roundLog) wins[w]++;
-                if (!roundLog.length) { wins.left = playerScore; wins.right = aiScore; }
-                const leftWon = wins.left >= wins.right;
-                const W = leftWon ? L : R;
-                document.getElementById('msBanner').textContent =
-                    W.name + ' won ' + (leftWon ? wins.left + '-' + wins.right : wins.right + '-' + wins.left);
-                document.getElementById('msBanner').className = 'ms-banner ' + (leftWon ? 'blue' : 'red');
-                document.getElementById('msNameL').textContent = L.name;
-                document.getElementById('msNameR').textContent = R.name;
-
-                // Scoreboard (tennis-style): a box per round, filled in the winner's colour with that team's
-                // running score, then the totals. Long matches show the last BOARD_MAX rounds.
-                const board = document.getElementById('msBoard');
-                board.textContent = '';
-                const BOARD_MAX = 16;
-                const run = { left: 0, right: 0 };
-                const cells = roundLog.map(w => { run[w]++; return { w, n: run[w] }; });
-                const shown = cells.slice(-BOARD_MAX), clipped = cells.length > shown.length;
-                for (const [side, r] of [['left', L], ['right', R]]) {
-                    const row = document.createElement('div');
-                    row.className = 'ms-board-row ' + r.cls;
-                    const nm = document.createElement('span');
-                    nm.className = 'ms-board-name'; nm.textContent = r.name;
-                    row.appendChild(nm);
-                    if (clipped) {
-                        const more = document.createElement('span');
-                        more.className = 'ms-board-more'; more.textContent = '\u2026';
-                        row.appendChild(more);
-                    }
-                    for (const c of shown) {
-                        const b = document.createElement('span');
-                        b.className = 'ms-box' + (c.w === side ? ' won' : '');
-                        b.textContent = c.w === side ? '' + c.n : '';
-                        row.appendChild(b);
-                    }
-                    const tot = document.createElement('span');
-                    const other = side === 'left' ? 'right' : 'left';
-                    tot.className = 'ms-board-total' + (wins[side] >= wins[other] ? ' lead' : '');
-                    tot.textContent = '' + wins[side];
-                    row.appendChild(tot);
-                    board.appendChild(row);
-                }
-
-                // Head-to-head stats: label centred, each team's bar grows out from the centre
-                // (length relative to the larger of the pair), value at the bar's end.
-                const stats = document.getElementById('msStats');
-                stats.textContent = '';
-                const BAR_MAX = 330;   // design px
-                for (const [label, a, b] of [['Casts', L.s.cast, R.s.cast], ['Parries', L.s.parry, R.s.parry], ['Damage', L.s.dmg, R.s.dmg]]) {
-                    const max = Math.max(a, b, 1);
-                    const st = document.createElement('div');
-                    st.className = 'ms-stat';
-                    st.innerHTML =
-                        '<div class="ms-label"></div>' +
-                        '<div class="ms-bars">' +
-                            '<div class="ms-half l"><span class="ms-val l' + (a >= b ? ' lead' : '') + '"></span><i class="ms-bar l"></i></div>' +
-                            '<div class="ms-half r"><i class="ms-bar r"></i><span class="ms-val r' + (b >= a ? ' lead' : '') + '"></span></div>' +
-                        '</div>';
-                    st.querySelector('.ms-label').textContent = label;
-                    st.querySelector('.ms-val.l').textContent = '' + a;
-                    st.querySelector('.ms-val.r').textContent = '' + b;
-                    st.querySelector('.ms-bar.l').style.width = Math.round(a / max * BAR_MAX) + 'px';
-                    st.querySelector('.ms-bar.r').style.width = Math.round(b / max * BAR_MAX) + 'px';
-                    stats.appendChild(st);
-                }
-            }
+            renderMatchSummary(ensureEndScreen(), false);
             const lbRefs = window.guiElements.victoryLeaderboardRefs;
             if (lbRefs) {
                 const blS = (window.combatants && window.combatants.left && window.combatants.left.matchStats) || { spellsCast: 0, parries: 0, damageDealt: 0 };
@@ -24221,6 +24171,172 @@
         // Victory/Defeat screen, laid out like every other menu (KH2 light theme): a white fade
         // from the left over the frozen arena, then one left column — title, the Battle Report
         // (dark steel data window, like Career), and the Play Again / Main Menu items.
+        // MATCH SUMMARY builder, shared by the end screen and the hold-Tab live overlay (#liveStats): result
+        // banner, round scoreboard and head-to-head stat bars, from the per-combatant matchStats (doubles adds
+        // the back wizard's numbers to its side) and roundLog. live = mid-match wording ("leads" / "Tied").
+        function matchTotals() {
+            const zero = { spellsCast: 0, parries: 0, damageDealt: 0 };
+            const cb = window.combatants || {};
+            const team = (a, b) => {
+                const x = (a && a.matchStats) || zero, y = (b && b.matchStats) || zero;
+                return { cast: (x.spellsCast || 0) + (y.spellsCast || 0),
+                         parry: (x.parries || 0) + (y.parries || 0),
+                         dmg: Math.round((x.damageDealt || 0) + (y.damageDealt || 0)) };
+            };
+            const isDoubles = !!(cb.leftBack || cb.rightBack);
+            const rows = [
+                { cls: 'blue', name: isDoubles ? 'Blue Team' : window.getPlayerName(), s: team(cb.left, cb.leftBack) },
+                { cls: 'red',  name: isDoubles ? 'Red Team' : 'Red', s: team(cb.right, cb.rightBack) },
+            ];
+            // roundLog is the source of truth for the score (fallback: the running scores).
+            const wins = { left: 0, right: 0 };
+            for (const w of roundLog) wins[w]++;
+            if (!roundLog.length) { wins.left = playerScore; wins.right = aiScore; }
+            return { L: rows[0], R: rows[1], wins };
+        }
+        function renderMatchSummary(root, live) {
+            // A tug-of-war match is won from 3 rounds up, so the winner has more rounds.
+            const { L, R, wins } = matchTotals();
+            const leftWon = wins.left >= wins.right;
+            const W = leftWon ? L : R;
+            const lead = leftWon ? wins.left + '-' + wins.right : wins.right + '-' + wins.left;
+            root.querySelector('.ms-banner').textContent = !live ? W.name + ' won ' + lead
+                : wins.left === wins.right ? 'Tied ' + lead : W.name + ' leads ' + lead;
+            root.querySelector('.ms-banner').className = 'ms-banner ' + (leftWon ? 'blue' : 'red');
+            root.querySelector('.ms-name.ms-left').textContent = L.name;
+            root.querySelector('.ms-name.ms-right').textContent = R.name;
+
+            // Scoreboard (tennis-style): a box per round, filled in the winner's colour with that team's
+            // running score, then the totals. Long matches show the last BOARD_MAX rounds.
+            const board = root.querySelector('.ms-board');
+            board.textContent = '';
+            const BOARD_MAX = 16;
+            const run = { left: 0, right: 0 };
+            const cells = roundLog.map(w => { run[w]++; return { w, n: run[w] }; });
+            const shown = cells.slice(-BOARD_MAX), clipped = cells.length > shown.length;
+            for (const [side, r] of [['left', L], ['right', R]]) {
+                const row = document.createElement('div');
+                row.className = 'ms-board-row ' + r.cls;
+                const nm = document.createElement('span');
+                nm.className = 'ms-board-name'; nm.textContent = r.name;
+                row.appendChild(nm);
+                if (clipped) {
+                    const more = document.createElement('span');
+                    more.className = 'ms-board-more'; more.textContent = '\u2026';
+                    row.appendChild(more);
+                }
+                for (const c of shown) {
+                    const b = document.createElement('span');
+                    b.className = 'ms-box' + (c.w === side ? ' won' : '');
+                    b.textContent = c.w === side ? '' + c.n : '';
+                    row.appendChild(b);
+                }
+                const tot = document.createElement('span');
+                const other = side === 'left' ? 'right' : 'left';
+                tot.className = 'ms-board-total' + (wins[side] >= wins[other] ? ' lead' : '');
+                tot.textContent = '' + wins[side];
+                row.appendChild(tot);
+                board.appendChild(row);
+            }
+
+            // Head-to-head stats: label centred, each team's bar grows out from the centre
+            // (length relative to the larger of the pair), value at the bar's end.
+            const stats = root.querySelector('.ms-stats');
+            stats.textContent = '';
+            const BAR_MAX = 330;   // design px
+            for (const [label, a, b] of [['Casts', L.s.cast, R.s.cast], ['Parries', L.s.parry, R.s.parry], ['Damage', L.s.dmg, R.s.dmg]]) {
+                const max = Math.max(a, b, 1);
+                const st = document.createElement('div');
+                st.className = 'ms-stat';
+                st.innerHTML =
+                    '<div class="ms-label"></div>' +
+                    '<div class="ms-bars">' +
+                        '<div class="ms-half l"><span class="ms-val l' + (a >= b ? ' lead' : '') + '"></span><i class="ms-bar l"></i></div>' +
+                        '<div class="ms-half r"><i class="ms-bar r"></i><span class="ms-val r' + (b >= a ? ' lead' : '') + '"></span></div>' +
+                    '</div>';
+                st.querySelector('.ms-label').textContent = label;
+                st.querySelector('.ms-val.l').textContent = '' + a;
+                st.querySelector('.ms-val.r').textContent = '' + b;
+                st.querySelector('.ms-bar.l').style.width = Math.round(a / max * BAR_MAX) + 'px';
+                st.querySelector('.ms-bar.r').style.width = Math.round(b / max * BAR_MAX) + 'px';
+                stats.appendChild(st);
+            }
+        }
+        // HOLD TAB: live match stats window (FF9 battle window, mid-match). Shows while Tab is held
+        // during a live match, refreshing 4x/sec; the game keeps running underneath. Tab's browser focus-cycling
+        // is suppressed only while playing (menus keep normal Tab behaviour).
+        function ensureLiveStats() {
+            let el = document.getElementById('liveStats');
+            if (el) return el;
+            // Same FF9 battle-window language as the in-match COMMAND / STATUS windows (steel box, light
+            // rim, title tab over the top border, FF9UI numbers underlined by thin team-colour bars).
+            el = document.createElement('div');
+            el.id = 'liveStats';
+            const COLS = ['Rounds', 'Casts', 'Parries', 'Damage'];
+            el.innerHTML =
+                '<div class="ls-tab">MATCH</div>' +
+                '<table class="ls-table"><thead><tr><th></th>' + COLS.map(c => '<th>' + c + '</th>').join('') + '</tr></thead>' +
+                '<tbody>' + ['blue', 'red'].map(cls =>
+                    '<tr class="ls-' + cls + '"><td class="ls-name"></td>' +
+                    COLS.map(() => '<td><span class="ls-val"></span><span class="ls-bar"><i></i></span></td>').join('') + '</tr>').join('') +
+                '</tbody></table>' +
+                '<div class="ls-rounds"></div>';
+            ensureEndScreenScaleLayer().appendChild(el);
+            return el;
+        }
+        function renderLiveStats(el) {
+            const { L, R, wins } = matchTotals();
+            const cols = [[wins.left, wins.right], [L.s.cast, R.s.cast], [L.s.parry, R.s.parry], [L.s.dmg, R.s.dmg]];
+            const rows = el.querySelectorAll('tbody tr');
+            [L, R].forEach((team, ri) => {
+                const tr = rows[ri];
+                tr.querySelector('.ls-name').textContent = team.name;
+                tr.querySelectorAll('td:not(.ls-name)').forEach((td, ci) => {
+                    const mine = cols[ci][ri], theirs = cols[ci][1 - ri];
+                    const v = td.querySelector('.ls-val');
+                    v.textContent = '' + mine;
+                    v.classList.toggle('lead', mine >= theirs);            // the category leader reads bright
+                    td.querySelector('.ls-bar i').style.width = (Math.max(mine, theirs) ? mine / Math.max(mine, theirs) * 100 : 0) + '%';
+                });
+            });
+            const strip = el.querySelector('.ls-rounds');
+            const PIPS = 24, shown = roundLog.slice(-PIPS);
+            if (strip._n !== roundLog.length) {                              // rebuild only when a round ends
+                strip._n = roundLog.length;
+                strip.textContent = '';
+                for (const w of shown) {
+                    const pip = document.createElement('span');
+                    pip.className = 'ls-pip ' + (w === 'left' ? 'blue' : 'red');
+                    strip.appendChild(pip);
+                }
+                strip.style.display = shown.length ? '' : 'none';
+            }
+        }
+        (function setupLiveStats() {
+            let timer = null;
+            const inMatch = () => gameState === 'playing' && !gameOver && !(window.isAnyMenuOpen && window.isAnyMenuOpen());
+            const show = () => {
+                const el = ensureLiveStats();
+                renderLiveStats(el);
+                el.classList.add('visible');
+                if (!timer) timer = setInterval(() => {
+                    if (!inMatch()) return hide();
+                    renderLiveStats(el);
+                }, 250);
+            };
+            const hide = () => {
+                const el = document.getElementById('liveStats');
+                if (el) el.classList.remove('visible');
+                clearInterval(timer); timer = null;
+            };
+            window.addEventListener('keydown', (e) => {
+                if (e.key !== 'Tab') return;
+                if (gameState === 'playing') e.preventDefault();
+                if (!e.repeat && inMatch()) show();
+            });
+            window.addEventListener('keyup', (e) => { if (e.key === 'Tab') hide(); });
+            window.addEventListener('blur', hide);
+        })();
         function ensureEndScreen() {
             let el = document.getElementById('endScreen');
             if (el) return el;

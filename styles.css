@@ -4038,3 +4038,53 @@ body.gp-cursor-hidden * {
 /* The pixel face is kept ONLY for what pops up in the arena: floating damage numbers and the combat
    dialogue over the wizards' heads (cast speech bubbles, "Frozen!", "Cancel!"...). */
 .damage-number, .combat-text, .frozen-text { font-family: 'FF9UI', monospace; }
+
+/* ---- Hold-Tab live stats: an FF9 battle window matching the in-match COMMAND / STATUS windows
+   (sizes are the GUI's x4/3: the Babylon GUI lays out on a 1440-wide ideal, this layer on 1920)
+   (STEEL rgba(46,56,76,.94), RIM #dfe6f2, 3px rim, r8, hard 5px black shadow, FF9UI, title tab). ---- */
+#liveStats {
+    position: absolute; left: 50%; top: 240px; transform: translateX(-50%);
+    display: none; pointer-events: none;
+    padding: 40px 35px 24px;
+    background: rgba(46, 56, 76, 0.94);
+    border: 3px solid #dfe6f2; border-radius: 11px;
+    box-shadow: 5px 5px 0 #000;
+}
+#liveStats.visible { display: block; }
+#liveStats .ls-tab {
+    position: absolute; left: 19px; top: -24px;
+    width: 200px; height: 40px; box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center;
+    background: rgb(46, 56, 76); border: 3px solid #dfe6f2; border-radius: 8px;
+    font-family: 'FF9UI', sans-serif; font-size: 21px; color: #ffffff;
+    -webkit-text-stroke: 3px #000; paint-order: stroke fill;
+    text-shadow: 3px 3px 0 #000;
+}
+#liveStats .ls-table { border-collapse: collapse; }
+#liveStats .ls-table th {
+    font-family: 'FF9UI', sans-serif; font-size: 19px; font-weight: 600; color: #ffffff;
+    -webkit-text-stroke: 3px #000; paint-order: stroke fill;
+    text-align: left; padding: 0 0 11px 35px;
+}
+#liveStats .ls-table td { padding: 8px 0 8px 35px; vertical-align: top; }
+#liveStats .ls-table td.ls-name {
+    padding-left: 0; min-width: 147px; max-width: 227px;
+    font-family: 'FF9UI', sans-serif; font-size: 24px;
+    text-shadow: 3px 3px 0 #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#liveStats .ls-blue .ls-name { color: #6fb0ff; }
+#liveStats .ls-red .ls-name { color: #e76e55; }
+#liveStats .ls-val {
+    display: block; min-width: 101px;
+    font-family: 'FF9UI', sans-serif; font-size: 27px; line-height: 1;
+    color: #8f9bb3; text-shadow: 3px 3px 0 #000;
+}
+#liveStats .ls-val.lead { color: #f4f7ff; }
+#liveStats .ls-bar { display: block; width: 101px; height: 4px; margin-top: 5px; background: rgba(12, 18, 30, 0.9); }
+#liveStats .ls-bar i { display: block; height: 100%; }
+#liveStats .ls-blue .ls-bar i { background: #6fb0ff; }
+#liveStats .ls-red .ls-bar i { background: #e76e55; }
+#liveStats .ls-rounds { display: flex; gap: 5px; margin-top: 13px; padding-top: 13px; border-top: 1px solid rgba(223, 230, 242, 0.18); }
+#liveStats .ls-pip { width: 16px; height: 16px; border-radius: 3px; }
+#liveStats .ls-pip.blue { background: #6fb0ff; }
+#liveStats .ls-pip.red { background: #e76e55; }
