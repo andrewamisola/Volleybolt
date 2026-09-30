@@ -963,6 +963,75 @@
         // Distance-based trail sampling (FPS-independent trails)
         const TRAIL_SAMPLE_SPACING = 0.2;  // Distance between trail samples
 
+        // CAMERA-FACING SPELL STREAK (drop-in for BABYLON.TrailMesh as the game uses it: update() / dispose() /
+        // isDisposed() / material / alwaysSelectAsActiveMesh). TrailMesh builds a fixed-orientation tube, which
+        // reads fine from the overhead game camera but goes thin and flat from other angles (spectate TV / Free
+        // cams). This keeps the last `length` sampled points (update() = one sample, driven from the sim step
+        // like before) and, every rendered frame, rebuilds a strip whose width always turns toward the camera,
+        // tapering to nothing at the tail: a proper billboarded ribbon from any angle.
+        class BillboardTrail {
+            constructor(name, generator, scene, diameter, length) {
+                this._gen = generator; this._scene = scene;
+                this._w = diameter; this._n = Math.max(2, length | 0);
+                const p0 = generator.getAbsolutePosition().clone();
+                this._pts = Array.from({ length: this._n }, () => p0.clone());   // [0] = head (newest)
+                const mesh = new BABYLON.Mesh(name, scene);
+                const pos = new Float32Array(this._n * 2 * 3), uvs = [], idx = [];
+                for (let i = 0; i < this._n; i++) {
+                    const v = i / (this._n - 1);
+                    uvs.push(0, v, 1, v);
+                    if (i < this._n - 1) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+                }
+                const vd = new BABYLON.VertexData();
+                vd.positions = pos; vd.uvs = uvs; vd.indices = idx;
+                vd.applyToMesh(mesh, true);
+                mesh.isPickable = false;
+                this.mesh = mesh;
+                this._pos = pos;
+                this._tmp = { side: new BABYLON.Vector3(), dir: new BABYLON.Vector3(), toCam: new BABYLON.Vector3() };
+                this._obs = scene.onBeforeRenderObservable.add(() => this._rebuild());
+                this._rebuild();
+            }
+            get material() { return this.mesh.material; }
+            set material(m) { this.mesh.material = m; }
+            get alwaysSelectAsActiveMesh() { return this.mesh.alwaysSelectAsActiveMesh; }
+            set alwaysSelectAsActiveMesh(v) { this.mesh.alwaysSelectAsActiveMesh = v; }
+            isDisposed() { return !this.mesh || this.mesh.isDisposed(); }
+            update() {
+                if (this.isDisposed()) return;
+                const last = this._pts.pop();
+                last.copyFrom(this._gen.getAbsolutePosition());
+                this._pts.unshift(last);
+            }
+            _rebuild() {
+                if (this.isDisposed()) return;
+                const cam = this._scene.activeCamera;
+                if (!cam) return;
+                const camPos = cam.globalPosition || cam.position;
+                const { side, dir, toCam } = this._tmp;
+                const n = this._n, pts = this._pts, pos = this._pos;
+                for (let i = 0; i < n; i++) {
+                    const p = pts[i];
+                    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+                    b.subtractToRef(a, dir);                         // local direction of travel
+                    camPos.subtractToRef(p, toCam);                  // toward the camera
+                    BABYLON.Vector3.CrossToRef(dir, toCam, side);
+                    const len = side.length();
+                    if (len > 1e-6) side.scaleInPlace((this._w * 0.5 * (1 - i / (n - 1))) / len);   // taper to the tail
+                    else side.setAll(0);
+                    const o = i * 6;
+                    pos[o] = p.x + side.x; pos[o + 1] = p.y + side.y; pos[o + 2] = p.z + side.z;
+                    pos[o + 3] = p.x - side.x; pos[o + 4] = p.y - side.y; pos[o + 5] = p.z - side.z;
+                }
+                this.mesh.updateVerticesData(BABYLON.VertexBuffer.PositionKind, pos, false, false);
+                this.mesh.refreshBoundingInfo();
+            }
+            dispose() {
+                if (this._obs) { this._scene.onBeforeRenderObservable.remove(this._obs); this._obs = null; }
+                if (this.mesh && !this.mesh.isDisposed()) this.mesh.dispose();
+            }
+        }
+
 
         // New parry system - window-based
         // PARRY WINDOW IN FRAMES (Elden-Ring style, at the fixed 60Hz sim step). No startup: the parry is
@@ -1015,6 +1084,12 @@
         // lifted LINE_LIFT toward +Z (to centre on the body), so the collision must catch the ball where it
         // VISUALLY crosses that lifted line → ZPERSP = ballParallax − LINE_LIFT. (LINE_LIFT 1.48 → ZPERSP ≈ −0.35.)
         BLOCK_ARC.ZPERSP = 1.126 - BLOCK_ARC.LINE_LIFT;
+        // The DRAWN line is then slid along the game camera's view ray, up to ball height: under the ortho
+        // game camera that is the exact same pixels (and it draws in rendering group 2, on top), but in 3D it
+        // now sits where balls are really blocked (paddleZ - ZPERSP, at ball height) instead of 1.48 to the
+        // side on the floor, so it stays on the wizard from any other angle (spectate TV / Free cams).
+        BLOCK_ARC.LINE_RAISE = 0.65;
+        BLOCK_ARC.LINE_Z = BLOCK_ARC.LINE_LIFT - BLOCK_ARC.LINE_RAISE * Math.tan(GAME_CAMERA.beta);
 
         // How far each wizard MODEL is slid back toward its home tower (render-only) so it sits behind
         // its block arc. Shared so the model AND its on-body VFX (freeze crystal, juice aura, ice light)
@@ -8518,17 +8593,19 @@
                     prepareDefines(defines) { defines.CUTAWAY = this._isEnabled; }
                     getClassName() { return "CutawayPluginMaterial"; }
                     getUniforms() {
-                        const decl = "#ifdef CUTAWAY\nuniform vec2 cutCenter;\nuniform vec4 cutParams;\n#endif";
+                        const decl = "#ifdef CUTAWAY\nuniform vec2 cutCenter;\nuniform vec4 cutParams;\nuniform float cutBase;\n#endif";
                         return {
-                            ubo: [{ name: "cutCenter", size: 2, type: "vec2" }, { name: "cutParams", size: 4, type: "vec4" }],
+                            ubo: [{ name: "cutCenter", size: 2, type: "vec2" }, { name: "cutParams", size: 4, type: "vec4" },
+                                  { name: "cutBase", size: 1, type: "float" }],
                             vertex: decl, fragment: decl,
                         };
                     }
                     bindForSubMesh(uniformBuffer) {
                         if (!this._isEnabled) return;
-                        const c = window._cutaway || { x: 0, y: 0, r: 0.3, aspect: 16 / 9, s: 0, floor: 0 };
+                        const c = window._cutaway || { x: 0, y: 0, r: 0.3, aspect: 16 / 9, s: 0, floor: 0, base: 1 };
                         uniformBuffer.updateFloat2("cutCenter", c.x, c.y);
                         uniformBuffer.updateFloat4("cutParams", c.r, c.aspect, c.s, c.floor);
+                        uniformBuffer.updateFloat("cutBase", c.base === undefined ? 1 : c.base);
                     }
                     getCustomCode(shaderType) {
                         if (shaderType === "vertex") return {
@@ -8546,7 +8623,8 @@
                                     vec2 cutNdc = vCutClip.xy / vCutClip.w;
                                     vec2 cutD = (cutNdc - cutCenter) * vec2(cutParams.y, 1.0);
                                     float cutR = length(cutD) / cutParams.x;                        // 0 at the character, 1 at the rim
-                                    float cutKeep = max(smoothstep(0.3, 1.0, cutR), cutParams.w);   // soft falloff to solid
+                                    // floor (at the character) -> base (the rest of the structure), soft falloff between
+                                    float cutKeep = mix(cutParams.w, cutBase, smoothstep(0.3, 1.0, cutR));
                                     float cutV = mix(1.0, cutKeep, cutParams.z);                    // strength eases it in/out
                                     if (cutV < 0.999 && cutV <= cutBayer4(gl_FragCoord.xy)) discard;
                                 }
@@ -10364,7 +10442,11 @@
                         B.pad.position.x = B.shieldX + _bjx;
                         B.pad.position.z = z + _bjz;
                         // FLOOR LINE follows the paddle EVERY frame — lag-free, no rebuild, no churn.
-                        if (B.floor) { B.floor.isVisible = true; B.floor.position.x = B.shieldX + _bjx; B.floor.position.z = z + _bjz; }
+                        const zLine = B.paddle.position.z + BLOCK_ARC.LINE_Z;   // same pixels, true 3D spot (see LINE_Z)
+                        if (B.floor) {
+                            B.floor.isVisible = true; B.floor.position.x = B.shieldX + _bjx;
+                            B.floor.position.y = 0.05 + BLOCK_ARC.LINE_RAISE; B.floor.position.z = zLine + _bjz;
+                        }
                         // Block hit-flash: for ~170ms after a block, lighten the team color toward white and
                         // firm up the alpha for a quick "impact" pop. Otherwise a steady, static line.
                         const f = B.flashUntil > t ? Math.min(1, (B.flashUntil - t) / FLASH_MS) : 0;
@@ -10398,8 +10480,8 @@
                                 G.mat.alpha = pf * 0.85;
                                 G.mesh.position.set(
                                     B.shieldX + G.off[0] * amp + (Math.random() * 2 - 1) * jit,
-                                    0.055,
-                                    z + G.off[1] * amp + (Math.random() * 2 - 1) * jit);
+                                    0.055 + BLOCK_ARC.LINE_RAISE,
+                                    zLine + G.off[1] * amp + (Math.random() * 2 - 1) * jit);
                             });
                         } else if (B.ghosts) {
                             B.ghosts.forEach(G => { if (G.mesh.isVisible) G.mesh.isVisible = false; });
@@ -13073,7 +13155,7 @@
                 // render loop. Auto-updating at render rate (~120fps) while the anchor only
                 // moves at sim rate (60fps) sampled duplicate points, and any sim stall
                 // collapsed the whole ribbon to a dot (tail vanished mid-flight).
-                proj.trail = new BABYLON.TrailMesh("fireTrail_" + Date.now(), proj.trailAnchor, scene, trailWidth, trailLength, false);
+                proj.trail = new BillboardTrail("fireTrail_" + Date.now(), proj.trailAnchor, scene, trailWidth, trailLength);   // camera-facing streak
                 const trailMat = new BABYLON.StandardMaterial("trailMat_" + Date.now(), scene);
                 trailMat.emissiveColor = new BABYLON.Color3(1, 0.3, 0.05);
                 trailMat.alpha = 0.6;
@@ -13259,7 +13341,7 @@
                 proj.trailAnchor.position.copyFrom(proj.mesh.position);
                 proj.lastTrailSamplePos = proj.mesh.position.clone();
                 proj.trailAnchor.computeWorldMatrix(true);  // seed sections at spawn, not origin (see fire trail)
-                proj.trail = new BABYLON.TrailMesh("iceTrail_" + Date.now(), proj.trailAnchor, scene, 0.18, 25, false);  // driven from fixed sim step
+                proj.trail = new BillboardTrail("iceTrail_" + Date.now(), proj.trailAnchor, scene, 0.18, 25);  // camera-facing streak, driven from fixed sim step
                 const trailMat = new BABYLON.StandardMaterial("iceTrailMat_" + Date.now(), scene);
                 trailMat.emissiveColor = new BABYLON.Color3(0.4, 0.7, 1);
                 trailMat.diffuseColor = new BABYLON.Color3(0, 0, 0);
@@ -17567,7 +17649,7 @@
                 const TV_SPOT_R = 0.3;                           // cutaway circle radius (NDC height units)
                 let tvOn = false, tvSaved = null, spotS = 0;
                 const tvCutMats = new Set();                     // materials with the cutaway switched on
-                window._cutaway = { x: 0, y: 0, r: TV_SPOT_R, aspect: 16 / 9, s: 0, floor: 0 };
+                window._cutaway = { x: 0, y: 0, r: TV_SPOT_R, aspect: 16 / 9, s: 0, floor: 0, base: 0.4 };   // base: the rest of the near structure stays ~40% opaque
                 const enterTV = () => {
                     tvOn = true;
                     tvSaved = { fogStart: scene.fogStart, fogEnd: scene.fogEnd, radius: camera.radius, fov: camera.fov };
@@ -17671,6 +17753,9 @@
                     if (mode === 'tv') {
                         if (!tvOn) enterTV();
                         camera.alpha = TV_CAMERA.alpha; camera.beta = TV_CAMERA.beta; camera.radius = TV_CAMERA.radius;
+                        // Locked on the court's centre line (dead centre of the screen): cycling here from Follow must
+                        // not keep Follow's lean, which pushed the whole stage off-centre. A hard cut, like a broadcast.
+                        cameraBasePosition.set(0, 0, 0);
                         updateCutaway(dtTV, true);
                         return;
                     }
