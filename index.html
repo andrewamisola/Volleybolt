@@ -8485,6 +8485,75 @@
             }
 
             // ============================================================
+            // SPOTLIGHT CUTAWAY (spectate TV cam): a soft screen-door circle around a character that
+            // punches through whatever structure is in front of them, the classic "walk behind a
+            // building" treatment. Registered on every material but OFF (compiled out) until TV mode
+            // switches it on for the near structure's materials. Discard, not blending, so the materials
+            // stay opaque. The ordered 4x4 Bayer threshold gives the PS1-appropriate dither. Settings
+            // live in window._cutaway: centre (NDC), radius (NDC height units), aspect, strength 0..1,
+            // floor (0 = fully see-through at the centre).
+            // ============================================================
+            try {
+                class CutawayPluginMaterial extends BABYLON.MaterialPluginBase {
+                    constructor(material) {
+                        super(material, "Cutaway", 210, { CUTAWAY: false });
+                        this._isEnabled = false;
+                    }
+                    get isEnabled() { return this._isEnabled; }
+                    set isEnabled(enabled) {
+                        if (this._isEnabled === enabled) return;
+                        this._isEnabled = enabled;
+                        this.markAllDefinesAsDirty();
+                        this._enable(enabled);
+                    }
+                    prepareDefines(defines) { defines.CUTAWAY = this._isEnabled; }
+                    getClassName() { return "CutawayPluginMaterial"; }
+                    getUniforms() {
+                        const decl = "#ifdef CUTAWAY\nuniform vec2 cutCenter;\nuniform vec4 cutParams;\n#endif";
+                        return {
+                            ubo: [{ name: "cutCenter", size: 2, type: "vec2" }, { name: "cutParams", size: 4, type: "vec4" }],
+                            vertex: decl, fragment: decl,
+                        };
+                    }
+                    bindForSubMesh(uniformBuffer) {
+                        if (!this._isEnabled) return;
+                        const c = window._cutaway || { x: 0, y: 0, r: 0.3, aspect: 16 / 9, s: 0, floor: 0 };
+                        uniformBuffer.updateFloat2("cutCenter", c.x, c.y);
+                        uniformBuffer.updateFloat4("cutParams", c.r, c.aspect, c.s, c.floor);
+                    }
+                    getCustomCode(shaderType) {
+                        if (shaderType === "vertex") return {
+                            "CUSTOM_VERTEX_DEFINITIONS": "#ifdef CUTAWAY\nvarying vec4 vCutClip;\n#endif",
+                            "CUSTOM_VERTEX_MAIN_END": "#ifdef CUTAWAY\nvCutClip = gl_Position;\n#endif",
+                        };
+                        return {
+                            "CUSTOM_FRAGMENT_DEFINITIONS": `#ifdef CUTAWAY
+                                varying vec4 vCutClip;
+                                float cutB2(vec2 a) { a = floor(a); return fract(dot(a, vec2(0.5, a.y * 0.75))); }
+                                float cutBayer4(vec2 a) { return cutB2(0.5 * a) * 0.25 + cutB2(a); }
+                            #endif`,
+                            "CUSTOM_FRAGMENT_MAIN_BEGIN": `#ifdef CUTAWAY
+                                {
+                                    vec2 cutNdc = vCutClip.xy / vCutClip.w;
+                                    vec2 cutD = (cutNdc - cutCenter) * vec2(cutParams.y, 1.0);
+                                    float cutR = length(cutD) / cutParams.x;                        // 0 at the character, 1 at the rim
+                                    float cutKeep = max(smoothstep(0.3, 1.0, cutR), cutParams.w);   // soft falloff to solid
+                                    float cutV = mix(1.0, cutKeep, cutParams.z);                    // strength eases it in/out
+                                    if (cutV < 0.999 && cutV <= cutBayer4(gl_FragCoord.xy)) discard;
+                                }
+                            #endif`,
+                        };
+                    }
+                }
+                BABYLON.RegisterMaterialPlugin("Cutaway", (material) => {
+                    material.cutaway = new CutawayPluginMaterial(material);
+                    return material.cutaway;
+                });
+            } catch (e) {
+                console.warn("Cutaway material plugin failed to register:", e);
+            }
+
+            // ============================================================
             // PS1 FLAT (GOURAUD-ish) LIGHTING -- kill specular highlights
             // The PS1 lit per-vertex with no specular. True per-vertex Gouraud isn't
             // injectable into Babylon's StandardMaterial, but removing the specular
@@ -17477,17 +17546,10 @@
                 // a see-through cutaway, like walking into a building in a game. No backdrop until its own painting
                 // exists (the arena painting only works for the arena angle).
                 const TV_CAMERA = { alpha: Math.PI, beta: 0.95, radius: 62, fov: 0.5 };
-                const TV_FADE = 0.18;
-                let tvOn = false, tvSaved = null;
-                const tvFaded = new Map();                       // mesh -> current visibility (cutaway)
-                // The structures' PBR materials are forced OPAQUE (transparencyMode 0), which ignores mesh
-                // visibility. During the cutaway their mode goes to automatic (null): a mesh blends only while its
-                // visibility < 1, so the same shared materials still draw Red's castle opaque. Restored on exit.
-                const tvMatModes = new Map();                    // material -> original transparencyMode
-                const tvAutoAlpha = (m) => {
-                    const mat = m.material;
-                    if (mat && 'transparencyMode' in mat && !tvMatModes.has(mat)) { tvMatModes.set(mat, mat.transparencyMode); mat.transparencyMode = null; }
-                };
+                const TV_SPOT_R = 0.3;                           // cutaway circle radius (NDC height units)
+                let tvOn = false, tvSaved = null, spotS = 0;
+                const tvCutMats = new Set();                     // materials with the cutaway switched on
+                window._cutaway = { x: 0, y: 0, r: TV_SPOT_R, aspect: 16 / 9, s: 0, floor: 0 };
                 const enterTV = () => {
                     tvOn = true;
                     tvSaved = { fogStart: scene.fogStart, fogEnd: scene.fogEnd, radius: camera.radius, fov: camera.fov };
@@ -17504,32 +17566,33 @@
                     if (tvSaved) { scene.fogStart = tvSaved.fogStart; scene.fogEnd = tvSaved.fogEnd; camera.fov = tvSaved.fov; }
                     camera.mode = BABYLON.Camera.ORTHOGRAPHIC_CAMERA;
                     camera.alpha = GAME_CAMERA.alpha; camera.beta = GAME_CAMERA.beta; camera.radius = GAME_CAMERA.radius;
-                    for (const [m] of tvFaded) if (!m.isDisposed()) m.visibility = 1;
-                    tvFaded.clear();
-                    for (const [mat, mode] of tvMatModes) mat.transparencyMode = mode;
-                    tvMatModes.clear();
+                    for (const mat of tvCutMats) if (mat.cutaway) mat.cutaway.isEnabled = false;
+                    tvCutMats.clear();
+                    spotS = 0; window._cutaway.s = 0;
                     if (window.setBackdropProxyEnabled) setBackdropProxyEnabled(true);
                     if (window.backdropLayer) backdropLayer.isEnabled = true;
                 };
-                // Blue's near structure eases to see-through (and back); follows the structure swap at stage changes.
+                // SPOTLIGHT CUTAWAY: a soft dithered circle around the Blue wizard punches through Blue's near
+                // structure (fully see-through at the wizard, solid again at the rim), like walking behind a
+                // building in a game. Eases in/out; follows the structure swap at stage changes.
                 const updateCutaway = (dt, on) => {
                     const root = on && window.getStructRoot ? getStructRoot('left') : null;
-                    const want = new Set(root ? root.getChildMeshes(false).filter(m => !/debris/i.test(m.name)) : []);
-                    const k = Math.min(1, dt * 5);
-                    for (const m of want) if (!tvFaded.has(m)) { tvFaded.set(m, m.visibility); tvAutoAlpha(m); }
-                    for (const [m, v] of tvFaded) {
-                        if (m.isDisposed()) { tvFaded.delete(m); continue; }
-                        const target = want.has(m) ? TV_FADE : 1;
-                        const nv = v + (target - v) * k;
-                        if (target === 1 && nv > 0.995) { m.visibility = 1; tvFaded.delete(m); continue; }
-                        m.visibility = nv; tvFaded.set(m, nv);
+                    const want = new Set();
+                    if (root) for (const m of root.getChildMeshes(false)) if (m.material && m.material.cutaway) want.add(m.material);
+                    for (const mat of want) if (!tvCutMats.has(mat)) { mat.cutaway.isEnabled = true; tvCutMats.add(mat); }
+                    spotS += ((on ? 1 : 0) - spotS) * Math.min(1, dt * 5);
+                    if (!on && spotS < 0.01) spotS = 0;
+                    for (const mat of [...tvCutMats]) if (!want.has(mat) && spotS === 0) { mat.cutaway.isEnabled = false; tvCutMats.delete(mat); }
+                    const c = window._cutaway;
+                    c.s = spotS;
+                    const blue = combatants.left && combatants.left.paddle;
+                    if (blue) {
+                        const w = blue.getAbsolutePosition().add(new BABYLON.Vector3(0, 1.0, 0));   // the wizard's body, not its feet
+                        const ndc = BABYLON.Vector3.TransformCoordinates(w, scene.getTransformMatrix());
+                        c.x = ndc.x; c.y = ndc.y;
                     }
-                };
-                let specZoom = 1, curYaw = 0, curTilt = 0;        // eased values actually applied
-                const clampFree = () => {
-                    free.yaw  = Math.max(-FREE.yawMax, Math.min(FREE.yawMax, free.yaw));
-                    free.tilt = Math.max(FREE.tiltDown, Math.min(FREE.tiltUp, free.tilt));
-                    free.zoom = Math.max(FREE.zoomMin, Math.min(FREE.zoomMax, free.zoom));
+                    const eng = scene.getEngine();
+                    c.aspect = eng.getRenderWidth() / Math.max(1, eng.getRenderHeight());
                 };
                 window.spectateFreeReset = () => { free.yaw = 0; free.tilt = 0; free.zoom = 1; };
                 window.spectateCamReset = () => {
@@ -17582,7 +17645,6 @@
                         return;
                     }
                     if (tvOn) { exitTV(); specZoom = 1; curYaw = 0; curTilt = 0; }
-                    if (tvFaded.size) updateCutaway(dtTV, false);
                     const follow = mode === 'follow', isFree = mode === 'free';
                     if (mode === 'arena' && specZoom > 0.999 && Math.abs(curYaw) < 1e-4 && Math.abs(curTilt) < 1e-4
                         && Math.abs(cameraBasePosition.x) < 1e-3 && Math.abs(cameraBasePosition.z) < 1e-3) return;
