@@ -140,6 +140,11 @@
                     <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
                     <span class="menu-btn-label">1v1 Duel</span>
                 </button>
+                <button class="game-btn menu-btn" id="domBtnSpectate">
+                    <span class="menu-btn-accent" aria-hidden="true"></span>
+                    <span class="menu-btn-glyph" aria-hidden="true">&#9673;</span>
+                    <span class="menu-btn-label">Spectate</span>
+                </button>
                 <!-- Locked for now (DOUBLES_LOCKED): shown so players know it's coming, but disabled —
                      2v2 needs its own AI + balance pass first. -->
                 <button class="game-btn menu-btn is-locked" id="domBtnDoubles" disabled aria-disabled="true" title="Coming soon">
@@ -838,6 +843,11 @@
         // Round-by-round winners ('left' | 'right') for the end screen's tennis-style scoreboard.
         // Presentation only (not snapshotted/hashed; round ends are confirmed-only online).
         let roundLog = [];
+        // SPECTATE (AI vs AI): Blue is driven by the same AI as Red and the player just watches.
+        // Set by startSpectateMatch(), cleared by startSinglesMatch() and on return to the main menu;
+        // a victory-screen Play Again keeps it (another AI match).
+        let spectating = false;
+        window.isSpectating = () => spectating;
         const winningScore = 5;
         let gameOver = false;
         let waitingToServe = true;
@@ -1459,6 +1469,7 @@
 
             // Increment a stat
             function increment(statKey, amount = 1, options = {}) {
+                if (window.isSpectating && window.isSpectating()) return;   // AI vs AI doesn't touch your career
                 if (!STAT_DEFINITIONS[statKey]) {
                     console.warn(`StatTracker: Unknown stat "${statKey}"`);
                     return;
@@ -1593,6 +1604,7 @@
 
             // Commit match stats to career (called at match end)
             function commitMatch() {
+                if (window.isSpectating && window.isSpectating()) return;
                 save();
                 emit('match_committed', { matchStats: { ...matchStats }, careerStats: { ...careerStats } });
             }
@@ -2812,6 +2824,7 @@
         // player can set a real name in Settings and it replaces "Blue" everywhere it's shown.
         // (Web build — no Steam username to read; defaults to "Blue".) "Red" = the AI/opponent. ----
         window.getPlayerName = function () {
+            if (window.isSpectating && window.isSpectating()) return 'Blue';   // AI vs AI: no player
             const n = (((window.Settings && Settings.values.playerName) || '') + '').trim();
             return n || 'Blue';
         };
@@ -12400,8 +12413,10 @@
                 };
                 const titleCard = (isVictory, winnerSide) => {
                     const el = document.createElement('div');
-                    el.className = 'cine-title ' + (isVictory ? 'is-victory' : 'is-defeat') + ' team-' + winnerSide;
-                    el.innerHTML = '<span>' + (isVictory ? 'Victory' : 'Defeat') + '</span>';
+                    const spec = window.isSpectating && window.isSpectating();
+                    el.className = 'cine-title ' + (isVictory || spec ? 'is-victory' : 'is-defeat') + ' team-' + winnerSide;
+                    el.innerHTML = '<span>' + (spec ? (winnerSide === 'left' ? 'Blue' : 'Red') + ' Wins'
+                                                    : (isVictory ? 'Victory' : 'Defeat')) + '</span>';
                     layer().appendChild(el);
                     return el;
                 };
@@ -13908,6 +13923,9 @@
                 // on a guest drop). Salt 0, matching 'right' — the two FRONT slots share the
                 // unsalted default; only the two backs need de-correlating salt (see block comment).
                 slotSalt: { left: 0, right: 0, leftBack: 0x5EED1, rightBack: 0x5EED2 },
+                // SPECTATE Blue: exactly the singles AI_PROFILE (no reaction/cadence deltas; castK
+                // absent -> the singles 8), with its own hash salt so its parry/aim rolls aren't Red's.
+                spectate: { reactionDelta: 0, slotSalt: 0x5EED3 },
             };
             // Per-slot reaction rings + threat-sight (replaces the singles globals for doubles slots).
             // 'left' added W3 (see DOUBLES_AI.slotSalt comment above) — computeDoublesAIInput /
@@ -14540,7 +14558,7 @@
                     // slotSalt de-correlates the parry timing-bucket hash per slot (see decideAI's
                     // PARRY_BUCKETS) so the two backs don't whiff/land on the same balls in lockstep.
                     // Reuses the same slotSalt map the (unused) per-frame RNG seed already keyed off.
-                    slotSalt: DOUBLES_AI.slotSalt[slotKey] };
+                    slotSalt: (DOUBLES_AI[roleKey].slotSalt !== undefined) ? DOUBLES_AI[roleKey].slotSalt : DOUBLES_AI.slotSalt[slotKey] };
                 if (window._dbgAiOff) return defaultInput();   // dbg.aiOff(): AI stands idle
                 updateSlotThreatSight(st, slotKey);            // side-derived incoming sight tick
                 st.views.push(buildAIViewForSlot(slotKey));
@@ -14548,7 +14566,7 @@
                 // lagged world, current self (see the singles driver: a lagged self made the AI shimmy)
                 const _view = { ...st.views[0], self: st.views[st.views.length - 1].self };
                 return aiJuiceGuard(decideAI(_view, frame,
-                    makeAIRng(frame ^ AI_RNG_SEED ^ DOUBLES_AI.slotSalt[slotKey]), prof), slotKey);
+                    makeAIRng(frame ^ AI_RNG_SEED ^ prof.slotSalt), prof), slotKey);
             }
             // Exposed so the outer-scope online lockstep merge (host) can fill AI slots — mirrors the
             // window.decideAI / window.updateMatchPresentation exposures (same inner-closure reason).
@@ -14643,7 +14661,10 @@
                 }
                 for (const k in aiThreatSight) { if (!_incoming.has(+k)) delete aiThreatSight[k]; }
 
-                const leftInput  = buildPlayerInput();
+                const humanInput = buildPlayerInput();   // always consumed, so presses never queue into a later match
+                // SPECTATE: Blue runs the same AI brain as Red, its cast rhythm half a beat out of phase
+                // (+4 frames on the 8-frame cast period: same rate) so the two don't mirror move for move.
+                const leftInput  = spectating ? computeDoublesAIInput('left', 'spectate', spFrameCounter + 4) : humanInput;
                 // slotSalt: 0 for the singles right-AI (only one slot; no de-correlation needed —
                 // see doubles' DOUBLES_AI.slotSalt for the multi-slot case). Feeds decideAI's parry
                 // timing-bucket hash; a stable 0 here reproduces the single-slot bucket assignment.
@@ -17775,6 +17796,7 @@
 
         // Switch to menu state
         function showMainMenu(instantCamera = false) {
+            spectating = false;
             gameState = "menu";
             GameSM.state = 'menu';
             GameSM.show3D(false);   // 2D menu: hide the 3D arena (no menu camera)
@@ -19637,6 +19659,7 @@
         // Launch a 1v1 singles match (the core mode). Shared by the main-menu
         // "Start Battle" button and the (currently dormant) mode-select "1v1 Duel".
         function startSinglesMatch() {
+            spectating = false;
             teamSize = 1;
             setDOMModeSelectVisible(false);
             gameMode = 'single';
@@ -19652,6 +19675,13 @@
             startGame();
         }
         window.startSinglesMatch = startSinglesMatch;
+        // AI vs AI: a normal singles match with Blue driven by the AI (see the singles driver).
+        function startSpectateMatch() {
+            startSinglesMatch();
+            spectating = true;
+            if (window.resetAISlotState) window.resetAISlotState();   // Blue's reaction ring starts empty
+        }
+        window.startSpectateMatch = startSpectateMatch;
 
         // Launch a 2v2 doubles match (M1: local only — both back-row wizards are AI). Mirrors
         // startSinglesMatch but sets teamSize=2 and creates the back-row combatants.
@@ -20149,6 +20179,9 @@
             btnDuel.addEventListener('click', () => {
                 startSinglesMatch();
             });
+            // Spectate — AI vs AI.
+            const btnSpectate = document.getElementById('domBtnSpectate');
+            if (btnSpectate) btnSpectate.addEventListener('click', () => startSpectateMatch());
 
             // 2v2 Doubles — M1: local-only, both back-row wizards are AI. Locked for now (see DOUBLES_LOCKED).
             btnDoubles.addEventListener('click', () => {
@@ -24072,9 +24105,11 @@
             overlay.background = "rgba(8, 6, 16, 0.3)";
             const endScreen = ensureEndScreen();
             const endTitle = document.getElementById('endScreenTitle');
-            endTitle.textContent = isVictory ? 'Victory' : 'Defeat';
+            // Spectating: nobody "won" or "lost" from the viewer's seat, so name the winning team instead.
+            const specWin = spectating ? ((isVictory ? 'Blue' : 'Red') + ' Wins') : null;
+            endTitle.textContent = specWin || (isVictory ? 'Victory' : 'Defeat');
             endTitle.setAttribute('data-text', endTitle.textContent);
-            endScreen.classList.toggle('is-defeat', !isVictory);
+            endScreen.classList.toggle('is-defeat', !isVictory && !spectating);
 
             // Hide the regular message
             hideMessage();
