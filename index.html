@@ -9084,6 +9084,11 @@
             window.alignBackdrop = () => {
                 const layer = window.backdropLayer;
                 if (!layer || !layer.texture || !scene.activeCamera) return;
+                // Spectate TV cam: its painting was made for that exact fixed camera, so it's shown full-screen as-is.
+                if (window._tvBackdropActive) {
+                    const t = layer.texture; t.uScale = 1; t.vScale = 1; t.uOffset = 0; t.vOffset = 0;
+                    return;
+                }
                 const eng = scene.getEngine();
                 const rw = eng.getRenderWidth(), rh = eng.getRenderHeight();
                 if (!rw || !rh) return;
@@ -9131,9 +9136,13 @@
                 territory: new BABYLON.Texture('textures/backdrop_territory.jpg?v=2', scene),
                 core: new BABYLON.Texture('textures/backdrop_core.jpg?v=2', scene),
             };
+            // The TV-cam painting (spectate TV mode): generated from the exact TV camera plate (art/plates),
+            // forest dressing for now; per-stage TV paintings can follow.
+            window.tvBackdropTexture = new BABYLON.Texture('textures/backdrop_forest_tv.jpg?v=1', scene, true);
             window.setStageBackdrop = (kind, mirror) => {
                 const tex = BACKDROPS[kind] || BACKDROPS.forest;
                 backdropLayer.texture = tex;
+                if (window._tvBackdropActive) { window._tvSavedLayerTex = tex; backdropLayer.texture = window.tvBackdropTexture; }
                 window._backdropMirror = !!mirror && tex !== BACKDROPS.forest;
                 window.alignBackdrop();
                 if (window.updateBackdropProxy) updateBackdropProxy(BACKDROPS[kind] ? kind : 'forest', window._backdropMirror);
@@ -17553,12 +17562,19 @@
                 const enterTV = () => {
                     tvOn = true;
                     tvSaved = { fogStart: scene.fogStart, fogEnd: scene.fogEnd, radius: camera.radius, fov: camera.fov };
+                    // Pushed well past the camera-distance shift: the far end of the court (Red's gate, ~80u away)
+                    // must stay about as clear as the TV painting around it, which carries its own light dusk haze.
                     const shift = TV_CAMERA.radius - GAME_CAMERA.radius;
-                    scene.fogStart = tvSaved.fogStart + shift; scene.fogEnd = tvSaved.fogEnd + shift;
+                    scene.fogStart = tvSaved.fogStart + shift + 22; scene.fogEnd = tvSaved.fogEnd + shift + 45;
                     camera.mode = BABYLON.Camera.PERSPECTIVE_CAMERA;
                     camera.fov = TV_CAMERA.fov;
                     if (window.setBackdropProxyEnabled) setBackdropProxyEnabled(false);
-                    if (window.backdropLayer) backdropLayer.isEnabled = false;
+                    if (window.backdropLayer && window.tvBackdropTexture) {   // the TV painting, full-screen
+                        window._tvSavedLayerTex = backdropLayer.texture;
+                        window._tvBackdropActive = true;
+                        backdropLayer.texture = window.tvBackdropTexture;
+                        backdropLayer.isEnabled = true;
+                    }
                 };
                 const exitTV = () => {
                     if (!tvOn) return;
@@ -17570,7 +17586,12 @@
                     tvCutMats.clear();
                     spotS = 0; window._cutaway.s = 0;
                     if (window.setBackdropProxyEnabled) setBackdropProxyEnabled(true);
-                    if (window.backdropLayer) backdropLayer.isEnabled = true;
+                    if (window.backdropLayer) {
+                        window._tvBackdropActive = false;
+                        if (window._tvSavedLayerTex) backdropLayer.texture = window._tvSavedLayerTex;
+                        window._tvSavedLayerTex = null;
+                        backdropLayer.isEnabled = true;
+                    }
                 };
                 // SPOTLIGHT CUTAWAY: a soft dithered circle around the Blue wizard punches through Blue's near
                 // structure (fully see-through at the wizard, solid again at the rim), like walking behind a
