@@ -230,7 +230,8 @@
             let dmg = 0;
             if (winner) {
                 const maxHP = (ctx.consts && typeof ctx.consts.maxTowerHealth === 'number') ? ctx.consts.maxTowerHealth : 20;
-                dmg = Math.round(OD.DMG_START * maxHP * (OD.DURATION - (OD.WINDUP || 0)));
+                dmg = Math.round(OD.DMG_START * maxHP * (OD.DURATION - (OD.WINDUP || 0)))
+                    + ((ctx.consts && ctx.consts.dmgBonus) || 0);   // overtime: +N to the beam's total
                 loser.towerHealth = Math.max(0, (loser.towerHealth || 0) - dmg);
             }
             L.clashT = 0; L.clashPos = 0;
@@ -271,7 +272,9 @@
                 const rampFrac = OD.RAMP_TIME > 0 ? c.juiceRamp / OD.RAMP_TIME : 1;
                 const ratePerSec = OD.DMG_START + (OD.DMG_MAX - OD.DMG_START) * rampFrac;
                 const maxHP = (ctx && ctx.consts && typeof ctx.consts.maxTowerHealth === 'number') ? ctx.consts.maxTowerHealth : 20;
-                const dmg = ratePerSec * maxHP * dt;   // fraction/sec * maxHP * dt
+                // + overtime escalation: dmgBonus added to the beam's TOTAL damage, spread across its beam time
+                const beamSecs = Math.max(0.1, OD.DURATION - (OD.WINDUP || 0));
+                const dmg = ratePerSec * maxHP * dt + (((ctx && ctx.consts && ctx.consts.dmgBonus) || 0) / beamSecs) * dt;
                 opp.towerHealth = Math.max(0, (opp.towerHealth || 0) - dmg);
                 // Attacker gains charge? NO — no charging while channeling (addJuice guards on juiceActive).
                 if (ctx && ctx.deps && !ctx.isResimulating && ctx.deps.onOverdriveHit) {
@@ -880,8 +883,11 @@
         // clashing, clashPos + = left ahead).
         const clashL = combatants.left && combatants.left.clashT > 0 ? combatants.left : null;
         if (clashL) {
-            if (leftInput.parry)  clashL.clashPos = (clashL.clashPos || 0) + BEAM_CLASH.STEP;
-            if (rightInput.parry) clashL.clashPos = (clashL.clashPos || 0) - BEAM_CLASH.STEP;
+            // Each press shoves harder the more CURRENT mana its caster holds (owner 2026-09-30: equal mashers
+            // were stalemating every clash): x1 at 0 mana, +20% per mana held. Same rule for both sides.
+            const push = (c) => BEAM_CLASH.STEP * (1 + 0.2 * Math.max(0, (c && c.mana) || 0));
+            if (leftInput.parry)  clashL.clashPos = (clashL.clashPos || 0) + push(combatants.left);
+            if (rightInput.parry) clashL.clashPos = (clashL.clashPos || 0) - push(combatants.right);
         } else {
             // Overdrive is a FULL SEND: once started it can't be cancelled (a press mid-channel does nothing —
             // spamming the key must never throw it away). simActivateJuice already ignores an active channel.

@@ -4144,3 +4144,14 @@ body.gp-cursor-hidden * {
     white-space: nowrap; pointer-events: none;
 }
 #spectatePanel.free .sp-hint { display: flex; }
+
+/* Spectate TV clean feed: a slim FF9-style key strip along the bottom edge instead of the windows. */
+#spectateTVHint {
+    position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+    display: none; align-items: center; gap: 6px; height: 34px; padding: 0 16px; box-sizing: border-box;
+    background: rgba(46, 56, 76, 0.85); border: 2px solid #dfe6f2; border-radius: 8px; box-shadow: 3px 3px 0 #000;
+    font-family: 'FF9UI', sans-serif; font-size: 18px; color: #cdd8ef; text-shadow: 1px 1px 0 #000;
+    white-space: nowrap; pointer-events: none;
+}
+#spectateTVHint b { color: #f0c050; font-weight: normal; }
+#spectateTVHint.visible { display: flex; }

@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=82-cinematic">
+    <link rel="stylesheet" href="styles.css?v=83-spectate-summary">
 </head>
 <body>
 
@@ -760,7 +760,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=45-round4-economy"></script>
+    <script type="module" src="js/sim.js?v=46-clash-mana-overtime"></script>
 
     <script>
         // Build identifier for bug reports (audit #6). Date-based: bump on every player-facing
@@ -843,6 +843,11 @@
         // Round-by-round winners ('left' | 'right') for the end screen's tennis-style scoreboard.
         // Presentation only (not snapshotted/hashed; round ends are confirmed-only online).
         let roundLog = [];
+        // OVERTIME ESCALATION (owner design 2026-09-30, instead of a round cap): from the 8th round of a match on,
+        // every round adds +1 damage to each Fireball gate hit, and +1 to a Juice beam's TOTAL damage (spread
+        // across the beam, so it can't run away). Reads totalRoundsPlayed (synced stage state), so online peers agree.
+        function overtimeDamageBonus() { return Math.max(0, (totalRoundsPlayed | 0) - 6); }
+        window.overtimeDamageBonus = overtimeDamageBonus;
         // SPECTATE (AI vs AI): Blue is driven by the same AI as Red and the player just watches.
         // Set by startSpectateMatch(), cleared by startSinglesMatch() and on return to the main menu;
         // a victory-screen Play Again keeps it (another AI match).
@@ -2455,7 +2460,8 @@
                         if (!ctx.isResimulating) { ctx.deps.playSound('block', px, 0.6); ctx.deps.onShieldBlock(railKey || side); }
                         return false; // bounced, not consumed
                     },
-                    onGateHit(proj, side, ctx) { return { damage: Math.min(2 + proj.volleyCount, 6) }; },
+                    // + the overtime escalation (round 8 on: +1 per round; see overtimeDamageBonus)
+                    onGateHit(proj, side, ctx) { return { damage: Math.min(2 + proj.volleyCount, 6) + ((ctx && ctx.consts && ctx.consts.dmgBonus) || 0) }; },
                 }
             },
             frostbolt: {
@@ -8026,8 +8032,11 @@
 
                 // Per-frame: visibility + live spell states (parry is driven by updateParryButtonGUI).
                 scene.onBeforeRenderObservable.add(() => {
+                    // Spectate TV cam = broadcast clean feed: the near wizard stands right where these bottom
+                    // windows sit, so they step aside (the top bars stay; keys still drive spectate).
+                    const tvClean = window._specCam === 'tv' && !!(window.isSpectating && window.isSpectating());
                     const inGame = ((typeof gameState === 'undefined') || (gameState !== 'menu' && gameState !== 'lobby'))
-                        && !window.hudHidden;   // debug hide-HUD hides the command/stats windows too
+                        && !window.hudHidden && !tvClean;   // debug hide-HUD hides the command/stats windows too
                     // Spectating: nothing to command — the COMMAND window gives its slot to the DOM SPECTATE
                     // window (ensureSpectatePanel); Combat Log + Status stay where they are.
                     const showCmd = inGame && !(window.isSpectating && window.isSpectating());
@@ -24057,7 +24066,8 @@
         function buildSimCtx() {
             return {
                 projectiles, combatants, abilities, pvpParryState, isResimulating,
-                consts: { parryWindow, parryFailCooldown, parrySuccessCooldown, parryHitboxExtend, manaRegenTime, juice: window.JUICE, overdrive: window.OVERDRIVE, arc: BLOCK_ARC, maxTowerHealth: maxTowerHealth, teamSize: teamSize },
+                consts: { parryWindow, parryFailCooldown, parrySuccessCooldown, parryHitboxExtend, manaRegenTime, juice: window.JUICE, overdrive: window.OVERDRIVE, arc: BLOCK_ARC, maxTowerHealth: maxTowerHealth, teamSize: teamSize,
+                          dmgBonus: overtimeDamageBonus() },
                 deps: SIM_DEPS,
                 backInputs: null,  // Task 5's doubles input driver fills this in; sim treats null as "no back wizards act"
             };
@@ -24344,6 +24354,10 @@
 
         // Start a new round
         function startRound() {
+            {
+                const ot = overtimeDamageBonus();
+                if (ot > 0 && window.logNeutral) window.logNeutral('Overtime! Fireballs +' + ot + ' damage');
+            }
             waitingToServe = false;
             roundActive = true;
             roundTransitioning = false;
@@ -24827,7 +24841,17 @@
         function updateSpectatePanel() {
             const el = ensureSpectatePanel();
             if (!el) return;
-            el.classList.toggle('visible', spectating);
+            const tv = spectating && window._specCam === 'tv';
+            el.classList.toggle('visible', spectating && !tv);
+            // TV clean feed: the SPECTATE window steps aside for a slim key strip along the bottom edge
+            let hint = document.getElementById('spectateTVHint');
+            if (!hint) {
+                hint = document.createElement('div');
+                hint.id = 'spectateTVHint';
+                hint.innerHTML = '<b>TV</b> &middot; C camera &middot; [ ] speed &middot; Space pause &middot; H hide HUD';
+                el.parentNode.appendChild(hint);
+            }
+            hint.classList.toggle('visible', tv);
             const sp = specSpeed();
             const set = (id, txt) => { const v = el.querySelector('[data-val="' + id + '"]'); if (v) v.textContent = txt; };
             set('speed', (sp === 0.5 ? '\u00bd' : sp) + '\u00d7');
