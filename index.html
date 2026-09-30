@@ -17797,11 +17797,21 @@
                     }
                 }
 
-                // Update floating combat text positions
-                if (window.updateCombatText) window.updateCombatText(dt);
-                if (window.updateSpellCastText) window.updateSpellCastText(dt);
-                if (window.updateFloatingTexts) window.updateFloatingTexts(dt);
-                if (window.updateDamageText) window.updateDamageText(dt);
+                // Update floating combat text positions. Their lifetimes run on SIM time: at a spectate speed
+                // (2x..8x, or paused) the text ages and animates at the same rate as the match that produces it,
+                // instead of piling up on wall-clock lifetimes. The CSS float/fade animations of the HUD-layer
+                // popups get the same playback rate. (Always 1 outside spectate.)
+                const txtRate = spectating ? (specPaused ? 0 : specSpeed()) : 1;
+                const tdt = dt * txtRate;
+                if (window.updateCombatText) window.updateCombatText(tdt);
+                if (window.updateSpellCastText) window.updateSpellCastText(tdt);
+                if (window.updateFloatingTexts) window.updateFloatingTexts(tdt);
+                if (window.updateDamageText) window.updateDamageText(tdt);
+                if (txtRate !== 1 || window._txtRateApplied !== 1) {
+                    window._txtRateApplied = txtRate;
+                    const hud = document.getElementById('hudScaleLayer');
+                    if (hud && hud.getAnimations) for (const a of hud.getAnimations({ subtree: true })) a.playbackRate = txtRate;
+                }
 
                 // Debug hide-HUD: re-hide GUI HUD controls that event-driven code re-shows
                 if (window.enforceHudHidden) window.enforceHudHidden();
