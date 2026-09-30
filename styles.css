@@ -3423,6 +3423,23 @@ body.gp-cursor-hidden * {
 .menu-logo img,
 #loadingTitle img { filter: drop-shadow(0 5px 0 #000); }   /* solid black, straight down, no blur */
 
+/* ---- Wordmark: the title set in plain Ferrum type (replaced the generated logo art). Two stacked
+   words in the menu's wizard purple and pickle green, flat fills, the headings' solid black drop.
+   Live text, so it stays crisp at any --ui-scale. Same block on the splash and the title screen. ---- */
+.menu-logo .logo-word {
+    display: block;
+    font-family: 'Ferrum', serif;
+    font-size: 184px;
+    line-height: 0.9;
+    letter-spacing: 3px;
+    white-space: nowrap;
+    -webkit-text-fill-color: currentColor;   /* the old splash gradient-text rule set it transparent */
+    text-shadow: 0 6px 0 #000;
+}
+.menu-logo .logo-dueling { color: #9a78ec; }
+.menu-logo .logo-pickles { color: #78b83e; }
+#loadingTitle.menu-logo, #domMenuTitle.menu-logo { margin: 0; line-height: 0.9; background: none; filter: none; }
+
 /* ---- KH menu items ---- */
 .arcane-buttons .menu-btn { padding: 6px 40px 6px 48px; }
 .arcane-buttons .menu-btn .menu-btn-label {
