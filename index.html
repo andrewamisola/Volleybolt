@@ -17464,20 +17464,66 @@
                 // Follow is a light broadcast drift, not a chase cam (owner tuning): a gentle zoom, leaning only
                 // part-way toward the action, eased slowly.
                 const FULL_HH = 12, ASPECT = 16 / 9, FOLLOW_ZOOM = 0.85, FOLLOW_LEAN = 0.45;
-                let specZoom = 1;
+                // FREE cam: the spectator turns (drag) and zooms (wheel) within the limits the camera-projected
+                // backdrop holds up to (~30-45 deg off the game angle). Offsets from the canonical game camera.
+                const FREE = { yawMax: 35 * Math.PI / 180, tiltDown: -10 * Math.PI / 180, tiltUp: 15 * Math.PI / 180,
+                               zoomMin: 0.55, zoomMax: 1 };
+                const free = { yaw: 0, tilt: 0, zoom: 1 };        // targets (input writes these)
+                let specZoom = 1, curYaw = 0, curTilt = 0;        // eased values actually applied
+                const clampFree = () => {
+                    free.yaw  = Math.max(-FREE.yawMax, Math.min(FREE.yawMax, free.yaw));
+                    free.tilt = Math.max(FREE.tiltDown, Math.min(FREE.tiltUp, free.tilt));
+                    free.zoom = Math.max(FREE.zoomMin, Math.min(FREE.zoomMax, free.zoom));
+                };
+                window.spectateFreeReset = () => { free.yaw = 0; free.tilt = 0; free.zoom = 1; };
                 window.spectateCamReset = () => {
                     window._specCam = 'arena';
-                    specZoom = 1;
+                    specZoom = 1; curYaw = 0; curTilt = 0;
+                    window.spectateFreeReset();
                     cameraBasePosition.set(0, 0, 0);
+                    camera.alpha = GAME_CAMERA.alpha; camera.beta = GAME_CAMERA.beta;
                     if (window.setOrthoForGame) setOrthoForGame();
                 };
+                // Free-cam input on the game canvas (spectating + Free only; nothing else reads the mouse there then).
+                {
+                    const cvs = engine.getRenderingCanvas();
+                    const active = () => window.isSpectating && window.isSpectating() && window._specCam === 'free'
+                        && gameState === 'playing' && !gameOver && !(window.isAnyMenuOpen && window.isAnyMenuOpen());
+                    let drag = null;
+                    cvs.addEventListener('pointerdown', (e) => {
+                        if (!active() || e.button !== 0) return;
+                        drag = { x: e.clientX, y: e.clientY };
+                        try { cvs.setPointerCapture(e.pointerId); } catch (_) {}
+                    });
+                    cvs.addEventListener('pointermove', (e) => {
+                        if (!drag) return;
+                        if (!active()) { drag = null; return; }
+                        const w = cvs.clientWidth || 1;
+                        free.yaw  -= (e.clientX - drag.x) / w * 1.6;    // a full-width drag ~ 90 deg (clamped to the limits)
+                        free.tilt -= (e.clientY - drag.y) / w * 1.2;
+                        drag.x = e.clientX; drag.y = e.clientY;
+                        clampFree();
+                    });
+                    const end = () => { drag = null; };
+                    cvs.addEventListener('pointerup', end);
+                    cvs.addEventListener('pointercancel', end);
+                    cvs.addEventListener('wheel', (e) => {
+                        if (!active()) return;
+                        e.preventDefault();
+                        free.zoom *= Math.exp(e.deltaY * 0.0012);
+                        clampFree();
+                    }, { passive: false });
+                }
                 scene.onBeforeRenderObservable.add(() => {
                     if (!(window.isSpectating && window.isSpectating()) || gameState !== 'playing' || gameOver) return;
-                    const follow = window._specCam === 'follow';
-                    if (!follow && specZoom > 0.999 && Math.abs(cameraBasePosition.x) < 1e-3 && Math.abs(cameraBasePosition.z) < 1e-3) return;
+                    const mode = window._specCam;
+                    const follow = mode === 'follow', isFree = mode === 'free';
+                    if (mode === 'arena' && specZoom > 0.999 && Math.abs(curYaw) < 1e-4 && Math.abs(curTilt) < 1e-4
+                        && Math.abs(cameraBasePosition.x) < 1e-3 && Math.abs(cameraBasePosition.z) < 1e-3) return;
                     const dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
                     const k = Math.min(1, dt * 1.1);       // pan: slow drift
                     const kz = Math.min(1, dt * 1.8);      // zoom in/out: a touch quicker
+                    const kr = Math.min(1, dt * 6);        // free-cam turn/zoom: responsive but eased
                     let tx = 0, tz = 0;
                     if (follow && projectiles.length) {
                         // Centre of the action: every ball, the more-rallied ones weighted harder; then lean
@@ -17489,8 +17535,16 @@
                         }
                         tx = sx / sw * FOLLOW_LEAN; tz = sz / sw * FOLLOW_LEAN;
                     }
-                    specZoom += ((follow ? FOLLOW_ZOOM : 1) - specZoom) * kz;
-                    if (!follow && specZoom > 0.999) specZoom = 1;
+                    const zoomTarget = follow ? FOLLOW_ZOOM : isFree ? free.zoom : 1;
+                    specZoom += (zoomTarget - specZoom) * (isFree ? kr : kz);
+                    if (mode === 'arena' && specZoom > 0.999) specZoom = 1;
+                    // turn: free = the spectator's yaw/tilt; any other mode eases back to the game angle
+                    curYaw  += ((isFree ? free.yaw : 0)  - curYaw)  * (isFree ? kr : kz);
+                    curTilt += ((isFree ? free.tilt : 0) - curTilt) * (isFree ? kr : kz);
+                    if (!isFree && Math.abs(curYaw) < 1e-4) curYaw = 0;
+                    if (!isFree && Math.abs(curTilt) < 1e-4) curTilt = 0;
+                    camera.alpha = GAME_CAMERA.alpha + curYaw;
+                    camera.beta  = GAME_CAMERA.beta - curTilt;          // tilt up = camera rises (smaller beta)
                     const HH = FULL_HH * specZoom, HW = HH * ASPECT;
                     const maxX = FULL_HH * ASPECT - HW, maxZ = (FULL_HH - HH) * 2;   // ground depth is foreshortened ~2x at this tilt
                     tx = Math.max(-maxX, Math.min(maxX, tx));
@@ -24588,7 +24642,8 @@
                         '<span class="sp-label">' + label + '</span>' +
                         '<span class="sp-val" data-val="' + id + '"></span>' +
                         '<span class="sp-key">' + key + '</span>' +
-                    '</button>').join('');
+                    '</button>').join('') +
+                '<div class="sp-hint">Drag to turn &middot; Wheel to zoom &middot; R to reset</div>';
             el.addEventListener('click', (e) => {
                 const b = e.target.closest('.sp-row');
                 if (b) spectateAction(b.dataset.act, e.shiftKey ? -1 : 1);
@@ -24605,7 +24660,8 @@
             const set = (id, txt) => { const v = el.querySelector('[data-val="' + id + '"]'); if (v) v.textContent = txt; };
             set('speed', (sp === 0.5 ? '\u00bd' : sp) + '\u00d7');
             set('pause', specPaused ? 'On' : 'Off');
-            set('camera', window._specCam === 'follow' ? 'Follow' : 'Arena');
+            set('camera', { arena: 'Arena', follow: 'Follow', free: 'Free' }[window._specCam] || 'Arena');
+            el.classList.toggle('free', spectating && window._specCam === 'free');
             set('hud', '');
         }
         window.updateSpectatePanel = updateSpectatePanel;
@@ -24623,7 +24679,11 @@
             } else if (act === 'pause') {
                 specPaused = !specPaused;
             } else if (act === 'camera') {
-                window._specCam = window._specCam === 'follow' ? 'arena' : 'follow';
+                const order = ['arena', 'follow', 'free'];
+                window._specCam = order[(order.indexOf(window._specCam) + 1) % order.length];
+                if (window._specCam === 'free' && window.spectateFreeReset) spectateFreeReset();
+            } else if (act === 'freeReset') {
+                if (window._specCam === 'free' && window.spectateFreeReset) spectateFreeReset();
             } else if (act === 'hud') {
                 if (window.setHudHidden) setHudHidden(!window.hudHidden);
             }
@@ -24632,7 +24692,7 @@
         window.spectateAction = spectateAction;
         window.addEventListener('keydown', (e) => {
             if (!spectating || gameState !== 'playing' || (window.isAnyMenuOpen && window.isAnyMenuOpen())) return;
-            const act = { BracketLeft: 'slower', BracketRight: 'faster', Space: 'pause', KeyC: 'camera', KeyH: 'hud' }[e.code];
+            const act = { BracketLeft: 'slower', BracketRight: 'faster', Space: 'pause', KeyC: 'camera', KeyH: 'hud', KeyR: 'freeReset' }[e.code];
             if (!act || e.repeat) return;
             e.preventDefault();
             spectateAction(act);
@@ -27049,9 +27109,9 @@
                     StatTracker.increment('matches_won');
                     StatTracker.commitMatch();
                     // Show victory screen instantly
-                    // match over: spectate cameras hand back the full view before the cinematic snapshots it
-                    // (only here: a stage change keeps the spectator's camera choice)
-                    if (spectating && window.spectateCamReset) spectateCamReset();
+                    // (No spectate camera reset here: snapping back from a zoomed/turned view read as a jolt. The
+                    // cinematic snapshots whatever the camera is and returns to it; the next match's Ready/Go and
+                    // the Main Menu restore the game camera under black.)
                     if (window.playVictoryCinematic) playVictoryCinematic(presWon, winnerSide); else showVictoryScreen(presWon);
                 } else {
                     showMessage(stageMsg);
@@ -27089,9 +27149,9 @@
                     StatTracker.increment('matches_lost');
                     StatTracker.commitMatch();
                     // Show defeat screen instantly
-                    // match over: spectate cameras hand back the full view before the cinematic snapshots it
-                    // (only here: a stage change keeps the spectator's camera choice)
-                    if (spectating && window.spectateCamReset) spectateCamReset();
+                    // (No spectate camera reset here: snapping back from a zoomed/turned view read as a jolt. The
+                    // cinematic snapshots whatever the camera is and returns to it; the next match's Ready/Go and
+                    // the Main Menu restore the game camera under black.)
                     if (window.playVictoryCinematic) playVictoryCinematic(presWon, winnerSide); else showVictoryScreen(presWon);
                 } else {
                     showMessage(stageMsg);
