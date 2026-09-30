@@ -9067,7 +9067,121 @@
                 backdropLayer.texture = tex;
                 window._backdropMirror = !!mirror && tex !== BACKDROPS.forest;
                 window.alignBackdrop();
+                if (window.updateBackdropProxy) updateBackdropProxy(BACKDROPS[kind] ? kind : 'forest', window._backdropMirror);
             };
+
+            // ============================================================
+            // CAMERA-PROJECTED BACKDROP (matte painting on proxy geometry)
+            // ============================================================
+            // The backdrop is one still painting made for the CANONICAL game camera; drawn flat behind the
+            // stage it only lines up from that exact angle. Here the same painting is projected from that
+            // camera onto simple stand-in surfaces in the world (the film matte-painting trick): a big ground
+            // sheet just under the stage and a vertical "tree wall" card past the far rail where the forest
+            // rises. Because the canonical camera is ORTHOGRAPHIC the projection is affine, so a surface's
+            // UV is simply where its vertex lands on screen in the canonical view, fed through the canonical
+            // rail alignment (same maths as alignBackdrop, evaluated once for the fixed camera). Result: from
+            // the game camera it is the same image as the flat layer; when the camera tilts/orbits (up to
+            // ~30-45 deg) the ground stays on the ground and the treeline stands up, so stage and backdrop keep
+            // reading as one scene. The flat layer stays behind as a fallback for any uncovered pixel.
+            {
+                const PROXY_SRC = { forest: 'textures/backdrop_forest.jpg?v=5', territory: 'textures/backdrop_territory.jpg?v=2', core: 'textures/backdrop_core.jpg?v=2' };
+                const proxyTex = {};
+                for (const k in PROXY_SRC) {
+                    const t = new BABYLON.Texture(PROXY_SRC[k], scene, true);   // own instances: the layer's are re-mapped live
+                    t.wrapU = BABYLON.Texture.CLAMP_ADDRESSMODE; t.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;
+                    proxyTex[k] = t;
+                }
+                // Canonical camera: the fixed game view the painting was made for (never rendered with).
+                const canon = new BABYLON.ArcRotateCamera('backdropCanonCam', GAME_CAMERA.alpha, GAME_CAMERA.beta,
+                    GAME_CAMERA.radius, BABYLON.Vector3.Zero(), scene);
+                canon.mode = BABYLON.Camera.ORTHOGRAPHIC_CAMERA;
+                const canonFrame = () => {
+                    const HH = 12 * (teamSize === 2 ? 4 / 3 : 1), HW = HH * 16 / 9;
+                    canon.orthoLeft = -HW; canon.orthoRight = HW; canon.orthoTop = HH; canon.orthoBottom = -HH;
+                    canon.alpha = GAME_CAMERA.alpha; canon.beta = GAME_CAMERA.beta; canon.radius = GAME_CAMERA.radius;
+                    canon.target.set(0, 0, 0);
+                    const T = canon.getViewMatrix(true).multiply(canon.getProjectionMatrix(true));
+                    const vp = new BABYLON.Viewport(0, 0, 1, 1);
+                    // screen position (fractions, y from top) of a world point in the canonical view
+                    return (x, y, z) => BABYLON.Vector3.Project(new BABYLON.Vector3(x, y, z), BABYLON.Matrix.Identity(), T, vp);
+                };
+                // Canonical texture mapping: alignBackdrop's rail fit, for the fixed camera at 16:9.
+                const canonMapping = (proj, mirror) => {
+                    const halfD = (window.getEffectiveTableDepth ? getEffectiveTableDepth() : 14) / 2;
+                    const sFar = proj(0, 0, -halfD).y, sNear = proj(0, 0, halfD).y;
+                    let vScale = (BACKDROP_NEAR_RAIL_T - BACKDROP_FAR_RAIL_T) / (sNear - sFar);
+                    let vOffset = BACKDROP_FAR_RAIL_T - sFar * vScale;
+                    vScale = -vScale; vOffset = 1 - vOffset;
+                    const uScale = Math.abs(vScale) * BACKDROP_IMG_ASPECT * (16 / 9);
+                    const sx0 = proj(0, 0, 0).x;
+                    return mirror ? { uScale: -uScale, uOffset: 0.5 + sx0 * uScale, vScale, vOffset }
+                                  : { uScale,  uOffset: 0.5 - sx0 * uScale, vScale, vOffset };
+                };
+                const mat = new BABYLON.StandardMaterial('backdropProxyMat', scene);
+                mat.disableLighting = true;
+                mat.diffuseColor = BABYLON.Color3.Black(); mat.specularColor = BABYLON.Color3.Black();
+                mat.emissiveColor = BABYLON.Color3.Black();   // the emissive TEXTURE is the only colour (it adds to this)
+                mat.fogEnabled = false;
+                mat.backFaceCulling = false;
+                mat.imageProcessingConfiguration = new BABYLON.ImageProcessingConfiguration();   // raw painting colours,
+                mat.imageProcessingConfiguration.isEnabled = false;                              // like the flat layer
+                const meshes = [];
+                const mkQuad = (name, corners) => {   // corners: 4 world points (a quad), UVs filled by applyUVs
+                    const m = new BABYLON.Mesh(name, scene);
+                    const vd = new BABYLON.VertexData();
+                    vd.positions = [].concat(...corners.map(c => [c.x, c.y, c.z]));
+                    vd.indices = [0, 1, 2, 0, 2, 3];
+                    vd.uvs = [0, 0, 0, 0, 0, 0, 0, 0];
+                    vd.applyToMesh(m, true);
+                    m.material = mat; m.isPickable = false; m.receiveShadows = false;
+                    m.alwaysSelectAsActiveMesh = true;
+                    meshes.push(m);
+                    return m;
+                };
+                const build = () => {   // rebuilt on every update: table depth / team size can change between matches
+                    while (meshes.length) meshes.pop().dispose();
+                    const proj = canonFrame();
+                    const halfD = (window.getEffectiveTableDepth ? getEffectiveTableDepth() : 14) / 2;
+                    // which rail is FAR (higher on screen) in the canonical view
+                    const farZ = proj(0, 0, -halfD).y < proj(0, 0, halfD).y ? -halfD : halfD;
+                    const dirFar = Math.sign(farZ);
+                    const X = 48, Y0 = -0.06;                       // wide enough for panning/orbits; just under the stage
+                    const FOLD = farZ + dirFar * 3;                 // where the painted treeline "stands up"
+                    const NEAR = -farZ - dirFar * 0.5;              // just outside the near rail (tucked under the wall)
+                    const V = BABYLON.Vector3;
+                    // Ground between the far fold and the near rail; a wall standing UP at the fold for the far
+                    // treeline; and a card hanging DOWN from the near rail (below the ground, so it hides nothing)
+                    // for the near-side forest. Any surface reproduces the painting from the canonical camera; a
+                    // vertical one never shears sideways when the camera orbits, so the near trees stay upright
+                    // instead of smearing across the ground.
+                    mkQuad('backdropProxyGround',  [new V(-X, Y0, FOLD), new V(X, Y0, FOLD), new V(X, Y0, NEAR), new V(-X, Y0, NEAR)]);
+                    mkQuad('backdropProxyFarWall', [new V(-X, Y0, FOLD), new V(X, Y0, FOLD), new V(X, 60, FOLD), new V(-X, 60, FOLD)]);
+                    mkQuad('backdropProxyNearDrop',[new V(-X, Y0, NEAR), new V(X, Y0, NEAR), new V(X, -80, NEAR), new V(-X, -80, NEAR)]);
+                    for (const m of meshes) m.setEnabled(proxyOn);
+                };
+                let proxyOn = true;
+                const applyUVs = (proj) => {
+                    for (const m of meshes) {
+                        const pos = m.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+                        const uv = [];
+                        for (let i = 0; i < pos.length; i += 3) {
+                            const sp = proj(pos[i], pos[i + 1], pos[i + 2]);
+                            uv.push(sp.x, 1 - sp.y);   // the flat layer's own screen UV (v up), before its texture transform
+                        }
+                        m.updateVerticesData(BABYLON.VertexBuffer.UVKind, uv);
+                    }
+                };
+                window.updateBackdropProxy = (kind, mirror) => {
+                    build();
+                    const proj = canonFrame();
+                    applyUVs(proj);
+                    const t = proxyTex[kind] || proxyTex.forest;
+                    Object.assign(t, canonMapping(proj, !!mirror));
+                    mat.emissiveTexture = t;
+                };
+                window.setBackdropProxyEnabled = (on) => { proxyOn = !!on; for (const m of meshes) m.setEnabled(proxyOn); };
+                setTimeout(() => window.updateBackdropProxy('forest', false), 0);   // after getEffectiveTableDepth exists
+            }
 
             // ============================================================
             // LIGHTING - Diablo 2 style (dark, warm, high contrast)
