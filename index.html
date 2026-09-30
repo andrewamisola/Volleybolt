@@ -10429,6 +10429,9 @@
                 player3DCastBar.position.set(0, 2.0, 0);  // Higher above the character
                 player3DCastBar.visibility = 0;
                 player3DCastBar.renderingGroupId = 1;  // Render in front of characters
+                // Billboard: the bar (and its child fill) always faces the camera squarely, like a sprite,
+                // whatever the camera angle (orbits / spectate cams). The fill's local X is then screen X.
+                player3DCastBar.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
 
                 player3DCastFill = BABYLON.MeshBuilder.CreateBox("player3DCastFill", {
                     width: barWidth * 0.98, height: barHeight * 0.7, depth: barDepth + 0.01
@@ -10453,7 +10456,8 @@
                 ai3DCastBar.parent = aiPaddle;
                 ai3DCastBar.position.set(0, 2.0, 0);  // Higher above the character
                 ai3DCastBar.visibility = 0;
-                ai3DCastBar.renderingGroupId = 1;  // Render in front of characters
+                ai3DCastBar.renderingGroupId = 1;
+                ai3DCastBar.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;   // faces the camera (see the player bar)  // Render in front of characters
 
                 ai3DCastFill = BABYLON.MeshBuilder.CreateBox("ai3DCastFill", {
                     width: barWidth * 0.98, height: barHeight * 0.7, depth: barDepth + 0.01
@@ -10487,6 +10491,7 @@
                         bar.visibility = 0;
                         bar.renderingGroupId = 1;
                         bar.isPickable = false;
+                        bar.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;   // faces the camera (see the front bars)
                         const fill = BABYLON.MeshBuilder.CreateBox(paddle.name + "3DCastFill", {
                             width: barWidth * 0.98, height: barHeight * 0.7, depth: barDepth + 0.01
                         }, scene);
@@ -17456,7 +17461,9 @@
             // arena's framing. 'arena': ease back to today's full view. Flat ortho either way, so every
             // world-anchored label/fog/ground layer still lines up. Singles framing only (spectate = 1v1).
             {
-                const FULL_HH = 12, ASPECT = 16 / 9, FOLLOW_ZOOM = 0.62;
+                // Follow is a light broadcast drift, not a chase cam (owner tuning): a gentle zoom, leaning only
+                // part-way toward the action, eased slowly.
+                const FULL_HH = 12, ASPECT = 16 / 9, FOLLOW_ZOOM = 0.85, FOLLOW_LEAN = 0.45;
                 let specZoom = 1;
                 window.spectateCamReset = () => {
                     window._specCam = 'arena';
@@ -17469,17 +17476,20 @@
                     const follow = window._specCam === 'follow';
                     if (!follow && specZoom > 0.999 && Math.abs(cameraBasePosition.x) < 1e-3 && Math.abs(cameraBasePosition.z) < 1e-3) return;
                     const dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
-                    const k = Math.min(1, dt * 3.5);
+                    const k = Math.min(1, dt * 1.1);       // pan: slow drift
+                    const kz = Math.min(1, dt * 1.8);      // zoom in/out: a touch quicker
                     let tx = 0, tz = 0;
-                    if (follow) {
-                        let best = null;
+                    if (follow && projectiles.length) {
+                        // Centre of the action: every ball, the more-rallied ones weighted harder; then lean
+                        // only part of the way there.
+                        let sx = 0, sz = 0, sw = 0;
                         for (const p of projectiles) {
-                            const v = p.volleyCount || 0, bv = best ? (best.volleyCount || 0) : -1;
-                            if (v > bv || (v === bv && p.id > best.id)) best = p;
+                            const w = 1 + (p.volleyCount || 0);
+                            sx += (p.x || 0) * w; sz += (p.z || 0) * w; sw += w;
                         }
-                        if (best) { tx = best.x || 0; tz = best.z || 0; }
+                        tx = sx / sw * FOLLOW_LEAN; tz = sz / sw * FOLLOW_LEAN;
                     }
-                    specZoom += ((follow ? FOLLOW_ZOOM : 1) - specZoom) * k;
+                    specZoom += ((follow ? FOLLOW_ZOOM : 1) - specZoom) * kz;
                     if (!follow && specZoom > 0.999) specZoom = 1;
                     const HH = FULL_HH * specZoom, HW = HH * ASPECT;
                     const maxX = FULL_HH * ASPECT - HW, maxZ = (FULL_HH - HH) * 2;   // ground depth is foreshortened ~2x at this tilt
@@ -26364,7 +26374,7 @@
 
             // Add to queue (removal only)
             const side = isPlayerTower ? 'player' : 'ai';
-            damageTextQueue[side].push({ el: dmgEl, age: 0 });
+            damageTextQueue[side].push({ el: dmgEl, age: 0, worldPos });   // re-projected each frame (moving cameras)
         }
 
         // Update damage text with stepped animation (called from render loop)
@@ -26386,7 +26396,15 @@
                         continue;
                     }
 
-                    // Movement + fade are handled by the CSS damageFloat animation.
+                    // Movement + fade are handled by the CSS damageFloat animation; the anchor follows the
+                    // world, so a moving camera (spectate Follow, shake) doesn't slide it off its gate.
+                    if (item.worldPos && scene.activeCamera) {
+                        const rw = scene.getEngine().getRenderWidth(), rh = scene.getEngine().getRenderHeight();
+                        const sp = BABYLON.Vector3.Project(item.worldPos, BABYLON.Matrix.Identity(), scene.getTransformMatrix(),
+                            scene.activeCamera.viewport.toGlobal(rw, rh));
+                        item.el.style.left = Math.floor(sp.x / rw * 1920) + 'px';
+                        item.el.style.top  = Math.floor(sp.y / rh * 1080) + 'px';
+                    }
                 }
             }
         };
@@ -26979,7 +26997,6 @@
             // Spectating: the viewer has no side, so every ending gets the WIN presentation (victory
             // fanfare, no defeat styling; the title names the winning team) and stage messages name who took it.
             const presWon = spectating || localWon;
-            if (spectating) { specPaused = false; if (window.spectateCamReset) spectateCamReset(); }
             const stageMsg = spectating ? ((winnerSide === 'left' ? 'Blue' : 'Red') + ' takes ' + stageName + '!')
                                         : (localWon ? (stageName + " Won!") : (stageName + " Lost!"));
 
@@ -27032,6 +27049,9 @@
                     StatTracker.increment('matches_won');
                     StatTracker.commitMatch();
                     // Show victory screen instantly
+                    // match over: spectate cameras hand back the full view before the cinematic snapshots it
+                    // (only here: a stage change keeps the spectator's camera choice)
+                    if (spectating && window.spectateCamReset) spectateCamReset();
                     if (window.playVictoryCinematic) playVictoryCinematic(presWon, winnerSide); else showVictoryScreen(presWon);
                 } else {
                     showMessage(stageMsg);
@@ -27069,6 +27089,9 @@
                     StatTracker.increment('matches_lost');
                     StatTracker.commitMatch();
                     // Show defeat screen instantly
+                    // match over: spectate cameras hand back the full view before the cinematic snapshots it
+                    // (only here: a stage change keeps the spectator's camera choice)
+                    if (spectating && window.spectateCamReset) spectateCamReset();
                     if (window.playVictoryCinematic) playVictoryCinematic(presWon, winnerSide); else showVictoryScreen(presWon);
                 } else {
                     showMessage(stageMsg);
