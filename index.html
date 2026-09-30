@@ -9038,12 +9038,19 @@
                 let vOffset = BACKDROP_FAR_RAIL_T - sFar * vScale;
                 vScale = -vScale; vOffset = 1 - vOffset;
                 const uScale = Math.abs(vScale) * BACKDROP_IMG_ASPECT * (rw / rh);
+                // Horizontal anchor: the art's centre column belongs to the lane's centre (world x = 0).
+                // Pin it to wherever x = 0 actually lands on screen (0.5 in the resting game view, i.e. the
+                // old centring), so a panned camera (spectate Follow) keeps the painting glued to the stage
+                // instead of sliding the arena across a static backdrop; screen shake now carries it
+                // sideways in lockstep too (it already followed vertically via the wall projection).
+                const sx0 = BABYLON.Vector3.Project(new BABYLON.Vector3(0, 0, 0), BABYLON.Matrix.Identity(),
+                    transform, cam.viewport.toGlobal(rw, rh)).x / rw;
                 const t = layer.texture;
                 t.wrapU = BABYLON.Texture.CLAMP_ADDRESSMODE;
                 t.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;
                 t.vScale = vScale; t.vOffset = vOffset;
-                if (window._backdropMirror) { t.uScale = -uScale; t.uOffset = (1 + uScale) / 2; }   // mirrored along the lane
-                else { t.uScale = uScale; t.uOffset = (1 - uScale) / 2; }
+                if (window._backdropMirror) { t.uScale = -uScale; t.uOffset = 0.5 + sx0 * uScale; }   // mirrored along the lane
+                else { t.uScale = uScale; t.uOffset = 0.5 - sx0 * uScale; }
             };
 
             // Per-stage backdrops. The territory/core paintings were made from the forest one (same
