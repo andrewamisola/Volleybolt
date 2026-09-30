@@ -4096,3 +4096,41 @@ body.gp-cursor-hidden * {
     -webkit-background-clip: text;
     background-clip: text;
 }
+
+/* ---- SPECTATE window: the COMMAND window's look (steel, rim, tab, FF9UI) in its slot, while spectating.
+   Sizes are the GUI's x4/3 (the GUI lays out on a 1440-wide ideal, this layer on 1920). ---- */
+#spectatePanel {
+    position: absolute; box-sizing: border-box;
+    display: none; flex-direction: column; justify-content: center;
+    padding: 0 11px;
+    background: rgba(46, 56, 76, 0.94);
+    border: 3px solid #dfe6f2; border-radius: 11px;
+    box-shadow: 5px 5px 0 #000;
+    pointer-events: auto;
+}
+#spectatePanel.visible { display: flex; }
+#spectatePanel .sp-tab {
+    position: absolute; top: -32px;
+    width: 200px; height: 35px; box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center;
+    background: rgb(46, 56, 76); border: 3px solid #dfe6f2; border-radius: 8px;
+    font-family: 'FF9UI', sans-serif; font-size: 21px; color: #ffffff;
+    -webkit-text-stroke: 3px #000; paint-order: stroke fill; text-shadow: 3px 3px 0 #000;
+}
+#spectatePanel .sp-row {
+    display: flex; align-items: center; gap: 12px;
+    width: 100%; padding: 0 4px 0 30px; margin: 0;
+    background: none; border: 0; cursor: pointer; position: relative;
+    font-family: 'FF9UI', sans-serif; font-size: 24px; color: #f4f7ff; text-shadow: 2px 2px 0 #000;
+}
+#spectatePanel .sp-row:hover::before {   /* the FF9 hand cursor, as on the COMMAND rows */
+    content: '\25B6'; position: absolute; left: 6px; font-size: 16px; color: #f0c050;
+}
+#spectatePanel .sp-label { flex: 1; text-align: left; }
+#spectatePanel .sp-val { color: #f0c050; min-width: 70px; text-align: right; }
+#spectatePanel .sp-key {
+    min-width: 35px; height: 32px; padding: 0 6px; box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(16, 24, 40, 0.55); border: 1px solid rgba(206, 214, 230, 0.5); border-radius: 5px;
+    font-size: 21px; color: #cdd8ef; text-shadow: 1px 1px 0 #000;
+}

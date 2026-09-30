@@ -848,6 +848,12 @@
         // a victory-screen Play Again keeps it (another AI match).
         let spectating = false;
         window.isSpectating = () => spectating;
+        // Spectate controls (SPECTATE window / keys): speed scales the sim clock, pause freezes it, the
+        // camera is 'arena' (today's view) or 'follow' (zoomed, tracking the busiest ball).
+        const SPEC_SPEEDS = [0.5, 1, 2, 4, 8];
+        let specSpeedIdx = 1, specPaused = false;
+        window._specCam = 'arena';
+        const specSpeed = () => SPEC_SPEEDS[specSpeedIdx];
         const winningScore = 5;
         let gameOver = false;
         let waitingToServe = true;
@@ -7249,6 +7255,9 @@
                 // 150px fits COMMAND / JUICE; "JUICE READY" (~111px in FF9UI 16) + the Q badge needs
                 // 172px, so the tab widens for that state (left edge held, see setTitleTabWidth).
                 const TITLE_W = 150, TITLE_W_READY = 172, TITLE_LEFT = CMD_LEFT + TAB_OFF;
+                // The SPECTATE window (DOM) takes this slot while spectating; it lays itself out from these.
+                window._cmdSlotGeom = { centerX: CMD_LEFT, w: BOX_W, h: BOX_H, bottom: BOTTOM_PAD,
+                                        tabCenterX: TITLE_LEFT, tabW: TITLE_W, tabH: TITLE_H, rowH: ROW_H, pad: PAD };
                 titleTab.width = TITLE_W + "px"; titleTab.height = TITLE_H + "px";
                 titleTab.background = STEEL; titleTab.color = RIM; titleTab.thickness = 2; titleTab.cornerRadius = 6;
                 titleTab.clipChildren = false;
@@ -8015,25 +8024,15 @@
                     return lc;
                 }
 
-                let hudTrioShift = 0;   // px the Combat Log + Status pair is slid left (spectating: Command hidden)
                 // Per-frame: visibility + live spell states (parry is driven by updateParryButtonGUI).
                 scene.onBeforeRenderObservable.add(() => {
                     const inGame = ((typeof gameState === 'undefined') || (gameState !== 'menu' && gameState !== 'lobby'))
                         && !window.hudHidden;   // debug hide-HUD hides the command/stats windows too
-                    // Spectating: nothing to command — hide the COMMAND window and slide Combat Log + Status
-                    // left by half its slot so the pair sits centred instead of leaving a hole.
-                    const spec = !!(window.isSpectating && window.isSpectating());
-                    const showCmd = inGame && !spec;
+                    // Spectating: nothing to command — the COMMAND window gives its slot to the DOM SPECTATE
+                    // window (ensureSpectatePanel); Combat Log + Status stay where they are.
+                    const showCmd = inGame && !(window.isSpectating && window.isSpectating());
                     if (box.isVisible !== showCmd) box.isVisible = showCmd;
                     if (titleTab.isVisible !== showCmd) titleTab.isVisible = showCmd;
-                    const trioShift = spec ? (CMD_W + GAP) / 2 : 0;
-                    if (trioShift !== hudTrioShift) {
-                        hudTrioShift = trioShift;
-                        detailBox.left = (DET_LEFT - trioShift) + "px";
-                        detailTab.left = (DET_LEFT + tabOff(DET_W) - trioShift) + "px";
-                        statsBox.left  = (STAT_LEFT - trioShift) + "px";
-                        statsTab.left  = (STAT_LEFT + tabOff(STAT_W) - trioShift) + "px";
-                    }
                     if (!inGame) {
                         if (detailBox.isVisible) hideDetail();
                         hideTip();
@@ -17331,6 +17330,46 @@
                 }
             });
 
+            // SPECTATE camera. 'follow': ease the ortho zoom to FOLLOW_ZOOM and pan the shake's anchor
+            // (cameraBasePosition) toward the most-rallied ball, clamped so the view never leaves the
+            // arena's framing. 'arena': ease back to today's full view. Flat ortho either way, so every
+            // world-anchored label/fog/ground layer still lines up. Singles framing only (spectate = 1v1).
+            {
+                const FULL_HH = 12, ASPECT = 16 / 9, FOLLOW_ZOOM = 0.62;
+                let specZoom = 1;
+                window.spectateCamReset = () => {
+                    window._specCam = 'arena';
+                    specZoom = 1;
+                    cameraBasePosition.set(0, 0, 0);
+                    if (window.setOrthoForGame) setOrthoForGame();
+                };
+                scene.onBeforeRenderObservable.add(() => {
+                    if (!(window.isSpectating && window.isSpectating()) || gameState !== 'playing' || gameOver) return;
+                    const follow = window._specCam === 'follow';
+                    if (!follow && specZoom > 0.999 && Math.abs(cameraBasePosition.x) < 1e-3 && Math.abs(cameraBasePosition.z) < 1e-3) return;
+                    const dt = Math.min(engine.getDeltaTime() / 1000, 0.05);
+                    const k = Math.min(1, dt * 3.5);
+                    let tx = 0, tz = 0;
+                    if (follow) {
+                        let best = null;
+                        for (const p of projectiles) {
+                            const v = p.volleyCount || 0, bv = best ? (best.volleyCount || 0) : -1;
+                            if (v > bv || (v === bv && p.id > best.id)) best = p;
+                        }
+                        if (best) { tx = best.x || 0; tz = best.z || 0; }
+                    }
+                    specZoom += ((follow ? FOLLOW_ZOOM : 1) - specZoom) * k;
+                    if (!follow && specZoom > 0.999) specZoom = 1;
+                    const HH = FULL_HH * specZoom, HW = HH * ASPECT;
+                    const maxX = FULL_HH * ASPECT - HW, maxZ = (FULL_HH - HH) * 2;   // ground depth is foreshortened ~2x at this tilt
+                    tx = Math.max(-maxX, Math.min(maxX, tx));
+                    tz = Math.max(-maxZ, Math.min(maxZ, tz));
+                    cameraBasePosition.x += (tx - cameraBasePosition.x) * k;
+                    cameraBasePosition.z += (tz - cameraBasePosition.z) * k;
+                    camera.orthoLeft = -HW; camera.orthoRight = HW; camera.orthoTop = HH; camera.orthoBottom = -HH;
+                });
+            }
+
             // Re-register the backdrop AFTER the shake has moved the camera this frame, so
             // the painted forest shakes in lockstep with the stage (a screen-space layer
             // doesn't follow the camera on its own — this observable runs after the shake
@@ -17670,18 +17709,26 @@
                 let dt = (now - lastSimWallTime) / 1000;
                 lastSimWallTime = now;
                 dt = Math.min(dt, MAX_FRAME_TIME);   // spiral-of-death guard
+                // SPECTATE: pause holds the sim (and the presentation clock) still; speed scales the step
+                // budget, and the per-frame step cap grows with it so 8x doesn't shed time.
+                let stepCap = MAX_STEPS_PER_FRAME;
+                if (spectating) {
+                    if (specPaused) return;
+                    dt *= specSpeed();
+                    stepCap = Math.ceil(MAX_STEPS_PER_FRAME * Math.max(1, specSpeed()));
+                }
                 // PvP runs its own internal fixed-timestep / rollback path.
                 if (gameMode === 'pvp' && roundActive) { runPvPGameLoop(dt); return; }
                 gameAccumulator += dt;
                 let steps = 0;
-                while (gameAccumulator >= FIXED_DT && steps < MAX_STEPS_PER_FRAME) {
+                while (gameAccumulator >= FIXED_DT && steps < stepCap) {
                     runSinglePlayerFrame(FIXED_DT);   // Always exactly 1/60s
                     if (window.updateJuice) window.updateJuice(FIXED_DT);   // drive the juice aura + white-hot tint
                     gameAccumulator -= FIXED_DT;
                     presTick();                       // between-round presentation timeline (frame-counted)
                     steps++;
                 }
-                if (steps >= MAX_STEPS_PER_FRAME) gameAccumulator = 0;  // drain excess, accept time loss
+                if (steps >= stepCap) gameAccumulator = 0;  // drain excess, accept time loss
             }
 
             // Store render loop function globally so we can restart it after pausing
@@ -17705,8 +17752,8 @@
                 stepFixedSim();
 
                 // STEPPED ANIMATIONS - Pause/resume at fixed intervals for retro sprite feel
-                if (paused) {
-                    // Esc pause menu: the sim is gated by `paused`, but Babylon AnimationGroups
+                if (paused || (spectating && specPaused)) {
+                    // Esc pause menu (or a spectate pause): the sim is gated by `paused`, but Babylon AnimationGroups
                     // run in the render loop independently -> models kept playing their idle/walk
                     // cycles. Freeze the animation system so the scene holds still behind the overlay.
                     scene.animationsEnabled = false;
@@ -17821,7 +17868,10 @@
 
         // Switch to menu state
         function showMainMenu(instantCamera = false) {
-            spectating = false;
+            if (spectating && window.spectateCamReset) spectateCamReset();
+            spectating = false; specPaused = false; specSpeedIdx = 1;
+            if (scene) scene.animationTimeScale = 1;
+            updateSpectatePanel();
             gameState = "menu";
             GameSM.state = 'menu';
             GameSM.show3D(false);   // 2D menu: hide the 3D arena (no menu camera)
@@ -19684,7 +19734,9 @@
         // Launch a 1v1 singles match (the core mode). Shared by the main-menu
         // "Start Battle" button and the (currently dormant) mode-select "1v1 Duel".
         function startSinglesMatch() {
-            spectating = false;
+            spectating = false; specPaused = false; specSpeedIdx = 1;
+            if (scene) scene.animationTimeScale = 1;
+            updateSpectatePanel();
             teamSize = 1;
             setDOMModeSelectVisible(false);
             gameMode = 'single';
@@ -19704,6 +19756,10 @@
         function startSpectateMatch() {
             startSinglesMatch();
             spectating = true;
+            specSpeedIdx = 1; specPaused = false;
+            if (window.spectateCamReset) spectateCamReset();
+            if (window.setHudHidden) setHudHidden(false);
+            if (window.updateSpectatePanel) updateSpectatePanel();
             if (window.resetAISlotState) window.resetAISlotState();   // Blue's reaction ring starts empty
         }
         window.startSpectateMatch = startSpectateMatch;
@@ -24373,6 +24429,83 @@
                 strip.style.display = shown.length ? '' : 'none';
             }
         }
+        // SPECTATE window: an FF9 battle window in the COMMAND slot while spectating (DOM, in #hudScaleLayer so
+        // Hide HUD covers it and the stage wipe draws over it). Rows are clickable and show their keys:
+        // Speed [ ]  (1/2x..8x)   Pause Space   Camera C (Arena / Follow)   Hide HUD H.
+        function ensureSpectatePanel() {
+            let el = document.getElementById('spectatePanel');
+            if (el) return el;
+            const g = window._cmdSlotGeom;
+            if (!g) return null;
+            const S = 1920 / 1440;   // Babylon GUI px (1440-wide ideal) -> this layer's 1920 px
+            el = document.createElement('div');
+            el.id = 'spectatePanel';
+            el.style.left   = (960 + (g.centerX - g.w / 2) * S) + 'px';
+            el.style.bottom = (g.bottom * S) + 'px';
+            el.style.width  = (g.w * S) + 'px';
+            el.style.height = (g.h * S) + 'px';
+            const rows = [
+                ['speed',  'Speed',    '[ ]'],
+                ['pause',  'Pause',    '\u2423'],
+                ['camera', 'Camera',   'C'],
+                ['hud',    'Hide HUD', 'H'],
+            ];
+            el.innerHTML =
+                '<div class="sp-tab" style="left:' + ((g.tabCenterX - g.centerX + g.w / 2 - g.tabW / 2) * S) + 'px">SPECTATE</div>' +
+                rows.map(([id, label, key]) =>
+                    '<button class="sp-row" data-act="' + id + '" style="height:' + (g.rowH * S) + 'px">' +
+                        '<span class="sp-label">' + label + '</span>' +
+                        '<span class="sp-val" data-val="' + id + '"></span>' +
+                        '<span class="sp-key">' + key + '</span>' +
+                    '</button>').join('');
+            el.addEventListener('click', (e) => {
+                const b = e.target.closest('.sp-row');
+                if (b) spectateAction(b.dataset.act, e.shiftKey ? -1 : 1);
+            });
+            const hud = document.getElementById('hudScaleLayer');
+            (hud || document.body).appendChild(el);
+            return el;
+        }
+        function updateSpectatePanel() {
+            const el = ensureSpectatePanel();
+            if (!el) return;
+            el.classList.toggle('visible', spectating);
+            const sp = specSpeed();
+            const set = (id, txt) => { const v = el.querySelector('[data-val="' + id + '"]'); if (v) v.textContent = txt; };
+            set('speed', (sp === 0.5 ? '\u00bd' : sp) + '\u00d7');
+            set('pause', specPaused ? 'On' : 'Off');
+            set('camera', window._specCam === 'follow' ? 'Follow' : 'Arena');
+            set('hud', '');
+        }
+        window.updateSpectatePanel = updateSpectatePanel;
+        function spectateAction(act, dir = 1) {
+            if (!spectating) return;
+            if (act === 'speed') {
+                specSpeedIdx = (specSpeedIdx + dir + SPEC_SPEEDS.length) % SPEC_SPEEDS.length;   // click cycles; [ / ] step
+                if (scene) scene.animationTimeScale = specSpeed();
+            } else if (act === 'slower') {
+                specSpeedIdx = Math.max(0, specSpeedIdx - 1);
+                if (scene) scene.animationTimeScale = specSpeed();
+            } else if (act === 'faster') {
+                specSpeedIdx = Math.min(SPEC_SPEEDS.length - 1, specSpeedIdx + 1);
+                if (scene) scene.animationTimeScale = specSpeed();
+            } else if (act === 'pause') {
+                specPaused = !specPaused;
+            } else if (act === 'camera') {
+                window._specCam = window._specCam === 'follow' ? 'arena' : 'follow';
+            } else if (act === 'hud') {
+                if (window.setHudHidden) setHudHidden(!window.hudHidden);
+            }
+            updateSpectatePanel();
+        }
+        window.spectateAction = spectateAction;
+        window.addEventListener('keydown', (e) => {
+            if (!spectating || gameState !== 'playing' || (window.isAnyMenuOpen && window.isAnyMenuOpen())) return;
+            const act = { BracketLeft: 'slower', BracketRight: 'faster', Space: 'pause', KeyC: 'camera', KeyH: 'hud' }[e.code];
+            if (!act || e.repeat) return;
+            e.preventDefault();
+            spectateAction(act);
+        });
         (function setupLiveStats() {
             let timer = null;
             const inMatch = () => gameState === 'playing' && !gameOver && !(window.isAnyMenuOpen && window.isAnyMenuOpen());
@@ -26725,6 +26858,7 @@
             // Spectating: the viewer has no side, so every ending gets the WIN presentation (victory
             // fanfare, no defeat styling; the title names the winning team) and stage messages name who took it.
             const presWon = spectating || localWon;
+            if (spectating) { specPaused = false; if (window.spectateCamReset) spectateCamReset(); }
             const stageMsg = spectating ? ((winnerSide === 'left' ? 'Blue' : 'Red') + ' takes ' + stageName + '!')
                                         : (localWon ? (stageName + " Won!") : (stageName + " Lost!"));
 
