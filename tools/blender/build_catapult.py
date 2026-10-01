@@ -150,7 +150,7 @@ MAT_ORDER = ['M_wood', 'M_iron', 'M_rope', 'M_stone', 'M_cloth_team', 'M_glow_te
 
 def build_materials():
     return {
-        'M_wood': make_mat('M_wood', pixel_image('wood_planks_cat', 32, 32, wood_planks)),
+        'M_wood': make_mat('M_wood', load_image('wood_planks.png')),   # pixel-first, shared (tools/pixelate_textures.py)
         'M_iron': make_mat('M_iron', color=(0.20, 0.19, 0.21, 1)),      # a touch darker: contrast vs lighter wood
         'M_rope': make_mat('M_rope', color=(0.82, 0.70, 0.48, 1)),      # pale tan so it pops
         'M_stone': make_mat('M_stone', load_image('tower_stone.png')),

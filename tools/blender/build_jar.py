@@ -127,7 +127,7 @@ def build_materials():
         'M_iron': make_mat('M_iron', color=(0.24, 0.23, 0.25, 1)),
         'M_rune': make_mat('M_rune', color=(0.55, 1.0, 0.35, 1)),
         'M_cloth_team': make_mat('M_cloth_team', color=(0.85, 0.85, 0.85, 1)),
-        'M_wood': make_mat('M_wood', pixel_image('wood_planks', 32, 32, wood_planks)),
+        'M_wood': make_mat('M_wood', load_image('wood_planks.png')),   # pixel-first, shared (tools/pixelate_textures.py)
         'M_candle': make_mat('M_candle', color=(0.92, 0.86, 0.7, 1)),
         'M_flame': make_mat('M_flame', color=(1.0, 0.75, 0.35, 1)),
         'M_crack': make_mat('M_crack', color=(0.92, 1.0, 0.96, 1)),

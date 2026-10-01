@@ -157,7 +157,7 @@ def build_materials():
         'M_wall': make_mat('M_wall', load_image('castle_wall.png')),
         'M_roof_team': make_mat('M_roof_team', pixel_image('roof_tiles', 32, 32, roof_tiles)),
         'M_cloth_team': make_mat('M_cloth_team', color=(0.85, 0.85, 0.85, 1)),
-        'M_wood': make_mat('M_wood', pixel_image('wood_planks', 32, 32, wood_planks)),
+        'M_wood': make_mat('M_wood', load_image('wood_planks.png')),   # pixel-first, shared (tools/pixelate_textures.py)
         'M_dark': make_mat('M_dark', color=(0.10, 0.08, 0.07, 1)),
         'M_window': make_mat('M_window', color=(1.0, 0.72, 0.32, 1)),
         'M_paving': make_mat('M_paving', pixel_image('paving_stone', 32, 32, paving_stone)),
