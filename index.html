@@ -846,7 +846,18 @@
         // OVERTIME ESCALATION (owner design 2026-09-30, instead of a round cap): from the 8th round of a match on,
         // every round adds +1 damage to each Fireball gate hit, and +1 to a Juice beam's TOTAL damage (spread
         // across the beam, so it can't run away). Reads totalRoundsPlayed (synced stage state), so online peers agree.
-        function overtimeDamageBonus() { return Math.max(0, (totalRoundsPlayed | 0) - 6); }
+        // MATCH-RULE SWITCHES for the headless match simulator (dbg.simBatch). The defaults ARE the live game;
+        // only the simulator changes them, and it puts them back. Read by deterministic code, so both online
+        // peers always see the defaults.
+        //   lanes:        'moba' (live: destroyable territories, home gates never heal, Midfield resets)
+        //                 'regen50' (previous rule: no destruction, gates below 50% lift to 50% on return)
+        //   defenderMana: the defender's extra max mana at its territory (4) / core (5)
+        //   overtime:     the +1-per-round damage escalation from round 8
+        const SIM_RULES_DEFAULT = { lanes: 'moba', defenderMana: true, overtime: true };
+        const SIM_RULES = { ...SIM_RULES_DEFAULT };
+        window.SIM_RULES = SIM_RULES;
+        window.SIM_RULES_DEFAULT = SIM_RULES_DEFAULT;
+        function overtimeDamageBonus() { return SIM_RULES.overtime ? Math.max(0, (totalRoundsPlayed | 0) - 6) : 0; }
         window.overtimeDamageBonus = overtimeDamageBonus;
         // In-battle stage label text (the overtime "(+N)" sits beside it in orange: stageBonusText).
         window.stageLabelText = (idx) => {
@@ -887,16 +898,29 @@
         let playerGateHealthByStage = [SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH];
         let aiGateHealthByStage = [SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH];
 
-        // Gate regeneration system — PARTIAL heal toward a 50% cap (owner design, 2026-09-30; was a full
-        // lift to 50% on any return, which made every comeback too strong and matches ran 30-40 rounds).
+        // MOBA LANE RULES (owner design, 2026-09-30; replaced the 50%-regen tug of war, whose comebacks
+        // ran matches to 30-40 rounds):
+        //   Midfield  - neutral ground: both gates start FULL every time play arrives there.
+        //   Territory - a tower: the HOME gate keeps its damage and never heals. If the attacker breaks it,
+        //               the territory is DESTROYED (territoryDown) for the rest of the match and every
+        //               later push skips straight over it.
+        //   Core      - the base: the home core keeps its damage (never heals); destroying it wins.
+        //   The VISITING side's gate resets to full every round (attackers have no towers in enemy lanes).
+        // Each territory can fall once and home gates only ever lose HP, so every match winds down.
         let totalRoundsPlayed = 0;
-        let lastRoundAtStage = [0, 0, 0, 0, 0];  // When we last played at each stage
-        // On returning to a stage, a gate below the cap heals GATE_REGEN_STEP of its max per round spent
-        // away, never past the cap; a gate at/above the cap keeps its stored (wounded) health. Every round
-        // moves the stage one step, so a quick bounce (Midfield -> Territory -> Midfield) is 1 round away
-        // = +25%, and a trip to the core and back (3 rounds away) is back up to the 50% cap.
-        const GATE_REGEN_FLOOR = 0.5;   // the cap: nothing ever regens above 50% of max
-        const GATE_REGEN_STEP = 0.25;   // heal per round away, as a fraction of max
+        let lastRoundAtStage = [0, 0, 0, 0, 0];  // When we last played at each stage (kept for state/hash)
+        let territoryDown = [false, false, false, false, false];   // [1] Blue Territory, [3] Red Territory
+        // Is `stage` this side's own ground (its territory or core)? Midfield is no one's.
+        function isHomeStage(side, stage) {
+            return (side === 'left' || side === 'player') ? stage <= 1 : stage >= 3;
+        }
+        // The stage a push lands on: one step, hopping over destroyed territories.
+        function nextStageAfterPush(from, dir) {
+            let st = from + dir;
+            while ((st === 1 || st === 3) && territoryDown[st]) st += dir;
+            return st;
+        }
+        window.isTerritoryDown = (stage) => !!territoryDown[stage];
 
         let ball, playerPaddle, aiPaddle;
         // Doubles (M1): back-row paddle meshes, created lazily by ensureDoublesPaddles() on the
@@ -1025,7 +1049,8 @@
                     camPos.subtractToRef(p, toCam);                  // toward the camera
                     BABYLON.Vector3.CrossToRef(dir, toCam, side);
                     const len = side.length();
-                    if (len > 1e-6) side.scaleInPlace((this._w * 0.5 * (1 - i / (n - 1))) / len);   // taper to the tail
+                    const taper = Math.min(1, 2 * (1 - i / (n - 1)));   // full width for the first half, then down to the tail
+                    if (len > 1e-6) side.scaleInPlace((this._w * 0.5 * taper) / len);
                     else side.setAll(0);
                     const o = i * 6;
                     pos[o] = p.x + side.x; pos[o + 1] = p.y + side.y; pos[o + 2] = p.z + side.z;
@@ -1460,6 +1485,7 @@
         // Territorial mana advantage - defender gets more mana
         // Stage 0=Blue Core, 1=Blue Territory, 2=Midfield, 3=Red Territory, 4=Red Core
         function getMaxMana(side) {
+            if (!SIM_RULES.defenderMana) return 3;   // simulator switch (live game: true)
             // Player (left) defends stages 0-1, AI (right) defends stages 3-4
             if (side === 'left' || side === 'player') {
                 if (currentStage === 0) return 5;  // Player's core - max defense
@@ -1475,7 +1501,7 @@
         // Territory defense — a side's structure is tougher the deeper into its own ground the fight
         // is: its own core (the relic) 50 HP, its own territory (the gatehouse) 30 HP, anywhere else
         // (midfield castle, the attacker's catapult/ram) the base 20. Derived only from shared state
-        // (currentStage), so both peers agree. The core never regenerates (see getGateHealthWithRegen).
+        // (currentStage), so both peers agree. Home gates never heal (see gateHealthForRound / MOBA lane rules).
         const TERRITORY_HP = 30;
         const CORE_HP = 50;
         function isOwnCore(side, stage) { return (side === 'left' || side === 'player') ? stage === 0 : stage === 4; }
@@ -3046,6 +3072,7 @@
 
         // Play a sound - routes through Tone.js sound therapy system
         function playSound(name, x = 0, volume = 1.0, pitch = 1.0) {
+            if (window._simHeadless) return;   // match simulator: silent (thousands of frames per second)
             // Route to Tone.js ToneSFX system with panning
             if (window.ToneSFX && window.ToneSFX[name]) {
                 if (window.setTonePan) window.setTonePan(x);
@@ -5939,19 +5966,26 @@
                 guiTexture.addControl(stageBonusText);
                 window.guiElements.stageBonusText = stageBonusText;
                 const measure = document.createElement('canvas').getContext('2d');
+                const GAP = 6;
                 let lastKey = '';
                 scene.onBeforeRenderObservable.add(() => {
                     const ot = window.overtimeDamageBonus ? overtimeDamageBonus() : 0;
                     const show = stageNameText.isVisible && ot > 0;
                     if (stageBonusText.isVisible !== show) stageBonusText.isVisible = show;
-                    if (!show) return;
-                    const key = stageNameText.text + '|' + ot;
+                    const key = show ? stageNameText.text + '|' + ot : '';
                     if (key === lastKey) return;
                     lastKey = key;
+                    if (!show) { stageNameText.left = "0px"; return; }
+                    // "Name (+N)" is centred as ONE group: measure both (GUI ideal px, same font size) and
+                    // shift the name left by half the bonus, the bonus right after it.
                     measure.font = "18px 'FF9UI', sans-serif";
-                    const nameW = measure.measureText(stageNameText.text).width;   // GUI ideal px (same font size)
-                    stageBonusText.text = '(+' + ot + ')';
-                    stageBonusText.left = (nameW / 2 + 6 + BONUS_W / 2) + "px";
+                    const label = '(+' + ot + ')';
+                    const nameW = measure.measureText(stageNameText.text).width;
+                    const bonusW = measure.measureText(label).width;
+                    const total = nameW + GAP + bonusW;
+                    stageBonusText.text = label;
+                    stageNameText.left = (-total / 2 + nameW / 2) + "px";
+                    stageBonusText.left = (-total / 2 + nameW + GAP + BONUS_W / 2) + "px";
                 });
             }
 
@@ -5984,6 +6018,7 @@
                         seg.fill.background = "#2e2418";
                         seg.bg.color = "#5a4326";
                     }
+                    seg.bg.isVisible = !territoryDown[i];   // a destroyed territory is simply gone from the bar
                 }
 
                 // Update stage name text (only show during gameplay, not menu)
@@ -13224,7 +13259,7 @@
                 proj.trail = new BillboardTrail("fireTrail_" + Date.now(), proj.trailAnchor, scene, trailWidth, trailLength);   // camera-facing streak
                 const trailMat = new BABYLON.StandardMaterial("trailMat_" + Date.now(), scene);
                 trailMat.emissiveColor = new BABYLON.Color3(1, 0.3, 0.05);
-                trailMat.alpha = 0.6;
+                trailMat.alpha = 0.84;   // one flat ribbon layer = the old tube's two overlapping 0.6 layers
                 trailMat.diffuseColor = new BABYLON.Color3(0, 0, 0);
                 trailMat.backFaceCulling = false;
                 proj.trail.material = trailMat;
@@ -13411,7 +13446,7 @@
                 const trailMat = new BABYLON.StandardMaterial("iceTrailMat_" + Date.now(), scene);
                 trailMat.emissiveColor = new BABYLON.Color3(0.4, 0.7, 1);
                 trailMat.diffuseColor = new BABYLON.Color3(0, 0, 0);
-                trailMat.alpha = 0.5;
+                trailMat.alpha = 0.75;   // one flat ribbon layer = the old tube's two overlapping 0.5 layers
                 trailMat.backFaceCulling = false;
                 proj.trail.material = trailMat;
                 proj.trailMat = trailMat;
@@ -14317,6 +14352,10 @@
                     aiSlotState[k].views.length = 0;
                     for (const id in aiSlotState[k].threatSight) delete aiSlotState[k].threatSight[id];
                 }
+                // the singles right-AI's own lag ring + sight map too (a new match mustn't open on the last
+                // match's world for its first reaction frames)
+                aiViewHistory.length = 0;
+                for (const id in aiThreatSight) delete aiThreatSight[id];
             }
             window.resetAISlotState = resetAISlotState;   // outer-scope startDoublesMatch reaches it via window
             const paddleHalfDepth = 1.25;
@@ -14410,7 +14449,10 @@
                 };
             }
 
-            const AI_RNG_SEED = 0xA1DE;  // fixed constant; stable seed offset for per-frame RNG
+            let AI_RNG_SEED = 0xA1DE;  // stable seed offset for per-frame RNG (only the match simulator varies it)
+            // Match simulator only: XORed into every AI slot's hash salt (parry timing buckets, aimed-return
+            // angles), which is where AI-vs-AI matches actually get their variety. Always 0 in the live game.
+            let simSalt = 0;
 
             // ── AI PROFILE ─────────────────────────────────────────────────────
             // One fixed set of behavior values, shared by every AI slot (singles opponent, doubles
@@ -14754,6 +14796,15 @@
             window.AI_PROFILE = AI_PROFILE;
             window.makeAIRng = makeAIRng;
             window.AI_RNG_SEED = AI_RNG_SEED;
+            // Match simulator: give each simulated match its own AI seed and a fresh think counter, so a
+            // match is a pure function of its seed. The live game never calls this.
+            window._simSeedAI = (seed) => {
+                AI_RNG_SEED = (seed == null) ? 0xA1DE : (seed >>> 0);
+                window.AI_RNG_SEED = AI_RNG_SEED;
+                simSalt = (seed == null) ? 0 : (seed >>> 0);
+                spFrameCounter = 0;
+                resetAISlotState();
+            };
             // updateMatchPresentation lives in THIS inner closure (used by runSinglePlayerFrame),
             // but runPvPGameLoop is in the OUTER scope and can't see it directly — expose it so the
             // PvP loop can drive the same per-frame FX. (Fixes: "updateMatchPresentation is not
@@ -14944,7 +14995,7 @@
                     // slotSalt de-correlates the parry timing-bucket hash per slot (see decideAI's
                     // PARRY_BUCKETS) so the two backs don't whiff/land on the same balls in lockstep.
                     // Reuses the same slotSalt map the (unused) per-frame RNG seed already keyed off.
-                    slotSalt: (DOUBLES_AI[roleKey].slotSalt !== undefined) ? DOUBLES_AI[roleKey].slotSalt : DOUBLES_AI.slotSalt[slotKey] };
+                    slotSalt: ((DOUBLES_AI[roleKey].slotSalt !== undefined) ? DOUBLES_AI[roleKey].slotSalt : DOUBLES_AI.slotSalt[slotKey]) ^ simSalt };
                 if (window._dbgAiOff) return defaultInput();   // dbg.aiOff(): AI stands idle
                 updateSlotThreatSight(st, slotKey);            // side-derived incoming sight tick
                 st.views.push(buildAIViewForSlot(slotKey));
@@ -15054,7 +15105,7 @@
                 // slotSalt: 0 for the singles right-AI (only one slot; no de-correlation needed —
                 // see doubles' DOUBLES_AI.slotSalt for the multi-slot case). Feeds decideAI's parry
                 // timing-bucket hash; a stable 0 here reproduces the single-slot bucket assignment.
-                const aiProfile  = { ...AI_PROFILE, slotSalt: 0 };
+                const aiProfile  = { ...AI_PROFILE, slotSalt: 0 ^ simSalt };
                 // Reaction delay: the AI decides on the world it saw `reactionFrames` ago.
                 aiViewHistory.push(buildAISingleView());
                 const lag = (aiProfile.reactionFrames | 0);
@@ -18193,6 +18244,17 @@
             // (or a slower machine) changes only visual smoothness, never gameplay speed or
             // fairness. Rendering is throttled separately in gameRenderLoop below.
             // ============================================================
+            // MATCH SIMULATOR frame runner: the same fixed step the live loop runs (sim frame + presentation
+            // clock), with no rendering, until the match ends or maxFrames pass. Returns frames run.
+            window._simRunFrames = (maxFrames) => {
+                let n = 0;
+                while (n < maxFrames && gameState === 'playing' && !gameOver) {
+                    runSinglePlayerFrame(FIXED_DT);
+                    presTick();
+                    n++;
+                }
+                return n;
+            };
             let lastSimWallTime = 0;
             function stepFixedSim() {
                 const now = performance.now();
@@ -18869,6 +18931,7 @@
         let readyGoGen = 0;
         window.cancelReadyGo = () => { readyGoGen++; };
         function doReadyGoTransition(callback) {
+            if (window._simHeadless) { if (callback) callback(); return; }   // match simulator: no countdown
             const overlay = window.guiElements?.transitionOverlay;
             const text = window.guiElements?.transitionText;
             const gen = ++readyGoGen;
@@ -21773,7 +21836,8 @@
                 ...(Array.isArray(aiGateHealthByStage) ? aiGateHealthByStage.map(round) : []),
                 ...(Array.isArray(stageResults) ? stageResults.map(r => r === 'player' ? 1 : (r === 'ai' ? 2 : 0)) : []),
                 totalRoundsPlayed | 0,
-                ...(Array.isArray(lastRoundAtStage) ? lastRoundAtStage.map(v => v | 0) : [])
+                ...(Array.isArray(lastRoundAtStage) ? lastRoundAtStage.map(v => v | 0) : []),
+                ...(territoryDown.some(Boolean) ? territoryDown.map(v => v ? 1 : 0) : [])   // only once one falls (keeps golden pins)
             ];
             let h = 2166136261 >>> 0;
             for (const v of fields) {
@@ -22618,6 +22682,104 @@
             };
         })();
 
+        // ---- Headless MATCH SIMULATOR — dbg.simMatch / dbg.simBatch / dbg.simBatchAsync ----------------
+        // Plays whole AI-vs-AI spectate matches with no rendering: a match is a pure function of its seed
+        // (AI seed + sim RNG seed), so rule sets can be compared on the same seeds. `rules` overrides
+        // SIM_RULES for the run (see SIM_RULES_DEFAULT); the live defaults are restored afterwards.
+        // Silent: synth SFX are no-ops for the run (thousands of frames of sounds would queue in one burst).
+        //   dbg.simMatch(seed, rules)               -> one match, synchronously
+        //   dbg.simBatch(fromSeed, count, rules)    -> { summary, matches }, synchronously
+        //   dbg.simBatchAsync(fromSeed, count, rules) -> runs in ~4000-frame chunks between page tasks;
+        //       progress + result in window.__simOut ({ done, progress, summary, matches })
+        (function attachMatchSimulator() {
+            let sfxSaved = null, sim = null;
+            const begin = (seed, rules) => {
+                Object.assign(SIM_RULES, SIM_RULES_DEFAULT, rules || {});
+                window._simHeadless = true;
+                window._simTrace = [];
+                if (!sfxSaved) {
+                    sfxSaved = {};
+                    for (const k of Object.keys(ToneSFX)) if (typeof ToneSFX[k] === 'function') { sfxSaved[k] = ToneSFX[k]; ToneSFX[k] = () => {}; }
+                }
+                netRngSeed = (seed >>> 0) || 1;
+                nextProjectileId = 0; currentFrame = 0;   // singles never resets these between matches (ball ids feed the AI's parry hash)
+                if (window._simSeedAI) window._simSeedAI((0xA1DE ^ Math.imul(seed | 0, 0x9E3779B1)) >>> 0);
+                gameState = 'menu'; startGameInProgress = false;   // back-to-back matches: no end screen / menu in between
+                window.startSpectateMatch();
+                specPaused = true;                                 // the live loop must not step it between chunks
+                sim = { seed, frames: 0 };
+            };
+            const result = () => ({
+                seed: sim.seed, winner: gameOver ? (currentStage >= 4 ? 'left' : 'right') : null,
+                rounds: totalRoundsPlayed, frames: sim.frames, minutes: +(sim.frames / 3600).toFixed(1),
+                stages: window._simTrace.join(''), log: roundLog.map(w => w === 'left' ? 'B' : 'R').join(''),
+                territoriesDown: territoryDown.map((v, i) => v ? i : -1).filter(i => i >= 0),
+            });
+            const end = () => {
+                if (sfxSaved) { Object.assign(ToneSFX, sfxSaved); sfxSaved = null; }
+                window._simHeadless = false;
+                window._simTrace = null;
+                Object.assign(SIM_RULES, SIM_RULES_DEFAULT);
+                if (window._simSeedAI) window._simSeedAI(null);
+                sim = null;
+            };
+            const CAP = 60 * 60 * 90;   // 90 sim-minutes per match
+            const summarize = (matches, rules) => {
+                const done = matches.filter(m => m.winner);
+                const r = done.map(m => m.rounds).sort((x, y) => x - y);
+                const pct = (q) => r.length ? r[Math.min(r.length - 1, Math.floor(q * r.length))] : null;
+                const mins = done.map(m => m.frames / 3600);
+                return {
+                    rules: { ...SIM_RULES_DEFAULT, ...(rules || {}) }, matches: matches.length, finished: done.length,
+                    blueWins: done.filter(m => m.winner === 'left').length,
+                    roundsAvg: r.length ? +(r.reduce((x, y) => x + y, 0) / r.length).toFixed(1) : null,
+                    roundsMedian: pct(0.5), roundsP90: pct(0.9), roundsMax: r.length ? r[r.length - 1] : null,
+                    minutesAvg: mins.length ? +(mins.reduce((x, y) => x + y, 0) / mins.length).toFixed(1) : null,
+                };
+            };
+            window.dbg.simMatch = function simMatch(seed, rules, maxFrames) {
+                try {
+                    begin(seed, rules);
+                    sim.frames = window._simRunFrames(maxFrames || CAP);
+                    if (window.clearAllCombatText) clearAllCombatText();
+                    return result();
+                } finally { end(); }
+            };
+            window.dbg.simBatch = function simBatch(fromSeed, count, rules) {
+                const matches = [];
+                for (let i = 0; i < count; i++) matches.push(window.dbg.simMatch(fromSeed + i, rules));
+                return { summary: summarize(matches, rules), matches };
+            };
+            window.dbg.simBatchAsync = function simBatchAsync(fromSeed, count, rules, chunk) {
+                const out = { done: false, progress: 0, summary: null, matches: [], error: null };
+                window.__simOut = out;
+                chunk = chunk || 4000;
+                let i = 0;
+                const tick = () => {
+                    try {
+                        if (!sim) begin(fromSeed + i, rules);
+                        sim.frames += window._simRunFrames(Math.min(chunk, CAP - sim.frames));
+                        if (window.clearAllCombatText) clearAllCombatText();   // floating text piles up with no render to retire it
+                        if (gameOver || gameState !== 'playing' || sim.frames >= CAP) {
+                            out.matches.push(result());
+                            end();
+                            i++;
+                            out.progress = i;
+                            if (i >= count) { out.summary = summarize(out.matches, rules); out.done = true; return; }
+                        }
+                    } catch (e) {
+                        out.error = String(e && e.stack || e).slice(0, 800);
+                        try { end(); } catch (_) {}
+                        out.done = true;
+                        return;
+                    }
+                    setTimeout(tick, 0);
+                };
+                setTimeout(tick, 0);
+                return 'started: read window.__simOut';
+            };
+        })();
+
         // ---- Capture stage (branding / marketing) — dbg.capture.* ------------------
         // Presentation-side ONLY. Blacks the backdrop, hides env meshes + HUD, and
         // streams canvas frames to the local capture server (tools/capture_server.py,
@@ -23225,6 +23387,7 @@
                     stageResults: Array.isArray(stageResults) ? [...stageResults] : [],
                     totalRoundsPlayed: totalRoundsPlayed,
                     lastRoundAtStage: Array.isArray(lastRoundAtStage) ? [...lastRoundAtStage] : [],
+                    territoryDown: [...territoryDown],
                     waitingToServe: waitingToServe,
                     roundTransitioning: roundTransitioning,
                     gameOver: gameOver
@@ -23360,6 +23523,8 @@
                 if (Array.isArray(state.stage.lastRoundAtStage)) {
                     lastRoundAtStage = [...state.stage.lastRoundAtStage];
                 }
+                territoryDown = Array.isArray(state.stage.territoryDown)
+                    ? state.stage.territoryDown.map(Boolean) : [false, false, false, false, false];
                 waitingToServe = state.stage.waitingToServe;
                 roundTransitioning = state.stage.roundTransitioning;
                 gameOver = state.stage.gameOver;
@@ -24505,6 +24670,7 @@
 
         // Start a new round
         function startRound() {
+            if (window._simHeadless && window._simTrace) window._simTrace.push(currentStage);   // match simulator
             {
                 const ot = overtimeDamageBonus();
                 if (ot > 0 && window.logNeutral) window.logNeutral('Overtime! Fireballs +' + ot + ' damage');
@@ -25264,6 +25430,7 @@
             // Reset gate regeneration tracking
             totalRoundsPlayed = 0;
             lastRoundAtStage = [0, 0, 0, 0, 0];
+            territoryDown = [false, false, false, false, false];
             if (window.updateStageIndicator) updateStageIndicator();
             if (window.updateManaBarVisibility) updateManaBarVisibility();
             updateScore();
@@ -25287,29 +25454,21 @@
             }
         }
 
-        // Gate health on returning to a stage: a gate below 50% of max heals 25% of max per round spent
-        // away, capped at 50%; a gate already at/above 50% keeps its stored (wounded) health. NOTHING
-        // ever regens above 50%. Same rule for both sides (symmetric). Deterministic (derived from shared
-        // state only). Applies on stage RETURN (roundsAway > 0); consecutive rounds at the same stage
-        // (roundsAway === 0) persist health unchanged.
-        function getGateHealthWithRegen(healthArray, stage, roundsAway, side) {
-            const storedHealth = healthArray[stage];
-            if (isOwnCore(side, stage)) return storedHealth;   // the core relic never regenerates
-            const roundsSinceLastVisit = (typeof roundsAway === 'number')
-                ? roundsAway
-                : (totalRoundsPlayed - lastRoundAtStage[stage]);
-
-            if (roundsSinceLastVisit > 0) {
-                const max = stageMaxHealth(side, stage);
-                const cap = Math.floor(GATE_REGEN_FLOOR * max);                 // 50% of this gate's max (integer HP)
-                const heal = Math.floor(GATE_REGEN_STEP * max * roundsSinceLastVisit);
-                const finalHealth = storedHealth >= cap ? storedHealth : Math.min(cap, storedHealth + heal);
-                healthArray[stage] = finalHealth;  // Update stored health
-                return finalHealth;
+        // Gate health at the start of a round (MOBA lane rules, see territoryDown): the HOME side's gate at
+        // its own territory/core keeps its stored damage (no healing ever); a visitor's gate, and both
+        // gates at neutral Midfield, start full. Writes the value back so stored state matches what's
+        // played. Symmetric and deterministic (shared state only).
+        function gateHealthForRound(healthArray, stage, side) {
+            if (SIM_RULES.lanes === 'regen50') {   // previous rule, simulator only: lift below-50% gates to 50% on return
+                const away = totalRoundsPlayed - lastRoundAtStage[stage];
+                let hp = healthArray[stage];
+                if (away > 0 && !isOwnCore(side, stage)) hp = Math.max(hp, Math.floor(0.5 * stageMaxHealth(side, stage)));
+                healthArray[stage] = hp;
+                return hp;
             }
-
-            // Same stage, no time away — return persistent (wounded) health.
-            return storedHealth;
+            const hp = isHomeStage(side, stage) ? healthArray[stage] : stageMaxHealth(side, stage);
+            healthArray[stage] = hp;
+            return hp;
         }
 
         function resetRound() {
@@ -25342,12 +25501,9 @@
                 c.moveDir = 0;
             }
 
-            // MOBA-style: partial gate heal on returning to this stage (25% per round away, capped at 50%;
-            // gates at/above 50% stay wounded). Same rule for both gates and both modes.
-            const roundsAway = totalRoundsPlayed - lastRoundAtStage[currentStage];
-            const playerGateHealth = getGateHealthWithRegen(playerGateHealthByStage, currentStage, roundsAway, 'left');
-            const aiGateHealth = getGateHealthWithRegen(aiGateHealthByStage, currentStage, roundsAway, 'right');
-            // Mark regen consumed for this stage (applied equally to both gates)
+            // MOBA lane rules: home gates keep their damage, visitors and Midfield start full.
+            const playerGateHealth = gateHealthForRound(playerGateHealthByStage, currentStage, 'left');
+            const aiGateHealth = gateHealthForRound(aiGateHealthByStage, currentStage, 'right');
             lastRoundAtStage[currentStage] = totalRoundsPlayed;
 
             if (combatants.left) combatants.left.towerHealth = playerGateHealth;
@@ -25386,6 +25542,11 @@
         // Stage transition - step fade to black, slide location name, fade back in
         // Uses Babylon GUI for CRT shader effects
         function doStageTransition(stageName, callback, prevStage = null, nextStage = null) {
+            if (window._simHeadless) {   // match simulator: no wipe, just the reset and the next serve
+                roundTransitioning = true; waitingToServe = true;
+                afterFrames(1, () => { resetRound(); hideMessage(); if (callback) callback(); roundTransitioning = false; });
+                return;
+            }
             const overlay = window.guiElements?.transitionOverlay;
             const text = window.guiElements?.transitionText;
 
@@ -27320,9 +27481,10 @@
                 }
             }
 
-            // Create burn decal at impact point
+            // Burn decal where the fireball actually hit: it crosses the goal line at |x| = 14 (js/sim.js goalX);
+            // drawn just in front of it so the scorch sits at the foot of the structure, on the ball's lane.
             if (window.createImpactDecal) {
-                window.createImpactDecal({ x: gateX, z: hitZ }, 'burn');
+                window.createImpactDecal({ x: isPlayerTower ? -13.4 : 13.4, z: hitZ }, 'burn');
             }
 
             // A chunk or two breaks off the castle (its damage STATE follows towerHealth on its own)
@@ -27407,8 +27569,13 @@
             // Spectating: the viewer has no side, so every ending gets the WIN presentation (victory
             // fanfare, no defeat styling; the title names the winning team) and stage messages name who took it.
             const presWon = spectating || localWon;
-            const stageMsg = spectating ? ((winnerSide === 'left' ? 'Blue' : 'Red') + ' takes ' + stageName + '!')
-                                        : (localWon ? (stageName + " Won!") : (stageName + " Lost!"));
+            // A territory falls when the ATTACKER wins there (Blue at Red Territory, Red at Blue Territory).
+            const territoryFalls = SIM_RULES.lanes === 'moba'
+                && ((currentStage === 3 && winnerSide === 'left') || (currentStage === 1 && winnerSide === 'right'));
+            if (territoryFalls) territoryDown[currentStage] = true;
+            const stageMsg = territoryFalls ? (stageName + ' Destroyed!')
+                : spectating ? ((winnerSide === 'left' ? 'Blue' : 'Red') + ' takes ' + stageName + '!')
+                             : (localWon ? (stageName + " Won!") : (stageName + " Lost!"));
 
             // Track rounds for gate regeneration system
             totalRoundsPlayed++;
@@ -27420,8 +27587,8 @@
             const playerHealth = combatants.left ? combatants.left.towerHealth : playerTowerHealth;
             const aiHealth = combatants.right ? combatants.right.towerHealth : aiTowerHealth;
 
-            // Pure tug-of-war: win = push forward, lose = pushed back
-            // No skipping - every stage must be fought for
+            // Tug of war: win = push forward, lose = pushed back, hopping over destroyed territories
+            // (nextStageAfterPush).
 
             if (winnerOwner === 'player') {
                 playerScore++;
@@ -27462,10 +27629,11 @@
                     // (No spectate camera reset here: snapping back from a zoomed/turned view read as a jolt. The
                     // cinematic snapshots whatever the camera is and returns to it; the next match's Ready/Go and
                     // the Main Menu restore the game camera under black.)
-                    if (window.playVictoryCinematic) playVictoryCinematic(presWon, winnerSide); else showVictoryScreen(presWon);
+                    if (window._simHeadless) { /* match simulator: no end screen */ }
+                    else if (window.playVictoryCinematic) playVictoryCinematic(presWon, winnerSide); else showVictoryScreen(presWon);
                 } else {
                     showMessage(stageMsg);
-                    currentStage++;
+                    currentStage = nextStageAfterPush(currentStage, +1);
                 }
             } else {
                 aiScore++;
@@ -27502,10 +27670,11 @@
                     // (No spectate camera reset here: snapping back from a zoomed/turned view read as a jolt. The
                     // cinematic snapshots whatever the camera is and returns to it; the next match's Ready/Go and
                     // the Main Menu restore the game camera under black.)
-                    if (window.playVictoryCinematic) playVictoryCinematic(presWon, winnerSide); else showVictoryScreen(presWon);
+                    if (window._simHeadless) { /* match simulator: no end screen */ }
+                    else if (window.playVictoryCinematic) playVictoryCinematic(presWon, winnerSide); else showVictoryScreen(presWon);
                 } else {
                     showMessage(stageMsg);
-                    currentStage--;
+                    currentStage = nextStageAfterPush(currentStage, -1);
                 }
             }
 
