@@ -9603,23 +9603,38 @@
                 dirtMat.specularColor = BABYLON.Color3.Black();
                 dirtMat.emissiveColor = new BABYLON.Color3(0.12, 0.10, 0.07);   // = lane road
                 {
-                    const MW = 512;
+                    // A SEAMLESS tile repeated 10x10 over the ground (~14u each, small next to the ~10u of ground the
+                    // camera sees past each rail): dirt and grass mix evenly on both sides of the court (one random
+                    // mask over the whole sheet bunched its patches by chance). Dirt-dominant, like the painting.
+                    const MW = 256, REP = 10;
                     const mask = new BABYLON.DynamicTexture('forestDirtMask', { width: MW, height: MW }, scene, true);
                     const g = mask.getContext();
-                    g.fillStyle = 'black'; g.fillRect(0, 0, MW, MW);
                     const R = (() => { let a = 7; return () => ((a = Math.imul(a ^ (a >>> 15), 2246822507) + 0x9E3779B9 | 0) >>> 0) / 4294967296; })();
-                    g.fillStyle = 'white';
-                    for (let i = 0; i < 70; i++) {
-                        const x = R() * MW, y = R() * MW, r = 10 + R() * 34;
-                        for (let k = 0; k < 4; k++) {   // lumpy blobs, not circles
-                            g.beginPath(); g.arc(x + (R() - 0.5) * r, y + (R() - 0.5) * r, r * (0.5 + R() * 0.6), 0, Math.PI * 2); g.fill();
+                    const tile = document.createElement('canvas'); tile.width = MW; tile.height = MW;
+                    const t = tile.getContext('2d');
+                    t.fillStyle = 'black'; t.fillRect(0, 0, MW, MW);
+                    t.fillStyle = 'white';
+                    for (let i = 0; i < 26; i++) {
+                        const x = R() * MW, y = R() * MW, r = 16 + R() * 20;
+                        for (let k = 0; k < 4; k++) {   // lumpy blobs, not circles, drawn wrapped so the tile is seamless
+                            const bx = x + (R() - 0.5) * r, by = y + (R() - 0.5) * r, br = r * (0.5 + R() * 0.6);
+                            for (const ox of [-MW, 0, MW]) for (const oy of [-MW, 0, MW]) {
+                                t.beginPath(); t.arc(bx + ox, by + oy, br, 0, Math.PI * 2); t.fill();
+                            }
                         }
                     }
-                    const tmp = document.createElement('canvas'); tmp.width = MW; tmp.height = MW;
-                    tmp.getContext('2d').drawImage(g.canvas, 0, 0);
-                    g.filter = 'blur(6px)'; g.clearRect(0, 0, MW, MW); g.drawImage(tmp, 0, 0); g.filter = 'none';
+                    // blur a 3x3 wrapped copy and keep the centre, so the softened edges still tile
+                    const big = document.createElement('canvas'); big.width = big.height = MW * 3;
+                    const bg = big.getContext('2d');
+                    bg.filter = 'blur(5px)';
+                    for (const ox of [0, MW, 2 * MW]) for (const oy of [0, MW, 2 * MW]) bg.drawImage(tile, ox, oy);
+                    const blurred = document.createElement('canvas'); blurred.width = blurred.height = MW * 3;
+                    const blg = blurred.getContext('2d'); blg.filter = 'blur(5px)'; blg.drawImage(big, 0, 0);
+                    g.drawImage(blurred, MW, MW, MW, MW, 0, 0, MW, MW);
                     mask.update();
                     mask.getAlphaFromRGB = true;
+                    mask.wrapU = mask.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+                    mask.uScale = mask.vScale = REP;
                     dirtMat.opacityTexture = mask;
                 }
                 dirtMat.zOffset = -1;
