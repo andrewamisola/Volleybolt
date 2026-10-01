@@ -18273,9 +18273,9 @@
                     // Chill-vs-Chill clash: a big GLOWING frost patch - a soft rime glow under two crossed crystal
                     // layers, all additive and staying bright (role 'iceGlow'), ~3s (owner: was way too big + long).
                     life = 3;
-                    const size = rnd(3.5, 4.0);
+                    const size = rnd(2.6, 3.0);   // = a Fireball scorch (burn decal)
                     const rot = Math.random() * Math.PI * 2;
-                    const rime = makeDecalPlane("chillRime", size * 1.1, size * 1.1, x, z, rot,
+                    const rime = makeDecalPlane("chillRime", size, size, x, z, rot,
                         decalTexture('rime', 128, 128, (g, S) => {
                             const grd = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
                             grd.addColorStop(0, 'rgba(255,255,255,0.9)'); grd.addColorStop(0.45, 'rgba(255,255,255,0.45)');
