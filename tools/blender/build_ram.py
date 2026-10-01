@@ -100,15 +100,35 @@ def pixel_image(name, w, h, fn):
 
 
 _wood_rng = random.Random(11)
-_wood_noise = [[_wood_rng.random() for _ in range(32)] for _ in range(32)]
+# per-board tone, per-row grain streak phase/strength, and a couple of knots (seamless 32x32 tile)
+_board_tone = [0.86 + 0.24 * _wood_rng.random() for _ in range(4)]
+_row_phase = [_wood_rng.random() * 32 for _ in range(32)]
+_row_amp = [0.05 + 0.13 * _wood_rng.random() for _ in range(32)]
+_knots = [(_wood_rng.randrange(32), 8 * b + 2 + _wood_rng.randrange(4)) for b in range(4) if _wood_rng.random() < 0.7]
 
 
 def wood_planks(x, y):
+    """Weathered timber, u = ALONG the grain (the mesh UVs run u down each beam / board's long side):
+    four boards (8px rows) with dark seams, long grain streaks running along u, a few knots, and a
+    weathered grey-brown palette rather than flat orange."""
+    board = y // 8
+    if y % 8 == 7:
+        return (0.17, 0.11, 0.07)                                 # seam between boards (shadowed)
     if y % 8 == 0:
-        return (0.16, 0.10, 0.06)
-    n = _wood_noise[y][x // 4]
-    grain = 0.9 + 0.2 * n
-    return (0.46 * grain, 0.30 * grain, 0.17 * grain)
+        t = 0.82                                                  # a lit bevel on the board's top edge
+    else:
+        t = 1.0
+    # grain: slow wavy streaks along u, different per row, a few dark lines
+    w = math.sin((x + _row_phase[y]) * TAU / 32 * 2) * _row_amp[y]
+    streak = 1.0 + w - (0.16 if (x * 7 + y * 13) % 29 == 0 else 0.0)
+    k = 1.0
+    for kx, ky in _knots:
+        dx = min(abs(x - kx), 32 - abs(x - kx)); dy = abs(y - ky)
+        if dx * dx + dy * dy * 3 <= 4:
+            k = 0.62 if dx * dx + dy * dy * 3 <= 1 else 0.8
+    g = _board_tone[board] * streak * k * t
+    base = (0.50, 0.36, 0.24)                                     # weathered oak, a touch grey
+    return tuple(min(1.0, c * g) for c in base)
 
 
 def make_mat(name, image=None, color=(1, 1, 1, 1)):
@@ -168,6 +188,11 @@ class MB:
         n = (pts[1] - pts[0]).cross(pts[2] - pts[0])
         ax = max(range(3), key=lambda k: abs(n[k]))
         a, b = [(1, 2), (0, 2), (0, 1)][ax]
+        if mat == 'M_wood':
+            ea = max(p[a] for p in pts) - min(p[a] for p in pts)
+            eb = max(p[b] for p in pts) - min(p[b] for p in pts)
+            if eb > ea:
+                a, b = b, a                                       # u (grain) along the long side
         self.face(idx, [(p[a] / TILE, p[b] / TILE) for p in pts], mat, tag, smooth)
 
 
@@ -249,9 +274,15 @@ def beam(m, p0, p1, t, mat, tag):
     u = d.cross(s).normalized() * (t / 2)
     ring = lambda p: [m.vert(p + s + u), m.vert(p - s + u), m.vert(p - s - u), m.vert(p + s - u)]
     a, b = ring(p0), ring(p1)
+    L = (p1 - p0).length / TILE
     for i in range(4):
         j = (i + 1) % 4
-        m.quad_planar([a[i], a[j], b[j], b[i]], mat, tag)
+        if mat == 'M_wood':
+            # u along the beam (the texture's grain), v across one board (rows are 8px = 0.25)
+            v0 = 0.25 * i + 0.01
+            m.face([a[i], a[j], b[j], b[i]], [(0, v0), (0, v0 + 0.23), (L, v0 + 0.23), (L, v0)], mat, tag)
+        else:
+            m.quad_planar([a[i], a[j], b[j], b[i]], mat, tag)
     m.quad_planar(a[::-1], mat, tag)
     m.quad_planar(b, mat, tag)
 
