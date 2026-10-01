@@ -1714,6 +1714,187 @@
         window.StatTracker = StatTracker;
 
         // ============================================================
+        // ACHIEVEMENTS (spec: docs/superpowers/specs/2026-10-01-achievements-design.md)
+        // ============================================================
+        // One rules list. Game code calls Achievements.note(event, data) on the LIVE pass only
+        // (never while resimulating) and evaluateMatchEnd(winnerSide) where a match ends; nothing
+        // here writes sim state, so determinism is untouched. "You" = the side of the combatant
+        // flagged isLocalPlayer (an online guest is Red). Spectate, the headless simulator and an
+        // online-doubles spectator earn nothing, unless dbg.achTest is on: then Blue counts, tallied
+        // into testCounts and never saved. Steam later: subscribe with onUnlock(cb).
+        const Achievements = (() => {
+            const STORAGE_KEY = 'volleybolt_achievements';
+            const FRAMES_PER_MIN = 3600;
+            const LIST = [
+                // Milestones (lifetime) read the career StatTracker
+                { id: 'FIRST_BRINE', name: 'First Brine', desc: 'Win your first match', group: 'milestones', stat: 'matches_won', target: 1 },
+                { id: 'SEASONED', name: 'Seasoned', desc: 'Win 10 matches', group: 'milestones', stat: 'matches_won', target: 10 },
+                { id: 'PICKLED', name: 'Pickled', desc: 'Win 50 matches', group: 'milestones', stat: 'matches_won', target: 50 },
+                { id: 'FERMENTED', name: 'Fermented', desc: 'Win 100 matches', group: 'milestones', stat: 'matches_won', target: 100 },
+                { id: 'WALL_OF_DILL', name: 'Wall of Dill', desc: '500 successful parries', group: 'milestones', stat: 'parries_successful', target: 500 },
+                { id: 'PYROMANCER', name: 'Pyromancer', desc: 'Cast 1,000 Fireballs', group: 'milestones', stat: 'fireball_casts', target: 1000 },
+                // Feats (one match)
+                { id: 'PICKLE_MONK', name: 'Pickle Monk', desc: 'Win without casting anything: paddle and parry only', group: 'feats', check: (m, won) => won && m.castsByMe === 0 },
+                { id: 'CLEAN_SWEEP', name: 'Clean Sweep', desc: 'Win without losing a round', group: 'feats', check: (m, won) => won && m.roundsLost === 0 },
+                { id: 'COMEBACK_KID', name: 'Comeback Kid', desc: 'Win after being pushed back to your own core', group: 'feats', check: (m, won) => won && m.wasOnOwnCore },
+                { id: 'SPEED_BRINE', name: 'Speed Brine', desc: 'Win with the match clock under 3:00', group: 'feats', check: (m, won) => won && m.clockFrames < 3 * FRAMES_PER_MIN },
+                { id: 'MARATHON', name: 'Marathon', desc: 'Win with the match clock past 10:00', group: 'feats', check: (m, won) => won && m.clockFrames > 10 * FRAMES_PER_MIN },
+                { id: 'UNTOUCHED', name: 'Untouched', desc: 'Win a round without your structure taking a hit', group: 'feats', check: (m) => m.untouchedRound },
+                // Spell mastery
+                { id: 'RETURN_TO_SENDER', name: 'Return to Sender', desc: 'Parry an enemy Chill Dill and freeze its caster with it', group: 'mastery', check: (m) => m.returnToSender },
+                { id: 'COLD_WAR', name: 'Cold War', desc: 'Cancel an enemy Chill Dill with your own', group: 'mastery', check: (m) => m.coldWar },
+                { id: 'STORM_CHASER', name: 'Storm Chaser', desc: 'Zap 3 projectiles with one Thunderstorm', group: 'mastery', check: (m) => m.stormChaser },
+                { id: 'MAX_RALLY', name: 'Max Rally', desc: 'Send a Fireball up to top tier yourself', group: 'mastery', check: (m) => m.maxRally },
+                { id: 'JUICE_CLASH_CHAMPION', name: 'Juice Clash Champion', desc: 'Win a beam clash', group: 'mastery', check: (m) => m.beamClashWon },
+                { id: 'PICKLED_IN_ICE', name: 'Pickled in Ice', desc: 'Freeze opponents 5 times in one match', group: 'mastery', check: (m) => m.freezesInflicted >= 5 },
+                // Pressure
+                { id: 'OVERTIME_HERO', name: 'Overtime Hero', desc: 'Win a round in overtime (round 10+)', group: 'pressure', check: (m) => m.overtimeRoundWon },
+                { id: 'DEMOLITION', name: 'Demolition', desc: 'Break the enemy territory, then win at their core the very next round', group: 'pressure',
+                  check: (m, won) => won && m.territoryBrokeRound > 0 && m.territoryBrokeRound === m.lastRoundNo - 1 },
+            ];
+            const byId = {};
+            for (const a of LIST) byId[a.id] = a;
+
+            const freshFlags = () => ({
+                castsByMe: 0, roundsLost: 0, wasOnOwnCore: false, roundStartHp: null, untouchedRound: false,
+                overtimeRoundWon: false, territoryBrokeRound: 0, lastRoundNo: 0, returnToSender: false,
+                coldWar: false, stormChaser: false, maxRally: false, beamClashWon: false, freezesInflicted: 0,
+                clockFrames: 0,
+            });
+            let m = freshFlags();
+            let state = { v: 1, unlocked: {}, seen: {} };
+            let last = [];
+            const testCounts = {};
+            const unlockListeners = [];
+
+            function load() {
+                state = { v: 1, unlocked: {}, seen: {} };
+                try {
+                    const raw = localStorage.getItem(STORAGE_KEY);
+                    const s = raw ? JSON.parse(raw) : null;
+                    if (s && s.v === 1 && s.unlocked && typeof s.unlocked === 'object') {
+                        state.unlocked = s.unlocked;
+                        state.seen = (s.seen && typeof s.seen === 'object') ? s.seen : {};
+                    }
+                } catch (e) { console.warn('Achievements: could not load', e); }
+            }
+            function save() {
+                try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+                catch (e) { console.warn('Achievements: could not save', e); }
+            }
+
+            const testMode = () => !!(window.dbg && window.dbg.achTest) && (spectating || !!window._simHeadless);
+            function localSide() {
+                if (spectating || window._simHeadless) return testMode() ? 'left' : null;
+                for (const c of getAllCombatants()) if (c && c.isLocalPlayer) return c.side;
+                return null;   // online-doubles spectator: no seat, nothing to earn
+            }
+            const ownerOf = (side) => side === 'left' ? 'player' : 'ai';
+            function isMe(c) { const L = localSide(); return !!(c && L && c.isLocalPlayer && c.side === L); }
+
+            function note(event, d) {
+                const L = localSide();
+                if (!L || !d) return;
+                switch (event) {
+                    case 'roundStart':
+                        if (isOwnCore(L, d.stage)) m.wasOnOwnCore = true;
+                        m.roundStartHp = d.hp[L];
+                        break;
+                    case 'roundEnd':
+                        m.lastRoundNo = d.roundNo;
+                        if (d.winnerSide === L) {
+                            if (m.roundStartHp !== null && d.hp[L] === m.roundStartHp) m.untouchedRound = true;
+                            if (d.roundNo >= SIM_RULES.overtimeStart) m.overtimeRoundWon = true;
+                            if (d.territoryFalls) m.territoryBrokeRound = d.roundNo;
+                        } else {
+                            m.roundsLost++;
+                        }
+                        break;
+                    case 'cast': if (isMe(d.c)) m.castsByMe++; break;
+                    case 'zap': if (isMe(d.c) && d.count >= 3) m.stormChaser = true; break;
+                    case 'freeze': {
+                        if (d.frozenSide === L) break;
+                        m.freezesInflicted++;
+                        const p = d.proj;
+                        if (p && p.isParried && p.parriedBy === ownerOf(L) && p.castBy === ownerOf(d.frozenSide)) m.returnToSender = true;
+                        break;
+                    }
+                    case 'chillClash': {
+                        const mine = ownerOf(L);
+                        if (d.a && d.b && ((d.a.castBy === mine) !== (d.b.castBy === mine))) m.coldWar = true;
+                        break;
+                    }
+                    case 'tier': if (d.side === L && d.from < 4 && d.to >= 4) m.maxRally = true; break;
+                    case 'beamClash': if (d.winnerSide === L) m.beamClashWon = true; break;
+                }
+            }
+
+            // Pure: which achievement ids does this match satisfy? Exported for console tests.
+            function judge(flags, won, careerGet) {
+                const ids = [];
+                for (const a of LIST) {
+                    const hit = a.stat ? careerGet(a.stat) >= a.target : !!a.check(flags, won);
+                    if (hit) ids.push(a.id);
+                }
+                return ids;
+            }
+            function unlock(ids) {
+                const fresh = ids.filter(id => byId[id] && !state.unlocked[id]);
+                if (!fresh.length) return [];
+                const at = Date.now();
+                for (const id of fresh) { state.unlocked[id] = { at }; delete state.seen[id]; }
+                save();
+                for (const id of fresh) for (const cb of unlockListeners) {
+                    try { cb(id); } catch (e) { console.error('Achievements onUnlock listener error:', e); }
+                }
+                return fresh;
+            }
+            function evaluateMatchEnd(winnerSide) {
+                last = [];
+                const L = localSide();
+                if (!L) return [];
+                m.clockFrames = window.getMatchClockFrames ? window.getMatchClockFrames() : 0;
+                const hits = judge(m, winnerSide === L, (k) => StatTracker.get(k, 'career'));
+                if (testMode()) {
+                    testCounts._matches = (testCounts._matches || 0) + 1;
+                    for (const id of hits) if (!byId[id].stat) testCounts[id] = (testCounts[id] || 0) + 1;
+                    return [];
+                }
+                last = unlock(hits);
+                return last.slice();
+            }
+            // Milestones already earned by an existing career unlock on load (unseen, so the dot shows).
+            function backfill(careerGet) {
+                return unlock(LIST.filter(a => a.stat && careerGet(a.stat) >= a.target).map(a => a.id));
+            }
+
+            load();
+            backfill((k) => StatTracker.get(k, 'career'));
+
+            return {
+                LIST, note, judge, evaluateMatchEnd, unlock, backfill, load, localSide, isMe, testCounts,
+                resetMatch() { m = freshFlags(); last = []; },
+                flags: () => ({ ...m }),
+                lastUnlocked: () => last.slice(),
+                unlockedAt: (id) => (state.unlocked[id] ? state.unlocked[id].at : null),
+                progress(id) {
+                    const a = byId[id];
+                    if (!a || !a.stat) return null;
+                    return [Math.min(StatTracker.get(a.stat, 'career'), a.target), a.target];
+                },
+                unseenIds: () => Object.keys(state.unlocked).filter(id => byId[id] && !state.seen[id]),
+                markAllSeen() {
+                    let changed = false;
+                    for (const id of Object.keys(state.unlocked)) if (!state.seen[id]) { state.seen[id] = true; changed = true; }
+                    if (changed) save();
+                },
+                onUnlock(cb) { unlockListeners.push(cb); },
+                _wipe() { try { localStorage.removeItem(STORAGE_KEY); } catch (e) {} load(); },
+            };
+        })();
+        window.Achievements = Achievements;
+
+        // ============================================================
         // SPELL REGISTRY
         // ============================================================
         // Central registry of all spells with metadata for loadout system.
@@ -24296,6 +24477,17 @@
                 return { steps, seed, fold, reproducible: fold === fold2 };
             };
         })();
+
+        // Achievements console helpers. dbg.achTest = true makes spectate/headless matches count for
+        // Blue into Achievements.testCounts (never saved), e.g. before dbg.simBatchAsync.
+        window.dbg.achievements = {
+            list() {
+                console.table(Achievements.LIST.map(a => ({ id: a.id, group: a.group, unlocked: Achievements.unlockedAt(a.id) ? new Date(Achievements.unlockedAt(a.id)).toLocaleString() : '', seen: !Achievements.unseenIds().includes(a.id) })));
+            },
+            reset() { Achievements._wipe(); if (window.refreshAchievementDots) refreshAchievementDots(); return 'achievements wiped'; },
+            unlock(id) { const r = Achievements.unlock([id]); if (window.refreshAchievementDots) refreshAchievementDots(); return r; },
+            counts() { return { ...Achievements.testCounts }; },
+        };
 
         // ---- Headless MATCH SIMULATOR — dbg.simMatch / dbg.simBatch / dbg.simBatchAsync ----------------
         // Plays whole AI-vs-AI spectate matches with no rendering: a match is a pure function of its seed
