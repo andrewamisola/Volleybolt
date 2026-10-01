@@ -9614,12 +9614,13 @@
                 window.eerieLightGain = 1.0;
                 class EerieFogPlugin extends BABYLON.MaterialPluginBase {
                     constructor(material, opts) {
-                        super(material, 'EerieFog', 300, { EERIEFOG: false, EERIELIGHTS: false, EERIEDETAIL: false });
+                        super(material, 'EerieFog', 300, { EERIEFOG: false, EERIELIGHTS: false, EERIEDETAIL: false, EERIEPUNCH: false });
                         this._lights = !(opts && opts.lights === false);
                         this._detail = !!(opts && opts.detail);
+                        this._punch = !(opts && opts.punch === false);
                         this._enable(true);
                     }
-                    prepareDefines(defines) { defines.EERIEFOG = true; defines.EERIELIGHTS = this._lights; defines.EERIEDETAIL = this._detail; }
+                    prepareDefines(defines) { defines.EERIEFOG = true; defines.EERIELIGHTS = this._lights; defines.EERIEDETAIL = this._detail; defines.EERIEPUNCH = this._punch; }
                     getClassName() { return 'EerieFogPlugin'; }
                     getUniforms() {
                         const ubo = [{ name: 'eerieA', size: 4, type: 'vec4' }, { name: 'eerieB', size: 4, type: 'vec4' },
@@ -9672,10 +9673,13 @@
                                 float eN = 0.62 * eNoise(eP * 1.3) + 0.38 * eNoise(eP * 3.7 + 11.0);
                                 ${c}.rgb *= 1.0 + (eN - 0.5) * eerieD.z;
                                 #endif
-                                // punch: contrast around mid-grey + saturation (the props read as rich as the structures)
+                                #ifdef EERIEPUNCH
+                                // punch: contrast around mid-grey + saturation. Not on textured stone props - those must
+                                // match the structures standing beside them.
                                 ${c}.rgb = max(vec3(0.0), (${c}.rgb - 0.35) * eerieD.x + 0.35);
                                 float eS = dot(${c}.rgb, vec3(0.299, 0.587, 0.114));
                                 ${c}.rgb = max(vec3(0.0), mix(vec3(eS), ${c}.rgb, eerieD.y));
+                                #endif
                                 vec3 eBase = ${c}.rgb;   // the surface as lit, before the murk
                                 float eZ = clamp((abs(vPositionW.z) - eerieA.x) / eerieA.y, 0.0, 1.0);
                                 float eX = clamp((abs(vPositionW.x) - eerieA.z) / eerieA.w, 0.0, 1.0);
@@ -10009,8 +10013,12 @@
                         propAmb.groundColor = new BABYLON.Color3(0.12, 0.08, 0.16);
                     }
                     propAmb.intensity = 0.2;
-                    propAmb.includedOnlyMeshes = meshes;
-                    for (const m of meshes) if (!amb.excludedMeshes.includes(m)) amb.excludedMeshes.push(m);
+                    // untextured props (foliage/bark/rock) take the dim fill for form; textured stone keeps the scene
+                    // ambient, exactly like the structures it stands next to
+                    const soft = meshes.filter(m => !(m.material && m.material.albedoTexture));
+                    propAmb.includedOnlyMeshes = soft;
+                    amb.excludedMeshes = amb.excludedMeshes.filter(m => !meshes.includes(m) || soft.includes(m));
+                    for (const m of soft) if (!amb.excludedMeshes.includes(m)) amb.excludedMeshes.push(m);
                 };
                 const applyPropSun = (S) => {
                     const sunL = scene.getLightByName('sun');
@@ -10423,7 +10431,9 @@
                             if (m.material) {
                                 const mat = m.material;
                                 mat.metallic = 0; mat.roughness = 1; mat.environmentIntensity = 0;
-                                mat.fogEnabled = false;   // the eerie murk is their distance fade; scene fog on top greyed them out
+                                // scene fog ON, like the structures: the purple distance haze ties props and structures
+                                // into one scene (owner: the guard tower vs the gate read as two worlds without it)
+                                mat.fogEnabled = true;
                                 if (mat.albedoTexture) mat.albedoTexture.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);   // = styleStructMat
                                 if (mat.name === 'M_banner') mat.emissiveColor = new BABYLON.Color3(0.16, 0.025, 0.02);   // cloth catches the firelight
                                 if (mat.name === 'M_sigil') mat.emissiveColor = new BABYLON.Color3(0.18, 0.13, 0.02);
@@ -10435,7 +10445,7 @@
                                     m._noShadowCast = true;
                                 } else if (!mat.pluginManager || !mat.pluginManager.getPlugin('EerieFog')) {
                                     // untextured props (foliage, bark, rock) get the painted detail; textured stone has its own
-                                    new EerieFogPlugin(mat, { detail: !mat.albedoTexture });
+                                    new EerieFogPlugin(mat, { detail: !mat.albedoTexture, punch: !mat.albedoTexture });
                                 }
                             }
                             m.setEnabled(false);
