@@ -9776,8 +9776,89 @@
                 const glow = BABYLON.MeshBuilder.CreateGround('backdropGlow', { width: GW, height: GW }, scene);
                 glow.position.y = -0.03;
                 glow.material = glowMat; glow.isPickable = false;
-                glow.alphaIndex = 3;
+                glow.alphaIndex = 1.8;   // BEFORE the shadow layer, so walls/pillars cut the beams and pools
                 glow.setEnabled(false);
+                // Cracked-floor overlay (the core painting's floor is full of fine cracks): a seamless tile of dark
+                // hairline cracks, alpha-only, repeated over the ground sheet.
+                const crackTex = new BABYLON.DynamicTexture('backdropCrackTex', { width: 512, height: 512 }, scene, true);
+                {
+                    const g = crackTex.getContext();
+                    g.clearRect(0, 0, 512, 512);
+                    let sd = 77;
+                    const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+                    g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineCap = 'round';
+                    for (let i = 0; i < 9; i++) {
+                        let x = r() * 512, y = r() * 512, a = r() * Math.PI * 2;
+                        const n = 6 + (r() * 10 | 0);
+                        g.lineWidth = 1.2 + r() * 1.2;
+                        for (let k = 0; k < n; k++) {
+                            const nx = x + Math.cos(a) * (12 + r() * 22), ny = y + Math.sin(a) * (12 + r() * 22);
+                            for (const ox of [-512, 0, 512]) for (const oy of [-512, 0, 512]) {
+                                g.beginPath(); g.moveTo(x + ox, y + oy); g.lineTo(nx + ox, ny + oy); g.stroke();
+                            }
+                            if (r() < 0.3) {   // a short branch
+                                const ba = a + (r() - 0.5) * 2.2, bx = nx + Math.cos(ba) * 14, by = ny + Math.sin(ba) * 14;
+                                for (const ox of [-512, 0, 512]) for (const oy of [-512, 0, 512]) {
+                                    g.beginPath(); g.moveTo(nx + ox, ny + oy); g.lineTo(bx + ox, by + oy); g.stroke();
+                                }
+                            }
+                            x = nx; y = ny; a += (r() - 0.5) * 1.1;
+                        }
+                    }
+                    crackTex.update();
+                    crackTex.hasAlpha = true;
+                    crackTex.wrapU = crackTex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+                    crackTex.uScale = crackTex.vScale = GW / 9;
+                }
+                const crackMat = new BABYLON.StandardMaterial('backdropCrackMat', scene);
+                crackMat.disableLighting = true;
+                crackMat.diffuseColor = BABYLON.Color3.Black(); crackMat.specularColor = BABYLON.Color3.Black();
+                crackMat.emissiveColor = new BABYLON.Color3(0.04, 0.02, 0.06);
+                crackMat.opacityTexture = crackTex;
+                crackMat.zOffset = -1.7;
+                new EerieFogPlugin(crackMat, { lights: false });
+                const cracks = BABYLON.MeshBuilder.CreateGround('backdropCracks', { width: GW, height: GW }, scene);
+                cracks.position.y = -0.045;
+                cracks.material = crackMat; cracks.isPickable = false;
+                cracks.alphaIndex = 1.6;
+                cracks.setEnabled(false);
+                // Dusty light shafts over the OUTER floors at the breach end (the lane already has the gate's own
+                // three): tall soft additive planes leaning back toward the breach, same look as the gate shafts.
+                let shaftMatB = null;
+                const outerShafts = [];
+                const ensureShafts = () => {
+                    if (shaftMatB) return true;
+                    const tex = scene.getTextureByName('gateShaftTex');
+                    if (!tex) return false;
+                    shaftMatB = new BABYLON.StandardMaterial('backdropShaftMat', scene);
+                    shaftMatB.disableLighting = true;
+                    shaftMatB.diffuseColor = BABYLON.Color3.Black();
+                    shaftMatB.emissiveColor = new BABYLON.Color3(1.0, 0.8, 0.5);
+                    shaftMatB.opacityTexture = tex;
+                    shaftMatB.alphaMode = BABYLON.Engine.ALPHA_ADD;
+                    shaftMatB.alpha = 0.26;
+                    shaftMatB.backFaceCulling = false;
+                    shaftMatB.fogEnabled = false;
+                    for (let i = 0; i < 8; i++) {
+                        const p = BABYLON.MeshBuilder.CreatePlane('backdropShaft' + i, { width: 1.6 + (i % 3) * 0.7, height: 11 }, scene);
+                        p.material = shaftMatB; p.isPickable = false; p.renderingGroupId = 2;
+                        p.setEnabled(false);
+                        outerShafts.push(p);
+                    }
+                    return true;
+                };
+                const placeShafts = (set, halfD) => {
+                    const on = set.def.shafts && ensureShafts();
+                    if (!on) { outerShafts.forEach(p => p.setEnabled(false)); return; }
+                    const s = set.mirror ? -1 : 1;
+                    const zs = [halfD + 2.5, halfD + 5.5, halfD + 8.5, halfD + 11, -halfD - 3, -halfD - 6.5, -halfD - 10, -halfD - 13];
+                    outerShafts.forEach((p, i) => {
+                        p.position.set(s * (-15.5 + (i % 4) * 2.4), 4.6, zs[i]);
+                        p.rotation.z = s * 0.62;                       // top leans back toward the breach
+                        p.scaling.y = 0.8 + (i % 3) * 0.15;
+                        p.setEnabled(true);
+                    });
+                };
                 const rng = (seed) => () => {   // mulberry32: the same stage every load
                     seed = (seed + 0x6D2B79F5) | 0;
                     let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
@@ -9874,7 +9955,10 @@
                 };
 
                 const bakeShadows = (recs, S) => {
-                    const SF = window.forestShadow;
+                    const SF = { ...window.forestShadow };
+                    if (curSet && curSet.def.cast != null) SF.cast = curSet.def.cast;
+                    if (curSet && curSet.def.contact != null) SF.contact = curSet.def.contact;
+                    shadowMat.emissiveColor = BABYLON.Color3.FromArray(curSet && curSet.def.shadowCol || [0.035, 0.025, 0.06]);
                     const L = S.dir;
                     const hl = Math.hypot(L.x, L.z) || 1e-3;
                     const dX = L.x / hl, dZ = L.z / hl;            // where shadows fall on the ground
@@ -10060,13 +10144,16 @@
                             // the far one stands out on the forecourt (the gatehouse would hide it at the corner), its
                             // curtain wall running back to the gate; the near one at the corner, low enough that its
                             // battlements stay under the near rail on screen, its wall running off-screen
-                            const towers = [{ x: 11, z: halfD + 6.5, wall: 'x' }, { x: 17.5, z: -halfD - 10.8, wall: 'z' }];
+                            // a matched pair, mirrored across the court: one on each side of the forecourt, each with its
+                            // curtain wall running back to the gate. (The far one can't stand at the corner - the gatehouse
+                            // would hide it - so both stand out on the forecourt.)
+                            const towers = [{ x: 11, z: halfD + 6.5 }, { x: 11, z: -halfD - 10.8 }];
+                            const wallKind = protos.curtain_wall && protos.curtain_wall.length ? 'curtain_wall' : 'hall_wall';
                             for (const T of towers) {
                                 add('guard_tower', T.x, T.z, 0, 1, 1, 0, true);
                                 // its torch (camera side, beside the banner) - a fixed fire
                                 fires.push({ x: T.x - 1.0, y: 3.2, z: T.z - 2.3, reach: 8, col: [1.0, 0.55, 0.2], w: 0.55 });
-                                if (T.wall === 'x') for (let x = T.x + 4.2; x < 46; x += 4) add('hall_wall', x, T.z + 0.8, 0, 1, 1, 0, true);
-                                else for (let z = T.z - 4.6; z > -46; z -= 4) add('hall_wall', T.x + 0.6, z, Math.PI / 2, 1, 1, 0, true);
+                                for (let x = T.x + 3.6; x < 46; x += 4) add(wallKind, x, T.z, 0, 1, 1, 0, true);
                             }
                         },
                     },
@@ -10075,7 +10162,10 @@
                     // broken wall ends) where the low daylight pours in.
                     core: {
                         // indoors the painting is lit, not lost in dusk: lighter, later murk so the walls/banners read
-                        eerie: { color: [0.09, 0.055, 0.06], max: 0.55, z0: 7, dim: 0.95, desat: 0.15 }, ground: 'pave', glow: 'breach',
+                        // Like the painting: the hall sits in deep PURPLE shade (shadows, murk, the stone's cast) and the
+                        // breach daylight cuts across it in warm streaks; fine cracks in the floor.
+                        eerie: { color: [0.10, 0.045, 0.15], max: 0.6, z0: 7, dim: 0.9, desat: 0.15 }, ground: 'pave', glow: 'breach',
+                        shadowCol: [0.09, 0.025, 0.15], cast: 0.78, contact: 0.6, paveTint: [0.36, 0.32, 0.42], cracks: true, shafts: true,
                         build: (R, add, halfD, fires) => {
                             const zF = halfD + 9, zN = -halfD - 13, BX = -19;    // far wall, near wall, breach end
                             for (const zw of [zF, zN]) {
@@ -10115,9 +10205,24 @@
                     for (const f of fires) pool(f.x, f.z, 4.2, 0.55);
                     if (set.def.glow === 'breach') {
                         const s = set.mirror ? -1 : 1;
-                        pool(s * -23, halfD + 6, 20, 1.0);     // over the far floor
-                        pool(s * -23, -halfD - 7, 20, 1.0);    // and the near floor
-                        pool(s * -26, 0, 26, 0.6);
+                        // light STREAKS: long soft bands thrown from the breach along the daylight's ground direction
+                        // (the core sun of sunFor), fading down the hall; the pillar/wall shadows cut them
+                        const S = sunFor(set), hl = Math.hypot(S.dir.x, S.dir.z) || 1;
+                        const dX = S.dir.x / hl, dZ = S.dir.z / hl, ang = Math.atan2(-dZ, dX);
+                        let sd = 31; const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+                        for (let k = 0; k < 14; k++) {
+                            const z0 = -44 + k * 6.5 + (r() - 0.5) * 3, L = (30 + r() * 22) * 512 / GW, w = (1.4 + r() * 2.6) * 512 / GW, a = 0.3 + r() * 0.35;
+                            g.save(); g.translate(cx(s * -24), cy(z0)); g.rotate(ang);
+                            const lg = g.createLinearGradient(0, 0, L, 0);
+                            lg.addColorStop(0, `rgba(255,255,255,${a})`); lg.addColorStop(0.5, `rgba(255,255,255,${a * 0.5})`); lg.addColorStop(1, 'rgba(255,255,255,0)');
+                            g.fillStyle = lg; g.filter = 'blur(2px)';
+                            g.fillRect(0, -w / 2, L, w);
+                            g.restore();
+                        }
+                        g.filter = 'none';
+                        pool(s * -23, halfD + 6, 20, 0.75);    // over the far floor
+                        pool(s * -23, -halfD - 7, 20, 0.7);    // and the near floor
+                        pool(s * -26, 0, 26, 0.45);
                     }
                     g.globalCompositeOperation = 'source-over';
                     glowTex.update();
@@ -10151,12 +10256,14 @@
                 const M = (x, z, yaw, sc, sy, y) => BABYLON.Matrix.Compose(new BABYLON.Vector3(sc, sc * (sy || 1), sc),
                     BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, yaw), new BABYLON.Vector3(x, y || 0, z));
                 let layers = { pave: false, glow: false, grass: true };
+                let curSet = null;
                 const place = () => {
                     const halfD = (window.getEffectiveTableDepth ? getEffectiveTableDepth() : 14) / 2;
                     const key = wantKey + '@' + halfD;
                     if (builtKey === key) return;
                     const set = parseKey(wantKey);
                     if (!set.def) return;
+                    curSet = set;
                     if (set.def.ground === 'pave' || set.def.paveFrom != null) { if (!ensurePaveTex()) return; }   // lane paving not built yet: retry later
                     builtKey = key;
                     const R = rng(set.kind === 'forest' ? 1337 : set.kind === 'territory' ? 4242 : 9001);
@@ -10189,8 +10296,11 @@
                         m.alwaysSelectAsActiveMesh = true;   // thin instances span the map: skip per-frame culling
                         m._propUsed = list.length > 0;
                     }
-                    // = the lane paving's stone tints (dark on purpose: brighter clips to a pinkish grey under the sun)
-                    paveMat.diffuseColor = set.kind === 'core' ? new BABYLON.Color3(0.44, 0.44, 0.46) : new BABYLON.Color3(0.44, 0.43, 0.41);
+                    // = the lane paving's stone tint (dark on purpose: brighter clips to a pinkish grey under the sun);
+                    // the core's hall stone takes a purple cast
+                    paveMat.diffuseColor = BABYLON.Color3.FromArray(set.def.paveTint || [0.44, 0.43, 0.41]);
+                    cracks.setEnabled(false); cracks._want = !!set.def.cracks;
+                    placeShafts(set, halfD);
                     layers = { grass: set.def.ground !== 'pave', pave: drawPaveMask(set), glow: drawGlow(set, halfD, setLights) };
                 };
                 const apply = () => {
@@ -10200,6 +10310,9 @@
                     const on = !!(ready && set && builtKey && builtKey.startsWith(wantKey + '@'));
                     ground.setEnabled(on && layers.grass); dirt.setEnabled(on && layers.grass);
                     pave.setEnabled(on && layers.pave); glow.setEnabled(on && layers.glow);
+                    cracks.setEnabled(on && !!cracks._want);
+                    if (!on) outerShafts.forEach(p => p.setEnabled(false));
+                    else if (curSet) placeShafts(curSet, (window.getEffectiveTableDepth ? getEffectiveTableDepth() : 14) / 2);
                     shadowPlane.setEnabled(on);
                     for (const kind of KINDS) for (const m of (protos[kind] || [])) m.setEnabled(on && !!m._propUsed);
                     window._propsBackdropActive = on;
