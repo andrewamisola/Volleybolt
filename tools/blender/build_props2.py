@@ -518,6 +518,26 @@ def build_hall_wall(mats):
     return to_object('hall_wall', m, mats, 103), m
 
 
+def build_hall_wall_tall(mats):
+    """FULL-HEIGHT interior hall wall for the core (owner: inside the fortress it's a real wall, not a knee-high
+    rampart). Same tiling as hall_wall (x -2..+2, pillar at x=-2, SEAM_U phase) but 5.6 tall with a string course
+    at 2.8 and a corbelled coping, built at true height so the castle_wall texture keeps its real brick size."""
+    H = 5.6
+    m = MB(ao_h=1.4, ushift=SEAM_U)
+    box(m, (0, 0, 0), (4.0, 0.98, 0.36), STONE, top=LIGHT, skip=('bot', 's3'))        # plinth
+    prism_x(m, -2.0, 2.0, [(-0.47, 0.36), (0.47, 0.36), (0.42, H - 0.3), (-0.42, H - 0.3)], STONE,
+            caps=(False, True))
+    box(m, (0, 0, 2.8), (4.0, 0.98, 0.16), LIGHT, skip=('bot', 's3'))                 # string course
+    box(m, (0, 0, H - 0.3), (4.0, 1.02, 0.14), LIGHT, skip=('bot', 's3'))             # corbel
+    box(m, (0, 0, H - 0.16), (4.0, 1.08, 0.22), LIGHT, skip=('bot', 's3'))            # coping
+    cx = -2.0                                                                         # pillar (pilaster)
+    box(m, (cx, 0, 0.0), (1.10, 1.30, 0.40), STONE, top=LIGHT)
+    box(m, (cx, 0, 0.40), (0.95, 1.18, H - 0.2), STONE, skip=('bot', 'top'))
+    box(m, (cx, 0, H + 0.2), (1.10, 1.30, 0.14), LIGHT, skip=('bot', 'top'))
+    box(m, (cx, 0, H + 0.34), (1.20, 1.40, 0.18), LIGHT, skip=('bot',))
+    return to_object('hall_wall_tall', m, mats, 111), m
+
+
 # ---------------------------------------------------------------- 5. brazier
 def build_brazier(mats):
     """Square stone pedestal 0.8 x 0.8 x 0.9 (light cap) + iron bowl + glowing coals + small faceted flame."""
@@ -665,7 +685,7 @@ def export_one(obj, fname):
         export_animations=False)
 
 
-BUDGET = {'stump': 80, 'guard_tower': 900, 'hall_wall': 200, 'banner': 60, 'brazier': 260,
+BUDGET = {'stump': 80, 'guard_tower': 900, 'hall_wall': 200, 'hall_wall_tall': 260, 'banner': 60, 'brazier': 260,
           'rubble': 160, 'wall_broken': 160, 'curtain_wall': 200, 'curtain_wall_end': 200, 'curtain_wall_end_r': 200}
 
 
@@ -688,7 +708,8 @@ def main():
     mats = build_materials()
     objs = []
     for fn, name in ((build_stump, 'stump.glb'), (build_tower, 'guard_tower.glb'),
-                     (build_hall_wall, 'hall_wall.glb'), (build_banner, 'banner.glb'),
+                     (build_hall_wall, 'hall_wall.glb'), (build_hall_wall_tall, 'hall_wall_tall.glb'),
+                     (build_banner, 'banner.glb'),
                      (build_brazier, 'brazier.glb'), (build_rubble, 'rubble.glb'),
                      (build_wall_broken, 'wall_broken.glb'),
                      (lambda mt: build_curtain('curtain_wall', 'mid', 108), 'curtain_wall.glb'),

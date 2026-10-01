@@ -9532,6 +9532,7 @@
                     tree: 'tree.glb?v=1', pine: 'pine.glb?v=1', rock: 'rock.glb?v=1',
                     // v2: the gatehouse's own textured stone (M_keep tower_stone / M_wall castle_wall, same texel size)
                     stump: 'stump.glb?v=2', guard_tower: 'guard_tower.glb?v=2', hall_wall: 'hall_wall.glb?v=2',
+                    hall_wall_tall: 'hall_wall_tall.glb?v=1',   // the core's full-height hall wall (true-size bricks)
                     banner: 'banner.glb?v=2', brazier: 'brazier.glb?v=2', rubble: 'rubble.glb?v=2', wall_broken: 'wall_broken.glb?v=2',
                     // crenellated curtain wall (tiles every 4u) + its two end pieces that tuck into a guard tower
                     curtain_wall: 'curtain_wall.glb?v=1', curtain_wall_end: 'curtain_wall_end.glb?v=1', curtain_wall_end_r: 'curtain_wall_end_r.glb?v=1',
@@ -10076,6 +10077,7 @@
                     stump: { cyl: { r: 0.3, h: 0.4 }, ao: 0.45 },
                     guard_tower: { cyl: { r: 2.05, h: 5.2 }, ao: 2.6 },
                     hall_wall: { box: [[0, 0, 4.0, 0.8, 2.2], [2.0, 0, 0.9, 0.9, 2.8]], ao: 0 },
+                    hall_wall_tall: { box: [[0, 0, 4.0, 0.9, 5.6], [2.0, 0, 0.95, 1.2, 6.1]], ao: 0 },
                     wall_broken: { box: [[-0.8, 0, 1.6, 0.8, 1.9], [-1.9, 0, 0.8, 0.8, 0.9]], ao: 0 },
                     brazier: { box: [[0, 0, 0.8, 0.8, 1.3]], ao: 0.7 },
                     rubble: { cyl: { r: 0.75, h: 0.55 }, ao: 1.0 },
@@ -10121,7 +10123,7 @@
                 };
                 // The props' own FILL: the scene's warm hemispheric fill (0.58) lit their shadow sides almost as
                 // bright as their lit sides - that flattened them. They take a dimmer, cooler one instead.
-                let propAmb = null;
+                let propAmb = null, stoneFillMul = 0, stoneAmb = null;
                 const applyPropFill = (meshes) => {
                     const amb = scene.getLightByName('ambient');
                     if (!amb) return;
@@ -10133,8 +10135,16 @@
                     }
                     propAmb.intensity = window.forestOvercast ? window.forestOvercast.fill : 0.3;   // overcast: mostly fill light
                     // untextured props (foliage/bark/rock) take the dim fill for form; textured stone keeps the scene
-                    // ambient, exactly like the structures it stands next to
+                    // ambient, exactly like the structures it stands next to (+ an extra fill indoors: stoneFill)
                     const soft = meshes.filter(m => !(m.material && m.material.albedoTexture));
+                    const stone = meshes.filter(m => m.material && m.material.albedoTexture);
+                    if (!stoneAmb) {
+                        stoneAmb = new BABYLON.HemisphericLight('propStoneFill', new BABYLON.Vector3(0, 0.3, -1), scene);
+                        stoneAmb.diffuse = new BABYLON.Color3(0.62, 0.52, 0.7); stoneAmb.specular = BABYLON.Color3.Black();
+                        stoneAmb.groundColor = new BABYLON.Color3(0.2, 0.14, 0.24);
+                    }
+                    stoneAmb.includedOnlyMeshes = stone;
+                    stoneAmb.intensity = stoneFillMul;
                     propAmb.includedOnlyMeshes = soft;
                     amb.excludedMeshes = amb.excludedMeshes.filter(m => !meshes.includes(m) || soft.includes(m));
                     for (const m of soft) if (!amb.excludedMeshes.includes(m)) amb.excludedMeshes.push(m);
@@ -10383,7 +10393,10 @@
                         // indoors the painting is lit, not lost in dusk: lighter, later murk so the walls/banners read
                         // Like the painting: the hall sits in deep PURPLE shade (shadows, murk, the stone's cast) and the
                         // breach daylight cuts across it in warm streaks; fine cracks in the floor.
-                        eerie: { color: [0.10, 0.045, 0.15], max: 0.6, z0: 7, dim: 0.8, desat: 0.08 }, ground: 'pave', glow: 'breach',
+                        // propFog false: the core's heavy purple scene fog flattened its walls to blank planes; indoors
+                        // the eerie murk alone does the depth. nearHaze low: the near wall faces away from the breach.
+                        eerie: { color: [0.10, 0.045, 0.15], max: 0.6, z0: 7, dim: 0.8, desat: 0.08, nearHaze: 0.25 }, ground: 'pave', glow: 'breach',
+                        propFog: false, stoneFill: 0.95,
                         shadowCol: [0.12, 0.04, 0.2], cast: 0.66, contact: 0.36, len: 1.0, paveTint: [0.36, 0.32, 0.42], cracks: true, shafts: true,
                         build: (R, add, halfD, fires) => {
                             const zF = halfD + 9, zN = -halfD - 13, BX = -19;    // far wall, near wall, breach end
@@ -10391,7 +10404,7 @@
                             for (const zw of [zF, zN]) {
                                 // INSIDE the fortress: full-height hall walls (owner: not knee-high ramparts) - the wall
                                 // module stretched 2.6x tall (~5.7u), pillars and all
-                                for (let x = BX + 4; x < 48; x += 4) add('hall_wall', x, zw, 0, 1, HALL_SY, 0, true);
+                                for (let x = BX + 4; x < 48; x += 4) add('hall_wall_tall', x, zw, 0, 1, 1, 0, true);
                                 // the broken end, crumbling toward the breach
                                 add('wall_broken', BX + 2, zw, 0, 1, HALL_SY, 0, false);   // not 'facing': mirrored it turns to point at the breach
                                 for (let i = 0; i < 4; i++) add('rubble', BX - 0.5 - R() * 4, zw + (R() - 0.5) * 3, R() * Math.PI * 2, 0.8 + R() * 0.6, 0.8 + R() * 0.5);
@@ -10503,6 +10516,11 @@
                     set.def.build(R, add, halfD, fires, s);
                     setLights = fires.map(f => ({ ...f, x: s * f.x }));
                     Object.assign(EERIE, EERIE_DEFAULT, set.def.eerie);
+                    for (const kind of KINDS) for (const m of (protos[kind] || [])) {
+                        if (m.material && !m._noShadowCast) m.material.fogEnabled = set.def.propFog !== false;
+                    }
+                    const ambL = scene.getLightByName('ambient');
+                    stoneFillMul = set.def.stoneFill || 0;
                     const S = sunFor(set);
                     applyPropSun(S);
                     const shade = bakeShadows(recs, S);
