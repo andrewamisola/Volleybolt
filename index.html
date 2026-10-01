@@ -10034,8 +10034,8 @@
                 // OVERCAST (owner 2026-10-01: long sun shadows looked silly - even lighting, sun high overhead): faint
                 // soft cast shadows pooled under things, ambient-occlusion-style contact darkness doing most of the work
                 window.forestShadow = { cast: 0.3, contact: 0.42, treeShade: 0.2, treeDark: 0.7, len: 1.0, blur: 7 };
-                window.forestSunElev = 68;
-                window.forestSunSwing = 12;
+                window.forestSunElev = 89;    // straight overhead: shadows pool directly under things, no offset
+                window.forestSunSwing = 0;
                 window.forestOvercast = { sun: 0.55, fill: 0.62 };   // key light x, prop fill intensity
                 // Shadow proxies per model (unit scale, Babylon local axes after import: the Blender +X of the
                 // models lands on Babylon -X). canopy: hc/r/trunk; box: [cx, cz, lx, lz, h] parts; cyl: r, h.
