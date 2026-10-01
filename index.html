@@ -761,7 +761,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=49-chill-dill-swept"></script>
+    <script type="module" src="js/sim.js?v=50-chill-dill-missile"></script>
 
     <script>
         // Build identifier for bug reports (audit #6). Date-based: bump on every player-facing
@@ -1073,14 +1073,17 @@
         // move together — a left/player wizard shifts -MODEL_BACK in X, a right/AI wizard +MODEL_BACK.
         const MODEL_BACK = 0.6;
 
-        // CHILL DILL homing (owner design 2026-10-01; js/sim.js updateNetworkProjectiles): sideways steering
-        // toward the targeted wizard. gain = how hard it wants to close the Z gap (1/s), maxLat = its top sideways
-        // speed (u/s), accel = how fast it can change that (u/s^2). It flies at 36 u/s (a crossing is ~0.55s).
-        // Owner spec: a STILL target is always hit - even caster and target on opposite far edges (11u apart);
-        // the only escapes are constant movement or cancelling it with a cast (or a parry, which sends it homing
-        // back at the caster). Verified in the sim: still target hit from 25/25 positions; a single late dash from
-        // standing still is caught; running back and forth at full speed escapes 18/22. (0.4x of this missed.)
-        const CHILL_DILL_HOMING = { gain: 8.0, maxLat: 18.0, accel: 100.0 };
+        // CHILL DILL homing missile (owner design 2026-10-01; js/sim.js updateNetworkProjectiles). Launches SLOW and
+        // straight (speedStart u/s), ACQUIRES startBefore units short of the centre line, then ramps its forward speed
+        // up to speedMax (speedAccel u/s^2) while steering toward the target wizard: gain = how hard it wants to close
+        // the Z gap (1/s), maxLat = top sideways speed (u/s), accel = how fast that sideways speed can change (u/s^2).
+        // Owner spec (option A of the trade-off): a STILL target is always hit, even edge to edge (11u apart); a single
+        // late dash from standing is caught; constant movement / a well-timed JUKE can escape (the low `accel` is what
+        // lets a reversal make it overshoot); counters: juke, Thunderstorm, parry, or your own Chill.
+        // Tuned by sim search: still 25/25, late dash caught at 5u and 3u, jukes escape 14/20. (Acquiring at the centre
+        // line instead left either no juke escapes or misses on still far-edge targets - physics, not a knob.)
+        const CHILL_DILL_HOMING = { gain: 10.0, maxLat: 34.0, accel: 90.0,
+                                    startBefore: 7.0, speedStart: 14.0, speedMax: 50.0, speedAccel: 90.0 };
         const modelBackFor = (side) => (side === 'left' ? -MODEL_BACK : MODEL_BACK);
 
         // Projectile system (replaces single ball)
@@ -2538,7 +2541,9 @@
                         // Doubles: scale initial launch speed at spawn (gated teamSize===2). x*1===x
                         // in IEEE, so singles/PvP are byte-identical.
                         const projScale = (ctx.consts.teamSize === 2) ? DOUBLES_PROJ_SPEED : 1;
-                        const velX = (combatant.side === 'left' ? a.baseSpeed : -a.baseSpeed) * projScale;
+                        // Homing Chill Dill launches SLOW (it ramps up once it acquires; see js/sim.js).
+                        const launch = (ctx.consts.frostHoming && ctx.consts.frostHoming.speedStart) || a.baseSpeed;
+                        const velX = (combatant.side === 'left' ? launch : -launch) * projScale;
                         const startX = combatant.side === 'left' ? combatant.paddleX + 1 : combatant.paddleX - 1;
                         if (!ctx.isResimulating) {
                             ctx.deps.playSound('frostboltCast', startX, 0.7);
