@@ -9992,6 +9992,7 @@
                     ? new BABYLON.Color3(0.44, 0.44, 0.46) : new BABYLON.Color3(0.44, 0.43, 0.41);
                 let shownKey = null;
                 window.applyStageGround = (stage) => {
+                    if (window._simSkipPres) return;   // match simulator: visuals only
                     const kind = stage === 0 || stage === 4 ? 'core' : stage === 1 || stage === 3 ? 'territory' : null;
                     const defender = stage <= 1 ? 'left' : 'right';
                     const key = kind ? kind + ':' + defender : 'none';
@@ -12694,6 +12695,7 @@
             // Per-hit feedback (replaces the old brick pop): a chunk or two breaks off. Skipped
             // during rollback resims so a replayed hit can't spawn a second set.
             window.castleHit = (isPlayerTower, damage) => {
+                if (window._simSkipPres) return;   // match simulator: visuals only
                 if (typeof isResimulating !== 'undefined' && isResimulating) return;
                 if (window._reduceMotion) return;
                 const side = isPlayerTower ? 'left' : 'right';
@@ -13909,6 +13911,7 @@
                 return mesh;
             };
             window.createImpactFlash = (position, color, size = 1.5) => {
+                if (window._simSkipPres) return;   // match simulator: visuals only
                 const reduce = !!window._reduceMotion;
                 const light = new BABYLON.PointLight("impactLight", new BABYLON.Vector3(position.x, position.y + 2.2, position.z - 1.4), scene);
                 light.diffuse = color;
@@ -15110,7 +15113,9 @@
                 const rightInput = window._dbgAiOff ? defaultInput()   // dbg.aiOff(): AI stands idle
                     : aiJuiceGuard(decideAI(aiView, spFrameCounter, makeAIRng(spFrameCounter ^ AI_RNG_SEED), aiProfile), 'right');
                 window.VolleyboltSim.simulateNetworkFrame(leftInput, rightInput, dt, buildSimCtx());
-                updateMatchPresentation(dt);
+                // Match simulator: skip the visual half of the frame (meshes, trails, particles, HUD). Verified
+                // not to feed the sim by replaying seeds with it on and off (identical round logs + frame counts).
+                if (!window._simSkipPres) updateMatchPresentation(dt);
             }
 
             // --- Overdrive beam lazy-create helpers (one-time, NOT per-frame) ---
@@ -17387,6 +17392,7 @@
                 });
 
                 window.applyStageLighting = (kind, defender) => {
+                    if (window._simSkipPres) return;   // match simulator: visuals only
                     const core = kind === 'core';
                     const c = core ? CORE : OUT;
                     if (core) {
@@ -18059,6 +18065,7 @@
             };
 
             window.createImpactDecal = (position, type = 'burn', direction = null) => {
+                if (window._simSkipPres) return;   // match simulator: visuals only
                 const x = position.x, z = position.z;
                 const layers = [];   // { plane, mat, role }
                 let life = 7;
@@ -22699,6 +22706,7 @@
                 gameState = 'menu'; startGameInProgress = false;   // back-to-back matches: no end screen / menu in between
                 window.startSpectateMatch();
                 specPaused = true;                                 // the live loop must not step it between chunks
+                window._simSkipPres = window._simPresOn ? false : true;   // _simPresOn: dev switch to A/B the skip
                 sim = { seed, frames: 0 };
             };
             const result = () => ({
@@ -22710,6 +22718,7 @@
             const end = () => {
                 if (sfxSaved) { Object.assign(ToneSFX, sfxSaved); sfxSaved = null; }
                 window._simHeadless = false;
+                window._simSkipPres = false;
                 window._simTrace = null;
                 Object.assign(SIM_RULES, SIM_RULES_DEFAULT);
                 if (window._simSeedAI) window._simSeedAI(null);
