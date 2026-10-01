@@ -9400,6 +9400,7 @@
                 window._backdropMirror = !!mirror && tex !== BACKDROPS.forest;
                 window.alignBackdrop();
                 if (window.updateBackdropProxy) updateBackdropProxy(BACKDROPS[kind] ? kind : 'forest', window._backdropMirror);
+                if (window.refreshPropsBackdrop) { setPropsBackdrop(BACKDROPS[kind] ? kind : 'forest'); refreshPropsBackdrop(); }
             };
 
             // ============================================================
@@ -9511,8 +9512,110 @@
                     Object.assign(t, canonMapping(proj, !!mirror));
                     mat.emissiveTexture = t;
                 };
-                window.setBackdropProxyEnabled = (on) => { proxyOn = !!on; for (const m of meshes) m.setEnabled(proxyOn); };
+                // (the 3D-props backdrop, when shown, replaces the painting: the proxy stays off under it)
+                window.setBackdropProxyEnabled = (on) => { proxyOn = !!on; for (const m of meshes) m.setEnabled(proxyOn && !window._propsBackdropActive); };
                 setTimeout(() => window.updateBackdropProxy('forest', false), 0);   // after getEffectiveTableDepth exists
+            }
+
+            // ============================================================
+            // 3D FOREST PROPS (replace the painted forest backdrop on Midfield)
+            // ============================================================
+            // One tree, one pine and one rock (tools/blender/build_props.py) are loaded ONCE and drawn as
+            // thin instances: a whole forest is 3 meshes' worth of draw calls. Placement is a seeded
+            // jittered grid in two bands (past the far rail, and far enough past the near rail that the
+            // canopies never cover the court in the game view), with random yaw / scale. A flat ground sheet
+            // under everything replaces the painting's ground. Because it's real geometry it works from any
+            // camera (TV cam, orbits), so the painting and its proxy step aside while it's shown.
+            // Presentation only - never read by the sim.
+            {
+                const PROP_FILES = { tree: 'tree.glb?v=1', pine: 'pine.glb?v=1', rock: 'rock.glb?v=1' };
+                const protos = {};            // kind -> [meshes baked to world space at the origin]
+                let loaded = 0, want = true, builtFor = null;   // the boot backdrop is the forest
+                const groundMat = new BABYLON.StandardMaterial('forestGroundMat', scene);
+                const gTex = new BABYLON.Texture('textures/grass_field_seamless.png?v=1', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
+                gTex.uScale = 14; gTex.vScale = 14;
+                groundMat.diffuseTexture = gTex;
+                groundMat.diffuseColor = new BABYLON.Color3(0.62, 0.55, 0.42);   // dusk-dimmed, toward the painting's earthy olive
+                groundMat.specularColor = BABYLON.Color3.Black();
+                const ground = BABYLON.MeshBuilder.CreateGround('forestGround', { width: 140, height: 140 }, scene);
+                ground.position.y = -0.08;   // just under the arena floor's top
+                ground.material = groundMat; ground.isPickable = false;
+                ground.setEnabled(false);
+                const rng = (seed) => () => {   // mulberry32: the same forest every load
+                    seed = (seed + 0x6D2B79F5) | 0;
+                    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+                    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+                    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+                };
+                const place = () => {
+                    const halfD = (window.getEffectiveTableDepth ? getEffectiveTableDepth() : 14) / 2;
+                    if (builtFor === halfD) return;
+                    builtFor = halfD;
+                    const R = rng(1337);
+                    const mats = { tree: [], pine: [], rock: [] };
+                    const M = (x, z, yaw, sc, sy) => BABYLON.Matrix.Compose(new BABYLON.Vector3(sc, sc * (sy || 1), sc),
+                        BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, yaw), new BABYLON.Vector3(x, 0, z));
+                    // Trees: far band (z > 0 = up-screen) and near band (z < 0), jittered grid.
+                    const CELL = 3.4;
+                    const band = (z0, z1) => {
+                        for (let z = z0; z < z1; z += CELL) for (let x = -46; x < 46; x += CELL) {
+                            if (R() < 0.12) continue;
+                            const px = x + (R() - 0.5) * CELL * 0.9, pz = z + (R() - 0.5) * CELL * 0.9;
+                            const r = R();
+                            const kind = r < 0.5 ? 'pine' : r < 0.93 ? 'tree' : 'rock';
+                            const sc = kind === 'rock' ? 0.9 + R() * 1.2 : 0.75 + R() * 0.5;
+                            mats[kind].push(M(px, pz, R() * Math.PI * 2, sc, kind === 'rock' ? 0.7 + R() * 0.6 : 1));
+                        }
+                    };
+                    band(halfD + 4.5, halfD + 34);          // far: starts just past the rail's grass fringe
+                    band(-halfD - 34, -halfD - 10.5);       // near: canopies stay below the near rail on screen
+                    // Loose rocks in the open ground between the rails and the treelines.
+                    for (let i = 0; i < 36; i++) {
+                        const far = i % 2 === 0;
+                        const pz = far ? halfD + 1.8 + R() * 2.4 : -halfD - 1.8 - R() * 8;
+                        const px = (R() - 0.5) * 90;
+                        mats.rock.push(M(px, pz, R() * Math.PI * 2, 0.45 + R() * 0.9, 0.6 + R() * 0.6));
+                    }
+                    for (const kind in protos) for (const m of protos[kind]) {
+                        const list = mats[kind];
+                        const buf = new Float32Array(list.length * 16);
+                        list.forEach((mx, i) => mx.copyToArray(buf, i * 16));
+                        m.thinInstanceSetBuffer('matrix', buf, 16, true);
+                        m.alwaysSelectAsActiveMesh = true;   // thin instances span the map: skip per-frame culling
+                    }
+                };
+                const apply = () => {
+                    const on = want && loaded === 3;
+                    if (on) place();
+                    ground.setEnabled(on);
+                    for (const kind in protos) for (const m of protos[kind]) m.setEnabled(on);
+                    window._propsBackdropActive = on;
+                    if (window.setBackdropProxyEnabled) setBackdropProxyEnabled(true);   // re-evaluates against the flag
+                    if (window.backdropLayer) backdropLayer.isEnabled = !on;
+                };
+                for (const kind in PROP_FILES) {
+                    BABYLON.SceneLoader.ImportMeshAsync('', 'models/props/', PROP_FILES[kind], scene).then(res => {
+                        protos[kind] = [];
+                        for (const m of res.meshes) {
+                            if (!m.getTotalVertices || m.getTotalVertices() === 0) continue;
+                            m.setParent(null);
+                            m.bakeCurrentTransformIntoVertices();   // drop the glTF handedness root: matrices are world-space
+                            m.isPickable = false;
+                            if (m.material) {
+                                const mat = m.material;
+                                mat.metallic = 0; mat.roughness = 1; mat.environmentIntensity = 0;
+                            }
+                            m.setEnabled(false);
+                            protos[kind].push(m);
+                        }
+                        res.meshes[0].dispose(false, false);   // the empty __root__
+                        loaded++;
+                        apply();
+                    }).catch(e => console.warn('[props] ' + kind + ' load failed', e));
+                }
+                // kind: the stage backdrop kind ('forest' | 'territory' | 'core'). Only the forest is built so far.
+                window.setPropsBackdrop = (kind) => { want = kind === 'forest'; apply(); };
+                window.refreshPropsBackdrop = () => { builtFor = null; apply(); };
             }
 
             // ============================================================
@@ -17967,7 +18070,7 @@
                         window._tvSavedLayerTex = backdropLayer.texture;
                         window._tvBackdropActive = true;
                         backdropLayer.texture = window.tvBackdropTexture;
-                        backdropLayer.isEnabled = true;
+                        backdropLayer.isEnabled = !window._propsBackdropActive;   // 3D props stage: no painting needed
                     }
                 };
                 const exitTV = () => {
@@ -17984,7 +18087,7 @@
                         window._tvBackdropActive = false;
                         if (window._tvSavedLayerTex) backdropLayer.texture = window._tvSavedLayerTex;
                         window._tvSavedLayerTex = null;
-                        backdropLayer.isEnabled = true;
+                        backdropLayer.isEnabled = !window._propsBackdropActive;
                     }
                 };
                 // SPOTLIGHT CUTAWAY: a soft dithered circle around the Blue wizard punches through Blue's near
