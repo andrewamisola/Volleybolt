@@ -10031,7 +10031,8 @@
                 // Outdoors matched to the core's deep shade (owner: "how far and deep the shadows run"): darker cast +
                 // contact, ground shadows stretched 1.8x, darker shaded sides on the props.
                 // (softened 2026-10-01: 0.82/0.65 over near-black read as black holes; now an even dusk PURPLE)
-                window.forestShadow = { cast: 0.62, contact: 0.32, treeShade: 0.35, treeDark: 0.42, len: 1.8 };
+                window.forestShadow = { cast: 0.62, contact: 0.32, treeShade: 0.35, treeDark: 0.42, len: 1.0 };   // length now comes from the low sun
+                window.forestSunElev = 16;
                 // Shadow proxies per model (unit scale, Babylon local axes after import: the Blender +X of the
                 // models lands on Babylon -X). canopy: hc/r/trunk; box: [cx, cz, lx, lz, h] parts; cyl: r, h.
                 const SHAPE = {
@@ -10066,6 +10067,14 @@
                         // = applyStageLighting's core sun: low daylight through the breach, travelling away from it
                         const sgn = set.mirror ? -1 : 1;
                         return { dir: new BABYLON.Vector3(sgn, -0.62, 0.34).normalize(), intensity: 1.6, diffuse: new BABYLON.Color3(1.0, 0.8, 0.52) };
+                    }
+                    // Outdoors: the stage sun's compass direction, but sitting LOW over the backdrop (window.forestSunElev
+                    // degrees above the horizon; the stage sun is ~35) - a late-dusk sun that rakes long shadows across
+                    // the clearings. Only the backdrop takes it; the court lighting is untouched.
+                    if (!window.forestSunDir) {
+                        const m = midSun.dir, hl = Math.hypot(m.x, m.z) || 1, e = (window.forestSunElev || 16) * Math.PI / 180;
+                        return { dir: new BABYLON.Vector3(m.x / hl * Math.cos(e), -Math.sin(e), m.z / hl * Math.cos(e)),
+                                 intensity: midSun.intensity * 1.15, diffuse: midSun.diffuse.clone() };
                     }
                     return { dir: (window.forestSunDir ? window.forestSunDir.clone() : midSun.dir.clone()).normalize(),
                              intensity: midSun.intensity, diffuse: midSun.diffuse.clone() };
