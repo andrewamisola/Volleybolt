@@ -4525,11 +4525,7 @@
                     // Channeling Overdrive: no parry — the press goes to the sim as the beam-clash mash.
                     if (!waitingToServe && !gameOver && !roundTransitioning) pendingNetInput.parry = true;
                 } else if (!waitingToServe && !gameOver && !roundTransitioning && canParry && parryCallback) {
-                    // Play parry animation on any attempt (3x speed, start at frame 20, lock for 500ms)
-                    if (window.playPlayerAnim) {
-                        playPlayerAnim('parry', false, 500, 3.0, 20);
-                        setTimeout(() => playPlayerAnim('idle', true), 500);
-                    }
+                    // (the parry pose is driven by the animation state machine from the sim's parry window)
                     parryCallback();
                 }
             }
@@ -4635,11 +4631,7 @@
                 // Channeling Overdrive: the parry button is the beam-clash mash.
                 if (!waitingToServe && !gameOver && !roundTransitioning) pendingNetInput.parry = true;
             } else if (!waitingToServe && !gameOver && !roundTransitioning && canParry && parryCallback) {
-                if (window.playPlayerAnim) {
-                    playPlayerAnim('parry', false, 500, 3.0, 20);
-                    setTimeout(() => playPlayerAnim('idle', true), 500);
-                }
-                parryCallback();
+                parryCallback();   // the parry pose follows the sim's parry window (animation state machine)
             }
         }
 
@@ -5174,11 +5166,7 @@
                 return;
             }
             if (!waitingToServe && !gameOver && !roundTransitioning && canParry && parryCallback) {
-                if (window.playPlayerAnim) {
-                    playPlayerAnim('parry', false, 500, 3.0, 20);
-                    setTimeout(() => playPlayerAnim('idle', true), 500);
-                }
-                parryCallback();
+                parryCallback();   // the parry pose follows the sim's parry window (animation state machine)
             }
         });
 
@@ -10610,8 +10598,13 @@
                             if (B.floor && B.floor.scaling.x !== 1) B.floor.scaling.set(1, 1, 1);
                         }
                         // PARRY RGB chromatic shake — shield-local: the R/G/B ghosts separate + jitter, then fade.
-                        const PARRY_MS = 200;
-                        const pf = B.parryFlashUntil > t ? (B.parryFlashUntil - t) / PARRY_MS : 0;
+                        // Lasts EXACTLY the parry window: read from the sim's parry state (full on the press,
+                        // fading to 0 as the window's 15 frames run out; gone the moment the parry resolves).
+                        // parryFlashUntil remains for the short beam-block waver kick (wall-clock, 80ms).
+                        const PS = pvpParryState[B.combatantKey];
+                        const pfWin = (PS && PS.active && parryWindow > 0) ? Math.max(0, Math.min(1, PS.timer / parryWindow)) : 0;
+                        const pfKick = B.parryFlashUntil > t ? (B.parryFlashUntil - t) / 80 : 0;
+                        const pf = Math.max(pfWin, Math.min(1, pfKick));
                         if (pf > 0 && B.ghosts && !window._reduceMotion) {   // chromatic shake off under Reduce Motion
                             const amp = 0.28 * pf;             // how far the channels split (world units)
                             const jit = 0.07 * pf;             // shake jitter
@@ -10649,10 +10642,9 @@
                     if (B) B.flashUntil = performance.now() + 170;
                 };
                 // Parry tell: fire the shield-local RGB chromatic shake on just that side's shield.
-                window.flashShieldOnParry = (side) => {
-                    const B = barrierForSide(side);
-                    if (B) B.parryFlashUntil = performance.now() + 200;
-                };
+                // (The shake itself now follows the sim's parry window every frame - see the barrier loop;
+                // this hook stays for callers but no longer runs its own clock.)
+                window.flashShieldOnParry = (side) => {};
 
                 window.playerBlockBarrier = playerBarrier;
                 window.aiBlockBarrier     = aiBarrier;
@@ -10997,8 +10989,11 @@
                     return;
                 }
 
-                // Don't restart same animation if already playing
-                if (combatant.currentAnim === name && anim.isPlaying) return;
+                // Don't restart same animation if already playing. A PLAY-ONCE clip that already ran stays
+                // on its last frame (e.g. the round-loss defeat: the wizard stays on the ground) instead of
+                // being restarted by the per-frame state machine - unless the loop mode changed.
+                if (combatant.currentAnim === name && (anim.isPlaying || (!loop && combatant._animLoop === false))) return;
+                combatant._animLoop = !!loop;
 
                 // Log animation changes
                 if (lastPlayedAnim[slotKey] !== name) {
@@ -11015,6 +11010,18 @@
                 combatant.currentAnim = name;
             }
             window.playAnim = playAnim;
+            // Successful parry: a quick release flourish, held through the state machine like a cast release.
+            window.playParryRelease = (c) => {
+                if (!c || !c.animations) return;
+                const name = c.animations['parry_release'] ? 'parry_release' : 'cast_release';
+                const anim = c.animations[name];
+                if (!anim) return;
+                c.playingCastRelease = true;
+                if (c.currentAnim === name) { anim.stop(); c.currentAnim = null; }   // restart if it's still playing
+                playAnim(c, name, false);
+                anim.onAnimationGroupEndObservable.clear();
+                anim.onAnimationGroupEndObservable.addOnce(() => { c.playingCastRelease = false; });
+            };
 
             // Alias for backwards compatibility
             window.combatantPlayAnim = (combatant, name, loop = true) => {
@@ -11053,7 +11060,7 @@
                     return;
                 }
                 if (combatant.roundResult === 'defeat') {
-                    playAnim(combatant, 'defeat');
+                    playAnim(combatant, combatant.animations['defeat_fall'] ? 'defeat_fall' : 'defeat', false);   // once, then hold: stays down
                     return;
                 }
 
@@ -11063,6 +11070,16 @@
                 if (combatant._blockerWavering) {
                     playAnim(combatant, 'defeat');
                     return;
+                }
+
+                // 1c. Parry: the pose plays exactly while this wizard's parry window is live (the sim's
+                //     state - same for every wizard, human or AI), and ends with it.
+                {
+                    const ps = pvpParryState[combatant.side + (combatant.position === 'back' ? 'Back' : '')];
+                    if (ps && ps.active) {
+                        if (combatant.currentAnim !== 'parry') playAnim(combatant, 'parry', false);
+                        return;
+                    }
                 }
 
                 // 2. Cast release (let it finish)
@@ -12134,9 +12151,37 @@
                                         const skip = Math.round((rel.to - rel.from) * 0.22);
                                         rel.normalize(rel.from + skip, rel.to);
                                         rel.speedRatio = 2.2;   // snappy release
-                                        // Parry reuses the (distinct) release clip.
-                                        target.animations['parry'] = rel;
-                                        if (animStore) animStore['parry'] = rel;
+                                        // Parry: its OWN copy of the release clip, sped to play out in exactly the parry
+                                        // window (PARRY_ACTIVE_FRAMES at 60Hz), so casts keep the release's speed.
+                                        let parryClip = rel;
+                                        try {
+                                            parryClip = rel.clone(rel.name + '_parry');
+                                            const ta = parryClip.targetedAnimations[0];
+                                            const fps = (ta && ta.animation && ta.animation.framePerSecond) || 60;
+                                            const clipSecs = (parryClip.to - parryClip.from) / fps;
+                                            parryClip.speedRatio = clipSecs / (PARRY_ACTIVE_FRAMES / 60);
+                                        } catch (e) { parryClip = rel; }
+                                        target.animations['parry'] = parryClip;
+                                        if (animStore) animStore['parry'] = parryClip;
+                                        // Parry CATCH feedback: a quick release flourish (its own copy, snappier than a cast's).
+                                        let catchClip = rel;
+                                        try { catchClip = rel.clone(rel.name + '_parryCatch'); catchClip.speedRatio = 3.0; } catch (e) { catchClip = rel; }
+                                        target.animations['parry_release'] = catchClip;
+                                        if (animStore) animStore['parry_release'] = catchClip;
+                                    }
+                                    const dft = target.animations['defeat'];
+                                    if (dft) {
+                                        // Round-loss fall: its own copy of the defeat clip, sped to reach the
+                                        // on-the-ground end pose in ~2.2s - inside the results pause (150 frames) -
+                                        // where playAnim holds it. The beam-block waver keeps the original speed.
+                                        try {
+                                            const fall = dft.clone(dft.name + '_fall');
+                                            const ta = fall.targetedAnimations[0];
+                                            const fps = (ta && ta.animation && ta.animation.framePerSecond) || 60;
+                                            fall.speedRatio = Math.max(1, ((fall.to - fall.from) / fps) / 2.2);
+                                            target.animations['defeat_fall'] = fall;
+                                            if (animStore) animStore['defeat_fall'] = fall;
+                                        } catch (e) {}
                                     }
                                     Object.values(target.animations).forEach(a => { if (a && a.stop) a.stop(); });
                                     if (target.animations['idle']) {
@@ -24476,7 +24521,11 @@
             // parried, forwarded from sim.js's checkPvPParryHitsForSide for combat-log
             // attribution only (see parryProjectile's own comment). Old 3-arg call sites (the
             // shield/juice auto-parry paths) pass undefined -> null -> byte-identical.
-            parryProjectile: (p, who, aimDir, casterC) => { if (window.parryProjectile) window.parryProjectile(p, who, aimDir, casterC); },
+            parryProjectile: (p, who, aimDir, casterC) => {
+                if (window.parryProjectile) window.parryProjectile(p, who, aimDir, casterC);
+                // Catch feedback: the parrying wizard throws a quick release (presentation only; once, not per resim)
+                if (casterC && !(typeof isResimulating !== 'undefined' && isResimulating) && window.playParryRelease) window.playParryRelease(casterC);
+            },
             updateFireballScale: (p) => { if (window.updateFireballScale) window.updateFireballScale(p); },
             onShieldBlock: (side) => { if (window.flashShieldOnBlock) window.flashShieldOnBlock(side); },  // presentation-only hit-flash
             // Cast pushback on a paddle block during a cast (deterministic sim state: decrements
@@ -26762,6 +26811,7 @@
                 if (!combatant) return;
 
                 combatant.playingCastRelease = true;
+                if (combatant.currentAnim === 'cast_release') combatant.currentAnim = null;   // a back-to-back cast restarts it
                 window.playAnim(combatant, 'cast_release', false);
 
                 // Clear flag when animation ends (state machine will return to idle)
