@@ -22654,6 +22654,8 @@
             const stats = document.getElementById('careerList'), achList = document.getElementById('achList');
             const tS = document.getElementById('careerTabStats'), tA = document.getElementById('careerTabAch');
             if (!stats || !achList || !tS || !tA) return;
+            // Already on that tab (key autorepeat / gamepad hold-to-repeat): keep this visit's "new" dots.
+            if (achList.hidden === !ach && tA.classList.contains('active') === ach) return;
             stats.hidden = ach; achList.hidden = !ach;
             tS.classList.toggle('active', !ach); tA.classList.toggle('active', ach);
             tS.setAttribute('aria-selected', String(!ach)); tA.setAttribute('aria-selected', String(ach));
@@ -29596,11 +29598,14 @@
             const stageBeforeRound = currentStage;   // the transition slides toward whichever end we moved
             const winnerOwner = winnerSide === 'left' ? 'player' : 'ai';
             const localSide = getLocalSide();
-            const localWon = gameMode === 'pvp' ? (winnerSide === localSide) : (winnerOwner === 'player');
+            // meSide: the side of OUR combatant (isLocalPlayer) — right for every seat, incl. an online-doubles
+            // guest seated on Blue, where host-based getLocalSide() is wrong. null: spectator, nothing to count.
+            const meSide = window.Achievements ? Achievements.localSide() : null;
+            const localWon = meSide ? (winnerSide === meSide)
+                : gameMode === 'pvp' ? (winnerSide === localSide) : (winnerOwner === 'player');
             // Spectating: the viewer has no side, so every ending gets the WIN presentation (victory
             // fanfare, no defeat styling; the title names the winning team) and stage messages name who took it.
             const presWon = spectating || localWon;
-            const meSide = window.Achievements ? Achievements.localSide() : null;   // null: spectator, nothing to count
             // A territory falls when the ATTACKER wins there (Blue at Red Territory, Red at Blue Territory).
             const territoryFalls = (SIM_RULES.lanes === 'moba' || SIM_RULES.lanes === 'fresh')
                 && ((currentStage === 3 && winnerSide === 'left') || (currentStage === 1 && winnerSide === 'right'));
