@@ -9554,6 +9554,7 @@
                     color: [0.10, 0.07, 0.13], max: 0.85,
                     dim: 0.72, desat: 0.22,    // the murky dusk grade (owner likes it); depth comes from the deep shadows
                     nearHaze: 1.0,             // near side takes its far-side mirror's scene fog (1 = exact match)
+                    farHaze: 0,                // far-side fog for sets whose props skip scene fog (core)
                 };
                 const EERIE = window.eerieFog = { ...EERIE_DEFAULT };   // each set overrides some (SETS[..].eerie)
                 // + JUICE TINT: the old painted backdrop dimmed/tinted toward the beaming team's colour (blue / red /
@@ -9611,7 +9612,7 @@
                     }
                     // flame meshes flicker with them
                     const f = 0.85 + 0.15 * Math.sin(t * 11.3) * Math.sin(t * 4.7 + 1.1);
-                    for (const m of flameMats) m.emissiveColor.set(1.0 * f, 0.62 * f, 0.26 * f);
+                    for (const m of flameMats) { m.emissiveColor.set(1.0 * f, 0.62 * f, 0.26 * f); m.albedoColor.set(1.0 * f, 0.72 * f, 0.32 * f); }
                 });
                 window.eerieLightGain = 1.0;
                 class EerieFogPlugin extends BABYLON.MaterialPluginBase {
@@ -9643,7 +9644,7 @@
                         ubo.updateFloat4('eerieF', fc.r, fc.g, fc.b, EERIE.nearHaze);
                         const cp = scene.activeCamera ? scene.activeCamera.globalPosition : BABYLON.Vector3.Zero();
                         ubo.updateFloat4('eerieG', cp.x, cp.y, cp.z, 0);
-                        ubo.updateFloat4('eerieH', scene.fogStart, scene.fogEnd, 0, 0);
+                        ubo.updateFloat4('eerieH', scene.fogStart, scene.fogEnd, EERIE.farHaze || 0, 0);
                         for (let i = 0; i < EERIE_NL * 2; i++) {
                             const o = i * 4;
                             ubo.updateFloat4('eerieL' + i, eerieLights[o], eerieLights[o + 1], eerieLights[o + 2], eerieLights[o + 3]);
@@ -9710,6 +9711,12 @@
                                     float eMf = clamp((eerieH.y - distance(eMir, eerieG.xyz)) / eFr, 0.0, 1.0);
                                     float eK2 = eOwn > 0.001 ? min(1.0, eMf / eOwn) : 1.0;
                                     ${c}.rgb = mix(eerieF.rgb, ${c}.rgb, mix(1.0, eK2, eerieF.w));
+                                }
+                                // FAR HAZE (sets whose props skip scene fog, e.g. the core): the far side still recedes into
+                                // the fog colour, ramping in past the far rail
+                                if (vPositionW.z > 0.0 && eerieH.z > 0.0) {
+                                    float eFz = clamp((vPositionW.z - eerieA.x + 4.0) / 6.0, 0.0, 1.0);
+                                    ${c}.rgb = mix(${c}.rgb, eerieF.rgb, eFz * eerieH.z);
                                 }
                                 // Juice: the backdrop dims + tints toward the beaming team
                                 ${c}.rgb *= eerieT.rgb;
@@ -10439,7 +10446,7 @@
                         // breach daylight cuts across it in warm streaks; fine cracks in the floor.
                         // (tried propFog false + stoneFill to un-fog the walls - owner prefers the fogged look; depth comes
                         // from baked AO + banner shadows instead)
-                        eerie: { color: [0.10, 0.045, 0.15], max: 0.6, z0: 7, dim: 0.8, desat: 0.08, nearHaze: 0.3 }, ground: 'pave', glow: 'breach',
+                        eerie: { color: [0.10, 0.045, 0.15], max: 0.6, z0: 7, dim: 0.8, desat: 0.08, nearHaze: 0.3, farHaze: 0.42 }, ground: 'pave', glow: 'breach',
                         // the hall walls sit in shade, far darker than the lit floor (owner): a dark purple-grey base and
                         // no scene fog on them (the purple fog lifted them back up to a flat lavender)
                         stoneDim: [0.28, 0.26, 0.32], propFog: false,
@@ -10630,10 +10637,13 @@
                                 mat.fogEnabled = true;
                                 if (mat.albedoTexture) mat.albedoTexture.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);   // = styleStructMat
                                 if (mat.name === 'M_banner') mat.emissiveColor = new BABYLON.Color3(0.16, 0.025, 0.02);   // cloth catches the firelight
-                                if (mat.name === 'M_sigil') mat.emissiveColor = new BABYLON.Color3(0.18, 0.13, 0.02);
+                                if (mat.name === 'M_sigil' || mat.name === 'M_sigil_dark') m.isVisible = false;   // plain banners (owner)
                                 if (mat.name === 'M_flame' || mat.name === 'M_coal') {
                                     // fire: self-lit, flickers (see the frame hook), casts no shadow
+                                    // pure fire like the fireball: unlit, full-bright, never fogged
                                     mat.unlit = true;
+                                    mat.fogEnabled = false;
+                                    mat.albedoColor = new BABYLON.Color3(1.0, 0.7, 0.3);
                                     mat.emissiveColor = new BABYLON.Color3(1.0, 0.62, 0.26);
                                     if (mat.name === 'M_flame') flameMats.push(mat);
                                     m._noShadowCast = true;
