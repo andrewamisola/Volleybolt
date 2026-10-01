@@ -9530,8 +9530,11 @@
             {
                 const PROP_FILES = {
                     tree: 'tree.glb?v=1', pine: 'pine.glb?v=1', rock: 'rock.glb?v=1',
-                    stump: 'stump.glb?v=1', guard_tower: 'guard_tower.glb?v=1', hall_wall: 'hall_wall.glb?v=1',
-                    banner: 'banner.glb?v=1', brazier: 'brazier.glb?v=1', rubble: 'rubble.glb?v=1', wall_broken: 'wall_broken.glb?v=1',
+                    // v2: the gatehouse's own textured stone (M_keep tower_stone / M_wall castle_wall, same texel size)
+                    stump: 'stump.glb?v=2', guard_tower: 'guard_tower.glb?v=2', hall_wall: 'hall_wall.glb?v=2',
+                    banner: 'banner.glb?v=2', brazier: 'brazier.glb?v=2', rubble: 'rubble.glb?v=2', wall_broken: 'wall_broken.glb?v=2',
+                    // crenellated curtain wall (tiles every 4u) + its two end pieces that tuck into a guard tower
+                    curtain_wall: 'curtain_wall.glb?v=1', curtain_wall_end: 'curtain_wall_end.glb?v=1', curtain_wall_end_r: 'curtain_wall_end_r.glb?v=1',
                 };
                 const KINDS = Object.keys(PROP_FILES);
                 window.refreshEerieFog = () => scene.markAllMaterialsAsDirty(BABYLON.Constants.MATERIAL_AllDirtyFlag);
@@ -9906,6 +9909,9 @@
                     brazier: { box: [[0, 0, 0.8, 0.8, 1.3]], ao: 0.7 },
                     rubble: { cyl: { r: 0.75, h: 0.55 }, ao: 1.0 },
                     banner: {},
+                    curtain_wall: { box: [[0, 0, 4.0, 1.2, 4.2]], ao: 0 },
+                    curtain_wall_end: { box: [[0, 0, 4.0, 1.2, 4.2]], ao: 0 },
+                    curtain_wall_end_r: { box: [[0, 0, 4.0, 1.2, 4.2]], ao: 0 },
                 };
                 const BOX_AO = 0.9;   // contact darkness band hugging walls / pillars
 
@@ -10129,7 +10135,7 @@
                     // each with its curtain wall running off-screen.
                     territory: {
                         eerie: {}, ground: 'grass', paveFrom: 5.5,
-                        build: (R, add, halfD, fires) => {
+                        build: (R, add, halfD, fires, s) => {
                             forestBands(R, add, halfD, -99, 2.5);
                             looseRocks(R, add, halfD, -99, 4, 36);
                             railBushes(R, add, halfD, -99, 3);
@@ -10148,12 +10154,16 @@
                             // curtain wall running back to the gate. (The far one can't stand at the corner - the gatehouse
                             // would hide it - so both stand out on the forecourt.)
                             const towers = [{ x: 11, z: halfD + 6.5 }, { x: 11, z: -halfD - 10.8 }];
-                            const wallKind = protos.curtain_wall && protos.curtain_wall.length ? 'curtain_wall' : 'hall_wall';
+                            // The wall's first piece is an END piece whose flat end tucks 1.4u inside the drum (centre 3.4u
+                            // from the tower's axis); plain 4u modules follow. Which end piece depends on which way the wall
+                            // runs on screen (the models' Blender +X lands on Babylon -X): toward +x -> curtain_wall_end_r.
+                            const endKind = s > 0 ? 'curtain_wall_end_r' : 'curtain_wall_end';
                             for (const T of towers) {
                                 add('guard_tower', T.x, T.z, 0, 1, 1, 0, true);
                                 // its torch (camera side, beside the banner) - a fixed fire
                                 fires.push({ x: T.x - 1.0, y: 3.2, z: T.z - 2.3, reach: 8, col: [1.0, 0.55, 0.2], w: 0.55 });
-                                for (let x = T.x + 3.6; x < 46; x += 4) add(wallKind, x, T.z, 0, 1, 1, 0, true);
+                                add(endKind, T.x + 3.4, T.z, 0, 1, 1, 0, true);
+                                for (let x = T.x + 7.4; x < 46; x += 4) add('curtain_wall', x, T.z, 0, 1, 1, 0, true);
                             }
                         },
                     },
@@ -10171,7 +10181,7 @@
                             for (const zw of [zF, zN]) {
                                 for (let x = BX + 4; x < 48; x += 4) add('hall_wall', x, zw, 0, 1, 1, 0, true);
                                 // the broken end, crumbling toward the breach
-                                add('wall_broken', BX + 2, zw, 0, 1, 1, 0, true);
+                                add('wall_broken', BX + 2, zw, 0, 1, 1, 0, false);   // not 'facing': mirrored it turns to point at the breach
                                 for (let i = 0; i < 4; i++) add('rubble', BX - 0.5 - R() * 4, zw + (R() - 0.5) * 3, R() * Math.PI * 2, 0.8 + R() * 0.6, 0.8 + R() * 0.5);
                                 // banners on the camera-facing face, every other bay
                                 for (let x = BX + 8; x < 48; x += 8) add('banner', x, zw - 0.45, 0, 1, 1, 2.05, true);
@@ -10278,7 +10288,7 @@
                         recs.push({ kind, x: wx, z, yaw: wyaw, sc, sy: sy || 1, y: y || 0 });
                     };
                     const fires = [];
-                    set.def.build(R, add, halfD, fires);
+                    set.def.build(R, add, halfD, fires, s);
                     setLights = fires.map(f => ({ ...f, x: s * f.x }));
                     Object.assign(EERIE, EERIE_DEFAULT, set.def.eerie);
                     const S = sunFor(set);
@@ -10331,6 +10341,7 @@
                             if (m.material) {
                                 const mat = m.material;
                                 mat.metallic = 0; mat.roughness = 1; mat.environmentIntensity = 0;
+                                if (mat.albedoTexture) mat.albedoTexture.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);   // = styleStructMat
                                 if (mat.name === 'M_banner') mat.emissiveColor = new BABYLON.Color3(0.16, 0.025, 0.02);   // cloth catches the firelight
                                 if (mat.name === 'M_sigil') mat.emissiveColor = new BABYLON.Color3(0.18, 0.13, 0.02);
                                 if (mat.name === 'M_flame' || mat.name === 'M_coal') {

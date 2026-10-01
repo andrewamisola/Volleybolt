@@ -1,5 +1,5 @@
 """Build the SECOND batch of storybook PROPS (stump, guard_tower, hall_wall, banner, brazier, rubble,
-wall_broken) in Blender and export them as small GLBs.
+wall_broken, curtain_wall, curtain_wall_end, curtain_wall_end_r) in Blender and export them as small GLBs.
 
 They replace the painted backdrops on the territory stage (textures/backdrop_territory.jpg: flagstone half
 with round guard towers + stumps) and the core stage (textures/backdrop_core.jpg: stone hall with pillared
@@ -10,14 +10,23 @@ Run from the repo root:
     "C:\\Program Files\\Blender Foundation\\Blender 5.0\\blender.exe" -b --factory-startup ^
         --python tools/blender/build_props2.py
 
-Writes models/props/{stump,guard_tower,hall_wall,banner,brazier,rubble,wall_broken}.glb (+ props2.blend).
+Writes models/props/{stump,guard_tower,hall_wall,banner,brazier,rubble,wall_broken,curtain_wall,
+curtain_wall_end,curtain_wall_end_r}.glb (+ props2.blend).
 
 Conventions (same as build_props.py / build_gatehouse.py): Blender +Z up (glTF export_yup converts),
 origin on the ground at the prop's base centre (banner: TOP centre of its rod), faces authored CCW from
-outside + flat shaded, materials looked up BY NAME in the game, roughness 1, metallic 0, no textures,
-flat base colours x COLOR_0 vertex-colour multiplier (baked ambient occlusion: dark at the base and in
-crevices, light on tops). Things that "face the camera" face Blender +Y.
-Materials: M_bark M_stumpcut | M_stone M_stone_light M_iron M_banner M_sigil M_sigil_dark M_flame M_coal.
+outside, materials looked up BY NAME in the game, roughness 1, metallic 0, x COLOR_0 vertex-colour
+multiplier (baked ambient occlusion: dark at the base and in crevices). Things that "face the camera"
+face Blender +Y.
+
+STONE IS TEXTURED exactly like tools/blender/build_gatehouse.py so props and the real gatehouse read as the
+same masonry side by side: M_keep = textures/tower_stone.png (round towers; lighter coping/caps),
+M_wall = textures/castle_wall.png (walls, pillars, rubble). Texel density = 1 texture repeat per TILE = 1.6
+world units (same constant as the gatehouse). Every face carries explicit UVs: lathe surfaces get (u along
+the circumference, v = z / TILE), boxes / prisms get world-scale planar UVs (vertical faces: u along the
+face, v = z / TILE; horizontal faces: x, y). Wall modules that tile every 4 units use a u phase picked so the
+64px brick texture is continuous across the 4.0 seam (2.5 repeats per module).
+Materials: M_bark M_stumpcut | M_keep M_wall (textured) | M_iron M_banner M_sigil M_sigil_dark M_flame M_coal.
 """
 import bpy, bmesh, math, random, os
 from mathutils import Vector, Euler
@@ -37,16 +46,34 @@ def lin(hexstr):
     return (out[0], out[1], out[2], 1.0)
 
 
-def make_mat(name, color):
+TEX_DIR = os.path.join(ROOT, 'textures')
+TILE = 1.6                      # world units per stone texture repeat -- SAME as build_gatehouse.py
+SEAM_U = 0.0547                 # u phase that makes castle_wall.png continuous across a 4.0 module seam
+
+
+def load_image(name):
+    img = bpy.data.images.load(os.path.join(TEX_DIR, name))
+    img.pack()
+    return img
+
+
+def make_mat(name, color=(1, 1, 1, 1), image=None):
     m = bpy.data.materials.new(name)
     if bpy.app.version < (5, 0, 0):
         m.use_nodes = True
-    bsdf = next(n for n in m.node_tree.nodes if n.type == 'BSDF_PRINCIPLED')
-    bsdf.inputs['Base Color'].default_value = color
+    nt = m.node_tree
+    bsdf = next(n for n in nt.nodes if n.type == 'BSDF_PRINCIPLED')
     bsdf.inputs['Roughness'].default_value = 1.0
     bsdf.inputs['Metallic'].default_value = 0.0
     if 'Specular IOR Level' in bsdf.inputs:
         bsdf.inputs['Specular IOR Level'].default_value = 0.0
+    if image is not None:                                  # same wiring as build_gatehouse.make_mat
+        tex = nt.nodes.new('ShaderNodeTexImage')
+        tex.image = image
+        tex.interpolation = 'Closest'
+        nt.links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
+    else:
+        bsdf.inputs['Base Color'].default_value = color
     m.diffuse_color = color
     return m
 
@@ -54,8 +81,8 @@ def make_mat(name, color):
 PALETTE = {
     'M_bark': '#6b4a30',         # stump sides (same as the trees)
     'M_stumpcut': '#c79a62',     # pale cut wood on top
-    'M_stone': '#a49b8e',        # warm grey flagstone / wall block (game darkens with dusk fog)
-    'M_stone_light': '#c0b7a8',  # cap / merlon top / coping
+    'M_keep': '#a8a49a',         # tower_stone.png (round towers, coping/caps) -- colour only used as a fallback
+    'M_wall': '#8a8070',         # castle_wall.png (walls, pillars, rubble)
     'M_iron': '#4b4a52',         # sconce, brazier bowl, banner rod
     'M_banner': '#a22b2d',       # banner red
     'M_sigil': '#e2b441',        # gold crown
@@ -66,8 +93,12 @@ PALETTE = {
 MATS = list(PALETTE)
 
 
+STONE_IMG = {'M_keep': 'tower_stone.png', 'M_wall': 'castle_wall.png'}
+
+
 def build_materials():
-    return {k: make_mat(k, lin(v)) for k, v in PALETTE.items()}
+    return {k: make_mat(k, lin(v), load_image(STONE_IMG[k]) if k in STONE_IMG else None)
+            for k, v in PALETTE.items()}
 
 
 # ---------------------------------------------------------------- mesh accumulator
@@ -84,21 +115,40 @@ def newell(pts):
 class MB:
     """Verts + faces, each face tagged with (material, shade-kind). ao_h = height of the ground-AO ramp."""
 
-    def __init__(self, ao_h=1.0):
-        self.v, self.f, self.mat, self.kind = [], [], [], []
+    def __init__(self, ao_h=1.0, xoff=0.0, ushift=0.0):
+        self.v, self.f, self.mat, self.kind, self.uv, self.smooth = [], [], [], [], [], []
         self.ao_h = ao_h
+        self.xoff, self.ushift = xoff, ushift      # planar-UV x offset / u phase (tiling wall modules)
 
     def vert(self, co):
         self.v.append(Vector(co))
         return len(self.v) - 1
 
-    def face(self, idx, mat, kind, want=None):
+    def auto_uv(self, idx):
+        """World-scale planar UVs, 1 texture repeat per TILE (the gatehouse's density). Vertical faces: u runs
+        along the face (left-to-right as seen from outside), v = z / TILE so brick courses stay horizontal at
+        world height; horizontal faces: (x, y). Same idea as build_gatehouse.quad_planar but rotation-proof."""
+        pts = [self.v[i] for i in idx]
+        n = newell(pts)
+        if n.length < 1e-9:
+            return [(0.0, 0.0)] * len(idx)
+        n.normalize()
+        if abs(n.z) > 0.7:
+            return [((p.x + self.xoff) / TILE + self.ushift, p.y / TILE) for p in pts]
+        t = Vector((-n.y, n.x, 0.0)).normalized()
+        return [(((p.x + self.xoff) * t.x + p.y * t.y) / TILE + self.ushift, p.z / TILE) for p in pts]
+
+    def face(self, idx, mat, kind, want=None, uv=None, smooth=False):
         idx = list(idx)
         if want is not None and newell([self.v[i] for i in idx]).dot(Vector(want)) < 0:
             idx.reverse()
+            if uv is not None:
+                uv = uv[::-1]
         self.f.append(idx)
         self.mat.append(MATS.index(mat))
         self.kind.append(kind)
+        self.uv.append(uv if uv is not None else self.auto_uv(idx))
+        self.smooth.append(smooth)
 
     def tri_count(self):
         return sum(len(f) - 2 for f in self.f)
@@ -136,9 +186,11 @@ def box(m, base, size, side, top=None, rotz=0.0, rot=None, pivot='base', taper=1
     return hexa(m, P, side, top, skip)
 
 
-def lathe(m, rings, sides, band, rot=0.0, center=(0.0, 0.0), top=None, bottom=None):
+def lathe(m, rings, sides, band, rot=0.0, center=(0.0, 0.0), top=None, bottom=None, smooth=False):
     """Revolved faceted shell. rings [(z, r)] (a band's outward side is the side facing away from the axis when
-    z increases); band = (mat, kind) or a per-band list; top/bottom = (mat, kind) n-gon caps."""
+    z increases); band = (mat, kind) or a per-band list; top/bottom = (mat, kind) n-gon caps.
+    UVs (as build_gatehouse.lathe): u along the circumference at TILE world units per repeat (rounded to a whole
+    number of repeats per band so the wrap seam is invisible, <5% density change), v = z / TILE."""
     cx, cy = center
     rs = []
     for (z, r) in rings:
@@ -146,9 +198,14 @@ def lathe(m, rings, sides, band, rot=0.0, center=(0.0, 0.0), top=None, bottom=No
                    for i in range(sides)])
     for k in range(len(rs) - 1):
         b = band[k] if isinstance(band, list) else band
+        r_avg = max((rings[k][1] + rings[k + 1][1]) / 2, 0.3)
+        circ = max(1, round(TAU * r_avg / TILE))
+        v0, v1 = rings[k][0] / TILE, rings[k + 1][0] / TILE
         for i in range(sides):
             j = (i + 1) % sides
-            m.face([rs[k][i], rs[k][j], rs[k + 1][j], rs[k + 1][i]], b[0], b[1])
+            u0, u1 = circ * i / sides, circ * (i + 1) / sides
+            m.face([rs[k][i], rs[k][j], rs[k + 1][j], rs[k + 1][i]], b[0], b[1],
+                   uv=[(u0, v0), (u1, v0), (u1, v1), (u0, v1)], smooth=smooth)
     if top:
         m.face(rs[-1], top[0], top[1])
     if bottom:
@@ -174,26 +231,23 @@ def ssmooth(t):
 
 
 # ---------------------------------------------------------------- vertex-colour shading
+STONE_KINDS = ('stone', 'stone_top', 'rubble')
+
+
 def shade(kind, nrm, co, tint, ao_h):
-    """RGB multiplier in [0, 1]: ground AO ramp (dark base) x top-light / underside-dark x per-face tint."""
-    up = nrm.z * 0.5 + 0.5
-    ao = 0.52 + 0.48 * ssmooth(co.z / ao_h)
-    tv = 1.0 + 0.16 * (tint - 0.5)
-    if isinstance(kind, tuple):                                    # ('blk', z0, z1): masonry course gradient
-        _, z0, z1 = kind
-        c = 0.70 + 0.30 * ssmooth((co.z - z0) / max(1e-4, z1 - z0))
-        v = ao * c * (0.84 + 0.16 * up) * tv
-        return (v, v * 0.985, v * 0.96)
-    if kind == 'stone':
-        v = ao * (0.80 + 0.20 * up) * tv
+    """RGB multiplier in [0, 1]. Stone uses the gatehouse's formula (dark ground-AO ramp up to ~1.7, +-8% per-face
+    variation, slight warm tint) so the textured props sit at the same brightness as the real structures."""
+    if kind in STONE_KINDS:
+        ramp = max(0.5, min(1.7, ao_h))
+        v = 0.62 + 0.38 * min(1.0, co.z / ramp)
+        v *= (0.97 + 0.05 * tint) if kind == 'stone_top' else (0.88 + 0.16 * tint)
+        if kind == 'rubble':
+            v *= 0.85
         if nrm.z < -0.5:
             v *= 0.65
-        return (v, v * 0.985, v * 0.96)
-    if kind == 'stone_top':                                        # light cap material: keep it bright
-        v = (0.62 + 0.38 * ssmooth(co.z / ao_h)) * (0.90 + 0.10 * up) * (1.0 + 0.08 * (tint - 0.5))
-        if nrm.z < -0.5:
-            v *= 0.62
-        return (v, v * 0.985, v * 0.96)
+        return (min(1.0, v * (1.0 + 0.03 * tint)), min(1.0, v), min(1.0, v * (0.95 - 0.04 * tint)))
+    up = nrm.z * 0.5 + 0.5
+    tv = 1.0 + 0.16 * (tint - 0.5)
     if kind == 'iron':
         v = (0.70 + 0.30 * up) * (0.7 + 0.3 * ssmooth(co.z / ao_h)) * tv
         return (v, v, v * 1.02)
@@ -224,18 +278,22 @@ def to_object(name, m, mats, seed):
     me.from_pydata([tuple(v) for v in m.v], [], m.f)
     for old in used:
         me.materials.append(mats[MATS[old]])
+    me.uv_layers.new(name='UVMap')
     me.color_attributes.new('Col', 'BYTE_COLOR', 'CORNER')
     me.update()
+    assert len(me.polygons) == len(m.f), f'{name}: degenerate faces were dropped'
     rng = random.Random(seed)
-    cols = []
+    cols, uvs = [], []
     for pi, p in enumerate(me.polygons):
         tint = rng.random()
         nrm = p.normal
-        for li in p.loop_indices:
+        for j, li in enumerate(p.loop_indices):
+            uvs += m.uv[pi][j]
             c = shade(m.kind[pi], nrm, m.v[me.loops[li].vertex_index], tint, m.ao_h)
             cols += (min(1.0, c[0]), min(1.0, c[1]), min(1.0, c[2]), 1.0)
     me.polygons.foreach_set('material_index', [remap[i] for i in m.mat])
-    me.polygons.foreach_set('use_smooth', [False] * len(me.polygons))
+    me.polygons.foreach_set('use_smooth', m.smooth)
+    me.uv_layers['UVMap'].data.foreach_set('uv', uvs)
     me.color_attributes['Col'].data.foreach_set('color', cols)
     me.color_attributes.active_color = me.color_attributes['Col']
     me.update()
@@ -245,13 +303,28 @@ def to_object(name, m, mats, seed):
 
 
 # shorthand (material, kind) pairs
-STONE = ('M_stone', 'stone')
-LIGHT = ('M_stone_light', 'stone_top')
+STONE = ('M_wall', 'stone')          # walls, pillars, rubble, pedestals (castle_wall.png)
+KEEP = ('M_keep', 'stone')           # round tower masonry (tower_stone.png)
+LIGHT = ('M_keep', 'stone_top')      # lighter coping / caps / merlon tops (tower_stone.png is the lighter stone)
 IRON = ('M_iron', 'iron')
 
 
-def block(z0, z1):
-    return ('M_stone', ('blk', z0, z1))
+def prism_x(m, x0, x1, prof, band, caps=(True, True)):
+    """Convex (y, z) profile extruded along X from x0 to x1 (wall bodies, cornices). Side faces + optional end
+    caps, all wound outward."""
+    cy = sum(p[0] for p in prof) / len(prof)
+    cz = sum(p[1] for p in prof) / len(prof)
+    a = [m.vert((x0, y, z)) for (y, z) in prof]
+    b = [m.vert((x1, y, z)) for (y, z) in prof]
+    n = len(prof)
+    for i in range(n):
+        j = (i + 1) % n
+        ym, zm = (prof[i][0] + prof[j][0]) / 2, (prof[i][1] + prof[j][1]) / 2
+        m.face([a[i], b[i], b[j], a[j]], band[0], band[1], want=(0, ym - cy, zm - cz))
+    if caps[0]:
+        m.face(a, band[0], band[1], want=(-1, 0, 0))
+    if caps[1]:
+        m.face(b, band[0], band[1], want=(1, 0, 0))
 
 
 # ---------------------------------------------------------------- 1. stump
@@ -347,7 +420,7 @@ def build_banner(mats):
 
 # ---------------------------------------------------------------- 2. guard tower
 def build_tower(mats):
-    """Round guard tower: radius ~2.0 (batter: 2.4 at the plinth, 1.95 under the parapet), 16-sided, a flared
+    """Round guard tower (M_keep / tower_stone.png, same texel density as the gatehouse's drums): radius ~2.0 (batter: 2.4 at the plinth, 1.95 under the parapet), 16-sided, a flared
     corbel ring, 10 chunky merlons (top at 5.2), a red banner + gold crown on the +Y face and one wall torch
     beside it."""
     m = MB(ao_h=2.2)
@@ -357,19 +430,19 @@ def build_tower(mats):
 
     def R(z):                                                      # body radius (batter)
         return 2.02 - (z - 0.45) * (0.15 / 3.80) if z >= 0.45 else 2.25
-    lathe(m, [(0.0, 2.27), (0.45, 2.16)], N, STONE, rot=rot)                       # plinth
+    lathe(m, [(0.0, 2.27), (0.45, 2.16)], N, KEEP, rot=rot, smooth=True)                       # plinth
     annulus(m, 0.45, 2.16, R(0.45), N, LIGHT, rot=rot)                             # plinth ledge
     zs = [0.45, 1.30, 2.55, 3.45, 4.25]
-    lathe(m, [(z, R(z)) for z in zs], N, STONE, rot=rot)                           # body
-    lathe(m, [(0.95, R(0.95) + 0.07), (1.10, R(1.10) + 0.07)], N, STONE, rot=rot)  # proud band (below banner tip)
+    lathe(m, [(z, R(z)) for z in zs], N, KEEP, rot=rot, smooth=True)                           # body
+    lathe(m, [(0.95, R(0.95) + 0.07), (1.10, R(1.10) + 0.07)], N, KEEP, rot=rot, smooth=True)  # proud band (below banner tip)
     annulus(m, 1.10, R(1.10) + 0.07, R(1.10) - 0.02, N, LIGHT, rot=rot)
-    lathe(m, [(4.25, R(4.25)), (4.40, R(4.25) + 0.05), (4.62, 2.18)], N, STONE, rot=rot)   # corbel flare
+    lathe(m, [(4.25, R(4.25)), (4.40, R(4.25) + 0.05), (4.62, 2.18)], N, KEEP, rot=rot, smooth=True)   # corbel flare
     m.face([m.vert((2.18 * math.cos(rot + TAU * i / N), 2.18 * math.sin(rot + TAU * i / N), 4.62))
-            for i in range(N)], 'M_stone_light', 'stone_top', want=(0, 0, 1))      # walkway disc
+            for i in range(N)], 'M_keep', 'stone_top', want=(0, 0, 1))      # walkway disc
     for i in range(10):                                            # merlons, light tops
         a = math.pi / 2 + TAU * i / 10
         c = Vector((1.92 * math.cos(a), 1.92 * math.sin(a), 4.62))
-        box(m, c, (0.55, 0.86, 0.58), STONE, top=LIGHT, rotz=a, skip=('bot',))
+        box(m, c, (0.55, 0.86, 0.58), KEEP, top=LIGHT, rotz=a, skip=('bot',))
     for k in (-3, 3, 6, -6):                                       # arrow slits (flat dark quads)
         a = math.pi / 2 + k * math.pi / 8
         z0, z1 = 2.0, 2.9
@@ -425,36 +498,23 @@ def build_tower(mats):
 def pillar(m, cx, cy=0.0):
     """Square stone pillar ~0.9 wide, 2.8 tall, chunky light cap."""
     box(m, (cx, cy, 0.0), (1.00, 1.00, 0.28), STONE, top=LIGHT)                         # plinth + ledge
-    box(m, (cx, cy, 0.28), (0.90, 0.90, 2.12), block(0.28, 2.40), skip=('bot', 'top'))  # shaft (0.9 sq)
+    box(m, (cx, cy, 0.28), (0.90, 0.90, 2.12), STONE, skip=('bot', 'top'))  # shaft (0.9 sq)
     box(m, (cx, cy, 2.40), (0.98, 0.98, 0.12), LIGHT, skip=('bot', 'top'))              # collar
     box(m, (cx, cy, 2.52), (0.98, 0.98, 0.12), LIGHT, taper=1.14 / 0.98, skip=('bot', 'top'))   # chamfer out
     box(m, (cx, cy, 2.64), (1.14, 1.14, 0.16), LIGHT, skip=('bot',))                    # cap slab
     return m
 
 
-COURSES = [  # (z0, z1, block edges in x)
-    (0.28, 0.95, [-2.0, -0.7, 0.6, 2.0]),
-    (0.95, 1.58, [-2.0, -1.2, 0.0, 1.3, 2.0]),
-    (1.58, 2.00, [-2.0, -0.4, 1.0, 2.0]),
-]
-
-
 def build_hall_wall(mats):
-    """Wall module that tiles along X: x -2..+2, 0.8 thick body, 2.2 tall to the top of the coping, a square
-    pillar (0.9, 2.8 tall) centred at x=-2 so modules every 4 units give a pillar every 4."""
-    m = MB(ao_h=0.9)
-    rng = random.Random(3)
+    """Wall module that tiles along X: x -2..+2, ~0.8 thick body (slight batter, ONE continuous castle_wall.png
+    face -- the masonry now comes from the texture, not from stacked block boxes), 2.2 tall to the top of the
+    coping (M_keep, the lighter stone), a square pillar (0.9, 2.8 tall) centred at x=-2 so modules every 4 units
+    give a pillar every 4. u phase = SEAM_U so the bricks run on unbroken across the 4.0 module seam."""
+    m = MB(ao_h=0.9, ushift=SEAM_U)
     box(m, (0, 0, 0), (4.0, 0.90, 0.28), STONE, top=LIGHT, skip=('bot', 's3'))        # plinth strip + ledge
-    for (z0, z1, xs) in COURSES:
-        for a, b in zip(xs[:-1], xs[1:]):
-            th = 0.80 + 0.03 * (rng.random() - 0.5)
-            box(m, ((a + b) / 2, 0, z0), (b - a, th, z1 - z0), block(z0, z1),
-                skip=('bot', 'top', 's1', 's3'))
+    prism_x(m, -2.0, 2.0, [(-0.43, 0.28), (0.43, 0.28), (0.40, 2.0), (-0.40, 2.0)], STONE, caps=(False, True))
     box(m, (0, 0, 2.0), (4.0, 0.92, 0.20), LIGHT, skip=('bot', 's3'))                 # coping
     pillar(m, -2.0)
-    for (z0, z1, w) in ((0.0, 0.28, 0.45), (0.28, 2.0, 0.40), (2.0, 2.2, 0.46)):      # close the +x end
-        pts = [Vector((2.0, -w, z0)), Vector((2.0, w, z0)), Vector((2.0, w, z1)), Vector((2.0, -w, z1))]
-        m.face([m.vert(p) for p in pts], 'M_stone', 'stone', want=(1, 0, 0))
     return to_object('hall_wall', m, mats, 103), m
 
 
@@ -519,7 +579,7 @@ def build_rubble(mats):
         P = [eul @ p for p in loc]
         zmin = min(p.z for p in P)
         P = [p + Vector((cx, cy, -zmin + lift)) for p in P]
-        hexa(m, P, STONE, top=STONE, skip=())
+        hexa(m, P, ('M_wall', 'rubble'), top=('M_wall', 'rubble'), skip=())
     return to_object('rubble', m, mats, 106), m
 
 
@@ -528,10 +588,9 @@ def build_wall_broken(mats):
     """Broken end of a hall wall: same section (0.8 thick, 2.2 tall) from x=0 to +2.5, top steps down jaggedly
     to rubble at +X."""
     rng = random.Random(8)
-    m = MB(ao_h=0.9)
+    m = MB(ao_h=0.9, xoff=2.0, ushift=SEAM_U)   # xoff: continues hall_wall masonry phase from its +x end
     box(m, (1.25, 0, 0.0), (2.5, 0.90, 0.28), STONE, top=LIGHT, skip=('bot', 's3'))   # plinth strip + ledge
-    for (z0, z1) in ((0.28, 0.95), (0.95, 1.58), (1.58, 2.0)):                        # intact stub, courses
-        box(m, (0.35, 0, z0), (0.7, 0.8, z1 - z0), block(z0, z1), skip=('bot', 'top', 's1', 's3'))
+    prism_x(m, 0.0, 0.7, [(-0.40, 0.28), (0.40, 0.28), (0.40, 2.0), (-0.40, 2.0)], STONE, caps=(False, False))  # intact stub
     box(m, (0.35, 0, 2.0), (0.7, 0.92, 0.20), LIGHT, skip=('bot', 's3'))              # coping on the stub
     cols = [(0.70, 1.25, 1.98, 1.55, 0.00, 0.02),                                     # jagged columns:
             (1.25, 1.72, 1.55, 1.72, 0.04, 0.00),                                     # x0, x1, h(x0), h(x1),
@@ -543,10 +602,50 @@ def build_wall_broken(mats):
         dz = 0.14 * (1 if rng.random() > 0.5 else -1)                                 # diagonal break through depth
         P = [(x0, yf, 0.28), (x1, yf, 0.28), (x1, yb, 0.28), (x0, yb, 0.28),
              (x0, yf, h0 + dz), (x1, yf, h1 + dz), (x1, yb, h1 - dz), (x0, yb, h0 - dz)]
-        hexa(m, P, block(0.28, 2.0), top=LIGHT, skip=('bot',))
+        hexa(m, P, STONE, top=LIGHT, skip=('bot',))
     for (cx, cy, s, rz) in ((2.30, 0.50, 0.30, 0.6), (1.95, -0.50, 0.26, 1.7)):       # fallen chunks
-        box(m, (cx, cy, 0.06), (s, s * 0.85, s * 0.8), STONE, top=STONE, rot=(0.15, -0.1, rz), skip=())
+        box(m, (cx, cy, 0.06), (s, s * 0.85, s * 0.8), ('M_wall', 'rubble'), top=('M_wall', 'rubble'), rot=(0.15, -0.1, rz), skip=())
     return to_object('wall_broken', m, mats, 107), m
+
+
+# ---------------------------------------------------------------- 8. curtain wall modules
+# A crenellated battlement curtain wall in the gatehouse's own language (build_gatehouse.curtain_wall): M_wall
+# masonry with a slight batter, a projecting walkway course, chunky merlons on BOTH edges, buttress piers. The
+# gatehouse wall is 6.2 tall to the walkway against a 7.8 gate-tower parapet (0.79); here the walkway is 3.7
+# against the guard tower's 4.62 parapet (0.80), merlon tops 4.4-4.55, so the wall always sits just under the
+# tower's own parapet. 4.0 long on X (x -2..2), tiles every 4.0 with the wall texture continuous across the seam.
+CW_HALF = 4.0 / 2
+CW_T = 0.60                  # half thickness at the walkway (1.2 thick)
+CW_BATTER = 0.09             # extra half-thickness at the base (gatehouse batters its wall the same way)
+CW_WALK = 3.70               # walkway (top of the cornice) height
+CW_CORN = 0.22               # cornice course height
+CW_MERLON = (0.66, 0.38)     # merlon size along the wall / across it (gatehouse: 0.6 x 0.8 on a 2.2 wall)
+CW_MERLON_H = [(0.80, 0.72), (0.70, 0.82), (0.78, 0.70), (0.72, 0.78)]    # (+Y edge, -Y edge) heights, 4 / module
+
+
+def curtain_module(variant):
+    """variant 'mid': plain tiling module. 'end_l': the tower end is local x=-2 (first merlon omitted so nothing
+    pokes out of the tower body; flat end face). 'end_r': mirror image (tower end at local x=+2)."""
+    m = MB(ao_h=1.7, ushift=SEAM_U)
+    zc = CW_WALK - CW_CORN
+    prism_x(m, -CW_HALF, CW_HALF, [(-(CW_T + CW_BATTER), 0.0), (CW_T + CW_BATTER, 0.0), (CW_T, zc), (-CW_T, zc)], STONE)
+    prism_x(m, -CW_HALF, CW_HALF, [(-(CW_T + 0.08), zc), (CW_T + 0.08, zc), (CW_T + 0.08, CW_WALK),
+                                   (-(CW_T + 0.08), CW_WALK)], STONE)                  # projecting walkway course
+    for i, x in enumerate((-1.5, -0.5, 0.5, 1.5)):                                      # merlons on both edges
+        if (variant == 'end_l' and i == 0) or (variant == 'end_r' and i == 3):
+            continue
+        for side, h in zip((1, -1), CW_MERLON_H[i]):
+            box(m, (x, side * (CW_T + 0.08 - CW_MERLON[1] / 2 - 0.04), CW_WALK), (CW_MERLON[0], CW_MERLON[1], h),
+                STONE, top=('M_wall', 'stone_top'), skip=('bot',))
+    for side in (1, -1):                                                                # buttress pier mid-module
+        box(m, (0.0, side * (CW_T + 0.04), 0.0), (0.72, 0.52, 3.1), STONE, top=('M_wall', 'stone_top'), taper=0.86,
+            skip=('bot',))
+    return m
+
+
+def build_curtain(name, variant, seed):
+    m = curtain_module(variant)
+    return to_object(name, m, build_curtain.mats, seed), m
 
 
 # ---------------------------------------------------------------- scene, export
@@ -567,7 +666,7 @@ def export_one(obj, fname):
 
 
 BUDGET = {'stump': 80, 'guard_tower': 900, 'hall_wall': 200, 'banner': 60, 'brazier': 260,
-          'rubble': 160, 'wall_broken': 160}
+          'rubble': 160, 'wall_broken': 160, 'curtain_wall': 200, 'curtain_wall_end': 200, 'curtain_wall_end_r': 200}
 
 
 def report(obj, m):
@@ -591,7 +690,11 @@ def main():
     for fn, name in ((build_stump, 'stump.glb'), (build_tower, 'guard_tower.glb'),
                      (build_hall_wall, 'hall_wall.glb'), (build_banner, 'banner.glb'),
                      (build_brazier, 'brazier.glb'), (build_rubble, 'rubble.glb'),
-                     (build_wall_broken, 'wall_broken.glb')):
+                     (build_wall_broken, 'wall_broken.glb'),
+                     (lambda mt: build_curtain('curtain_wall', 'mid', 108), 'curtain_wall.glb'),
+                     (lambda mt: build_curtain('curtain_wall_end', 'end_l', 109), 'curtain_wall_end.glb'),
+                     (lambda mt: build_curtain('curtain_wall_end_r', 'end_r', 110), 'curtain_wall_end_r.glb')):
+        build_curtain.mats = mats
         obj, m = fn(mats)
         report(obj, m)
         objs.append((obj, name))
