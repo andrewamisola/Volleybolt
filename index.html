@@ -853,13 +853,18 @@
         //   lanes:        'moba' (live: territory + core damage is permanent; Midfield and the attacker's gate full)
         //                 'fresh' (2026-09-30 interim: every zone full on arrival except the core)
         //                 'regen50' (previous rule: no destruction, gates below 50% lift to 50% on return)
-        //   defenderMana: the defender's extra max mana at its territory (4) / core (5)
-        //   overtime:     the +1-per-round damage escalation from round overtimeStart (10)
-        const SIM_RULES_DEFAULT = { lanes: 'moba', defenderMana: true, overtime: true, territoryHp: 0, overtimeStart: 10,
-                                    aiPath: 'mixed', phaseSide: 'alt',
-                                    liveSalts: false,
-                                    liveTiming: false,
-                                    frostHoming: true, frostTuning: null };   // frostTuning: {gain,maxLat,accel} override for sims   // Chill Dill lazy homing (false = the old straight shot, for A/B)   // true: between rounds, wait the live wipe's frames (in 23 + 1 + hold 120 + out 24 + prep 90)   // true: keep the live game's fixed AI salts (vary only the sim RNG + ball ids)   // spectate AI-driver experiments (see runSinglePlayerFrame)   // territoryHp 0 = TERRITORY_HP
+        //   defenderMana: the home side's mana cap of 4 on its own territory/core (else 3)
+        //   overtime:     the +1-per-round damage escalation, from round overtimeStart (10)
+        //   territoryHp / coreHp: structure HP overrides (0 = the base, like every structure)
+        //   aiPath:       spectate Red's driver ('mixed' live / 'slots' = Blue's per-slot driver; plays identically)
+        //   phaseSide:    which side carries the AI's +4 cast-phase shift ('alt' live: alternates by round)
+        //   liveSalts:    keep the live game's fixed AI salts (vary only the sim RNG + ball ids)
+        //   liveTiming:   between rounds, wait the live wipe's frames instead of skipping them (use for minutes)
+        //   frostHoming / frostTuning: Chill Dill homing on/off, and a {gain,maxLat,accel,...} override
+        const SIM_RULES_DEFAULT = { lanes: 'moba', defenderMana: true, overtime: true, overtimeStart: 10,
+                                    territoryHp: 0, coreHp: 0,
+                                    aiPath: 'mixed', phaseSide: 'alt', liveSalts: false, liveTiming: false,
+                                    frostHoming: true, frostTuning: null };
         const SIM_RULES = { ...SIM_RULES_DEFAULT };
         window.SIM_RULES = SIM_RULES;
         window.SIM_RULES_DEFAULT = SIM_RULES_DEFAULT;
@@ -1453,19 +1458,18 @@
             return isHomeStage(side, currentStage) ? 4 : 3;
         }
 
-        // Territory defense — a side's structure is tougher the deeper into its own ground the fight
-        // is: its own core (the relic) 40 HP, its own territory (the gatehouse) 20 HP, anywhere else
-        // (midfield castle, the attacker's catapult/ram) the base 20. Derived only from shared state
-        // (currentStage), so both peers agree. Home gates never heal (see gateHealthForRound / MOBA lane rules).
-        const TERRITORY_HP = 20;   // was 30 (see LANE RULES)
-        const CORE_HP = 40;   // was 50; trimmed 2026-09-30 (the core siege is what stretched the longest matches)
+        // Structure health: EVERY structure has the match's base health (owner 2026-10-01: "they should all be 20")
+        // - Midfield gates, territories, cores and the attacker's ram/catapult alike (20 in singles; doubles scales
+        // the base). Home advantage now comes from the permanent-damage lane rules and the home mana cap, not HP.
+        // Derived only from shared state, so both peers agree. (Was core 50 -> 40, territory 30 -> 20.)
+        // SIM_RULES.coreHp / territoryHp: simulator overrides (0 = base).
         function isOwnCore(side, stage) { return (side === 'left' || side === 'player') ? stage === 0 : stage === 4; }
         function stageMaxHealth(side, stage) {
             if (stage === undefined) stage = currentStage;
             const own = (side === 'left' || side === 'player');
-            if (stage === (own ? 0 : 4)) return CORE_HP;
-            if (stage === (own ? 1 : 3)) return SIM_RULES.territoryHp || TERRITORY_HP;   // simulator switch (live: unset)
-            return maxTowerHealth;   // base (20)
+            if (stage === (own ? 0 : 4) && SIM_RULES.coreHp) return SIM_RULES.coreHp;
+            if (stage === (own ? 1 : 3) && SIM_RULES.territoryHp) return SIM_RULES.territoryHp;
+            return maxTowerHealth;
         }
         function stageHealthArray(side) { return [0, 1, 2, 3, 4].map(st => stageMaxHealth(side, st)); }
         window.stageMaxHealth = stageMaxHealth;
