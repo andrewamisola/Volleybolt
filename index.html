@@ -9828,7 +9828,7 @@
                     // flagstone is a 64px tile over 1.6u too - same stone size, same chunky texel size
                     // Drawn at 64px, then box-filtered DOWN to 32px (owner: "lower the resolution so it reads softer,
                     // like PS1"): same brick size, half the texels, grout and bevels melt into soft 1px tones.
-                    const T = 64, ROWS = 8, RH = T / ROWS, TO = 32;
+                    const T = 64, ROWS = 8, RH = T / ROWS, TO = window.paveTexRes || 16;   // 16: a quarter of the castle's texels
                     const src = document.createElement('canvas'); src.width = src.height = T;
                     const g = src.getContext('2d');
                     let sd = 2024;
