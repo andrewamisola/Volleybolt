@@ -848,6 +848,12 @@
         // across the beam, so it can't run away). Reads totalRoundsPlayed (synced stage state), so online peers agree.
         function overtimeDamageBonus() { return Math.max(0, (totalRoundsPlayed | 0) - 6); }
         window.overtimeDamageBonus = overtimeDamageBonus;
+        // In-battle stage label: the stage name plus the live overtime bonus, e.g. "Midfield (+2)".
+        window.stageLabelText = (idx) => {
+            const name = window.stageNames ? window.stageNames[idx] : '';
+            const ot = overtimeDamageBonus();
+            return ot > 0 ? name + ' (+' + ot + ')' : name;
+        };
         // SPECTATE (AI vs AI): Blue is driven by the same AI as Red and the player just watches.
         // Set by startSpectateMatch(), cleared by startSinglesMatch() and on return to the main menu;
         // a victory-screen Play Again keeps it (another AI match).
@@ -5943,7 +5949,7 @@
 
                 // Update stage name text (only show during gameplay, not menu)
                 if (window.guiElements.stageNameText && window.stageNames) {
-                    window.guiElements.stageNameText.text = window.stageNames[currentStage];
+                    window.guiElements.stageNameText.text = window.stageLabelText(currentStage);
                     if (window.getStageColor) {
                         window.guiElements.stageNameText.color = window.getStageColor(currentStage);
                     }
@@ -6017,7 +6023,7 @@
             const wipeBand = document.createElement('div');
             wipeBand.style.cssText = 'position:absolute;left:0;top:0;width:1920px;height:1080px;background:#000;will-change:transform';
             const wipeTitle = document.createElement('div');
-            wipeTitle.style.cssText = "position:absolute;left:0;top:0;width:1920px;height:1080px;display:flex;align-items:center;" +
+            wipeTitle.style.cssText = "position:absolute;left:0;top:0;width:1920px;height:1080px;display:flex;flex-direction:column;align-items:center;" +
                 "justify-content:center;font-family:'Ferrum',serif;font-size:52px;color:#f0c050;text-shadow:3px 3px 0 #000;white-space:nowrap";
             wipeTrack.append(wipeBand, wipeTitle);
             wipeEl.appendChild(wipeTrack);
@@ -6190,9 +6196,16 @@
             window.setWipePos = (pct) => {
                 wipeTrack.style.transform = 'translate3d(' + (pct / 100 * REF_W).toFixed(1) + 'px,0,0)';
             };
-            window.setWipeTitle = (text, color) => {
-                wipeTitle.textContent = text || '';
-                if (color) wipeTitle.style.color = color;
+            // sub = an optional second line under the stage name (the overtime damage bump, e.g. "Overtime +2").
+            const wipeTitleMain = document.createElement('div');
+            const wipeTitleSub = document.createElement('div');
+            wipeTitleSub.style.cssText = "font-size:34px;color:#ff8a3d;margin-top:6px;letter-spacing:2px;display:none";
+            wipeTitle.append(wipeTitleMain, wipeTitleSub);
+            window.setWipeTitle = (text, color, sub) => {
+                wipeTitleMain.textContent = text || '';
+                if (color) wipeTitleMain.style.color = color;
+                wipeTitleSub.textContent = sub || '';
+                wipeTitleSub.style.display = sub ? 'block' : 'none';
             };
             silImg.src = 'textures/pickle_run_silhouette.png?v=1';
             // Dress the band for one wipe. movingRight = the push goes toward Red (the band sweeps left->right).
@@ -12126,7 +12139,7 @@
                 const iceRoot = new BABYLON.TransformNode(name + "Root", scene);
                 iceRoot.parent = parent;
                 iceRoot.position.y = 1.0;
-                iceRoot.position.z = BLOCK_ARC.LINE_LIFT * 0.5;          // sit between the wizard and the (lifted) shield line
+                iceRoot.position.z = 0;                                   // on the wizard (true 3D spot; reads right from every camera)
                 // Tighter block that hugs the wizard — the old 2.0/1.35/2.4 encased the shield
                 // too and read as a bigger hitbox than the paddle actually has.
                 iceRoot.scaling = new BABYLON.Vector3(1.4, 1.15, 1.7);
@@ -12172,7 +12185,7 @@
             };
 
             const playerIceBlock = createIceBlock("playerIce", playerPaddle);
-            playerIceBlock.position.x = 0;   // centred between the wizard (behind the paddle) and the shield (in front)
+            playerIceBlock.position.x = modelBackFor('left');    // on the wizard model (MODEL_BACK behind the paddle)
             playerIceBlock.setEnabled(false);
 
             // Keep reference to inner for animations (use first child mesh)
@@ -12189,7 +12202,7 @@
 
             // AI ice block - geometric crystalline ice
             const aiIceBlock = createIceBlock("aiIce", aiPaddle);
-            aiIceBlock.position.x = 0;   // centred between the wizard (behind the paddle) and the shield (in front)
+            aiIceBlock.position.x = modelBackFor('right');   // on the wizard model (MODEL_BACK behind the paddle)
             aiIceBlock.setEnabled(false);
 
             // Keep reference for animations
@@ -12218,9 +12231,8 @@
                 const paddle = isPlayer ? playerPaddle : aiPaddle;
                 if (!iceBlock || !paddle) return;
 
-                // Get world position of ice block center
-                const worldPos = paddle.position.clone();
-                worldPos.y += 1.0;
+                // Shatter from the ice block itself (it sits on the wizard model, MODEL_BACK behind the paddle)
+                const worldPos = iceBlock.getAbsolutePosition().clone();
 
                 // Play ice shatter sound
                 playSound('iceShatter', paddle.position.x, 0.6);
@@ -25468,7 +25480,10 @@
             overlay.alpha = 0;
             overlay.left = '0%';
             text.text = '';
-            if (window.setWipeTitle) window.setWipeTitle(stageName, stageColor);
+            if (window.setWipeTitle) {
+                const ot = overtimeDamageBonus();   // already counts the round that just ended
+                window.setWipeTitle(stageName, stageColor, ot > 0 ? 'Overtime +' + ot : '');
+            }
             window.setWipePos(wipeIn);
 
             // Step 1: the band ramps up and slams in
@@ -25517,7 +25532,7 @@
                     text.alpha = 1;
                     text.isVisible = true;
                     if (window.guiElements?.stageNameText) {
-                        window.guiElements.stageNameText.text = stageName;
+                        window.guiElements.stageNameText.text = window.stageLabelText ? window.stageLabelText(toStage) : stageName;
                         if (window.getStageColor) {
                             window.guiElements.stageNameText.color = window.getStageColor(toStage);
                         }
