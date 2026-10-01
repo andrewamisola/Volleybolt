@@ -859,7 +859,7 @@
                                     aiPath: 'mixed', phaseSide: 'alt',
                                     liveSalts: false,
                                     liveTiming: false,
-                                    frostHoming: true };   // Chill Dill lazy homing (false = the old straight shot, for A/B)   // true: between rounds, wait the live wipe's frames (in 23 + 1 + hold 120 + out 24 + prep 90)   // true: keep the live game's fixed AI salts (vary only the sim RNG + ball ids)   // spectate AI-driver experiments (see runSinglePlayerFrame)   // territoryHp 0 = TERRITORY_HP
+                                    frostHoming: true, frostTuning: null };   // frostTuning: {gain,maxLat,accel} override for sims   // Chill Dill lazy homing (false = the old straight shot, for A/B)   // true: between rounds, wait the live wipe's frames (in 23 + 1 + hold 120 + out 24 + prep 90)   // true: keep the live game's fixed AI salts (vary only the sim RNG + ball ids)   // spectate AI-driver experiments (see runSinglePlayerFrame)   // territoryHp 0 = TERRITORY_HP
         const SIM_RULES = { ...SIM_RULES_DEFAULT };
         window.SIM_RULES = SIM_RULES;
         window.SIM_RULES_DEFAULT = SIM_RULES_DEFAULT;
@@ -1073,11 +1073,14 @@
         // move together — a left/player wizard shifts -MODEL_BACK in X, a right/AI wizard +MODEL_BACK.
         const MODEL_BACK = 0.6;
 
-        // CHILL DILL lazy homing (owner design 2026-10-01; js/sim.js updateNetworkProjectiles): sideways steering
+        // CHILL DILL homing (owner design 2026-10-01; js/sim.js updateNetworkProjectiles): sideways steering
         // toward the targeted wizard. gain = how hard it wants to close the Z gap (1/s), maxLat = its top sideways
-        // speed (u/s), accel = how fast it can change that (u/s^2) - the "lazy" part: it can't follow a sharp, late
-        // sidestep. It flies at 36 u/s, so a full crossing is ~0.55s.
-        const CHILL_DILL_HOMING = { gain: 4.0, maxLat: 7.0, accel: 30.0 };
+        // speed (u/s), accel = how fast it can change that (u/s^2). It flies at 36 u/s (a crossing is ~0.55s).
+        // Owner spec: a STILL target is always hit - even caster and target on opposite far edges (11u apart);
+        // the only escapes are constant movement or cancelling it with a cast (or a parry, which sends it homing
+        // back at the caster). Verified in the sim: still target hit from 25/25 positions; a single late dash from
+        // standing still is caught; running back and forth at full speed escapes 18/22. (0.4x of this missed.)
+        const CHILL_DILL_HOMING = { gain: 8.0, maxLat: 18.0, accel: 100.0 };
         const modelBackFor = (side) => (side === 'left' ? -MODEL_BACK : MODEL_BACK);
 
         // Projectile system (replaces single ball)
@@ -24505,7 +24508,7 @@
                 projectiles, combatants, abilities, pvpParryState, isResimulating,
                 consts: { parryWindow, parryFailCooldown, parrySuccessCooldown, parryHitboxExtend, manaRegenTime, juice: window.JUICE, overdrive: window.OVERDRIVE, arc: BLOCK_ARC, maxTowerHealth: maxTowerHealth, teamSize: teamSize,
                           dmgBonus: overtimeDamageBonus(),
-                          frostHoming: SIM_RULES.frostHoming ? CHILL_DILL_HOMING : null },
+                          frostHoming: SIM_RULES.frostHoming ? (SIM_RULES.frostTuning || CHILL_DILL_HOMING) : null },
                 deps: SIM_DEPS,
                 backInputs: null,  // Task 5's doubles input driver fills this in; sim treats null as "no back wizards act"
             };
