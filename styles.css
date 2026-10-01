@@ -3923,6 +3923,32 @@ body.gp-cursor-hidden * {
     position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%);
     flex-direction: row; gap: 40px; margin-left: 0;
 }
+/* "Achievement unlocked" column in the free band right of the centred stat bars (below the banner,
+   above the corner team name); under the stats it collided with Play Again / Main Menu. */
+#endScreen .end-ach {
+    position: absolute; right: 40px; top: 236px; width: 340px;
+    display: flex; flex-direction: column; gap: 12px;
+}
+#endScreen .end-ach[hidden] { display: none; }
+#endScreen .end-ach-chip {
+    padding: 8px 18px 10px;
+    background: linear-gradient(180deg, rgba(52, 62, 84, 0.9) 0%, rgba(22, 27, 40, 0.92) 100%);
+    border: 2px solid #f0c050; border-radius: 10px;
+    box-shadow: inset 0 0 0 1px rgba(16, 24, 40, 0.7), 5px 5px 0 rgba(0, 0, 0, 0.45);
+    animation: menuRise 0.5s ease 0.5s both;
+}
+#endScreen .end-ach-kicker {
+    font-family: 'Manrope UI', 'Manrope', sans-serif; font-weight: 800; font-size: 13px;
+    letter-spacing: 0.16em; text-transform: uppercase; color: #f0c050;
+}
+#endScreen .end-ach-name {
+    font-family: 'Manrope UI', 'Manrope', sans-serif; font-weight: 800; font-size: 24px; color: #ffe39a;
+}
+#endScreen .end-ach-desc { font-family: 'Manrope', sans-serif; font-size: 15px; color: #c8c3d8; }
+#endScreen .end-ach-more {
+    display: flex; align-items: center;
+    font-family: 'Manrope UI', 'Manrope', sans-serif; font-weight: 800; font-size: 20px; color: #ffe39a;
+}
 
 #endScreen .end-wait {
     font-family: 'Manrope', sans-serif;

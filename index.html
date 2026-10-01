@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=84-achievements">
+    <link rel="stylesheet" href="styles.css?v=85-achievements-end">
 </head>
 <body>
 
@@ -26881,6 +26881,8 @@
             // Populate the end-of-match summary from the final per-combatant stats
             // (matchStats are still intact here; resetGame() clears them on Continue).
             renderMatchSummary(ensureEndScreen(), false);
+            renderAchievementStrip(ensureEndScreen());
+            if (window.refreshAchievementDots) refreshAchievementDots();   // the menu dot is waiting on Continue
             const lbRefs = window.guiElements.victoryLeaderboardRefs;
             if (lbRefs) {
                 const blS = (window.combatants && window.combatants.left && window.combatants.left.matchStats) || { spellsCast: 0, parries: 0, damageDealt: 0 };
@@ -27227,6 +27229,47 @@
             ensureEndScreenScaleLayer().appendChild(el);
             return el;
         }
+        // "Achievement unlocked" strip under the match summary: what THIS match earned (empty = hidden).
+        // ids defaults to Achievements.lastUnlocked(); passing ids is for console tests / previews.
+        const END_ACH_MAX = 4;
+        function renderAchievementStrip(root, ids) {
+            const content = root.querySelector('.end-content');
+            const stats = root.querySelector('.ms-stats');
+            if (!content || !stats) return;
+            let strip = document.getElementById('endAchStrip');
+            if (!strip) {
+                strip = document.createElement('div');
+                strip.id = 'endAchStrip';
+                strip.className = 'end-ach';
+                content.insertBefore(strip, stats.nextSibling);
+            }
+            const list = (ids || (window.Achievements ? Achievements.lastUnlocked() : []))
+                .map(id => window.Achievements && Achievements.LIST.find(a => a.id === id)).filter(Boolean);
+            strip.innerHTML = '';
+            strip.hidden = list.length === 0;
+            for (const a of list.slice(0, END_ACH_MAX)) {
+                const chip = document.createElement('div');
+                chip.className = 'end-ach-chip';
+                const kicker = document.createElement('div');
+                kicker.className = 'end-ach-kicker';
+                kicker.textContent = 'Achievement unlocked';
+                const name = document.createElement('div');
+                name.className = 'end-ach-name';
+                name.textContent = a.name;
+                const desc = document.createElement('div');
+                desc.className = 'end-ach-desc';
+                desc.textContent = a.desc;
+                chip.append(kicker, name, desc);
+                strip.appendChild(chip);
+            }
+            if (list.length > END_ACH_MAX) {
+                const more = document.createElement('div');
+                more.className = 'end-ach-chip end-ach-more';
+                more.textContent = '+' + (list.length - END_ACH_MAX) + ' more';
+                strip.appendChild(more);
+            }
+        }
+        window.renderAchievementStrip = renderAchievementStrip;
         function ensureVictoryButtonContainer() {
             let box = document.getElementById('victoryButtons');
             if (box) return box;
