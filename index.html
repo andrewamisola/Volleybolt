@@ -843,7 +843,7 @@
         // Round-by-round winners ('left' | 'right') for the end screen's tennis-style scoreboard.
         // Presentation only (not snapshotted/hashed; round ends are confirmed-only online).
         let roundLog = [];
-        // OVERTIME ESCALATION (owner design 2026-09-30, instead of a round cap): from the 8th round of a match on,
+        // OVERTIME ESCALATION (owner design 2026-09-30, instead of a round cap): from the 13th round of a match on (was the 8th; moved after the 2026-09-30 sims so a typical match never reaches it),
         // every round adds +1 damage to each Fireball gate hit, and +1 to a Juice beam's TOTAL damage (spread
         // across the beam, so it can't run away). Reads totalRoundsPlayed (synced stage state), so online peers agree.
         // MATCH-RULE SWITCHES for the headless match simulator (dbg.simBatch). The defaults ARE the live game;
@@ -852,12 +852,12 @@
         //   lanes:        'moba' (live: destroyable territories, home gates never heal, Midfield resets)
         //                 'regen50' (previous rule: no destruction, gates below 50% lift to 50% on return)
         //   defenderMana: the defender's extra max mana at its territory (4) / core (5)
-        //   overtime:     the +1-per-round damage escalation from round 8
+        //   overtime:     the +1-per-round damage escalation from round 13
         const SIM_RULES_DEFAULT = { lanes: 'moba', defenderMana: true, overtime: true };
         const SIM_RULES = { ...SIM_RULES_DEFAULT };
         window.SIM_RULES = SIM_RULES;
         window.SIM_RULES_DEFAULT = SIM_RULES_DEFAULT;
-        function overtimeDamageBonus() { return SIM_RULES.overtime ? Math.max(0, (totalRoundsPlayed | 0) - 6) : 0; }
+        function overtimeDamageBonus() { return SIM_RULES.overtime ? Math.max(0, (totalRoundsPlayed | 0) - 11) : 0; }   // 12 rounds played -> +1 on the 13th
         window.overtimeDamageBonus = overtimeDamageBonus;
         // In-battle stage label text (the overtime "(+N)" sits beside it in orange: stageBonusText).
         window.stageLabelText = (idx) => {
@@ -2561,7 +2561,7 @@
                         if (!ctx.isResimulating) { ctx.deps.playSound('block', px, 0.6); ctx.deps.onShieldBlock(railKey || side); }
                         return false; // bounced, not consumed
                     },
-                    // + the overtime escalation (round 8 on: +1 per round; see overtimeDamageBonus)
+                    // + the overtime escalation (round 13 on: +1 per round; see overtimeDamageBonus)
                     onGateHit(proj, side, ctx) { return { damage: Math.min(2 + proj.volleyCount, 6) + ((ctx && ctx.consts && ctx.consts.dmgBonus) || 0) }; },
                 }
             },
