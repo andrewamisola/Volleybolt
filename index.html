@@ -10204,7 +10204,7 @@
                         const sgn = set.mirror ? -1 : 1;
                         // the breach is directly behind the attackers: the light travels straight down the hall (pure x),
                         // low, so every shadow runs horizontally away from the gate (owner)
-                        return { dir: new BABYLON.Vector3(sgn, -0.5, 0).normalize(), intensity: 1.6, diffuse: new BABYLON.Color3(1.0, 0.8, 0.52) };
+                        return { dir: new BABYLON.Vector3(sgn, -0.62, 0).normalize(), intensity: 1.6, diffuse: new BABYLON.Color3(1.0, 0.8, 0.52) };   // ~32 deg: shadows ~1.6x their height
                     }
                     // Outdoors: the stage sun's compass direction, but sitting LOW over the backdrop (window.forestSunElev
                     // degrees above the horizon; the stage sun is ~35) - a late-dusk sun that rakes long shadows across
@@ -10307,6 +10307,22 @@
                     };
                     const circ = (x, z, r) => { cg.beginPath(); cg.arc(sx(x), sz(z), r * SH_K, 0, Math.PI * 2); cg.fill(); };
                     const pX = -dZ, pZ = dX;                      // across the light
+                    // ROCK SHADOW: the rock's own lumpy outline (7 jittered corners, seeded by position), swept along the
+                    // light up to its height - footprint + the top's (shrunken) copy + the band between = a faceted shadow
+                    const rockShadow = (r, rad, ht) => {
+                        let sd = (Math.abs(Math.round(r.x * 37 + r.z * 91)) % 9973) + 7;
+                        const rn = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+                        const N = 7, foot = [], top = [];
+                        const o = Math.max(0, ht) / tanE;
+                        for (let i = 0; i < N; i++) {
+                            const a = r.yaw + i / N * Math.PI * 2, rr = rad * (0.72 + rn() * 0.5);
+                            const fx = r.x + Math.cos(a) * rr, fz = r.z + Math.sin(a) * rr * 0.85;
+                            foot.push([fx, fz]);
+                            top.push([r.x + (fx - r.x) * 0.55 + dX * o, r.z + (fz - r.z) * 0.55 + dZ * o]);
+                        }
+                        poly(foot); poly(top);
+                        for (let i = 0; i < N; i++) { const j = (i + 1) % N; poly([foot[i], foot[j], top[j], top[i]]); }
+                    };
                     const rotP = (r, lx, lz) => {                 // model-local (x, z) -> world, by the instance yaw
                         const c = Math.cos(r.yaw), s = Math.sin(r.yaw);
                         return [r.x + (lx * c + lz * s) * r.sc, r.z + (-lx * s + lz * c) * r.sc];
@@ -10332,13 +10348,19 @@
                                     disc(r.x + Math.cos(a) * rad * 0.75 + dX * lo, r.z + Math.sin(a) * rad * 0.75 + dZ * lo, lr / sinE, lr, ang);
                                 }
                             } else {
-                                const rad = c.r * sc * Math.min(1, 0.6 + r.sy * 0.4), o = h(c.hc);
-                                disc(r.x + dX * o * 0.5, r.z + dZ * o * 0.5, rad * (1 + 0.6 * (1 / sinE - 1)), rad, ang);
+                                rockShadow(r, c.r * sc, (0.66 * sc * r.sy + r.y));
                             }
                             if (c.trunk && r.y >= 0) {         // trunk streak to the canopy
                                 const t = h(c.trunk);
                                 cg.strokeStyle = '#000'; cg.lineWidth = Math.max(2, 0.22 * sc * SH_K); cg.lineCap = 'round';
                                 cg.beginPath(); cg.moveTo(sx(r.x), sz(r.z)); cg.lineTo(sx(r.x + dX * t), sz(r.z + dZ * t)); cg.stroke();
+                            }
+                        } else if (r.kind === 'rubble') {
+                            // a pile of cut blocks: three chunky faceted lumps, not one round blob
+                            const hh = 0.6 * sc * r.sy;
+                            for (const [ox, oz, k] of [[0, 0, 0.62], [0.55, 0.25, 0.42], [-0.5, -0.2, 0.4]]) {
+                                const [qx, qz] = rotP(r, ox, oz);
+                                rockShadow({ x: qx, z: qz, yaw: r.yaw + ox * 3, sc, sy: r.sy, y: 0 }, k * sc, hh * (k + 0.35));
                             }
                         } else if (sh.cyl) {
                             // an upright cylinder: base disc + top disc thrown along the light + the band between
@@ -10505,7 +10527,7 @@
                         stoneDim: [0.28, 0.26, 0.32], propFog: false,
                         // sunlit hall floor: things in the breach light throw real directional shadows away from it, not
                         // round contact puddles (owner)
-                        shadowCol: [0.1, 0.03, 0.17], cast: 0.88, contact: 0.0, len: 3.2,
+                        shadowCol: [0.1, 0.03, 0.17], cast: 0.85, contact: 0.0, len: 1.0,
                         // HARSH (owner: the gate is the only natural light - not overcast): crisp shadow edges, hard shadow
                         // map on the props, almost no soft fill
                         blur: 1.0, fill: 0.1, treeDark: 0.2, paveTint: [0.36, 0.32, 0.42], cracks: true, shafts: true,
