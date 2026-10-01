@@ -10031,8 +10031,12 @@
                 // Outdoors matched to the core's deep shade (owner: "how far and deep the shadows run"): darker cast +
                 // contact, ground shadows stretched 1.8x, darker shaded sides on the props.
                 // (softened 2026-10-01: 0.82/0.65 over near-black read as black holes; now an even dusk PURPLE)
-                window.forestShadow = { cast: 0.62, contact: 0.32, treeShade: 0.35, treeDark: 0.42, len: 1.0 };   // length now comes from the low sun
-                window.forestSunElev = 16;
+                // OVERCAST (owner 2026-10-01: long sun shadows looked silly - even lighting, sun high overhead): faint
+                // soft cast shadows pooled under things, ambient-occlusion-style contact darkness doing most of the work
+                window.forestShadow = { cast: 0.3, contact: 0.42, treeShade: 0.2, treeDark: 0.7, len: 1.0, blur: 7 };
+                window.forestSunElev = 68;
+                window.forestSunSwing = 12;
+                window.forestOvercast = { sun: 0.55, fill: 0.62 };   // key light x, prop fill intensity
                 // Shadow proxies per model (unit scale, Babylon local axes after import: the Blender +X of the
                 // models lands on Babylon -X). canopy: hc/r/trunk; box: [cx, cz, lx, lz, h] parts; cyl: r, h.
                 const SHAPE = {
@@ -10079,7 +10083,8 @@
                         const e = (window.forestSunElev || 16) * Math.PI / 180;
                         const sw = set.kind === 'territory' ? (set.mirror ? -1 : 1) * (window.forestSunSwing || 32) * Math.PI / 180 : 0;
                         return { dir: new BABYLON.Vector3(Math.sin(sw) * Math.cos(e), -Math.sin(e), Math.cos(sw) * Math.cos(e)),
-                                 intensity: midSun.intensity * 1.15, diffuse: midSun.diffuse.clone() };
+                                 intensity: midSun.intensity * (window.forestOvercast ? window.forestOvercast.sun : 1),
+                                 diffuse: BABYLON.Color3.Lerp(midSun.diffuse, new BABYLON.Color3(0.85, 0.82, 0.9), 0.5) };   // greyer, cloud-filtered
                     }
                     return { dir: (window.forestSunDir ? window.forestSunDir.clone() : midSun.dir.clone()).normalize(),
                              intensity: midSun.intensity, diffuse: midSun.diffuse.clone() };
@@ -10096,7 +10101,7 @@
                         propAmb.diffuse = new BABYLON.Color3(0.5, 0.4, 0.62); propAmb.specular = BABYLON.Color3.Black();
                         propAmb.groundColor = new BABYLON.Color3(0.12, 0.08, 0.16);
                     }
-                    propAmb.intensity = 0.3;
+                    propAmb.intensity = window.forestOvercast ? window.forestOvercast.fill : 0.3;   // overcast: mostly fill light
                     // untextured props (foliage/bark/rock) take the dim fill for form; textured stone keeps the scene
                     // ambient, exactly like the structures it stands next to
                     const soft = meshes.filter(m => !(m.material && m.material.albedoTexture));
@@ -10228,7 +10233,7 @@
                         g.fillStyle = grd; g.beginPath(); g.arc(sx(a.x), sz(a.z), R, 0, Math.PI * 2); g.fill();
                     }
                     // the merged silhouettes, edges just anti-aliased (readable shapes, not mush)
-                    g.filter = 'blur(1.2px)'; g.globalAlpha = SF.cast;
+                    g.filter = 'blur(' + (SF.blur || 1.2) + 'px)'; g.globalAlpha = SF.cast;
                     g.drawImage(cast, 0, 0);
                     g.filter = 'none'; g.globalAlpha = 1;
                     shadowTex.update();
