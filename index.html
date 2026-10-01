@@ -9856,7 +9856,7 @@
                     return t;
                 };
                 // the court's own pixel-first grass at the court's texel size (~0.1u texels): seamless across the rail
-                const gTex = new BABYLON.Texture('textures/grass_field_seamless.png?v=3', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPNEAREST);
+                const gTex = new BABYLON.Texture('textures/grass_field_seamless.png?v=4', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPNEAREST);
                 // Same grass as the court floor (floorMat): ~13u tiles, same tint and black-point lift, so the
                 // ground right past the rails continues the stage seamlessly before the murk takes over.
                 gTex.uScale = 10.5; gTex.vScale = 10.5;   // 13.3u tiles = the court floor's grass tile
@@ -9868,7 +9868,7 @@
                 // Dirt patches over it (the lane road's dirt, through a blotchy blurred mask) - the paintings' open
                 // ground is mostly worn earth with grass between.
                 const dirtMat = new BABYLON.StandardMaterial('forestDirtMat', scene);
-                const dTex = new BABYLON.Texture('textures/dirt_road_seamless.png?v=3', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPNEAREST);
+                const dTex = new BABYLON.Texture('textures/dirt_road_seamless.png?v=4', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPNEAREST);
                 dTex.uScale = 32; dTex.vScale = 32;   // ~4.4u tiles = the lane road's dirt tile (same texels)
                 dirtMat.diffuseTexture = dTex;
                 dirtMat.specularColor = BABYLON.Color3.Black();
@@ -11054,7 +11054,7 @@
             })();
 
             // === MATERIALS (solid colors for now - add textures later) ===
-            const floorMat = createClassicMaterial("floorMat", "textures/grass_field_seamless.png?v=3", 4, 2, new BABYLON.Color3(1.0, 0.98, 0.9));  // Tiling storybook grass ground (real material, not a baked top-down map)
+            const floorMat = createClassicMaterial("floorMat", "textures/grass_field_seamless.png?v=4", 4, 2, new BABYLON.Color3(1.0, 0.98, 0.9));  // Tiling storybook grass ground (real material, not a baked top-down map)
             floorMat.emissiveColor = new BABYLON.Color3(0.16, 0.16, 0.12);  // Gentle black-point lift
 
             // Optional bump/normal map - disabled (created outline artifacts, not D2 style)
@@ -11150,7 +11150,7 @@
             // ============================================================
             (function buildLanePath() {
                 const dirtMat = new BABYLON.StandardMaterial("lanePathMat", scene);
-                const dirtTex = new BABYLON.Texture("textures/dirt_road_seamless.png?v=3", scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPNEAREST);
+                const dirtTex = new BABYLON.Texture("textures/dirt_road_seamless.png?v=4", scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPNEAREST);
                 dirtTex.uScale = 6 * groundRatio;  dirtTex.vScale = 3;   // tile for surface detail
                 dirtMat.diffuseTexture = dirtTex;
                 dirtMat.specularColor = BABYLON.Color3.Black();
