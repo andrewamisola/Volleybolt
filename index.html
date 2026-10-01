@@ -5784,39 +5784,77 @@
             aiHealthFill.addControl(aiHealthTexture);
 
             // --- SCORE DISPLAY ---
+            // Same material as the HP gauges (FF9 steel window, light rim, rounded): the top of the HUD reads
+            // as one set. 160 wide = the stage track below it.
+            const SCORE_W = 160;
             const scorePanel = new BABYLON.GUI.Rectangle();
-            scorePanel.width = "180px";
-            scorePanel.height = "60px";
+            scorePanel.width = SCORE_W + "px";
+            scorePanel.height = "52px";
             scorePanel.top = "15px";  // Top center
-            scorePanel.background = "rgba(40, 34, 28, 0.9)";
-            scorePanel.color = "#8a6a38";  // Gilded plaque border
-            scorePanel.thickness = 3;
-            scorePanel.cornerRadius = 4;
+            scorePanel.background = "rgba(46,56,76,0.94)";   // FF9 steel window (= HP gauge)
+            scorePanel.color = "#dfe6f2";                    // light rim (= HP gauge)
+            scorePanel.thickness = 2;
+            scorePanel.cornerRadius = 10;
             scorePanel.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
             scorePanel.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
             scorePanel.isVisible = false;  // Start hidden (menu state)
             guiTexture.addControl(scorePanel);
             window.guiElements.scorePanel = scorePanel;
 
-            const scoreText = new BABYLON.GUI.TextBlock();
-            scoreText.text = "0 - 0";
-            scoreText.color = "#f0c050";
-            scoreText.fontSize = 42;
-            scoreText.fontFamily = "'FF9UI', sans-serif";
-            scoreText.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
+            // The score sits in three FIXED cells (left digit | dash | right digit) so it stays dead centre
+            // whatever the digits' widths. Gold = the neutral HUD colour (owner pick over team colours).
+            // `scoreText` stays the one handle the rest of the code uses: alpha toggles the whole score and
+            // `.text = "A - B"` fills the cells.
+            const scoreText = new BABYLON.GUI.Grid();
+            scoreText.width = "152px";
+            scoreText.addColumnDefinition(64, true);
+            scoreText.addColumnDefinition(24, true);
+            scoreText.addColumnDefinition(64, true);
+            const mkScoreCell = (txt, size) => {
+                const t = new BABYLON.GUI.TextBlock();
+                t.text = txt;
+                t.color = "#f0c050";
+                t.fontSize = size;
+                t.fontFamily = "'FF9UI', sans-serif";
+                t.fontWeight = "400";   // FF9 single-weight: no faux-bold on the pixel font
+                t.shadowColor = "#000"; t.shadowBlur = 0; t.shadowOffsetX = 2; t.shadowOffsetY = 2;
+                return t;
+            };
+            const scoreLeft = mkScoreCell("0", 36), scoreDash = mkScoreCell("-", 24), scoreRight = mkScoreCell("0", 36);
+            scoreText.addControl(scoreLeft, 0, 0);
+            scoreText.addControl(scoreDash, 0, 1);
+            scoreText.addControl(scoreRight, 0, 2);
+            let scoreStr = "0 - 0";
+            Object.defineProperty(scoreText, 'text', {
+                get: () => scoreStr,
+                set: (v) => {
+                    scoreStr = String(v);
+                    const m = scoreStr.split('-').map(x => x.trim());
+                    scoreLeft.text = m[0] || '0';
+                    scoreRight.text = m[1] || '0';
+                },
+            });
             scoreText.alpha = 0;  // Start hidden (menu state)
             scorePanel.addControl(scoreText);
             window.guiElements.scoreText = scoreText;
 
             // --- STAGE INDICATOR (Tug-of-War progress) ---
             // Use Grid for precise centering
+            // ONE segmented gauge, the same width as the score window: a light-rim track (the rim colour
+            // shows through as the dividers) holding five rounded segments.
+            const stageTrack = new BABYLON.GUI.Rectangle();
+            stageTrack.width = SCORE_W + "px";
+            stageTrack.height = "18px";
+            stageTrack.top = "73px";
+            stageTrack.background = "#dfe6f2";   // = HP gauge rim
+            stageTrack.thickness = 0;
+            stageTrack.cornerRadius = 6;
+            stageTrack.isVisible = false;  // Start hidden (menu state)
+            stageTrack.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
+            stageTrack.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
             const stageGrid = new BABYLON.GUI.Grid();
-            stageGrid.width = "200px";
-            stageGrid.height = "28px";
-            stageGrid.top = "80px";
-            stageGrid.isVisible = false;  // Start hidden (menu state)
-            stageGrid.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
-            stageGrid.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+            stageGrid.paddingLeft = stageGrid.paddingRight = stageGrid.paddingTop = stageGrid.paddingBottom = "2px";
+            stageTrack.addControl(stageGrid);
             // 5 equal columns
             stageGrid.addColumnDefinition(1);
             stageGrid.addColumnDefinition(1);
@@ -5824,8 +5862,8 @@
             stageGrid.addColumnDefinition(1);
             stageGrid.addColumnDefinition(1);
             stageGrid.addRowDefinition(1);
-            guiTexture.addControl(stageGrid);
-            window.guiElements.stageGrid = stageGrid;
+            guiTexture.addControl(stageTrack);
+            window.guiElements.stageGrid = stageTrack;   // every show/hide toggles the whole gauge
 
             // Stage names & palette (blue = player side, gold = midfield, red = enemy side)
             const stageNames = ["Blue Core", "Blue Territory", "Midfield", "Red Territory", "Red Core"];
@@ -5836,32 +5874,31 @@
             window.getStageColor = (idx) => stageColors[Math.min(Math.max(idx, 0), stageColors.length - 1)];
             for (let i = 0; i < 5; i++) {
                 const stageBg = new BABYLON.GUI.Rectangle();
-                stageBg.width = "34px";
-                stageBg.height = "24px";
-                stageBg.background = "#241b12";
-                stageBg.color = "#5a4326";
-                stageBg.thickness = 2;
+                stageBg.thickness = 0;
+                stageBg.paddingLeft = i === 0 ? "0px" : "1px";     // 2px rim-coloured dividers between segments
+                stageBg.paddingRight = i === 4 ? "0px" : "1px";
                 stageGrid.addControl(stageBg, 0, i);
 
                 // Fill rectangle (shows current/won/lost state)
                 const stageFill = new BABYLON.GUI.Rectangle();
                 stageFill.width = "100%";
                 stageFill.height = "100%";
-                stageFill.background = i === currentStage ? "#f0c050" : "#2e2418";
+                stageFill.background = i === currentStage ? "#f0c050" : "#2b3446";
                 stageFill.color = "transparent";
                 stageFill.thickness = 0;
+                stageFill.cornerRadius = 4;
                 stageBg.addControl(stageFill);
 
-                // Destroyed-territory mark: a 7x7 PIXEL-ART X (3px squares, not a font glyph) over a dimmed box.
+                // Destroyed-territory mark: a 7x7 PIXEL-ART X (2px squares, not a font glyph) over a dimmed segment.
                 const stageX = new BABYLON.GUI.Rectangle();
-                stageX.width = "21px"; stageX.height = "21px"; stageX.thickness = 0;
+                stageX.width = "14px"; stageX.height = "14px"; stageX.thickness = 0;
                 stageX.isVisible = false;
                 for (let k = 0; k < 7; k++) {
                     for (const col of (k === 3 ? [3] : [k, 6 - k])) {
                         const px = new BABYLON.GUI.Rectangle();
-                        px.width = "3px"; px.height = "3px"; px.thickness = 0;
-                        px.background = "#c9b48a";
-                        px.left = ((col - 3) * 3) + "px"; px.top = ((k - 3) * 3) + "px";
+                        px.width = "2px"; px.height = "2px"; px.thickness = 0;
+                        px.background = "#9aa6bd";
+                        px.left = ((col - 3) * 2) + "px"; px.top = ((k - 3) * 2) + "px";
                         stageX.addControl(px);
                     }
                 }
@@ -5876,7 +5913,7 @@
             stageNameText.color = window.getStageColor ? window.getStageColor(currentStage) : "#f0c050";
             stageNameText.fontSize = "18px";
             stageNameText.fontFamily = "'FF9UI', sans-serif";
-            stageNameText.top = "120px";
+            stageNameText.top = "96px";
             stageNameText.height = "24px";
             stageNameText.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
             stageNameText.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
@@ -5895,7 +5932,7 @@
                 stageBonusText.color = "#ff8a3d";
                 stageBonusText.fontSize = "18px";
                 stageBonusText.fontFamily = "'FF9UI', sans-serif";
-                stageBonusText.top = "120px";
+                stageBonusText.top = "96px";
                 stageBonusText.height = "24px";
                 stageBonusText.width = BONUS_W + "px";
                 stageBonusText.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
@@ -5946,25 +5983,15 @@
                     const down = !!territoryDown[i];
                     if (seg.x) seg.x.isVisible = down;
                     if (down) {
-                        // destroyed territory: dimmed box + pixel X (it can never be played again)
-                        seg.fill.background = "#16110b";
-                        seg.bg.color = "#3a2e1e";
+                        seg.fill.background = "#161b26";   // destroyed territory: dark steel + pixel X (never played again)
                     } else if (i === currentStage) {
-                        // Current stage - bright gold
-                        seg.fill.background = "#f0c050";
-                        seg.bg.color = "#f0c050";
+                        seg.fill.background = "#f0c050";   // current stage: gold
                     } else if (result === 'player') {
-                        // Player won this stage - blue/green
-                        seg.fill.background = "#209cee";
-                        seg.bg.color = "#3cb0f3";
+                        seg.fill.background = "#3a9ad6";   // Blue took it (HP-gauge blue)
                     } else if (result === 'ai') {
-                        // AI won this stage - red
-                        seg.fill.background = "#e74c3c";
-                        seg.bg.color = "#ff6b5b";
+                        seg.fill.background = "#e76e55";   // Red took it (HP-gauge red)
                     } else {
-                        // Future/unplayed - dim warm
-                        seg.fill.background = "#2e2418";
-                        seg.bg.color = "#5a4326";
+                        seg.fill.background = "#2b3446";   // unplayed: steel
                     }
                 }
 
