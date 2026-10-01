@@ -25,8 +25,8 @@ SRC = os.path.join(ROOT, 'src')
 JOBS = {
     'castle_wall':          ((64, 64), 24, 80, 0.06, 1.12),   # 64: fewer and the mortar lines vanish
     'tower_stone':          ((64, 64), 24, 80, 0.06, 1.12),
-    'grass_field_seamless': ((128, 128), 24, 80, 0.08, 1.15),   # same count as before: only the look changes
-    'dirt_road_seamless':   ((128, 128), 20, 70, 0.06, 1.12),
+    'grass_field_seamless': ((128, 128), 32, 35, 0.03, 1.04),   # same count as before: only the look changes
+    'dirt_road_seamless':   ((128, 128), 32, 30, 0.025, 1.03),
     'rail':                 ((128, 86), 20, 70, 0.06, 1.1),
     'wood_planks':          ((32, 32), 12, 60, 0.05, 1.08),   # generated (wood_source); shared by every structure
 }
