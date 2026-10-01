@@ -44,7 +44,7 @@ seen. Later, achievements are what cosmetic unlocks and a Steam bridge hang off.
 | `PICKLED_IN_ICE` | Pickled in Ice | Freeze opponents 5 times in one match |
 | **Pressure** | | |
 | `OVERTIME_HERO` | Overtime Hero | Win a round in overtime (round 10+) |
-| `DEMOLITION` | Demolition | **Needs a new definition — see §8** |
+| `DEMOLITION` | Demolition | Break the enemy territory, then win at their core the very next round (a two-round finishing push, no lost round in between) |
 
 Feats marked "win a round" (Untouched, Overtime Hero) and the spell-mastery ones only need to happen
 during a match; they don't require winning the match. They are still awarded when the match ends.
@@ -86,6 +86,7 @@ A single new block in index.html, `Achievements`, next to `StatTracker`:
 | Max Rally | the three tier raises (fireball `onPaddleHit` 2505, `parryProjectile` 14169, overpower sim.js:410/416): tier reaches 4 from a local hit |
 | Juice Clash Champion | `onBeamClashResolve` (24796): `winner` is local |
 | Pickled in Ice | frostbolt `onPaddleHit` freeze (2605): frozen side isn't local → `freezesInflicted++` |
+| Demolition | `endRound`: when `territoryFalls` and the winner is local, `matchFlags.territoryBrokeRound = totalRoundsPlayed` (after the increment). At the local match win: `territoryBrokeRound === totalRoundsPlayed - 1`. Only possible under `SIM_RULES.lanes` `'moba'` (live) / `'fresh'` — the lanes that destroy territories |
 
 ## 5. Bugs to fix along the way (found while mapping hooks)
 
@@ -125,15 +126,13 @@ These are wrong today and would make achievements wrong:
   so the fold should hold.
 - Online: verify a guest win credits the guest, and a rollback-heavy match doesn't double count.
 
-## 8. Open question — Demolition
+## 8. Resolved — Demolition (owner, 2026-10-01)
 
-The draft said "destroy both enemy territories and their core in one match". Each side has **one**
-territory (Blue Core · Blue Territory · Midfield · Red Territory · Red Core), and you can't reach the
-enemy core without breaking their territory — so as written, **every win** earns it.
-
-Recommendation: **Demolition — break the enemy territory and their core in back-to-back rounds**
-(a two-round finishing push with no lost round in between). Alternatives: *win with your own territory
-still standing*, or *deal 20+ damage in a single round*.
+The draft said "destroy both enemy territories and their core in one match", but each side has **one**
+territory and you can't reach the enemy core without breaking it, so every win would have earned it.
+Owner picked **back-to-back push**: the round that breaks the enemy territory is immediately followed
+by the winning round at their core. Losing at the core after breaking the territory sends you back
+over the (still-down) territory to Midfield, and that push no longer counts.
 
 ## 9. Out of scope
 
