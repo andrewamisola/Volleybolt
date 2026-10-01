@@ -10202,7 +10202,9 @@
                     if (set.kind === 'core') {
                         // = applyStageLighting's core sun: low daylight through the breach, travelling away from it
                         const sgn = set.mirror ? -1 : 1;
-                        return { dir: new BABYLON.Vector3(sgn, -0.62, 0.34).normalize(), intensity: 1.6, diffuse: new BABYLON.Color3(1.0, 0.8, 0.52) };
+                        // the backdrop's breach light comes in on a diagonal (owner: not literally straight from behind the
+                        // attackers), low, so the rubble in it rakes shadows across the hall floor
+                        return { dir: new BABYLON.Vector3(sgn * 0.72, -0.5, 0.62).normalize(), intensity: 1.6, diffuse: new BABYLON.Color3(1.0, 0.8, 0.52) };
                     }
                     // Outdoors: the stage sun's compass direction, but sitting LOW over the backdrop (window.forestSunElev
                     // degrees above the horizon; the stage sun is ~35) - a late-dusk sun that rakes long shadows across
@@ -10499,7 +10501,9 @@
                         // the hall walls sit in shade, far darker than the lit floor (owner): a dark purple-grey base and
                         // no scene fog on them (the purple fog lifted them back up to a flat lavender)
                         stoneDim: [0.28, 0.26, 0.32], propFog: false,
-                        shadowCol: [0.12, 0.04, 0.2], cast: 0.66, contact: 0.36, len: 1.0, paveTint: [0.36, 0.32, 0.42], cracks: true, shafts: true,
+                        // sunlit hall floor: things in the breach light throw real directional shadows away from it, not
+                        // round contact puddles (owner)
+                        shadowCol: [0.12, 0.04, 0.2], cast: 0.74, contact: 0.12, len: 1.5, paveTint: [0.36, 0.32, 0.42], cracks: true, shafts: true,
                         build: (R, add, halfD, fires) => {
                             const zF = halfD + 9, zN = -halfD - 13, BX = -19;    // far wall, near wall, breach end
                             const HALL_SY = 2.6;
