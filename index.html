@@ -9550,8 +9550,8 @@
                 const EERIE_DEFAULT = {
                     z0: 2.5, zRange: 24,       // starts this far past each rail, full over zRange
                     x0: 16, xRange: 18,        // and toward the sides (|x| past x0)
-                    color: [0.10, 0.07, 0.13], max: 0.8,
-                    dim: 0.8, desat: 0.25,     // the paintings' murky grade, ramping in past the rails
+                    color: [0.10, 0.07, 0.13], max: 0.85,
+                    dim: 0.62, desat: 0.08,    // darker but NOT greyed out past the rails (greying is what flattened it)
                 };
                 const EERIE = window.eerieFog = { ...EERIE_DEFAULT };   // each set overrides some (SETS[..].eerie)
                 // + JUICE TINT: the old painted backdrop dimmed/tinted toward the beaming team's colour (blue / red /
@@ -9562,6 +9562,12 @@
                 //   scaled by the surface's own lit colour, so nearby props visibly catch the glow. The set's own
                 //   fixed fires (tower torches, braziers) go through the same path, flickering. The shadow layer
                 //   opts out (lights: false).
+                // PUNCH (live-tunable): contrast / saturation of every backdrop surface, and the strength + texel
+                // density of the props' painted surface detail
+                // Tuned in-game against the textured structures (owner: the backdrops were flat next to them):
+                // contrast + saturation back, painted leaf/bark/rock grain, and the murk DARKENS rather than paints
+                // everything purple (murkTint 0.4), so greens stay green into the shadows.
+                const PUNCH = window.backdropPunch = { contrast: 1.3, sat: 1.15, detail: 0.5, detailScale: 6.0, murkTint: 0.4 };
                 const EERIE_NL = 8;
                 const eerieLights = new Float32Array(EERIE_NL * 8);   // per light: pos.xyz, reach | colour.rgb, -
                 const eerieTint = [1, 1, 1];
@@ -9608,16 +9614,18 @@
                 window.eerieLightGain = 1.0;
                 class EerieFogPlugin extends BABYLON.MaterialPluginBase {
                     constructor(material, opts) {
-                        super(material, 'EerieFog', 300, { EERIEFOG: false, EERIELIGHTS: false });
+                        super(material, 'EerieFog', 300, { EERIEFOG: false, EERIELIGHTS: false, EERIEDETAIL: false });
                         this._lights = !(opts && opts.lights === false);
+                        this._detail = !!(opts && opts.detail);
                         this._enable(true);
                     }
-                    prepareDefines(defines) { defines.EERIEFOG = true; defines.EERIELIGHTS = this._lights; }
+                    prepareDefines(defines) { defines.EERIEFOG = true; defines.EERIELIGHTS = this._lights; defines.EERIEDETAIL = this._detail; }
                     getClassName() { return 'EerieFogPlugin'; }
                     getUniforms() {
                         const ubo = [{ name: 'eerieA', size: 4, type: 'vec4' }, { name: 'eerieB', size: 4, type: 'vec4' },
-                                     { name: 'eerieC', size: 4, type: 'vec4' }, { name: 'eerieT', size: 4, type: 'vec4' }];
-                        let decl = '#ifdef EERIEFOG\nuniform vec4 eerieA;\nuniform vec4 eerieB;\nuniform vec4 eerieC;\nuniform vec4 eerieT;\n';
+                                     { name: 'eerieC', size: 4, type: 'vec4' }, { name: 'eerieT', size: 4, type: 'vec4' },
+                                     { name: 'eerieD', size: 4, type: 'vec4' }];
+                        let decl = '#ifdef EERIEFOG\nuniform vec4 eerieA;\nuniform vec4 eerieB;\nuniform vec4 eerieC;\nuniform vec4 eerieT;\nuniform vec4 eerieD;\n';
                         for (let i = 0; i < EERIE_NL * 2; i++) { ubo.push({ name: 'eerieL' + i, size: 4, type: 'vec4' }); decl += 'uniform vec4 eerieL' + i + ';\n'; }
                         return { ubo, fragment: decl + '#endif' };
                     }
@@ -9625,8 +9633,9 @@
                         const halfD = (window.getEffectiveTableDepth ? getEffectiveTableDepth() : 14) / 2;
                         ubo.updateFloat4('eerieA', halfD + EERIE.z0, EERIE.zRange, EERIE.x0, EERIE.xRange);
                         ubo.updateFloat4('eerieB', EERIE.color[0], EERIE.color[1], EERIE.color[2], EERIE.max);
-                        ubo.updateFloat4('eerieC', EERIE.dim, EERIE.desat, window.eerieLightGain, 0);
+                        ubo.updateFloat4('eerieC', EERIE.dim, EERIE.desat, window.eerieLightGain, PUNCH.murkTint);
                         ubo.updateFloat4('eerieT', eerieTint[0], eerieTint[1], eerieTint[2], 0);
+                        ubo.updateFloat4('eerieD', PUNCH.contrast, PUNCH.sat, PUNCH.detail, PUNCH.detailScale);
                         for (let i = 0; i < EERIE_NL * 2; i++) {
                             const o = i * 4;
                             ubo.updateFloat4('eerieL' + i, eerieLights[o], eerieLights[o + 1], eerieLights[o + 2], eerieLights[o + 3]);
@@ -9643,9 +9652,30 @@
                                     eAdd += eerieL${i * 2 + 1}.rgb * eA${i} * eA${i};
                                 }`;
                         }
-                        return { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: `
+                        return {
+                            CUSTOM_FRAGMENT_DEFINITIONS: `
+                            #ifdef EERIEDETAIL
+                            float eHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+                            float eNoise(vec3 x) {
+                                vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
+                                return mix(mix(mix(eHash(i), eHash(i + vec3(1,0,0)), f.x), mix(eHash(i + vec3(0,1,0)), eHash(i + vec3(1,1,0)), f.x), f.y),
+                                           mix(mix(eHash(i + vec3(0,0,1)), eHash(i + vec3(1,0,1)), f.x), mix(eHash(i + vec3(0,1,1)), eHash(i + vec3(1,1,1)), f.x), f.y), f.z);
+                            }
+                            #endif`,
+                            CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: `
                             #ifdef EERIEFOG
                             {
+                                #ifdef EERIEDETAIL
+                                // painterly surface detail for the untextured props (leaves, bark, rock): chunky world-space
+                                // value noise, snapped to a PS1 texel grid, two octaves
+                                vec3 eP = floor(vPositionW * eerieD.w) / eerieD.w;
+                                float eN = 0.62 * eNoise(eP * 1.3) + 0.38 * eNoise(eP * 3.7 + 11.0);
+                                ${c}.rgb *= 1.0 + (eN - 0.5) * eerieD.z;
+                                #endif
+                                // punch: contrast around mid-grey + saturation (the props read as rich as the structures)
+                                ${c}.rgb = max(vec3(0.0), (${c}.rgb - 0.35) * eerieD.x + 0.35);
+                                float eS = dot(${c}.rgb, vec3(0.299, 0.587, 0.114));
+                                ${c}.rgb = max(vec3(0.0), mix(vec3(eS), ${c}.rgb, eerieD.y));
                                 vec3 eBase = ${c}.rgb;   // the surface as lit, before the murk
                                 float eZ = clamp((abs(vPositionW.z) - eerieA.x) / eerieA.y, 0.0, 1.0);
                                 float eX = clamp((abs(vPositionW.x) - eerieA.z) / eerieA.w, 0.0, 1.0);
@@ -9656,7 +9686,8 @@
                                 ${c}.rgb = mix(${c}.rgb, mix(${c}.rgb, vec3(eL), eerieC.y) * eerieC.x, eG);
                                 // ... then the dusk murk
                                 eK = eK * eK * (3.0 - 2.0 * eK);
-                                ${c}.rgb = mix(${c}.rgb, eerieB.rgb, eK * eerieB.w);
+                                // murkTint (eerieC.w): 1 = sink into the murk colour, 0 = just darken (keeps the hue - greens stay green)
+                                ${c}.rgb = mix(${c}.rgb, mix(${c}.rgb * 0.22, eerieB.rgb, eerieC.w), eK * eerieB.w);
                                 // Juice: the backdrop dims + tints toward the beaming team
                                 ${c}.rgb *= eerieT.rgb;
                                 #ifdef EERIELIGHTS
@@ -9934,13 +9965,29 @@
                     return { dir: (window.forestSunDir ? window.forestSunDir.clone() : midSun.dir.clone()).normalize(),
                              intensity: midSun.intensity, diffuse: midSun.diffuse.clone() };
                 };
+                // The props' own FILL: the scene's warm hemispheric fill (0.58) lit their shadow sides almost as
+                // bright as their lit sides - that flattened them. They take a dimmer, cooler one instead.
+                let propAmb = null;
+                const applyPropFill = (meshes) => {
+                    const amb = scene.getLightByName('ambient');
+                    if (!amb) return;
+                    if (!propAmb) {
+                        propAmb = new BABYLON.HemisphericLight('propAmb', new BABYLON.Vector3(0, 1, 0), scene);
+                        propAmb.diffuse = amb.diffuse.clone(); propAmb.specular = BABYLON.Color3.Black();
+                        propAmb.groundColor = new BABYLON.Color3(0.12, 0.08, 0.16);
+                    }
+                    propAmb.intensity = 0.26;
+                    propAmb.includedOnlyMeshes = meshes;
+                    for (const m of meshes) if (!amb.excludedMeshes.includes(m)) amb.excludedMeshes.push(m);
+                };
                 const applyPropSun = (S) => {
                     const sunL = scene.getLightByName('sun');
                     const meshes = Object.values(protos).flat();
+                    applyPropFill(meshes);
                     if (!propSun) propSun = new BABYLON.DirectionalLight('forestSun', S.dir.clone(), scene);
                     propSun.direction = S.dir.clone();
                     propSun.position = S.dir.scale(-80);
-                    propSun.intensity = S.intensity; propSun.diffuse = S.diffuse.clone(); propSun.specular = BABYLON.Color3.Black();
+                    propSun.intensity = S.intensity * 0.95; propSun.diffuse = S.diffuse.clone(); propSun.specular = BABYLON.Color3.Black();
                     propSun.includedOnlyMeshes = meshes;
                     if (sunL) for (const m of meshes) if (!sunL.excludedMeshes.includes(m)) sunL.excludedMeshes.push(m);
                     if (!propSG) {
@@ -10174,7 +10221,7 @@
                         // indoors the painting is lit, not lost in dusk: lighter, later murk so the walls/banners read
                         // Like the painting: the hall sits in deep PURPLE shade (shadows, murk, the stone's cast) and the
                         // breach daylight cuts across it in warm streaks; fine cracks in the floor.
-                        eerie: { color: [0.10, 0.045, 0.15], max: 0.6, z0: 7, dim: 0.9, desat: 0.15 }, ground: 'pave', glow: 'breach',
+                        eerie: { color: [0.10, 0.045, 0.15], max: 0.6, z0: 7, dim: 0.8, desat: 0.08 }, ground: 'pave', glow: 'breach',
                         shadowCol: [0.09, 0.025, 0.15], cast: 0.78, contact: 0.6, paveTint: [0.36, 0.32, 0.42], cracks: true, shafts: true,
                         build: (R, add, halfD, fires) => {
                             const zF = halfD + 9, zN = -halfD - 13, BX = -19;    // far wall, near wall, breach end
@@ -10341,6 +10388,7 @@
                             if (m.material) {
                                 const mat = m.material;
                                 mat.metallic = 0; mat.roughness = 1; mat.environmentIntensity = 0;
+                                mat.fogEnabled = false;   // the eerie murk is their distance fade; scene fog on top greyed them out
                                 if (mat.albedoTexture) mat.albedoTexture.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);   // = styleStructMat
                                 if (mat.name === 'M_banner') mat.emissiveColor = new BABYLON.Color3(0.16, 0.025, 0.02);   // cloth catches the firelight
                                 if (mat.name === 'M_sigil') mat.emissiveColor = new BABYLON.Color3(0.18, 0.13, 0.02);
@@ -10350,7 +10398,10 @@
                                     mat.emissiveColor = new BABYLON.Color3(1.0, 0.62, 0.26);
                                     if (mat.name === 'M_flame') flameMats.push(mat);
                                     m._noShadowCast = true;
-                                } else if (!mat.pluginManager || !mat.pluginManager.getPlugin('EerieFog')) new EerieFogPlugin(mat);
+                                } else if (!mat.pluginManager || !mat.pluginManager.getPlugin('EerieFog')) {
+                                    // untextured props (foliage, bark, rock) get the painted detail; textured stone has its own
+                                    new EerieFogPlugin(mat, { detail: !mat.albedoTexture });
+                                }
                             }
                             m.setEnabled(false);
                             protos[kind].push(m);
