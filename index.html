@@ -9543,32 +9543,85 @@
                     color: [0.10, 0.07, 0.13], max: 0.8,
                     dim: 0.8, desat: 0.25,     // the painting's murky grade, ramping in past the rails
                 };
+                // + JUICE TINT: the old painted backdrop dimmed/tinted toward the beaming team's colour (blue / red /
+                //   purple when both) through backdropLayer.color; the 3D backdrop takes the very same tint (the
+                //   ratio of that live colour to its original) as a multiplier here.
+                // + LIGHT THROUGH THE MURK: the spell lights (fireballs, Juice beams + charge orbs) already light the
+                //   props for real, but the dusk murk swallows them past the rails. The strongest few are passed in
+                //   and added back on top, scaled by the surface's own lit colour, so nearby trees, rocks and ground
+                //   visibly catch the fire / beam glow. The shadow layer opts out (lights: false).
+                const EERIE_NL = 6;
+                const eerieLights = new Float32Array(EERIE_NL * 8);   // per light: pos.xyz, reach | colour.rgb, -
+                const eerieTint = [1, 1, 1];
+                scene.onBeforeRenderObservable.add(() => {
+                    if (!window._propsBackdropActive) return;
+                    // Juice tint: ratio of the live backdrop colour to its original
+                    const d = window._odBgDim;
+                    if (d && d.cur && d.origColor) {
+                        eerieTint[0] = d.cur.r / Math.max(0.01, d.origColor.r);
+                        eerieTint[1] = d.cur.g / Math.max(0.01, d.origColor.g);
+                        eerieTint[2] = d.cur.b / Math.max(0.01, d.origColor.b);
+                    } else { eerieTint[0] = eerieTint[1] = eerieTint[2] = 1; }
+                    // the strongest spell lights this frame
+                    const picks = [];
+                    for (const l of scene.lights) {
+                        if (!(l instanceof BABYLON.PointLight) || !l.isEnabled() || l.intensity <= 0) continue;
+                        const n = l.name;
+                        const fire = n.startsWith('fireLight_');
+                        const k = fire ? 0.045 : /_bLight\d/.test(n) ? 0.07 : /_orbLight$/.test(n) ? 0.11 : 0;   // tuned in-game
+                        if (!k) continue;
+                        picks.push({ l, w: l.intensity * k, reach: fire ? l.range * 1.1 : l.range * 0.8 });
+                    }
+                    picks.sort((a, b) => b.w - a.w);
+                    eerieLights.fill(0);
+                    for (let i = 0; i < Math.min(EERIE_NL, picks.length); i++) {
+                        const { l, w, reach } = picks[i], q = l.getAbsolutePosition(), o = i * 8;
+                        eerieLights[o] = q.x; eerieLights[o + 1] = q.y; eerieLights[o + 2] = q.z; eerieLights[o + 3] = reach;
+                        eerieLights[o + 4] = l.diffuse.r * w; eerieLights[o + 5] = l.diffuse.g * w; eerieLights[o + 6] = l.diffuse.b * w;
+                    }
+                });
+                window.eerieLightGain = 1.0;
                 class EerieFogPlugin extends BABYLON.MaterialPluginBase {
-                    constructor(material) {
-                        super(material, 'EerieFog', 300, { EERIEFOG: false });
+                    constructor(material, opts) {
+                        super(material, 'EerieFog', 300, { EERIEFOG: false, EERIELIGHTS: false });
+                        this._lights = !(opts && opts.lights === false);
                         this._enable(true);
                     }
-                    prepareDefines(defines) { defines.EERIEFOG = true; }
+                    prepareDefines(defines) { defines.EERIEFOG = true; defines.EERIELIGHTS = this._lights; }
                     getClassName() { return 'EerieFogPlugin'; }
                     getUniforms() {
-                        return {
-                            ubo: [{ name: 'eerieA', size: 4, type: 'vec4' }, { name: 'eerieB', size: 4, type: 'vec4' },
-                                  { name: 'eerieC', size: 4, type: 'vec4' }],
-                            fragment: '#ifdef EERIEFOG\nuniform vec4 eerieA;\nuniform vec4 eerieB;\nuniform vec4 eerieC;\n#endif',
-                        };
+                        const ubo = [{ name: 'eerieA', size: 4, type: 'vec4' }, { name: 'eerieB', size: 4, type: 'vec4' },
+                                     { name: 'eerieC', size: 4, type: 'vec4' }, { name: 'eerieT', size: 4, type: 'vec4' }];
+                        let decl = '#ifdef EERIEFOG\nuniform vec4 eerieA;\nuniform vec4 eerieB;\nuniform vec4 eerieC;\nuniform vec4 eerieT;\n';
+                        for (let i = 0; i < EERIE_NL * 2; i++) { ubo.push({ name: 'eerieL' + i, size: 4, type: 'vec4' }); decl += 'uniform vec4 eerieL' + i + ';\n'; }
+                        return { ubo, fragment: decl + '#endif' };
                     }
                     bindForSubMesh(ubo) {
                         const halfD = (window.getEffectiveTableDepth ? getEffectiveTableDepth() : 14) / 2;
                         ubo.updateFloat4('eerieA', halfD + EERIE.z0, EERIE.zRange, EERIE.x0, EERIE.xRange);
                         ubo.updateFloat4('eerieB', EERIE.color[0], EERIE.color[1], EERIE.color[2], EERIE.max);
-                        ubo.updateFloat4('eerieC', EERIE.dim, EERIE.desat, 0, 0);
+                        ubo.updateFloat4('eerieC', EERIE.dim, EERIE.desat, window.eerieLightGain, 0);
+                        ubo.updateFloat4('eerieT', eerieTint[0], eerieTint[1], eerieTint[2], 0);
+                        for (let i = 0; i < EERIE_NL * 2; i++) {
+                            const o = i * 4;
+                            ubo.updateFloat4('eerieL' + i, eerieLights[o], eerieLights[o + 1], eerieLights[o + 2], eerieLights[o + 3]);
+                        }
                     }
                     getCustomCode(shaderType) {
                         if (shaderType !== 'fragment') return null;
                         const c = this._material instanceof BABYLON.PBRMaterial ? 'finalColor' : 'color';
+                        let lightCode = '';
+                        for (let i = 0; i < EERIE_NL; i++) {
+                            lightCode += `
+                                if (eerieL${i * 2}.w > 0.0) {
+                                    float eA${i} = clamp(1.0 - distance(vPositionW, eerieL${i * 2}.xyz) / eerieL${i * 2}.w, 0.0, 1.0);
+                                    eAdd += eerieL${i * 2 + 1}.rgb * eA${i} * eA${i};
+                                }`;
+                        }
                         return { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: `
                             #ifdef EERIEFOG
                             {
+                                vec3 eBase = ${c}.rgb;   // the surface as lit, before the murk
                                 float eZ = clamp((abs(vPositionW.z) - eerieA.x) / eerieA.y, 0.0, 1.0);
                                 float eX = clamp((abs(vPositionW.x) - eerieA.z) / eerieA.w, 0.0, 1.0);
                                 float eK = 1.0 - (1.0 - eZ) * (1.0 - eX);
@@ -9579,6 +9632,14 @@
                                 // ... then the dusk murk
                                 eK = eK * eK * (3.0 - 2.0 * eK);
                                 ${c}.rgb = mix(${c}.rgb, eerieB.rgb, eK * eerieB.w);
+                                // Juice: the backdrop dims + tints toward the beaming team
+                                ${c}.rgb *= eerieT.rgb;
+                                #ifdef EERIELIGHTS
+                                // spell light cutting through the murk (reflected off the surface's own colour)
+                                vec3 eAdd = vec3(0.0);
+                                ${lightCode}
+                                ${c}.rgb += (eBase * 1.6 + vec3(0.04)) * eAdd * eerieC.z;
+                                #endif
                             }
                             #endif
                         ` };
@@ -9672,7 +9733,7 @@
                 shadowMat.emissiveColor = new BABYLON.Color3(0.035, 0.025, 0.06);   // cool dusk shade, not pure black
                 shadowMat.opacityTexture = shadowTex;
                 shadowMat.zOffset = -2;
-                new EerieFogPlugin(shadowMat);
+                new EerieFogPlugin(shadowMat, { lights: false });
                 const shadowPlane = BABYLON.MeshBuilder.CreateGround('forestShadow', { width: SH_W, height: SH_W }, scene);
                 shadowPlane.position.y = -0.04;   // over ground + dirt, still under the arena floor's top
                 shadowPlane.material = shadowMat; shadowPlane.isPickable = false;
