@@ -9531,11 +9531,11 @@
                 const PROP_FILES = {
                     tree: 'tree.glb?v=1', pine: 'pine.glb?v=1', rock: 'rock.glb?v=1',
                     // v2: the gatehouse's own textured stone (M_keep tower_stone / M_wall castle_wall, same texel size)
-                    stump: 'stump.glb?v=2', guard_tower: 'guard_tower.glb?v=3', hall_wall: 'hall_wall.glb?v=3',
-                    hall_wall_tall: 'hall_wall_tall.glb?v=2',   // the core's full-height hall wall (true-size bricks)
-                    banner: 'banner.glb?v=2', brazier: 'brazier.glb?v=3', rubble: 'rubble.glb?v=3', wall_broken: 'wall_broken.glb?v=3',
+                    stump: 'stump.glb?v=3', guard_tower: 'guard_tower.glb?v=4', hall_wall: 'hall_wall.glb?v=4',
+                    hall_wall_tall: 'hall_wall_tall.glb?v=3',   // the core's full-height hall wall (true-size bricks)
+                    banner: 'banner.glb?v=3', brazier: 'brazier.glb?v=4', rubble: 'rubble.glb?v=4', wall_broken: 'wall_broken.glb?v=4',
                     // crenellated curtain wall (tiles every 4u) + its two end pieces that tuck into a guard tower
-                    curtain_wall: 'curtain_wall.glb?v=2', curtain_wall_end: 'curtain_wall_end.glb?v=2', curtain_wall_end_r: 'curtain_wall_end_r.glb?v=2',
+                    curtain_wall: 'curtain_wall.glb?v=3', curtain_wall_end: 'curtain_wall_end.glb?v=3', curtain_wall_end_r: 'curtain_wall_end_r.glb?v=3',
                 };
                 const KINDS = Object.keys(PROP_FILES);
                 window.refreshEerieFog = () => scene.markAllMaterialsAsDirty(BABYLON.Constants.MATERIAL_AllDirtyFlag);
@@ -9793,19 +9793,19 @@
                 // to match the stage): the image box-filtered down to `res` px, crisp nearest texels.
                 const lowResTex = (url, name, res) => {
                     const t = new BABYLON.DynamicTexture(name, { width: res, height: res }, scene, true);
-                    t.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
+                    t.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPNEAREST);
                     t.wrapU = t.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
                     const img = new Image();
                     img.onload = () => {
                         const g = t.getContext();
-                        g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+                        g.imageSmoothingEnabled = false;   // pixel-first source: keep texels crisp
                         g.drawImage(img, 0, 0, res, res);
                         t.update();
                     };
                     img.src = url;
                     return t;
                 };
-                const gTex = lowResTex('textures/grass_field_seamless.png?v=1', 'backdropGrassLow', 32);
+                const gTex = lowResTex('textures/grass_field_seamless.png?v=2', 'backdropGrassLow', 32);
                 // Same grass as the court floor (floorMat): ~13u tiles, same tint and black-point lift, so the
                 // ground right past the rails continues the stage seamlessly before the murk takes over.
                 gTex.uScale = 21; gTex.vScale = 21;   // ~6.7u tiles (half the old size), 32px: chunky PS1 grass
@@ -9817,7 +9817,7 @@
                 // Dirt patches over it (the lane road's dirt, through a blotchy blurred mask) - the paintings' open
                 // ground is mostly worn earth with grass between.
                 const dirtMat = new BABYLON.StandardMaterial('forestDirtMat', scene);
-                const dTex = lowResTex('textures/dirt_road_seamless.png?v=1', 'backdropDirtLow', 32);
+                const dTex = lowResTex('textures/dirt_road_seamless.png?v=2', 'backdropDirtLow', 32);
                 dTex.uScale = 32; dTex.vScale = 32;   // ~4.4u tiles = the lane road's dirt size, 32px
                 dirtMat.diffuseTexture = dTex;
                 dirtMat.specularColor = BABYLON.Color3.Black();
@@ -9929,7 +9929,7 @@
                     tg.imageSmoothingEnabled = true; tg.imageSmoothingQuality = 'high';
                     tg.drawImage(src, 0, 0, TO, TO);
                     t.update();
-                    t.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
+                    t.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPNEAREST);
                     t.wrapU = t.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
                     t.uScale = t.vScale = GW / 1.6;   // 1.6u per tile: same brick size as the gatehouse wall, half its texels
                     paveMat.diffuseTexture = t;
@@ -10723,7 +10723,7 @@
                                 // scene fog ON, like the structures: the purple distance haze ties props and structures
                                 // into one scene (owner: the guard tower vs the gate read as two worlds without it)
                                 mat.fogEnabled = true;
-                                if (mat.albedoTexture) mat.albedoTexture.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);   // = styleStructMat
+                                if (mat.albedoTexture) mat.albedoTexture.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPNEAREST);   // = styleStructMat
                                 if (mat.name === 'M_banner') mat.emissiveColor = new BABYLON.Color3(0.16, 0.025, 0.02);   // cloth catches the firelight
                                 if (mat.name === 'M_sigil' || mat.name === 'M_sigil_dark') m.isVisible = false;   // plain banners (owner)
                                 if (mat.name === 'M_flame' || mat.name === 'M_coal') {
@@ -10954,13 +10954,13 @@
                 mat.specularPower = 0;
 
                 if (texturePath) {
-                    const tex = new BABYLON.Texture(texturePath, scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
+                    const tex = new BABYLON.Texture(texturePath, scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPNEAREST);
                     tex.uScale = tileU;
                     tex.vScale = tileV;
                     mat.diffuseTexture = tex;
                     // PS1 look: nearest magnification (chunky texels) + mipmapped minification
                     // (mode 8) so the low-res tiling ground stays stable in the distance (no sparkle)
-                    tex.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
+                    tex.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPNEAREST);
                 }
 
                 if (color) {
@@ -11003,7 +11003,7 @@
             })();
 
             // === MATERIALS (solid colors for now - add textures later) ===
-            const floorMat = createClassicMaterial("floorMat", "textures/grass_field_seamless.png?v=1", 4, 2, new BABYLON.Color3(1.0, 0.98, 0.9));  // Tiling storybook grass ground (real material, not a baked top-down map)
+            const floorMat = createClassicMaterial("floorMat", "textures/grass_field_seamless.png?v=2", 4, 2, new BABYLON.Color3(1.0, 0.98, 0.9));  // Tiling storybook grass ground (real material, not a baked top-down map)
             floorMat.emissiveColor = new BABYLON.Color3(0.16, 0.16, 0.12);  // Gentle black-point lift
 
             // Optional bump/normal map - disabled (created outline artifacts, not D2 style)
@@ -11016,7 +11016,7 @@
             // floorMat.invertNormalMapX = true;
             // floorMat.invertNormalMapY = true;
             const groundMat = createClassicMaterial("groundMat", null, 1, 1, GRAY.ground);
-            const wallStoneMat = createClassicMaterial("wallStoneMat", "textures/rail.png?v=3", 8, 1, new BABYLON.Color3(0.6, 0.6, 0.6));
+            const wallStoneMat = createClassicMaterial("wallStoneMat", "textures/rail.png?v=4", 8, 1, new BABYLON.Color3(0.6, 0.6, 0.6));
             wallStoneMat.emissiveColor = new BABYLON.Color3(0.15, 0.12, 0.1);  // Subtle glow so walls are always visible
             const cliffMat = createClassicMaterial("cliffMat", null, 1, 1, GRAY.jungle);
 
@@ -11099,7 +11099,7 @@
             // ============================================================
             (function buildLanePath() {
                 const dirtMat = new BABYLON.StandardMaterial("lanePathMat", scene);
-                const dirtTex = new BABYLON.Texture("textures/dirt_road_seamless.png?v=1", scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
+                const dirtTex = new BABYLON.Texture("textures/dirt_road_seamless.png?v=2", scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPNEAREST);
                 dirtTex.uScale = 6 * groundRatio;  dirtTex.vScale = 3;   // tile for surface detail
                 dirtMat.diffuseTexture = dirtTex;
                 dirtMat.specularColor = BABYLON.Color3.Black();
@@ -13382,7 +13382,7 @@
                                 // pickle is small on screen (plain NEAREST ignores mipmaps -> sparkle).
                                 const tex = mat.albedoTexture || mat.diffuseTexture;
                                 if (tex) {
-                                    tex.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
+                                    tex.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPNEAREST);
                                     tex.anisotropicFilteringLevel = 8;
                                 }
                             });
@@ -13807,18 +13807,18 @@
             // in the breach. A kind whose GLB is missing or still loading falls back to the castle.
             // ============================================================
             const STRUCT_FILES = {
-                castle:    { dir: 'models/castle/',    file: 'castle.glb?v=2' },
-                core:      { dir: 'models/core/',      file: 'core.glb?v=4' },
-                gatehouse: { dir: 'models/gatehouse/', file: 'gatehouse.glb?v=2' },
-                catapult:  { dir: 'models/catapult/',  file: 'catapult.glb?v=2' },   // v2: grain-aligned weathered wood
-                ram:       { dir: 'models/ram/',       file: 'ram.glb?v=5' },   // v2: baked occlusion + breach-light shadow in the vertex colours
+                castle:    { dir: 'models/castle/',    file: 'castle.glb?v=3' },
+                core:      { dir: 'models/core/',      file: 'core.glb?v=5' },
+                gatehouse: { dir: 'models/gatehouse/', file: 'gatehouse.glb?v=3' },
+                catapult:  { dir: 'models/catapult/',  file: 'catapult.glb?v=3' },   // v2: grain-aligned weathered wood
+                ram:       { dir: 'models/ram/',       file: 'ram.glb?v=6' },   // v2: baked occlusion + breach-light shadow in the vertex colours
             };
             // Materials are styled by NAME (the Blender scripts use a shared vocabulary).
             const styleStructMat = (st, mat) => {
                 // Match the flat PS1 storybook look (same treatment as the pickle wizards):
                 // no PBR gloss/reflections, crisp nearest texels with mipmapped minification.
                 mat.metallic = 0; mat.roughness = 1; mat.environmentIntensity = 0;
-                if (mat.albedoTexture) mat.albedoTexture.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
+                if (mat.albedoTexture) mat.albedoTexture.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPNEAREST);
                 const n = mat.name;
                 const add = (list) => { if (!list.includes(mat)) list.push(mat); };
                 if (n === 'M_brine_team') {
@@ -13943,8 +13943,8 @@
 
             // Load castle wall texture for team-colored surfaces
             const loadTeamTextures = () => {
-                const teamTex = new BABYLON.Texture("textures/castle_wall.png?v=3", scene, false, true,
-                    BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR,
+                const teamTex = new BABYLON.Texture("textures/castle_wall.png?v=4", scene, false, true,
+                    BABYLON.Texture.NEAREST_NEAREST_MIPNEAREST,
                     () => {
                         // Apply to blue team (base + backdrop)
                         const blueTex = teamTex.clone();
