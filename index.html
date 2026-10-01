@@ -855,7 +855,8 @@
         //                 'regen50' (previous rule: no destruction, gates below 50% lift to 50% on return)
         //   defenderMana: the defender's extra max mana at its territory (4) / core (5)
         //   overtime:     the +1-per-round damage escalation from round overtimeStart (10)
-        const SIM_RULES_DEFAULT = { lanes: 'fresh', defenderMana: true, overtime: true, territoryHp: 0, overtimeStart: 10 };   // territoryHp 0 = TERRITORY_HP
+        const SIM_RULES_DEFAULT = { lanes: 'fresh', defenderMana: true, overtime: true, territoryHp: 0, overtimeStart: 10,
+                                    aiPath: 'mixed', phaseSide: 'alt' };   // spectate AI-driver experiments (see runSinglePlayerFrame)   // territoryHp 0 = TERRITORY_HP
         const SIM_RULES = { ...SIM_RULES_DEFAULT };
         window.SIM_RULES = SIM_RULES;
         window.SIM_RULES_DEFAULT = SIM_RULES_DEFAULT;
@@ -14339,6 +14340,9 @@
                 // SPECTATE Blue: exactly the singles AI_PROFILE (no reaction/cadence deltas; castK
                 // absent -> the singles 8), with its own hash salt so its parry/aim rolls aren't Red's.
                 spectate: { reactionDelta: 0, slotSalt: 0x5EED3 },
+                // SPECTATE Red when SIM_RULES.aiPath === 'slots' (simulator experiment): the identical per-slot
+                // driver as spectate Blue, with the singles right-AI's salt (0).
+                spectateR: { reactionDelta: 0, slotSalt: 0 },
             };
             // Per-slot reaction rings + threat-sight (replaces the singles globals for doubles slots).
             // 'left' added W3 (see DOUBLES_AI.slotSalt comment above) — computeDoublesAIInput /
@@ -15103,9 +15107,16 @@
                 for (const k in aiThreatSight) { if (!_incoming.has(+k)) delete aiThreatSight[k]; }
 
                 const humanInput = buildPlayerInput();   // always consumed, so presses never queue into a later match
-                // SPECTATE: Blue runs the same AI brain as Red, its cast rhythm half a beat out of phase
-                // (+4 frames on the 8-frame cast period: same rate) so the two don't mirror move for move.
-                const leftInput  = spectating ? computeDoublesAIInput('left', 'spectate', spFrameCounter + 4) : humanInput;
+                // SPECTATE: Blue runs the same AI brain as Red, one of the two half a beat out of phase (+4 frames
+                // on the 8-frame cast period: same rate) so they don't mirror move for move. The shifted side
+                // measurably wins fewer rounds (80 seeds, 2026-10-01: Blue 45% of rounds carrying the shift, 49%
+                // without), so the shift ALTERNATES by round (deterministic: totalRoundsPlayed) and neither side
+                // carries it. Normal play (a human Blue) is untouched: Red keeps phase 0.
+                // (simulator experiments: SIM_RULES.phaseSide 'left'/'right' pins the shift to one side; aiPath
+                //  'slots' drives Red through the same per-slot driver as Blue, which plays identically)
+                const shiftRed = SIM_RULES.phaseSide === 'right' || (SIM_RULES.phaseSide === 'alt' && (totalRoundsPlayed & 1) === 1);
+                const bluePhase = shiftRed ? 0 : 4, redPhase = spectating ? 4 - bluePhase : 0;
+                const leftInput  = spectating ? computeDoublesAIInput('left', 'spectate', spFrameCounter + bluePhase) : humanInput;
                 // slotSalt: 0 for the singles right-AI (only one slot; no de-correlation needed —
                 // see doubles' DOUBLES_AI.slotSalt for the multi-slot case). Feeds decideAI's parry
                 // timing-bucket hash; a stable 0 here reproduces the single-slot bucket assignment.
@@ -15120,7 +15131,8 @@
                 // lane, which let the beam connect in and out.
                 const aiView = { ...aiViewHistory[0], self: aiViewHistory[aiViewHistory.length - 1].self };
                 const rightInput = window._dbgAiOff ? defaultInput()   // dbg.aiOff(): AI stands idle
-                    : aiJuiceGuard(decideAI(aiView, spFrameCounter, makeAIRng(spFrameCounter ^ AI_RNG_SEED), aiProfile), 'right');
+                    : (spectating && SIM_RULES.aiPath === 'slots') ? computeDoublesAIInput('right', 'spectateR', spFrameCounter + redPhase)
+                    : aiJuiceGuard(decideAI(aiView, spFrameCounter + redPhase, makeAIRng(spFrameCounter ^ AI_RNG_SEED), aiProfile), 'right');
                 window.VolleyboltSim.simulateNetworkFrame(leftInput, rightInput, dt, buildSimCtx());
                 // Match simulator: skip the visual half of the frame (meshes, trails, particles, HUD). Verified
                 // not to feed the sim by replaying seeds with it on and off (identical round logs + frame counts).
