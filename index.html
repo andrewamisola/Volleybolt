@@ -18850,6 +18850,9 @@
                 psCam.orthoLeft = -PS_W / 2; psCam.orthoRight = PS_W / 2; psCam.orthoTop = PS_D / 2; psCam.orthoBottom = -PS_D / 2;
                 psCam.layerMask = PS_LAYER;
                 psRTT.activeCamera = psCam;
+                // soft penumbra: a small blur on the baked silhouette
+                psRTT.addPostProcess(new BABYLON.BlurPostProcess('psBlurH', new BABYLON.Vector2(1, 0), 10, 1.0, null, BABYLON.Texture.BILINEAR_SAMPLINGMODE, scene.getEngine()));
+                psRTT.addPostProcess(new BABYLON.BlurPostProcess('psBlurV', new BABYLON.Vector2(0, 1), 10, 1.0, null, BABYLON.Texture.BILINEAR_SAMPLINGMODE, scene.getEngine()));
                 scene.customRenderTargets.push(psRTT);
                 const psCasterMat = new BABYLON.StandardMaterial('structProjCasterMat', scene);
                 psCasterMat.disableLighting = true; psCasterMat.emissiveColor = BABYLON.Color3.White();
@@ -18868,7 +18871,7 @@
                 psDecalMat.zOffset = -4;
                 psDecal.renderingGroupId = 0; psDecal.isPickable = false;
                 psDecal.setEnabled(false);
-                window.structProjShadowTune = { alpha: 0.72, elev: -0.62 };
+                window.structProjShadowTune = { alpha: 0.72, elev: -1.0 };   // 45 deg: the tall ram's shadow stays out of mid-court
                 let psClones = [], psKey = null;
                 const psProject = (dirX) => {
                     // light travels (dirX, elev, 0): p' = p - d * (p.y - h0) / d.y, as a row-vector matrix
@@ -18888,6 +18891,7 @@
                             if (bb.maximumWorld.z - bb.minimumWorld.z > 10) continue;   // the rail-to-rail wall chunks
                             const c = m.clone(m.name + '_psh', null, true);
                             c.parent = null; c.material = psCasterMat; c.layerMask = PS_LAYER; c.isPickable = false;
+                            c.useVertexColors = false;   // the baked AO tints would leave grey holes in the shadow
                             c.freezeWorldMatrix(m.computeWorldMatrix(true).multiply(P));
                             psClones.push(c);
                         }
