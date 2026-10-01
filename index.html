@@ -1482,28 +1482,20 @@
         const baseMana = 3;
         const manaRegenTime = 3;  // seconds per 0.5 mana (discrete ticks)
 
-        // Territorial mana advantage - defender gets more mana
+        // Territorial mana advantage (owner design 2026-09-30, simplified from 3/4/5): on your OWN ground
+        // (your territory or your core) your mana cap is 4, everywhere else 3. One extra cast of leeway on defense.
         // Stage 0=Blue Core, 1=Blue Territory, 2=Midfield, 3=Red Territory, 4=Red Core
         function getMaxMana(side) {
             if (!SIM_RULES.defenderMana) return 3;   // simulator switch (live game: true)
-            // Player (left) defends stages 0-1, AI (right) defends stages 3-4
-            if (side === 'left' || side === 'player') {
-                if (currentStage === 0) return 5;  // Player's core - max defense
-                if (currentStage === 1) return 4;  // Player's territory
-                return 3;  // Midfield or enemy territory
-            } else {
-                if (currentStage === 4) return 5;  // AI's core - max defense
-                if (currentStage === 3) return 4;  // AI's territory
-                return 3;  // Midfield or player territory
-            }
+            return isHomeStage(side, currentStage) ? 4 : 3;
         }
 
         // Territory defense — a side's structure is tougher the deeper into its own ground the fight
-        // is: its own core (the relic) 50 HP, its own territory (the gatehouse) 30 HP, anywhere else
+        // is: its own core (the relic) 40 HP, its own territory (the gatehouse) 30 HP, anywhere else
         // (midfield castle, the attacker's catapult/ram) the base 20. Derived only from shared state
         // (currentStage), so both peers agree. Home gates never heal (see gateHealthForRound / MOBA lane rules).
         const TERRITORY_HP = 30;
-        const CORE_HP = 50;
+        const CORE_HP = 40;   // was 50; trimmed 2026-09-30 (the core siege is what stretched the longest matches)
         function isOwnCore(side, stage) { return (side === 'left' || side === 'player') ? stage === 0 : stage === 4; }
         function stageMaxHealth(side, stage) {
             if (stage === undefined) stage = currentStage;
