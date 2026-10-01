@@ -240,13 +240,14 @@
                     <div class="htp-title">Advance &mdash; or fall back</div>
                     <div class="htp-note">The battle is a tug of war across five stages.</div>
                     <div class="htp-note">Win a round to push into enemy territory. Lose and you get pushed back.</div>
+                    <div class="htp-note">Break an enemy territory and it&rsquo;s gone for good &mdash; pushes skip right past it.</div>
                     <div class="htp-note">Break through at the enemy core to win the match.</div>
                 </div>
                 <div class="htp-page">
                     <div class="htp-title">Mana is momentum</div>
                     <div class="htp-note">Spells cost mana &mdash; and the losing side draws more.</div>
                     <div class="htp-note">Parry a spell to send it back faster and steal 1 mana.</div>
-                    <div class="htp-note">Towers regrow health over time, so press your advantage.</div>
+                    <div class="htp-note">Every new stage is a fresh fight &mdash; but a core never heals, so press your advantage.</div>
                 </div>
                 <div class="htp-page">
                     <div class="htp-title">Controls</div>
@@ -843,22 +844,22 @@
         // Round-by-round winners ('left' | 'right') for the end screen's tennis-style scoreboard.
         // Presentation only (not snapshotted/hashed; round ends are confirmed-only online).
         let roundLog = [];
-        // OVERTIME ESCALATION (owner design 2026-09-30, instead of a round cap): from the 13th round of a match on (was the 8th; moved after the 2026-09-30 sims so a typical match never reaches it),
+        // OVERTIME ESCALATION (owner design 2026-09-30, instead of a round cap): from the 10th round of a match on (SIM_RULES.overtimeStart; was 8, then 13; 10 with fresh zones cut the over-10-minute matches 10 -> 4 of 40),
         // every round adds +1 damage to each Fireball gate hit, and +1 to a Juice beam's TOTAL damage (spread
         // across the beam, so it can't run away). Reads totalRoundsPlayed (synced stage state), so online peers agree.
         // MATCH-RULE SWITCHES for the headless match simulator (dbg.simBatch). The defaults ARE the live game;
         // only the simulator changes them, and it puts them back. Read by deterministic code, so both online
         // peers always see the defaults.
-        //   lanes:        'moba' (live: destroyable territories, home gates never heal, Midfield resets)
+        //   lanes:        'fresh' (live: every zone full on arrival except the core; territories destroyable)
+        //                 'moba' (2026-09-30 interim: a held territory kept its damage between visits)
         //                 'regen50' (previous rule: no destruction, gates below 50% lift to 50% on return)
-        //                 'fresh' (moba, but a held territory is back to full next visit; only the core keeps damage)
         //   defenderMana: the defender's extra max mana at its territory (4) / core (5)
-        //   overtime:     the +1-per-round damage escalation from round 13
-        const SIM_RULES_DEFAULT = { lanes: 'moba', defenderMana: true, overtime: true, territoryHp: 0 };   // territoryHp 0 = TERRITORY_HP
+        //   overtime:     the +1-per-round damage escalation from round overtimeStart (10)
+        const SIM_RULES_DEFAULT = { lanes: 'fresh', defenderMana: true, overtime: true, territoryHp: 0, overtimeStart: 10 };   // territoryHp 0 = TERRITORY_HP
         const SIM_RULES = { ...SIM_RULES_DEFAULT };
         window.SIM_RULES = SIM_RULES;
         window.SIM_RULES_DEFAULT = SIM_RULES_DEFAULT;
-        function overtimeDamageBonus() { return SIM_RULES.overtime ? Math.max(0, (totalRoundsPlayed | 0) - 11) : 0; }   // 12 rounds played -> +1 on the 13th
+        function overtimeDamageBonus() { return SIM_RULES.overtime ? Math.max(0, (totalRoundsPlayed | 0) - (SIM_RULES.overtimeStart - 2)) : 0; }   // 9 played -> +1 on the 10th
         window.overtimeDamageBonus = overtimeDamageBonus;
         // In-battle stage label text (the overtime "(+N)" sits beside it in orange: stageBonusText).
         window.stageLabelText = (idx) => {
@@ -899,15 +900,16 @@
         let playerGateHealthByStage = [SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH];
         let aiGateHealthByStage = [SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH];
 
-        // MOBA LANE RULES (owner design, 2026-09-30; replaced the 50%-regen tug of war, whose comebacks
-        // ran matches to 30-40 rounds):
-        //   Midfield  - neutral ground: both gates start FULL every time play arrives there.
-        //   Territory - a tower: the HOME gate keeps its damage and never heals. If the attacker breaks it,
-        //               the territory is DESTROYED (territoryDown) for the rest of the match and every
-        //               later push skips straight over it.
-        //   Core      - the base: the home core keeps its damage (never heals); destroying it wins.
-        //   The VISITING side's gate resets to full every round (attackers have no towers in enemy lanes).
-        // Each territory can fall once and home gates only ever lose HP, so every match winds down.
+        // LANE RULES - "FRESH ZONES" (owner design, 2026-09-30; replaced the 50%-regen tug of war, whose
+        // comebacks ran matches to 30-40 rounds):
+        //   Every zone is a fresh fight: both gates start FULL whenever play arrives (Midfield, a territory,
+        //   the attacker's ram/catapult) - EXCEPT the core.
+        //   Territory - if the attacker breaks it, it is DESTROYED (territoryDown) for the rest of the match:
+        //               every later push skips straight over it, and its stage-bar box shows a pixel X.
+        //   Core      - the base: the home core keeps its damage and never heals; destroying it wins.
+        // Each territory can fall once and the cores only ever lose HP, so every match winds down.
+        // Tuned with the match simulator (dbg.simBatchAsync): territory 20 HP; at 30 HP fresh zones let a
+        // held territory stall (40 seeds: max 60 rounds), at 20 the median match is ~6 sim-minutes.
         let totalRoundsPlayed = 0;
         let lastRoundAtStage = [0, 0, 0, 0, 0];  // When we last played at each stage (kept for state/hash)
         let territoryDown = [false, false, false, false, false];   // [1] Blue Territory, [3] Red Territory
@@ -1423,10 +1425,10 @@
         }
 
         // Territory defense — a side's structure is tougher the deeper into its own ground the fight
-        // is: its own core (the relic) 40 HP, its own territory (the gatehouse) 30 HP, anywhere else
+        // is: its own core (the relic) 40 HP, its own territory (the gatehouse) 20 HP, anywhere else
         // (midfield castle, the attacker's catapult/ram) the base 20. Derived only from shared state
         // (currentStage), so both peers agree. Home gates never heal (see gateHealthForRound / MOBA lane rules).
-        const TERRITORY_HP = 30;
+        const TERRITORY_HP = 20;   // was 30; with fresh zones a 30 HP territory could hold forever (see LANE RULES)
         const CORE_HP = 40;   // was 50; trimmed 2026-09-30 (the core siege is what stretched the longest matches)
         function isOwnCore(side, stage) { return (side === 'left' || side === 'player') ? stage === 0 : stage === 4; }
         function stageMaxHealth(side, stage) {
@@ -2493,7 +2495,7 @@
                         if (!ctx.isResimulating) { ctx.deps.playSound('block', px, 0.6); ctx.deps.onShieldBlock(railKey || side); }
                         return false; // bounced, not consumed
                     },
-                    // + the overtime escalation (round 13 on: +1 per round; see overtimeDamageBonus)
+                    // + the overtime escalation (round 10 on: +1 per round; see overtimeDamageBonus)
                     onGateHit(proj, side, ctx) { return { damage: Math.min(2 + proj.volleyCount, 6) + ((ctx && ctx.consts && ctx.consts.dmgBonus) || 0) }; },
                 }
             },
@@ -5849,7 +5851,22 @@
                 stageFill.thickness = 0;
                 stageBg.addControl(stageFill);
 
-                window.guiElements.stageSegments.push({ bg: stageBg, fill: stageFill });
+                // Destroyed-territory mark: a 7x7 PIXEL-ART X (3px squares, not a font glyph) over a dimmed box.
+                const stageX = new BABYLON.GUI.Rectangle();
+                stageX.width = "21px"; stageX.height = "21px"; stageX.thickness = 0;
+                stageX.isVisible = false;
+                for (let k = 0; k < 7; k++) {
+                    for (const col of (k === 3 ? [3] : [k, 6 - k])) {
+                        const px = new BABYLON.GUI.Rectangle();
+                        px.width = "3px"; px.height = "3px"; px.thickness = 0;
+                        px.background = "#c9b48a";
+                        px.left = ((col - 3) * 3) + "px"; px.top = ((k - 3) * 3) + "px";
+                        stageX.addControl(px);
+                    }
+                }
+                stageBg.addControl(stageX);
+
+                window.guiElements.stageSegments.push({ bg: stageBg, fill: stageFill, x: stageX });
             }
 
             // Stage name text below progress bar (stageGrid ends at ~108px)
@@ -5925,7 +5942,13 @@
                     }
 
                     // Current stage ALWAYS takes priority (yellow) - so player knows where they are
-                    if (i === currentStage) {
+                    const down = !!territoryDown[i];
+                    if (seg.x) seg.x.isVisible = down;
+                    if (down) {
+                        // destroyed territory: dimmed box + pixel X (it can never be played again)
+                        seg.fill.background = "#16110b";
+                        seg.bg.color = "#3a2e1e";
+                    } else if (i === currentStage) {
                         // Current stage - bright gold
                         seg.fill.background = "#f0c050";
                         seg.bg.color = "#f0c050";
@@ -5942,7 +5965,6 @@
                         seg.fill.background = "#2e2418";
                         seg.bg.color = "#5a4326";
                     }
-                    seg.bg.isVisible = !territoryDown[i];   // a destroyed territory is simply gone from the bar
                 }
 
                 // Update stage name text (only show during gameplay, not menu)
