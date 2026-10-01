@@ -13431,6 +13431,9 @@
                                 if (mat.specularIntensity !== undefined) mat.specularIntensity = 0;
                                 if (mat.emissiveColor) mat.emissiveColor = new BABYLON.Color3(0, 0, 0);
                                 mat.emissiveFresnelParameters = null;
+                                // No PS1 vertex-snap wobble on the wizards (owner): the characters stay solid while
+                                // the world keeps its swim. (Applied after the tint clones above, so both copies.)
+                                if (mat.ps1Snap) mat.ps1Snap.isEnabled = false;
                                 // Crisp pixel texels (nearest magnification) BUT mip-mapped
                                 // minification, so the 2048² texture doesn't alias/shimmer when the
                                 // pickle is small on screen (plain NEAREST ignores mipmaps -> sparkle).
