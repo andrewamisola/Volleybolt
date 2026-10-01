@@ -761,7 +761,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=51-chill-clash-fx"></script>
+    <script type="module" src="js/sim.js?v=52-achievements"></script>
 
     <script>
         // Build identifier for bug reports (audit #6). Date-based: bump on every player-facing
@@ -2709,6 +2709,7 @@
                         if (!ctx.isResimulating) {
                             ctx.deps.playSound('block', px, 0.6); ctx.deps.onShieldBlock(railKey || side);
                             if (window.StatTracker && window.Achievements && Achievements.localSide() === side) StatTracker.increment('projectiles_blocked');
+                            if (window.Achievements) Achievements.note('tier', { side, from: proj.volleyCount - 1, to: proj.volleyCount });
                         }
                         return false; // bounced, not consumed
                     },
@@ -2767,6 +2768,7 @@
                             // matching every legacy cast increment.
                             if (combatant.matchStats) combatant.matchStats.spellsCast++;
                             if (combatant.isLocalPlayer && window.StatTracker) StatTracker.increment('frostbolt_casts');
+                            if (window.Achievements) Achievements.note('cast', { c: combatant });
                         }
                         ctx.deps.spawnFrostbolt(owner, startX, combatant.paddleZ, velX, 0); // factory assigns id
                         // Juice charge on cast (matches SP castFrostbolt ~13778). Instant cast: this
@@ -2807,6 +2809,7 @@
                             ctx.deps.showFrozenText(!!(c && c.isLocalPlayer), c);
                             const me = window.Achievements ? Achievements.localSide() : null;
                             if (me && side !== me && window.StatTracker) StatTracker.increment('freeze_time_inflicted', ctx.abilities.frostbolt.freezeDuration);
+                            if (window.Achievements) Achievements.note('freeze', { frozenSide: side, proj });
                         }
                         return true; // consumed (destroy)
                     },
@@ -14961,6 +14964,7 @@
                                         // it slack to reliably register on the shield and freeze (was defaulting to 0.25)
                     isParried: false,
                     parriedBy: null,
+                    castBy: owner,  // who CAST it (owner flips on a parry); bookkeeping only, never hashed
                     volleyCount: 0,
                     time: 0  // For animation
                 };
@@ -15603,7 +15607,9 @@
                 // never climbed). Fireballs come back at the tier speed with a small parry timing-bonus on top;
                 // frostbolt (no tier) keeps the magnitude-based return.
                 if (proj.type === 'fireball') {
-                    proj.volleyCount = Math.min((proj.volleyCount || 0) + 1, 4);
+                    const vcBefore = proj.volleyCount || 0;
+                    proj.volleyCount = Math.min(vcBefore + 1, 4);
+                    if (!isResimulating && window.Achievements) Achievements.note('tier', { side: parryer === 'player' ? 'left' : 'right', from: vcBefore, to: proj.volleyCount });
                     const fb = (window.abilities && window.abilities.fireball) || { baseSpeed: 12, maxSpeed: 20 };
                     const tierSpeed = Math.min(fb.baseSpeed + proj.volleyCount * (fb.maxSpeed - fb.baseSpeed) / 4, fb.maxSpeed);
                     proj.speed = tierSpeed * 1.5;   // tier ramp + a real 1.5x parry reward (was 1.15, then diluted away by the 0.85 velX factor below — now the forward velocity uses the full speed)
@@ -25194,6 +25200,7 @@
                     volleyCount: p.volleyCount || 0,
                     isParried: p.isParried || false,
                     parriedBy: p.parriedBy || null,
+                    castBy: p.castBy || null,
                     bounceCount: p.bounceCount || 0,
                     isSplitProjectile: p.isSplitProjectile || false
                 })),
@@ -25410,6 +25417,7 @@
                     existing.volleyCount = sp.volleyCount;
                     existing.isParried = sp.isParried;
                     existing.parriedBy = sp.parriedBy;
+                    existing.castBy = sp.castBy;
                     existing.bounceCount = sp.bounceCount;
                     // hitboxRadius is a pure function of volleyCount, but only recomputed on a hit —
                     // re-derive it so a volley on the abandoned timeline can't leave a stale (bigger) hitbox.
@@ -25431,6 +25439,7 @@
                         newProj.volleyCount = sp.volleyCount;
                         newProj.isParried = sp.isParried;
                         newProj.parriedBy = sp.parriedBy;
+                        newProj.castBy = sp.castBy;
                         newProj.x = sp.x;
                         newProj.y = sp.y;
                         newProj.z = sp.z;
@@ -26308,7 +26317,8 @@
             // createImpactDecal accepts a plain {x, z}.
             // Chill Dill vs Chill Dill: a special ICY clash (presentation only) - a big ice burst with an after-pop,
             // a frost shockwave ring racing out over the ground, and a large lingering frost patch.
-            onChillClash: (midX, midZ) => {
+            onChillClash: (midX, midZ, a, b) => {
+                if (window.Achievements) Achievements.note('chillClash', { a, b });
                 const pos = new BABYLON.Vector3(midX, 0.6, midZ);
                 const ice = new BABYLON.Color3(0.62, 0.9, 1.0);
                 if (window.createImpactFlash) {
@@ -26338,6 +26348,8 @@
                 if (window.showCombatTextAt) showCombatTextAt(pos, 'Overpowered!', 'cancel');
                 playSound('overpowered', midX, 0.8);
             },
+            // Achievements bookkeeping from js/sim.js (called on the live pass only; writes no sim state).
+            noteAchievement: (event, data) => { if (window.Achievements) Achievements.note(event, data); },
             onProjCancel: (midX, midZ) => {
                 const pos = new BABYLON.Vector3(midX, 0.6, midZ);
                 if (window.createImpactFlash) createImpactFlash(pos, new BABYLON.Color3(1, 0.7, 0.2), 3.0);
@@ -26368,6 +26380,7 @@
             // plays 'juiceUp', starts the drone and sets the white-hot tint; onJuiceEnd fades
             // the aura, stops the drone and restores the tint.
             onJuiceActivate: (combatant) => {
+                if (window.Achievements) Achievements.note('cast', { c: combatant });
                 if (window.onJuiceStart) window.onJuiceStart(combatant);
                 if (window.logJuice) window.logJuice(combatant.side === 'left' ? 'blue' : 'red');
             },
@@ -26388,6 +26401,7 @@
             // the winner's colour races down the lane and detonates on the loser's tower (burn mark, big
             // shake, explosion + deep boom, damage number).
             onBeamClashResolve: (winner, loser, dmg) => {
+                if (window.Achievements && winner) Achievements.note('beamClash', { winnerSide: winner.side });
                 const cx = (typeof window._lastClashX === 'number') ? window._lastClashX : 0;
                 const cz = (typeof window._lastClashZ === 'number') ? window._lastClashZ : 0;
                 const hit = (p, col, size) => { if (window.createImpactFlash) try { createImpactFlash(p, col, size); } catch (e) {} };
@@ -26485,6 +26499,7 @@
                     } else {
                         const isPlayer = owner === 'player';
                         if (window.showSpellCastText) showSpellCastText(isPlayer, 'Thunderstorm x' + zapsToPerform, 'lightning', casterC);
+                        if (window.Achievements) { Achievements.note('cast', { c: casterC }); Achievements.note('zap', { c: casterC, count: zapsToPerform }); }
                         if (window.ToneSFX && window.ToneSFX.lightning) window.ToneSFX.lightning();
                         if (window.StatTracker && window.Achievements && Achievements.isMe(casterC)) {
                             StatTracker.increment('thunderstorm_casts');
@@ -28073,6 +28088,7 @@
             }
 
             // Track stats (only for local player)
+            if (!isResimulating && window.Achievements) { Achievements.note('cast', { c }); Achievements.note('zap', { c, count: zapsToPerform }); }
             if (!isResimulating && window.Achievements && Achievements.isMe(c)) {
                 StatTracker.increment('thunderstorm_casts');
                 StatTracker.increment('projectiles_zapped', zapsToPerform);
@@ -28658,6 +28674,7 @@
                 // (the deleted castFireball/castFrostbolt and legacy executeThunderstorm all
                 // gated on the local caster).
                 if (c.isLocalPlayer && window.StatTracker) StatTracker.increment('fireball_casts');
+                if (window.Achievements) Achievements.note('cast', { c });
                 if (window.logCombat) {
                     const blue = (c.side === 'left');
                     const label = window.doublesLogLabel ? window.doublesLogLabel(c) : null;
