@@ -9529,14 +9529,65 @@
             // Presentation only - never read by the sim.
             {
                 const PROP_FILES = { tree: 'tree.glb?v=1', pine: 'pine.glb?v=1', rock: 'rock.glb?v=1' };
+                window.refreshEerieFog = () => scene.markAllMaterialsAsDirty(BABYLON.Constants.MATERIAL_AllDirtyFlag);
                 const protos = {};            // kind -> [meshes baked to world space at the origin]
                 let loaded = 0, want = true, builtFor = null;   // the boot backdrop is the forest
+                // EERIE FOG: the painting's dark dusk vignette, rebuilt in the world. Backdrop surfaces (ground +
+                // props, never the court) are dimmed/desaturated, then sink toward a near-black purple the
+                // further they are from the court - past the rails (|z|) and toward the screen sides (|x|) - so
+                // the screen edges and corners fall into murk like the painting, wherever the camera looks.
+                // Per-pixel, after scene fog. Live-tunable: window.eerieFog (then nothing to rebuild).
+                const EERIE = window.eerieFog = {
+                    z0: 1.0, zRange: 24,       // starts this far past each rail, full over zRange
+                    x0: 14, xRange: 18,        // and toward the sides (|x| past x0)
+                    color: [0.10, 0.07, 0.13], max: 0.85,
+                    dim: 0.74, desat: 0.3,     // the painting's murky base grade
+                };
+                class EerieFogPlugin extends BABYLON.MaterialPluginBase {
+                    constructor(material) {
+                        super(material, 'EerieFog', 300, { EERIEFOG: false });
+                        this._enable(true);
+                    }
+                    prepareDefines(defines) { defines.EERIEFOG = true; }
+                    getClassName() { return 'EerieFogPlugin'; }
+                    getUniforms() {
+                        return {
+                            ubo: [{ name: 'eerieA', size: 4, type: 'vec4' }, { name: 'eerieB', size: 4, type: 'vec4' },
+                                  { name: 'eerieC', size: 4, type: 'vec4' }],
+                            fragment: '#ifdef EERIEFOG\nuniform vec4 eerieA;\nuniform vec4 eerieB;\nuniform vec4 eerieC;\n#endif',
+                        };
+                    }
+                    bindForSubMesh(ubo) {
+                        const halfD = (window.getEffectiveTableDepth ? getEffectiveTableDepth() : 14) / 2;
+                        ubo.updateFloat4('eerieA', halfD + EERIE.z0, EERIE.zRange, EERIE.x0, EERIE.xRange);
+                        ubo.updateFloat4('eerieB', EERIE.color[0], EERIE.color[1], EERIE.color[2], EERIE.max);
+                        ubo.updateFloat4('eerieC', EERIE.dim, EERIE.desat, 0, 0);
+                    }
+                    getCustomCode(shaderType) {
+                        if (shaderType !== 'fragment') return null;
+                        const c = this._material instanceof BABYLON.PBRMaterial ? 'finalColor' : 'color';
+                        return { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: `
+                            #ifdef EERIEFOG
+                            {
+                                float eL = dot(${c}.rgb, vec3(0.299, 0.587, 0.114));
+                                ${c}.rgb = mix(${c}.rgb, vec3(eL), eerieC.y) * eerieC.x;
+                                float eZ = clamp((abs(vPositionW.z) - eerieA.x) / eerieA.y, 0.0, 1.0);
+                                float eX = clamp((abs(vPositionW.x) - eerieA.z) / eerieA.w, 0.0, 1.0);
+                                float eK = 1.0 - (1.0 - eZ) * (1.0 - eX);
+                                eK = eK * eK * (3.0 - 2.0 * eK);
+                                ${c}.rgb = mix(${c}.rgb, eerieB.rgb, eK * eerieB.w);
+                            }
+                            #endif
+                        ` };
+                    }
+                }
                 const groundMat = new BABYLON.StandardMaterial('forestGroundMat', scene);
                 const gTex = new BABYLON.Texture('textures/grass_field_seamless.png?v=1', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
                 gTex.uScale = 14; gTex.vScale = 14;
                 groundMat.diffuseTexture = gTex;
-                groundMat.diffuseColor = new BABYLON.Color3(0.62, 0.55, 0.42);   // dusk-dimmed, toward the painting's earthy olive
+                groundMat.diffuseColor = new BABYLON.Color3(0.6, 0.46, 0.4);   // toward the painting's dusty brown earth
                 groundMat.specularColor = BABYLON.Color3.Black();
+                new EerieFogPlugin(groundMat);
                 const ground = BABYLON.MeshBuilder.CreateGround('forestGround', { width: 140, height: 140 }, scene);
                 ground.position.y = -0.08;   // just under the arena floor's top
                 ground.material = groundMat; ground.isPickable = false;
@@ -9553,8 +9604,8 @@
                     builtFor = halfD;
                     const R = rng(1337);
                     const mats = { tree: [], pine: [], rock: [] };
-                    const M = (x, z, yaw, sc, sy) => BABYLON.Matrix.Compose(new BABYLON.Vector3(sc, sc * (sy || 1), sc),
-                        BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, yaw), new BABYLON.Vector3(x, 0, z));
+                    const M = (x, z, yaw, sc, sy, y) => BABYLON.Matrix.Compose(new BABYLON.Vector3(sc, sc * (sy || 1), sc),
+                        BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, yaw), new BABYLON.Vector3(x, y || 0, z));
                     // Trees: far band (z > 0 = up-screen) and near band (z < 0), jittered grid.
                     const CELL = 3.4;
                     const band = (z0, z1) => {
@@ -9567,7 +9618,7 @@
                             mats[kind].push(M(px, pz, R() * Math.PI * 2, sc, kind === 'rock' ? 0.7 + R() * 0.6 : 1));
                         }
                     };
-                    band(halfD + 4.5, halfD + 34);          // far: starts just past the rail's grass fringe
+                    band(halfD + 6.5, halfD + 34);          // far: a rocky clearing first, like the painting
                     band(-halfD - 34, -halfD - 10.5);       // near: canopies stay below the near rail on screen
                     // Loose rocks in the open ground between the rails and the treelines.
                     for (let i = 0; i < 36; i++) {
@@ -9575,6 +9626,17 @@
                         const pz = far ? halfD + 1.8 + R() * 2.4 : -halfD - 1.8 - R() * 8;
                         const px = (R() - 0.5) * 90;
                         mats.rock.push(M(px, pz, R() * Math.PI * 2, 0.45 + R() * 0.9, 0.6 + R() * 0.6));
+                    }
+                    // Bushes hugging the rails: the round tree, small and sunk so only its canopy shows.
+                    for (let x = -46; x < 46; x += 1.6 + R() * 2.6) {
+                        if (R() < 0.35) continue;
+                        const sc = 0.22 + R() * 0.14;
+                        mats.tree.push(M(x, halfD + 0.9 + R() * 1.1, R() * Math.PI * 2, sc, 0.8, -sc * 2.6));
+                    }
+                    for (let x = -46; x < 46; x += 2.5 + R() * 4) {
+                        if (R() < 0.45) continue;
+                        const sc = 0.14 + R() * 0.08;
+                        mats.tree.push(M(x, -halfD - 0.8 - R() * 0.8, R() * Math.PI * 2, sc, 0.7, -sc * 2.6));
                     }
                     for (const kind in protos) for (const m of protos[kind]) {
                         const list = mats[kind];
@@ -9604,6 +9666,7 @@
                             if (m.material) {
                                 const mat = m.material;
                                 mat.metallic = 0; mat.roughness = 1; mat.environmentIntensity = 0;
+                                if (!mat.pluginManager || !mat.pluginManager.getPlugin('EerieFog')) new EerieFogPlugin(mat);
                             }
                             m.setEnabled(false);
                             protos[kind].push(m);
