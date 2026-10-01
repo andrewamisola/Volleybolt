@@ -18550,6 +18550,7 @@
                 // Group 1 with the wizards + fog (depth-tested), NOT group 2: group 2 starts with a cleared depth
                 // buffer, so floor light/shadow there painted OVER the wizards standing in it.
                 spill.renderingGroupId = 1;
+                spill.alphaIndex = 1;   // before the structures' projected shadows (alphaIndex 4) so they cut it
                 spill.isPickable = false;
                 spill.setEnabled(false);
 
@@ -18863,13 +18864,32 @@
                 psDecalMat.emissiveColor = new BABYLON.Color3(0.1, 0.03, 0.17);
                 psDecalMat.opacityTexture = psRTT; psRTT.getAlphaFromRGB = true;
                 psDecalMat.alpha = 0.72; psDecalMat.fogEnabled = false;
-                const psDecal = BABYLON.MeshBuilder.CreateGround('structProjShadow', { width: PS_W, height: PS_D }, scene);
-                psDecal.material = psDecalMat;
+                const psHalf = (name, side) => {
+                    const m = BABYLON.MeshBuilder.CreateGround(name, { width: PS_W / 2, height: PS_D }, scene);
+                    const uv = m.getVerticesData(BABYLON.VertexBuffer.UVKind);
+                    for (let i = 0; i < uv.length; i += 2) uv[i] = uv[i] * 0.5 + (side > 0 ? 0.5 : 0);
+                    m.setVerticesData(BABYLON.VertexBuffer.UVKind, uv);
+                    m.position.x = side * PS_W / 4;
+                    m.material = psDecalMat; m.isPickable = false; m.setEnabled(false);
+                    return m;
+                };
+                const psHalves = { '-1': psHalf('structProjShadowL', -1), '1': psHalf('structProjShadowR', 1) };
+                const psDecal = { _ok: false, isEnabled: () => psHalves['-1'].isEnabled(),
+                    setEnabled(on) { for (const k in psHalves) psHalves[k].setEnabled(on); } };
+                // attacker = the side the light comes FROM (dir: +1 = from the left)
+                const psLayer = (dir) => {
+                    for (const k of ['-1', '1']) {
+                        const m = psHalves[k], atk = (+k) === -dir;
+                        // attacker half: over the breach light pouring in (group 1, after the light spill); defender half:
+                        // the floor layer, depth-tested under the jar (group 1 starts with a cleared depth buffer)
+                        m.renderingGroupId = atk ? 1 : 0;
+                        m.alphaIndex = atk ? 4 : 0;
+                        m.position.y = atk ? 0.335 : 0.09;
+                    }
+                };
                 // on the FLOOR layer (group 0, depth-tested against the ram/jar standing in it - group 1 starts with a
                 // cleared depth buffer and painted over them), just above the stage paving
-                psDecal.position.y = 0.09;
                 psDecalMat.zOffset = -4;
-                psDecal.renderingGroupId = 0; psDecal.isPickable = false;
                 psDecal.setEnabled(false);
                 window.structProjShadowTune = { alpha: 0.72, elev: -1.0 };   // 45 deg: the tall ram's shadow stays out of mid-court
                 let psClones = [], psKey = null;
@@ -18887,8 +18907,8 @@
                         if (!info || (info.kind !== 'ram' && info.kind !== 'core')) continue;
                         for (const m of info.shownMeshes) {
                             if (!m.getTotalVertices || !m.getTotalVertices() || !m.isEnabled()) continue;
-                            const bb = m.getBoundingInfo().boundingBox;
-                            if (bb.maximumWorld.z - bb.minimumWorld.z > 10) continue;   // the rail-to-rail wall chunks
+                            // (the broken gate wall + its columns are one rail-to-rail mesh - included: they shade the
+                            // floor at both rails and the light pours through the gap between them)
                             const c = m.clone(m.name + '_psh', null, true);
                             c.parent = null; c.material = psCasterMat; c.layerMask = PS_LAYER; c.isPickable = false;
                             c.useVertexColors = false;   // the baked AO tints would leave grey holes in the shadow
@@ -18922,7 +18942,7 @@
                     {
                         const lInfo = window.getActiveStructMeshes ? [window.getActiveStructMeshes('left'), window.getActiveStructMeshes('right')] : [];
                         const k2 = dir + ':' + lInfo.map(i => i ? i.kind + i.shown : '-').join('|');
-                        if (k2 !== psKey) { psKey = k2; psDecal._ok = psRebuild(dir); }
+                        if (k2 !== psKey) { psKey = k2; psDecal._ok = psRebuild(dir); psLayer(dir); }
                         psDecal.setEnabled(!!psDecal._ok);
                         psDecalMat.alpha = window.structProjShadowTune.alpha;
                     }
