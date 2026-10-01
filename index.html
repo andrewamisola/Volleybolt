@@ -704,7 +704,7 @@
                     <span class="tooltip-stat-item cooldown"><span class="icon">@</span><span class="value">0.2s / 3s CD</span></span>
                 </div>
                 <div class="tooltip-description">
-                    <span class="tt-mechanic">Parry</span> incoming projectiles to reflect them back with increased speed. Grants <span class="tt-value">1</span> <span class="tt-mana">Mana</span> on success. <span class="tt-value">0.2s</span> CD on hit, <span class="tt-value">3s</span> CD on miss.
+                    <span class="tt-mechanic">Parry</span> incoming projectiles to reflect them back with increased speed. Grants <span class="tt-value">1</span> <span class="tt-mana">Mana</span> on success. <span class="tt-value">0.5s</span> CD after every parry, hit or miss.
                 </div>
             </div>
         </div>
@@ -1011,8 +1011,15 @@
         // short: float error can never stretch it into an extra frame.
         const PARRY_ACTIVE_FRAMES = 15;
         const parryWindow = (PARRY_ACTIVE_FRAMES - 0.5) / 60;
-        const parrySuccessCooldown = 0.2; // Quick refresh on successful parry
-        const parryFailCooldown = 3.0;    // Punishment for whiffing
+        // PARRY COOLDOWN: 30 frames (0.5s) after EVERY parry, hit or miss (owner 2026-10-01: no whiff penalty -
+        // more high-octane and responsive; was 0.2s on a hit / 3s on a miss). Starts when the parry resolves.
+        // Exactly 30 frames both ways given js/sim.js's per-frame order (timers -> presses -> hit checks):
+        //   a catch sets it AFTER that frame's timer tick, so it counts down from the next frame (29.5 -> 30 ticks);
+        //   a whiff sets it INSIDE the timer tick, which also takes its first tick that frame (30.5 -> 1 + 29).
+        // The half frame keeps float error from adding a frame either way.
+        const PARRY_COOLDOWN_FRAMES = 30;
+        const parrySuccessCooldown = (PARRY_COOLDOWN_FRAMES - 0.5) / 60;
+        const parryFailCooldown = (PARRY_COOLDOWN_FRAMES + 0.5) / 60;
         const parryHitboxExtend = 2.5;    // Extended hitbox range during parry window
         let canParry = true;              // Can initiate parry
         let parryActive = false;          // Is parry window currently active
@@ -8032,8 +8039,8 @@
                     }
                     if (id === 'parry') return {
                         name: 'Parry', stats: 'Space    Reaction',
-                        desc: 'Time it to deflect an incoming projectile back at the enemy. A clean parry returns it faster; a whiff means a longer cooldown.',
-                        descHtml: 'Time it to deflect an incoming projectile back at the enemy. A clean parry returns it faster; a whiff means a longer cooldown.',
+                        desc: 'Time it to deflect an incoming projectile back at the enemy. A clean parry returns it faster. Ready again 0.5s after every parry, hit or miss.',
+                        descHtml: 'Time it to deflect an incoming projectile back at the enemy. A clean parry returns it faster. Ready again 0.5s after every parry, hit or miss.',
                     };
                     return null;
                 }
