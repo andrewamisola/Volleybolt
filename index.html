@@ -9589,7 +9589,7 @@
                     // the set's fires (flickering; never culled by spell lights - they're listed first)
                     for (let i = 0; i < setLights.length; i++) {
                         const L = setLights[i];
-                        const fl = 0.86 + 0.09 * Math.sin(t * 9.1 + i * 2.3) + 0.05 * Math.sin(t * 23.7 + i * 5.1);
+                        const fl = fireFlicker(i, t);
                         picks.push({ x: L.x, y: L.y, z: L.z, reach: L.reach, r: L.col[0] * L.w * fl, g: L.col[1] * L.w * fl, b: L.col[2] * L.w * fl, w: 99 });
                     }
                     // the strongest spell lights this frame
@@ -9610,11 +9610,45 @@
                         eerieLights[o] = p.x; eerieLights[o + 1] = p.y; eerieLights[o + 2] = p.z; eerieLights[o + 3] = p.reach;
                         eerieLights[o + 4] = p.r; eerieLights[o + 5] = p.g; eerieLights[o + 6] = p.b;
                     }
-                    // flame meshes flicker with them
-                    const f = 0.85 + 0.15 * Math.sin(t * 11.3) * Math.sin(t * 4.7 + 1.1);
-                    for (const m of flameMats) { m.emissiveColor.set(1.0 * f, 0.62 * f, 0.26 * f); m.albedoColor.set(1.0 * f, 0.62 * f, 0.22 * f); }
+                    // flame meshes flicker with them: colour pulses, and each flame tongue stretches/squashes on its
+                    // own beat (per-instance matrices, scaled about the flame's base)
+                    const f = 0.75 + 0.25 * fireFlicker(0, t);
+                    for (const m of flameMats) { m.emissiveColor.set(1.0 * f, 0.55 * f, 0.16 * f); m.albedoColor.set(1.0 * f, 0.6 * f, 0.18 * f); }
+                    for (const fm of flameInst) {
+                        const buf = fm.buf;
+                        fm.base.forEach((B, i) => {
+                            const k = fireFlicker(i + fm.seed, t);
+                            const sy = 0.7 + 0.45 * k, sx = 1.08 - 0.12 * k + 0.05 * Math.sin(t * 17 + i);
+                            const S = BABYLON.Matrix.Translation(0, -fm.pivot, 0)
+                                .multiply(BABYLON.Matrix.Scaling(sx, sy, sx))
+                                .multiply(BABYLON.Matrix.RotationZ(0.08 * Math.sin(t * 7.3 + i * 1.7)))
+                                .multiply(BABYLON.Matrix.Translation(0, fm.pivot, 0));
+                            S.multiply(B).copyToArray(buf, i * 16);
+                        });
+                        fm.mesh.thinInstanceBufferUpdated('matrix');
+                    }
+                    // banner shadows jitter with the fire that casts them
+                    if (bannerShadow.isEnabled() && bannerShadow._sh) {
+                        const sh = bannerShadow._sh, buf = bannerShadow._buf;
+                        sh.forEach((b, i) => {
+                            const k = fireFlicker(b.fire, t);            // 0..~1.15: brighter = shorter, crisper shadow
+                            const len = b.len * (1.25 - 0.3 * k);
+                            BABYLON.Matrix.Compose(new BABYLON.Vector3(b.sx * (1.05 + 0.08 * (1 - k)), b.sy * (1.05 + 0.08 * (1 - k)), 1),
+                                BABYLON.Quaternion.Identity(),
+                                new BABYLON.Vector3(b.x + b.dx * len, b.y + b.dy * len, b.z)).copyToArray(buf, i * 16);
+                        });
+                        bannerShadow.thinInstanceBufferUpdated('matrix');
+                    }
                 });
                 window.eerieLightGain = 1.0;
+                // FIRE FLICKER: one shared, noisy flicker per fire (index i): ~0.55..1.15 - a lively twinkle with the
+                // odd dip, used by the fire lights, the flame meshes and the banner shadows so they all move together
+                function fireFlicker(i, t) {
+                    const a = Math.sin(t * 8.3 + i * 2.31) * 0.5 + Math.sin(t * 13.7 + i * 5.13) * 0.3 + Math.sin(t * 23.1 + i * 1.7) * 0.2;
+                    const dip = Math.max(0, Math.sin(t * 2.9 + i * 3.7) - 0.85) * 2.2;   // occasional gutter
+                    return 0.86 + 0.26 * a - dip * 0.3;
+                }
+                const flameInst = [];   // { mesh, base: [Matrix], buf, pivot, seed } per flame primitive
                 class EerieFogPlugin extends BABYLON.MaterialPluginBase {
                     constructor(material, opts) {
                         super(material, 'EerieFog', 300, { EERIEFOG: false, EERIELIGHTS: false, EERIEDETAIL: false, EERIEPUNCH: false });
@@ -9724,7 +9758,7 @@
                                 // spell light / fixed fires cutting through the murk (reflected off the surface's own colour)
                                 vec3 eAdd = vec3(0.0);
                                 ${lightCode}
-                                ${c}.rgb += (eBase * 1.6 + vec3(0.04)) * eAdd * eerieC.z;
+                                ${c}.rgb += mix(eBase * 1.6, vec3(0.5), 0.35) * eAdd * eerieC.z;   // keeps fire ORANGE on purple stone
                                 #endif
                             }
                             #endif
@@ -9907,7 +9941,8 @@
                 const glowMat = new BABYLON.StandardMaterial('backdropGlowMat', scene);
                 glowMat.disableLighting = true;
                 glowMat.diffuseColor = BABYLON.Color3.Black();
-                glowMat.emissiveColor = new BABYLON.Color3(1.0, 0.64, 0.16);   // warm amber firelight / low sun (pure orange went pink over the purple floor)
+                glowMat.fogEnabled = false;   // fogged, the additive orange went pink
+                glowMat.emissiveColor = new BABYLON.Color3(1.0, 0.56, 0.14);   // warm amber firelight / low sun (pure orange went pink over the purple floor)
                 glowMat.opacityTexture = glowTex;
                 glowMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
                 glowMat.zOffset = -3;
@@ -10067,13 +10102,27 @@
                     if (!list.length) { bannerShadow.setEnabled(false); return; }
                     const hl = Math.hypot(S.dir.x, S.dir.z) || 1;
                     const buf = new Float32Array(list.length * 16);
+                    const sh = [];
                     list.forEach((r, i) => {
-                        // the cloth hangs from y (rod) down ~1.6*sc; the card sits 0.04 behind it, towards the wall
-                        const h = 1.6 * r.sc, wz = r.z + 0.1;   // between the cloth and the wall face (+z = wallward)
+                        // the cloth hangs from y (rod) down ~1.6*sc; the card sits between the cloth and the wall face
+                        const h = 1.6 * r.sc, wz = r.z + 0.1, cy = r.y - h / 2;
+                        // cast by the NEAREST fire on this wall: away from it (up and out, the flames sit below)
+                        let best = -1, bd = 1e9;
+                        setLights.forEach((F, j) => { const d = Math.hypot(F.x - r.x, F.z - r.z); if (d < bd) { bd = d; best = j; } });
+                        let dx = S.dir.x / hl, dy = -0.6, len = 0.3, fire = 0;
+                        if (best >= 0 && bd < 14) {
+                            const F = setLights[best];
+                            const vx = r.x - F.x, vy = cy - F.y, vl = Math.hypot(vx, vy) || 1;
+                            dx = vx / vl; dy = vy / vl;
+                            len = Math.min(0.9, 0.18 + 2.2 / vl);      // nearer the flame = a longer throw
+                            fire = best;
+                        }
+                        sh.push({ x: r.x, y: cy, z: wz, dx, dy, len, fire, sx: r.sc * 1.1, sy: r.sc * 1.05 });
                         BABYLON.Matrix.Compose(new BABYLON.Vector3(r.sc * 1.1, r.sc * 1.05, 1), BABYLON.Quaternion.Identity(),
-                            new BABYLON.Vector3(r.x + S.dir.x / hl * 0.3, r.y - h / 2 - 0.28, wz)).copyToArray(buf, i * 16);
+                            new BABYLON.Vector3(r.x + dx * len, cy + dy * len, wz)).copyToArray(buf, i * 16);
                     });
-                    bannerShadow.thinInstanceSetBuffer('matrix', buf, 16, true);
+                    bannerShadow._sh = sh; bannerShadow._buf = buf;
+                    bannerShadow.thinInstanceSetBuffer('matrix', buf, 16, false);
                     bannerShadow.alwaysSelectAsActiveMesh = true;
                     bannerShadow.setEnabled(true);
                 };
@@ -10469,7 +10518,7 @@
                                 if (zw > 0) for (const bx of [-7, 7, 23]) {
                                     const bz = zw - 1.4;
                                     add('brazier', bx, bz, 0, 1, 1, 0, true);
-                                    fires.push({ x: bx, y: 1.4, z: bz, reach: 10, col: [1.0, 0.48, 0.14], w: 1.5 });   // warm vs the purple stone
+                                    fires.push({ x: bx, y: 1.6, z: bz, reach: 7, col: [1.0, 0.46, 0.12], w: 1.3, wall: true });   // warm vs the purple stone
                                 }
                             }
                             // tumbled blocks spilling in from the breach across the floor
@@ -10492,7 +10541,7 @@
                         grd.addColorStop(0, `rgba(255,255,255,${a})`); grd.addColorStop(0.35, `rgba(255,255,255,${a * 0.45})`); grd.addColorStop(1, 'rgba(255,255,255,0)');
                         g.fillStyle = grd; g.fillRect(0, 0, 512, 512);
                     };
-                    for (const f of fires) pool(f.x, f.z, 6.5, 1.0);   // a big warm pool of firelight on the floor
+                    for (const f of fires) pool(f.x, f.z, 4.8, 0.42);   // a warm pool of firelight on the floor
                     if (set.def.glow === 'breach') {
                         const s = set.mirror ? -1 : 1;
                         // light STREAKS: long soft bands thrown from the breach along the daylight's ground direction
@@ -10592,8 +10641,15 @@
                         list.forEach((mx, i) => mx.copyToArray(buf, i * 16));
                         const col = new Float32Array(Math.max(1, list.length) * 4);
                         idx[kind].forEach((ri, i) => { const f = shade[ri]; col.set([f, f, f * 0.98 + 0.02, 1], i * 4); });
-                        m.thinInstanceSetBuffer('matrix', buf, 16, true);
+                        const isFlame = m.material && m.material.name === 'M_flame';
+                        m.thinInstanceSetBuffer('matrix', buf, 16, !isFlame);
                         m.thinInstanceSetBuffer('color', col, 4, true);   // baked: in a neighbour's shadow or not
+                        if (isFlame) {
+                            const ex = flameInst.findIndex(f => f.mesh === m);
+                            if (ex >= 0) flameInst.splice(ex, 1);
+                            if (list.length) flameInst.push({ mesh: m, base: list.map(x => x.clone()), buf,
+                                pivot: kind === 'brazier' ? 1.12 : 2.7, seed: kind === 'brazier' ? 3 : 11 });
+                        }
                         m.thinInstanceCount = list.length;
                         m.alwaysSelectAsActiveMesh = true;   // thin instances span the map: skip per-frame culling
                         m._propUsed = list.length > 0;
