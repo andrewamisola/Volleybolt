@@ -2706,7 +2706,10 @@
                         // Hit-flash routes by railKey so a BACK-rail block flashes the back barrier
                         // (flashShieldOnBlock's barrierForSide handles all four keys); `|| side`
                         // keeps legacy 3-arg callers (tests/oracles) working unchanged.
-                        if (!ctx.isResimulating) { ctx.deps.playSound('block', px, 0.6); ctx.deps.onShieldBlock(railKey || side); }
+                        if (!ctx.isResimulating) {
+                            ctx.deps.playSound('block', px, 0.6); ctx.deps.onShieldBlock(railKey || side);
+                            if (window.StatTracker && window.Achievements && Achievements.localSide() === side) StatTracker.increment('projectiles_blocked');
+                        }
                         return false; // bounced, not consumed
                     },
                     // + the overtime escalation (round 10 on: +1 per round; see overtimeDamageBonus)
@@ -2802,6 +2805,8 @@
                             // 2nd arg (the frozen combatant) lets the dep anchor "Frozen!" at a BACK
                             // wizard's paddle; front calls take the legacy front-paddle path unchanged.
                             ctx.deps.showFrozenText(!!(c && c.isLocalPlayer), c);
+                            const me = window.Achievements ? Achievements.localSide() : null;
+                            if (me && side !== me && window.StatTracker) StatTracker.increment('freeze_time_inflicted', ctx.abilities.frostbolt.freezeDuration);
                         }
                         return true; // consumed (destroy)
                     },
@@ -15589,7 +15594,7 @@
 
                 // Track parry stats (only for local player). Career stats are not
                 // snapshot-restored either — same LIVE-pass-only gate as matchStats above.
-                if (!isResimulating && parryer === 'player') {
+                if (!isResimulating && window.Achievements && Achievements.localSide() === (parryer === 'player' ? 'left' : 'right')) {
                     StatTracker.increment('parries_successful');
                 }
 
@@ -22124,6 +22129,9 @@
             // Doubles teardown BEFORE resizeStageForMode() runs, so a doubles->singles
             // transition lands on exactly the state a fresh boot would have.
             exitDoublesState();
+            // A previous online match can leave Red flagged as ours (we were the guest). Single player
+            // is always Blue; career stats and achievements key on isLocalPlayer.
+            for (const c of getAllCombatants()) if (c) c.isLocalPlayer = (c === combatants.left);
             if (window.resizeStageForMode) window.resizeStageForMode();
             startGame();
         }
@@ -22210,6 +22218,9 @@
 
         function startDoublesMatch() {
             setupDoublesMatchCommon();
+            // A previous online match can leave another seat flagged as ours. Local doubles: you are
+            // the Blue front; career stats and achievements key on isLocalPlayer.
+            for (const c of getAllCombatants()) if (c) c.isLocalPlayer = (c === combatants.left);
             // Gate the actual match start (AND the name tags, which need every modelRoot to exist)
             // on the back-wizard models being ready (lazy-loaded on the first doubles match; every
             // later match re-attaches the cache — see beginBackModels).
@@ -26475,7 +26486,7 @@
                         const isPlayer = owner === 'player';
                         if (window.showSpellCastText) showSpellCastText(isPlayer, 'Thunderstorm x' + zapsToPerform, 'lightning', casterC);
                         if (window.ToneSFX && window.ToneSFX.lightning) window.ToneSFX.lightning();
-                        if (window.StatTracker) {
+                        if (window.StatTracker && window.Achievements && Achievements.isMe(casterC)) {
                             StatTracker.increment('thunderstorm_casts');
                             StatTracker.increment('projectiles_zapped', zapsToPerform);
                         }
@@ -28060,7 +28071,7 @@
             }
 
             // Track stats (only for local player)
-            if (isPlayer || c.isLocalPlayer) {
+            if (!isResimulating && window.Achievements && Achievements.isMe(c)) {
                 StatTracker.increment('thunderstorm_casts');
                 StatTracker.increment('projectiles_zapped', zapsToPerform);
             }
@@ -29296,12 +29307,13 @@
             // LEGACY - sync tower health variables
             if (isPlayerTower) {
                 playerTowerHealth = combatant ? combatant.towerHealth : Math.max(0, playerTowerHealth - damage);
-                // Player took damage
-                StatTracker.increment('damage_taken', damage);
             } else {
                 aiTowerHealth = combatant ? combatant.towerHealth : Math.max(0, aiTowerHealth - damage);
-                // Player dealt damage to enemy
-                StatTracker.increment('damage_dealt', damage);
+            }
+            // Career damage belongs to the LOCAL side, counted once (the sim calls this during rollback resim too).
+            const meSide = window.Achievements ? Achievements.localSide() : null;
+            if (!isResimulating && meSide) {
+                StatTracker.increment((isPlayerTower ? 'left' : 'right') === meSide ? 'damage_taken' : 'damage_dealt', damage);
             }
             updateHealthBars();
             showDamageNumber(damage, isPlayerTower, hitZ);
@@ -29417,6 +29429,7 @@
             // Spectating: the viewer has no side, so every ending gets the WIN presentation (victory
             // fanfare, no defeat styling; the title names the winning team) and stage messages name who took it.
             const presWon = spectating || localWon;
+            const meSide = window.Achievements ? Achievements.localSide() : null;   // null: spectator, nothing to count
             // A territory falls when the ATTACKER wins there (Blue at Red Territory, Red at Blue Territory).
             const territoryFalls = (SIM_RULES.lanes === 'moba' || SIM_RULES.lanes === 'fresh')
                 && ((currentStage === 3 && winnerSide === 'left') || (currentStage === 1 && winnerSide === 'right'));
@@ -29435,18 +29448,21 @@
             const playerHealth = combatants.left ? combatants.left.towerHealth : playerTowerHealth;
             const aiHealth = combatants.right ? combatants.right.towerHealth : aiTowerHealth;
 
+            // Career round stats belong to the LOCAL side (an online guest plays Red).
+            if (meSide) {
+                if (winnerSide === meSide) {
+                    StatTracker.increment('rounds_won');
+                    if ((meSide === 'left' ? playerHealth : aiHealth) === stageMaxHealth(meSide)) StatTracker.increment('perfect_rounds');
+                } else {
+                    StatTracker.increment('rounds_lost');
+                }
+            }
+
             // Tug of war: win = push forward, lose = pushed back, hopping over destroyed territories
             // (nextStageAfterPush).
 
             if (winnerOwner === 'player') {
                 playerScore++;
-
-                // Track round stats
-                StatTracker.increment('rounds_won');
-                // Check for perfect round (full health remaining)
-                if (playerHealth === stageMaxHealth('left')) {
-                    StatTracker.increment('perfect_rounds');
-                }
 
                 // Record stage result for progress bar coloring
                 stageResults[currentStage] = 'player';
@@ -29471,7 +29487,7 @@
                         _c.juiceActive = false; _c.juiceTimer = 0; _c.juice = 0; _c.juiceRamp = 0;
                     }
                     // Track match win and commit stats
-                    StatTracker.increment('matches_won');
+                    if (meSide) StatTracker.increment(winnerSide === meSide ? 'matches_won' : 'matches_lost');
                     StatTracker.commitMatch();
                     // Show victory screen instantly
                     // (No spectate camera reset here: snapping back from a zoomed/turned view read as a jolt. The
@@ -29485,9 +29501,6 @@
                 }
             } else {
                 aiScore++;
-
-                // Track round loss
-                StatTracker.increment('rounds_lost');
 
                 // Record stage result for progress bar coloring
                 stageResults[currentStage] = 'ai';
@@ -29512,7 +29525,7 @@
                         _c.juiceActive = false; _c.juiceTimer = 0; _c.juice = 0; _c.juiceRamp = 0;
                     }
                     // Track match loss and commit stats
-                    StatTracker.increment('matches_lost');
+                    if (meSide) StatTracker.increment(winnerSide === meSide ? 'matches_won' : 'matches_lost');
                     StatTracker.commitMatch();
                     // Show defeat screen instantly
                     // (No spectate camera reset here: snapping back from a zoomed/turned view read as a jolt. The
