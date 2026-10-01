@@ -9742,7 +9742,7 @@
                 const gTex = new BABYLON.Texture('textures/grass_field_seamless.png?v=1', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
                 // Same grass as the court floor (floorMat): ~13u tiles, same tint and black-point lift, so the
                 // ground right past the rails continues the stage seamlessly before the murk takes over.
-                gTex.uScale = 5.25; gTex.vScale = 5.25;   // half the texture resolution of the court (chunkier texels, owner pick)
+                gTex.uScale = 10.5; gTex.vScale = 10.5;
                 groundMat.diffuseTexture = gTex;
                 groundMat.diffuseColor = new BABYLON.Color3(1.0, 0.98, 0.9);
                 groundMat.emissiveColor = new BABYLON.Color3(0.16, 0.16, 0.12);
@@ -9752,7 +9752,7 @@
                 // ground is mostly worn earth with grass between.
                 const dirtMat = new BABYLON.StandardMaterial('forestDirtMat', scene);
                 const dTex = new BABYLON.Texture('textures/dirt_road_seamless.png?v=1', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
-                dTex.uScale = 12; dTex.vScale = 12;   // half resolution (2x texels)
+                dTex.uScale = 24; dTex.vScale = 24;
                 dirtMat.diffuseTexture = dTex;
                 dirtMat.specularColor = BABYLON.Color3.Black();
                 dirtMat.emissiveColor = new BABYLON.Color3(0.12, 0.10, 0.07);   // = lane road
@@ -10030,7 +10030,8 @@
                 // (0 = black, 1 = none)
                 // Outdoors matched to the core's deep shade (owner: "how far and deep the shadows run"): darker cast +
                 // contact, ground shadows stretched 1.8x, darker shaded sides on the props.
-                window.forestShadow = { cast: 0.82, contact: 0.65, treeShade: 0.45, treeDark: 0.2, len: 1.8 };
+                // (softened 2026-10-01: 0.82/0.65 over near-black read as black holes; now an even dusk PURPLE)
+                window.forestShadow = { cast: 0.62, contact: 0.32, treeShade: 0.35, treeDark: 0.42, len: 1.8 };
                 // Shadow proxies per model (unit scale, Babylon local axes after import: the Blender +X of the
                 // models lands on Babylon -X). canopy: hc/r/trunk; box: [cx, cz, lx, lz, h] parts; cyl: r, h.
                 const SHAPE = {
@@ -10077,10 +10078,11 @@
                     if (!amb) return;
                     if (!propAmb) {
                         propAmb = new BABYLON.HemisphericLight('propAmb', new BABYLON.Vector3(0, 1, 0), scene);
-                        propAmb.diffuse = amb.diffuse.clone(); propAmb.specular = BABYLON.Color3.Black();
+                        // a dusk-purple fill: the props' shaded sides go purple (like the core's shade), never black
+                        propAmb.diffuse = new BABYLON.Color3(0.5, 0.4, 0.62); propAmb.specular = BABYLON.Color3.Black();
                         propAmb.groundColor = new BABYLON.Color3(0.12, 0.08, 0.16);
                     }
-                    propAmb.intensity = 0.2;
+                    propAmb.intensity = 0.3;
                     // untextured props (foliage/bark/rock) take the dim fill for form; textured stone keeps the scene
                     // ambient, exactly like the structures it stands next to
                     const soft = meshes.filter(m => !(m.material && m.material.albedoTexture));
@@ -10120,7 +10122,7 @@
                     if (curSet && curSet.def.cast != null) SF.cast = curSet.def.cast;
                     if (curSet && curSet.def.contact != null) SF.contact = curSet.def.contact;
                     if (curSet && curSet.def.len != null) SF.len = curSet.def.len;
-                    shadowMat.emissiveColor = BABYLON.Color3.FromArray(curSet && curSet.def.shadowCol || [0.04, 0.02, 0.08]);   // deep dusk purple
+                    shadowMat.emissiveColor = BABYLON.Color3.FromArray(curSet && curSet.def.shadowCol || [0.11, 0.05, 0.19]);   // dark dusk PURPLE, not black
                     const L = S.dir;
                     const hl = Math.hypot(L.x, L.z) || 1e-3;
                     const dX = L.x / hl, dZ = L.z / hl;            // where shadows fall on the ground
@@ -10333,7 +10335,7 @@
                         // Like the painting: the hall sits in deep PURPLE shade (shadows, murk, the stone's cast) and the
                         // breach daylight cuts across it in warm streaks; fine cracks in the floor.
                         eerie: { color: [0.10, 0.045, 0.15], max: 0.6, z0: 7, dim: 0.8, desat: 0.08 }, ground: 'pave', glow: 'breach',
-                        shadowCol: [0.09, 0.025, 0.15], cast: 0.78, contact: 0.6, len: 1.0, paveTint: [0.36, 0.32, 0.42], cracks: true, shafts: true,
+                        shadowCol: [0.12, 0.04, 0.2], cast: 0.66, contact: 0.36, len: 1.0, paveTint: [0.36, 0.32, 0.42], cracks: true, shafts: true,
                         build: (R, add, halfD, fires) => {
                             const zF = halfD + 9, zN = -halfD - 13, BX = -19;    // far wall, near wall, breach end
                             for (const zw of [zF, zN]) {
