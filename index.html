@@ -9538,10 +9538,10 @@
                 // the screen edges and corners fall into murk like the painting, wherever the camera looks.
                 // Per-pixel, after scene fog. Live-tunable: window.eerieFog (then nothing to rebuild).
                 const EERIE = window.eerieFog = {
-                    z0: 1.0, zRange: 24,       // starts this far past each rail, full over zRange
-                    x0: 14, xRange: 18,        // and toward the sides (|x| past x0)
-                    color: [0.10, 0.07, 0.13], max: 0.85,
-                    dim: 0.74, desat: 0.3,     // the painting's murky base grade
+                    z0: 2.5, zRange: 24,       // starts this far past each rail, full over zRange
+                    x0: 16, xRange: 18,        // and toward the sides (|x| past x0)
+                    color: [0.10, 0.07, 0.13], max: 0.8,
+                    dim: 0.8, desat: 0.25,     // the painting's murky grade, ramping in past the rails
                 };
                 class EerieFogPlugin extends BABYLON.MaterialPluginBase {
                     constructor(material) {
@@ -9569,11 +9569,14 @@
                         return { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: `
                             #ifdef EERIEFOG
                             {
-                                float eL = dot(${c}.rgb, vec3(0.299, 0.587, 0.114));
-                                ${c}.rgb = mix(${c}.rgb, vec3(eL), eerieC.y) * eerieC.x;
                                 float eZ = clamp((abs(vPositionW.z) - eerieA.x) / eerieA.y, 0.0, 1.0);
                                 float eX = clamp((abs(vPositionW.x) - eerieA.z) / eerieA.w, 0.0, 1.0);
                                 float eK = 1.0 - (1.0 - eZ) * (1.0 - eX);
+                                // murky grade first (reaches full strength a third of the way out) ...
+                                float eG = clamp(eK * 3.0, 0.0, 1.0);
+                                float eL = dot(${c}.rgb, vec3(0.299, 0.587, 0.114));
+                                ${c}.rgb = mix(${c}.rgb, mix(${c}.rgb, vec3(eL), eerieC.y) * eerieC.x, eG);
+                                // ... then the dusk murk
                                 eK = eK * eK * (3.0 - 2.0 * eK);
                                 ${c}.rgb = mix(${c}.rgb, eerieB.rgb, eK * eerieB.w);
                             }
@@ -9583,11 +9586,48 @@
                 }
                 const groundMat = new BABYLON.StandardMaterial('forestGroundMat', scene);
                 const gTex = new BABYLON.Texture('textures/grass_field_seamless.png?v=1', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
-                gTex.uScale = 14; gTex.vScale = 14;
+                // Same grass as the court floor (floorMat): ~13u tiles, same tint and black-point lift, so the
+                // ground right past the rails continues the stage seamlessly before the murk takes over.
+                gTex.uScale = 10.5; gTex.vScale = 10.5;
                 groundMat.diffuseTexture = gTex;
-                groundMat.diffuseColor = new BABYLON.Color3(0.6, 0.46, 0.4);   // toward the painting's dusty brown earth
+                groundMat.diffuseColor = new BABYLON.Color3(1.0, 0.98, 0.9);
+                groundMat.emissiveColor = new BABYLON.Color3(0.16, 0.16, 0.12);
                 groundMat.specularColor = BABYLON.Color3.Black();
                 new EerieFogPlugin(groundMat);
+                // Dirt patches over it (the lane road's dirt, through a blotchy blurred mask) - the painting's
+                // open ground is mostly worn earth with grass between.
+                const dirtMat = new BABYLON.StandardMaterial('forestDirtMat', scene);
+                const dTex = new BABYLON.Texture('textures/dirt_road_seamless.png?v=1', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
+                dTex.uScale = 24; dTex.vScale = 24;
+                dirtMat.diffuseTexture = dTex;
+                dirtMat.specularColor = BABYLON.Color3.Black();
+                dirtMat.emissiveColor = new BABYLON.Color3(0.12, 0.10, 0.07);   // = lane road
+                {
+                    const MW = 512;
+                    const mask = new BABYLON.DynamicTexture('forestDirtMask', { width: MW, height: MW }, scene, true);
+                    const g = mask.getContext();
+                    g.fillStyle = 'black'; g.fillRect(0, 0, MW, MW);
+                    const R = (() => { let a = 7; return () => ((a = Math.imul(a ^ (a >>> 15), 2246822507) + 0x9E3779B9 | 0) >>> 0) / 4294967296; })();
+                    g.fillStyle = 'white';
+                    for (let i = 0; i < 70; i++) {
+                        const x = R() * MW, y = R() * MW, r = 10 + R() * 34;
+                        for (let k = 0; k < 4; k++) {   // lumpy blobs, not circles
+                            g.beginPath(); g.arc(x + (R() - 0.5) * r, y + (R() - 0.5) * r, r * (0.5 + R() * 0.6), 0, Math.PI * 2); g.fill();
+                        }
+                    }
+                    const tmp = document.createElement('canvas'); tmp.width = MW; tmp.height = MW;
+                    tmp.getContext('2d').drawImage(g.canvas, 0, 0);
+                    g.filter = 'blur(6px)'; g.clearRect(0, 0, MW, MW); g.drawImage(tmp, 0, 0); g.filter = 'none';
+                    mask.update();
+                    mask.getAlphaFromRGB = true;
+                    dirtMat.opacityTexture = mask;
+                }
+                dirtMat.zOffset = -1;
+                new EerieFogPlugin(dirtMat);
+                const dirt = BABYLON.MeshBuilder.CreateGround('forestDirt', { width: 140, height: 140 }, scene);
+                dirt.position.y = -0.06;
+                dirt.material = dirtMat; dirt.isPickable = false;
+                dirt.setEnabled(false);
                 const ground = BABYLON.MeshBuilder.CreateGround('forestGround', { width: 140, height: 140 }, scene);
                 ground.position.y = -0.08;   // just under the arena floor's top
                 ground.material = groundMat; ground.isPickable = false;
@@ -9649,7 +9689,7 @@
                 const apply = () => {
                     const on = want && loaded === 3;
                     if (on) place();
-                    ground.setEnabled(on);
+                    ground.setEnabled(on); dirt.setEnabled(on);
                     for (const kind in protos) for (const m of protos[kind]) m.setEnabled(on);
                     window._propsBackdropActive = on;
                     if (window.setBackdropProxyEnabled) setBackdropProxyEnabled(true);   // re-evaluates against the flag
