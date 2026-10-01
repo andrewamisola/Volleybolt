@@ -9824,7 +9824,7 @@
                 let paveTexReady = false;
                 const ensurePaveTex = () => {
                     if (paveTexReady) return true;
-                    const T = 512, ROWS = 8, RH = T / ROWS;
+                    const T = 256, ROWS = 8, RH = T / ROWS;   // half resolution (chunkier texels), same slab size
                     const t = new BABYLON.DynamicTexture('backdropPaveTex', { width: T, height: T }, scene, true);
                     const g = t.getContext();
                     let sd = 2024;
@@ -9832,7 +9832,7 @@
                     g.fillStyle = 'rgb(58,52,48)'; g.fillRect(0, 0, T, T);           // grout
                     const slab = (x, y, w, h) => {
                         const v = (r() - 0.5) * 34, base = [150 + v, 140 + v, 128 + v * 0.9];
-                        const G = 3, B = 3;                                          // grout gap, bevel width
+                        const G = 2, B = 2;                                          // grout gap, bevel width
                         for (const ox of [-T, 0, T]) {
                             const X = x + ox + G / 2, Y = y + G / 2, W = w - G, H = h - G;
                             g.fillStyle = `rgb(${base[0] | 0},${base[1] | 0},${base[2] | 0})`; g.fillRect(X, Y, W, H);
@@ -9841,23 +9841,23 @@
                         }
                     };
                     for (let row = 0; row < ROWS; row++) {
-                        let x = (r() * 40) | 0;                                      // stagger
+                        let x = (r() * 20) | 0;                                      // stagger
                         const start = x;
                         while (x < start + T) {
-                            let w = 46 + ((r() * 70) | 0);
-                            if (x + w > start + T - 30) w = start + T - x;           // close the row exactly (seamless)
+                            let w = 23 + ((r() * 35) | 0);
+                            if (x + w > start + T - 15) w = start + T - x;           // close the row exactly (seamless)
                             slab(x, row * RH, w, RH);
                             x += w;
                         }
                     }
-                    for (let i = 0; i < 2600; i++) {                                 // grit / wear speckle
+                    for (let i = 0; i < 650; i++) {                                  // grit / wear speckle
                         const v = r() < 0.5 ? 'rgba(0,0,0,0.10)' : 'rgba(255,240,220,0.07)';
                         g.fillStyle = v; g.fillRect(r() * T, r() * T, 1 + r() * 2, 1 + r() * 2);
                     }
                     t.update();
                     t.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
                     t.wrapU = t.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
-                    t.uScale = t.vScale = GW / 12.0;  // 12u per tile: half the texture resolution (owner pick)
+                    t.uScale = t.vScale = GW / 6.0;   // 6u per tile -> slabs ~0.6-1.4 x 0.75u, like the painting's
                     paveMat.diffuseTexture = t;
                     return (paveTexReady = true);
                 };
@@ -9906,7 +9906,7 @@
                     crackTex.update();
                     crackTex.hasAlpha = true;
                     crackTex.wrapU = crackTex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
-                    crackTex.uScale = crackTex.vScale = GW / 18;
+                    crackTex.uScale = crackTex.vScale = GW / 9;
                 }
                 const crackMat = new BABYLON.StandardMaterial('backdropCrackMat', scene);
                 crackMat.disableLighting = true;
