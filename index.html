@@ -856,7 +856,8 @@
         //   defenderMana: the defender's extra max mana at its territory (4) / core (5)
         //   overtime:     the +1-per-round damage escalation from round overtimeStart (10)
         const SIM_RULES_DEFAULT = { lanes: 'fresh', defenderMana: true, overtime: true, territoryHp: 0, overtimeStart: 10,
-                                    aiPath: 'mixed', phaseSide: 'alt' };   // spectate AI-driver experiments (see runSinglePlayerFrame)   // territoryHp 0 = TERRITORY_HP
+                                    aiPath: 'mixed', phaseSide: 'alt',
+                                    liveSalts: false };   // true: keep the live game's fixed AI salts (vary only the sim RNG + ball ids)   // spectate AI-driver experiments (see runSinglePlayerFrame)   // territoryHp 0 = TERRITORY_HP
         const SIM_RULES = { ...SIM_RULES_DEFAULT };
         window.SIM_RULES = SIM_RULES;
         window.SIM_RULES_DEFAULT = SIM_RULES_DEFAULT;
@@ -14833,10 +14834,10 @@
             window.AI_RNG_SEED = AI_RNG_SEED;
             // Match simulator: give each simulated match its own AI seed and a fresh think counter, so a
             // match is a pure function of its seed. The live game never calls this.
-            window._simSeedAI = (seed) => {
-                AI_RNG_SEED = (seed == null) ? 0xA1DE : (seed >>> 0);
+            window._simSeedAI = (seed, keepLiveSalts) => {
+                AI_RNG_SEED = (seed == null || keepLiveSalts) ? 0xA1DE : (seed >>> 0);
                 window.AI_RNG_SEED = AI_RNG_SEED;
-                simSalt = (seed == null) ? 0 : (seed >>> 0);
+                simSalt = (seed == null || keepLiveSalts) ? 0 : (seed >>> 0);
                 spFrameCounter = 0;
                 resetAISlotState();
             };
@@ -22749,7 +22750,8 @@
                 }
                 netRngSeed = (seed >>> 0) || 1;
                 nextProjectileId = 0; currentFrame = 0;   // singles never resets these between matches (ball ids feed the AI's parry hash)
-                if (window._simSeedAI) window._simSeedAI((0xA1DE ^ Math.imul(seed | 0, 0x9E3779B1)) >>> 0);
+                if (window._simSeedAI) window._simSeedAI((0xA1DE ^ Math.imul(seed | 0, 0x9E3779B1)) >>> 0, SIM_RULES.liveSalts);
+                if (SIM_RULES.liveSalts) nextProjectileId = (Math.imul(seed | 0, 2654435761) >>> 20);   // live-like: ball ids carry over between matches
                 gameState = 'menu'; startGameInProgress = false;   // back-to-back matches: no end screen / menu in between
                 window.startSpectateMatch();
                 specPaused = true;                                 // the live loop must not step it between chunks
