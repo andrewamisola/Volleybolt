@@ -721,10 +721,10 @@
         <div id="gamepadPromptBar"></div>
     </div><!-- /gameContainer -->
 
-    <script src="https://cdn.babylonjs.com/babylon.js"></script>
-    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
-    <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
-    <script src="https://cdn.babylonjs.com/havok/HavokPhysics_umd.js"></script>
+    <script src="https://cdn.babylonjs.com/v9.29.0/babylon.js"></script>   <!-- PINNED: the unversioned URL auto-updates to every new release -->
+    <script src="https://cdn.babylonjs.com/v9.29.0/loaders/babylonjs.loaders.min.js"></script>
+    <script src="https://cdn.babylonjs.com/v9.29.0/gui/babylon.gui.min.js"></script>
+    <script src="https://cdn.babylonjs.com/v9.29.0/havok/HavokPhysics_umd.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
     <!-- PeerJS for P2P WebRTC multiplayer -->
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
@@ -18256,7 +18256,7 @@
                 if (window._simSkipPres) return;   // match simulator: visuals only
                 const x = position.x, z = position.z;
                 const layers = [];   // { plane, mat, role }
-                let life = 7;
+                let life = 7, fade = 1.6;
                 if (type === 'overpower' && direction) {
                     const rotY = -Math.atan2(direction.z, direction.x);
                     const L = rnd(3.0, 3.6);
@@ -18271,8 +18271,9 @@
                     layers.push({ ...hotL, role: 'ember', color: new BABYLON.Color3(1.0, 0.55, 0.15), alpha: 1, glow: 1.6 });
                 } else if (type === 'chill') {
                     // Chill-vs-Chill clash: a big GLOWING frost patch - a soft rime glow under two crossed crystal
-                    // layers, all additive and staying bright (role 'iceGlow'), ~3s (owner: was way too big + long).
-                    life = 3;
+                    // layers (role 'iceGlow'). Owner: it should just come and go, less clutter -> ~1.2s with a quick
+                    // fade, drawn PS1-style 50/50 semi-transparent (half ice, half ground) rather than additive glow.
+                    life = 1.2; fade = 0.5;
                     const size = rnd(2.6, 3.0);   // = a Fireball scorch (burn decal)
                     const rot = Math.random() * Math.PI * 2;
                     const rime = makeDecalPlane("chillRime", size, size, x, z, rot,
@@ -18282,16 +18283,16 @@
                             grd.addColorStop(1, 'rgba(255,255,255,0)');
                             g.fillStyle = grd; g.fillRect(0, 0, S, S);
                         }, true));
-                    layers.push({ ...rime, role: 'iceGlow', color: new BABYLON.Color3(0.35, 0.6, 0.8), alpha: 0.7 });
+                    layers.push({ ...rime, role: 'iceGlow', color: new BABYLON.Color3(0.55, 0.8, 0.95), alpha: 0.5 });
                     const f1 = makeDecalPlane("chillDecal", size, size, x, z, rot,
                         decalTexture('frost', 128, 128, (g, S) => drawFrost(g, S), true));
-                    layers.push({ ...f1, role: 'iceGlow', color: new BABYLON.Color3(0.75, 0.93, 1.0), alpha: 1 });
+                    layers.push({ ...f1, role: 'iceGlow', color: new BABYLON.Color3(0.75, 0.93, 1.0), alpha: 0.5 });
                     const f2 = makeDecalPlane("chillDecal2", size * 0.7, size * 0.7, x, z, rot + 0.8,
                         decalTexture('frost', 128, 128, (g, S) => drawFrost(g, S), true));
-                    layers.push({ ...f2, role: 'iceGlow', color: new BABYLON.Color3(0.9, 0.98, 1.0), alpha: 0.9 });
-                    for (const l of layers) {   // additive light, not a tinted stain: it glows on any ground
+                    layers.push({ ...f2, role: 'iceGlow', color: new BABYLON.Color3(0.9, 0.98, 1.0), alpha: 0.5 });
+                    for (const l of layers) {   // PS1 50/50: the ice colour blended half over the ground
                         l.mat.diffuseColor = BABYLON.Color3.Black();
-                        l.mat.alphaMode = BABYLON.Engine.ALPHA_ADD;
+                        l.mat.alphaMode = BABYLON.Engine.ALPHA_COMBINE;
                     }
                 } else if (type === 'frost') {
                     life = 6;
@@ -18315,7 +18316,7 @@
                     layers.push({ ...emb, role: 'ember', color: new BABYLON.Color3(1.0, 0.5, 0.12), alpha: 1, glow: 2.4 });
                 }
                 for (const l of layers) l.mat.alpha = l.alpha;
-                impactDecals.push({ layers, t: 0, life, fade: 1.6 });
+                impactDecals.push({ layers, t: 0, life, fade });
                 while (impactDecals.length > maxDecals) disposeDecal(impactDecals.shift());
             };
             const disposeDecal = (d) => {
