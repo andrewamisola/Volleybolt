@@ -5825,9 +5825,9 @@
             // `.text = "A - B"` fills the cells.
             const scoreText = new BABYLON.GUI.Grid();
             scoreText.width = "152px";
-            scoreText.addColumnDefinition(64, true);
-            scoreText.addColumnDefinition(24, true);
-            scoreText.addColumnDefinition(64, true);
+            scoreText.addColumnDefinition(54, true);
+            scoreText.addColumnDefinition(44, true);   // middle cell = the match clock (broadcast-scoreboard style)
+            scoreText.addColumnDefinition(54, true);
             const mkScoreCell = (txt, size) => {
                 const t = new BABYLON.GUI.TextBlock();
                 t.text = txt;
@@ -5838,7 +5838,9 @@
                 t.shadowColor = "#000"; t.shadowBlur = 0; t.shadowOffsetX = 2; t.shadowOffsetY = 2;
                 return t;
             };
-            const scoreLeft = mkScoreCell("0", 36), scoreDash = mkScoreCell("-", 24), scoreRight = mkScoreCell("0", 36);
+            const scoreLeft = mkScoreCell("0", 36), scoreDash = mkScoreCell("0:00", 15), scoreRight = mkScoreCell("0", 36);
+            scoreDash.color = "#cdd8ef";   // the clock: muted light steel, smaller than the gold digits
+            window.guiElements.scoreClock = scoreDash;
             scoreText.addControl(scoreLeft, 0, 0);
             scoreText.addControl(scoreDash, 0, 1);
             scoreText.addControl(scoreRight, 0, 2);
@@ -5941,29 +5943,16 @@
             stageNameText.isVisible = false;  // Start hidden (menu state)
             guiTexture.addControl(stageNameText);
             window.guiElements.stageNameText = stageNameText;
-            // Match clock (m:ss) centred under the stage name; follows the stage name's visibility.
+            // Match clock (m:ss) inside the score window, between the two scores (sim time; see matchClockFrames).
             {
-                const clockText = new BABYLON.GUI.TextBlock();
-                clockText.color = "#cdd8ef";
-                clockText.fontSize = "15px";
-                clockText.fontFamily = "'FF9UI', sans-serif";
-                clockText.top = "122px";
-                clockText.height = "20px";
-                clockText.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
-                clockText.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
-                clockText.shadowColor = "#000"; clockText.shadowOffsetX = 2; clockText.shadowOffsetY = 2;
-                clockText.isVisible = false;
-                guiTexture.addControl(clockText);
-                window.guiElements.matchClockText = clockText;
                 let lastSecs = -1;
                 scene.onBeforeRenderObservable.add(() => {
-                    const show = stageNameText.isVisible;
-                    if (clockText.isVisible !== show) clockText.isVisible = show;
-                    if (!show) return;
+                    const clock = window.guiElements.scoreClock;
+                    if (!clock) return;
                     const secs = Math.floor((window.getMatchClockFrames ? getMatchClockFrames() : 0) / 60);
                     if (secs === lastSecs) return;
                     lastSecs = secs;
-                    clockText.text = Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
+                    clock.text = Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
                 });
             }
             // Overtime bonus "(+N)" in the wipe's orange, hung just right of the (centred) stage name. Its own
