@@ -9552,6 +9552,7 @@
                     x0: 16, xRange: 18,        // and toward the sides (|x| past x0)
                     color: [0.10, 0.07, 0.13], max: 0.85,
                     dim: 0.72, desat: 0.22,    // the murky dusk grade (owner likes it); depth comes from the deep shadows
+                    nearHaze: 0.6,             // scene-fog haze added past the NEAR rail (the far side gets it from distance)
                 };
                 const EERIE = window.eerieFog = { ...EERIE_DEFAULT };   // each set overrides some (SETS[..].eerie)
                 // + JUICE TINT: the old painted backdrop dimmed/tinted toward the beaming team's colour (blue / red /
@@ -9625,8 +9626,8 @@
                     getUniforms() {
                         const ubo = [{ name: 'eerieA', size: 4, type: 'vec4' }, { name: 'eerieB', size: 4, type: 'vec4' },
                                      { name: 'eerieC', size: 4, type: 'vec4' }, { name: 'eerieT', size: 4, type: 'vec4' },
-                                     { name: 'eerieD', size: 4, type: 'vec4' }];
-                        let decl = '#ifdef EERIEFOG\nuniform vec4 eerieA;\nuniform vec4 eerieB;\nuniform vec4 eerieC;\nuniform vec4 eerieT;\nuniform vec4 eerieD;\n';
+                                     { name: 'eerieD', size: 4, type: 'vec4' }, { name: 'eerieF', size: 4, type: 'vec4' }];
+                        let decl = '#ifdef EERIEFOG\nuniform vec4 eerieA;\nuniform vec4 eerieB;\nuniform vec4 eerieC;\nuniform vec4 eerieT;\nuniform vec4 eerieD;\nuniform vec4 eerieF;\n';
                         for (let i = 0; i < EERIE_NL * 2; i++) { ubo.push({ name: 'eerieL' + i, size: 4, type: 'vec4' }); decl += 'uniform vec4 eerieL' + i + ';\n'; }
                         return { ubo, fragment: decl + '#endif' };
                     }
@@ -9637,6 +9638,8 @@
                         ubo.updateFloat4('eerieC', EERIE.dim, EERIE.desat, window.eerieLightGain, PUNCH.murkTint);
                         ubo.updateFloat4('eerieT', eerieTint[0], eerieTint[1], eerieTint[2], 0);
                         ubo.updateFloat4('eerieD', PUNCH.contrast, PUNCH.sat, PUNCH.detail, PUNCH.detailScale);
+                        const fc = scene.fogColor;
+                        ubo.updateFloat4('eerieF', fc.r, fc.g, fc.b, EERIE.nearHaze);
                         for (let i = 0; i < EERIE_NL * 2; i++) {
                             const o = i * 4;
                             ubo.updateFloat4('eerieL' + i, eerieLights[o], eerieLights[o + 1], eerieLights[o + 2], eerieLights[o + 3]);
@@ -9692,6 +9695,13 @@
                                 eK = eK * eK * (3.0 - 2.0 * eK);
                                 // murkTint (eerieC.w): 1 = sink into the murk colour, 0 = just darken (keeps the hue - greens stay green)
                                 ${c}.rgb = mix(${c}.rgb, mix(${c}.rgb * 0.22, eerieB.rgb, eerieC.w), eK * eerieB.w);
+                                // NEAR-SIDE HAZE: the scene's distance fog is measured from the camera, so the far treeline
+                                // sinks into purple haze but the near one (close to the camera) barely gets any. Past the
+                                // near rail the same fog colour is added back by depth, so both treelines share the murk.
+                                {
+                                    float eNz = clamp((-vPositionW.z - eerieA.x - 4.0) / 16.0, 0.0, 1.0);
+                                    ${c}.rgb = mix(${c}.rgb, eerieF.rgb, eNz * eerieF.w);
+                                }
                                 // Juice: the backdrop dims + tints toward the beaming team
                                 ${c}.rgb *= eerieT.rgb;
                                 #ifdef EERIELIGHTS
@@ -9724,17 +9734,15 @@
                     m.setVerticesData(BABYLON.VertexBuffer.UV2Kind, uv2, true);
                 };
                 const warpGround = (name) => {
-                    const m = BABYLON.MeshBuilder.CreateGround(name, { width: GW, height: GW, subdivisionsX: 8, subdivisionsY: 140, updatable: true }, scene);
-                    setWarpUV(m);
-                    warpedGrounds.push(m);
-                    return m;
+                    // (perspective warp tried 2026-10-01 and rejected by the owner - plain sheets; setWarpUV kept for reference)
+                    return BABYLON.MeshBuilder.CreateGround(name, { width: GW, height: GW }, scene);
                 };
                 window.rewarpGround = () => warpedGrounds.forEach(setWarpUV);
                 const groundMat = new BABYLON.StandardMaterial('forestGroundMat', scene);
                 const gTex = new BABYLON.Texture('textures/grass_field_seamless.png?v=1', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
                 // Same grass as the court floor (floorMat): ~13u tiles, same tint and black-point lift, so the
                 // ground right past the rails continues the stage seamlessly before the murk takes over.
-                gTex.uScale = 10.5; gTex.vScale = 10.5; gTex.coordinatesIndex = 1;   // perspective-warped UVs
+                gTex.uScale = 5.25; gTex.vScale = 5.25;   // half the texture resolution of the court (chunkier texels, owner pick)
                 groundMat.diffuseTexture = gTex;
                 groundMat.diffuseColor = new BABYLON.Color3(1.0, 0.98, 0.9);
                 groundMat.emissiveColor = new BABYLON.Color3(0.16, 0.16, 0.12);
@@ -9744,7 +9752,7 @@
                 // ground is mostly worn earth with grass between.
                 const dirtMat = new BABYLON.StandardMaterial('forestDirtMat', scene);
                 const dTex = new BABYLON.Texture('textures/dirt_road_seamless.png?v=1', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
-                dTex.uScale = 24; dTex.vScale = 24; dTex.coordinatesIndex = 1;
+                dTex.uScale = 12; dTex.vScale = 12;   // half resolution (2x texels)
                 dirtMat.diffuseTexture = dTex;
                 dirtMat.specularColor = BABYLON.Color3.Black();
                 dirtMat.emissiveColor = new BABYLON.Color3(0.12, 0.10, 0.07);   // = lane road
@@ -9780,7 +9788,7 @@
                     mask.update();
                     mask.getAlphaFromRGB = true;
                     mask.wrapU = mask.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
-                    mask.uScale = mask.vScale = REP; mask.coordinatesIndex = 1;   // the patches recede with the ground
+                    mask.uScale = mask.vScale = REP;
                     dirtMat.opacityTexture = mask;
                 }
                 dirtMat.zOffset = -1;
@@ -9849,8 +9857,7 @@
                     t.update();
                     t.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
                     t.wrapU = t.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
-                    t.uScale = t.vScale = GW / 6.0;   // 6u per tile -> slabs ~0.6-1.4 x 0.75u, like the painting's
-                    t.coordinatesIndex = 1;           // perspective-warped (the forecourt mask stays on UV0)
+                    t.uScale = t.vScale = GW / 12.0;  // 12u per tile: half the texture resolution (owner pick)
                     paveMat.diffuseTexture = t;
                     return (paveTexReady = true);
                 };
@@ -9899,7 +9906,7 @@
                     crackTex.update();
                     crackTex.hasAlpha = true;
                     crackTex.wrapU = crackTex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
-                    crackTex.uScale = crackTex.vScale = GW / 9; crackTex.coordinatesIndex = 1;
+                    crackTex.uScale = crackTex.vScale = GW / 18;
                 }
                 const crackMat = new BABYLON.StandardMaterial('backdropCrackMat', scene);
                 crackMat.disableLighting = true;
