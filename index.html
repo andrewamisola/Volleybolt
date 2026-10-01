@@ -10202,9 +10202,9 @@
                     if (set.kind === 'core') {
                         // = applyStageLighting's core sun: low daylight through the breach, travelling away from it
                         const sgn = set.mirror ? -1 : 1;
-                        // the backdrop's breach light comes in on a diagonal (owner: not literally straight from behind the
-                        // attackers), low, so the rubble in it rakes shadows across the hall floor
-                        return { dir: new BABYLON.Vector3(sgn * 0.72, -0.5, 0.62).normalize(), intensity: 1.6, diffuse: new BABYLON.Color3(1.0, 0.8, 0.52) };
+                        // the breach is directly behind the attackers: the light travels straight down the hall (pure x),
+                        // low, so every shadow runs horizontally away from the gate (owner)
+                        return { dir: new BABYLON.Vector3(sgn, -0.5, 0).normalize(), intensity: 1.6, diffuse: new BABYLON.Color3(1.0, 0.8, 0.52) };
                     }
                     // Outdoors: the stage sun's compass direction, but sitting LOW over the backdrop (window.forestSunElev
                     // degrees above the horizon; the stage sun is ~35) - a late-dusk sun that rakes long shadows across
