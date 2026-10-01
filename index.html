@@ -10235,7 +10235,8 @@
                         propAmb.diffuse = new BABYLON.Color3(0.5, 0.4, 0.62); propAmb.specular = BABYLON.Color3.Black();
                         propAmb.groundColor = new BABYLON.Color3(0.12, 0.08, 0.16);
                     }
-                    propAmb.intensity = window.forestOvercast ? window.forestOvercast.fill : 0.3;   // overcast: mostly fill light
+                    propAmb.intensity = curSet && curSet.def.fill != null ? curSet.def.fill
+                        : window.forestOvercast ? window.forestOvercast.fill : 0.3;   // overcast: mostly fill light
                     // untextured props (foliage/bark/rock) take the dim fill for form; textured stone keeps the scene
                     // ambient, exactly like the structures it stands next to (+ an extra fill indoors: stoneFill)
                     const soft = meshes.filter(m => !(m.material && m.material.albedoTexture));
@@ -10268,7 +10269,7 @@
                         propSG.bias = 0.003; propSG.normalBias = 0.02;
                         propSG.getShadowMap().refreshRate = BABYLON.RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
                     }
-                    propSG.setDarkness(window.forestShadow.treeDark);
+                    propSG.setDarkness(curSet && curSet.def.treeDark != null ? curSet.def.treeDark : window.forestShadow.treeDark);
                     propSG.getShadowMap().renderList = meshes.filter(m => !m._noShadowCast);
                     for (const m of meshes) m.receiveShadows = !m._noShadowCast;
                     // re-render once for the new layout - and again a little later, in case the first pass ran
@@ -10283,6 +10284,7 @@
                     if (curSet && curSet.def.cast != null) SF.cast = curSet.def.cast;
                     if (curSet && curSet.def.contact != null) SF.contact = curSet.def.contact;
                     if (curSet && curSet.def.len != null) SF.len = curSet.def.len;
+                    if (curSet && curSet.def.blur != null) SF.blur = curSet.def.blur;
                     shadowMat.emissiveColor = BABYLON.Color3.FromArray(curSet && curSet.def.shadowCol || [0.11, 0.05, 0.19]);   // dark dusk PURPLE, not black
                     const L = S.dir;
                     const hl = Math.hypot(L.x, L.z) || 1e-3;
@@ -10503,7 +10505,10 @@
                         stoneDim: [0.28, 0.26, 0.32], propFog: false,
                         // sunlit hall floor: things in the breach light throw real directional shadows away from it, not
                         // round contact puddles (owner)
-                        shadowCol: [0.12, 0.04, 0.2], cast: 0.74, contact: 0.12, len: 1.5, paveTint: [0.36, 0.32, 0.42], cracks: true, shafts: true,
+                        shadowCol: [0.1, 0.03, 0.17], cast: 0.88, contact: 0.0, len: 3.2,
+                        // HARSH (owner: the gate is the only natural light - not overcast): crisp shadow edges, hard shadow
+                        // map on the props, almost no soft fill
+                        blur: 1.0, fill: 0.1, treeDark: 0.2, paveTint: [0.36, 0.32, 0.42], cracks: true, shafts: true,
                         build: (R, add, halfD, fires) => {
                             const zF = halfD + 9, zN = -halfD - 13, BX = -19;    // far wall, near wall, breach end
                             const HALL_SY = 2.6;
