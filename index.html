@@ -9826,9 +9826,11 @@
                     if (paveTexReady) return true;
                     // MATCHES THE CASTLE STONE: castle_wall.png is 64px per 1.6u (8 courses, ~0.2u bricks), so the
                     // flagstone is a 64px tile over 1.6u too - same stone size, same chunky texel size
-                    const T = 64, ROWS = 8, RH = T / ROWS;
-                    const t = new BABYLON.DynamicTexture('backdropPaveTex', { width: T, height: T }, scene, true);
-                    const g = t.getContext();
+                    // Drawn at 64px, then box-filtered DOWN to 32px (owner: "lower the resolution so it reads softer,
+                    // like PS1"): same brick size, half the texels, grout and bevels melt into soft 1px tones.
+                    const T = 64, ROWS = 8, RH = T / ROWS, TO = 32;
+                    const src = document.createElement('canvas'); src.width = src.height = T;
+                    const g = src.getContext('2d');
                     let sd = 2024;
                     const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
                     g.fillStyle = 'rgb(58,52,48)'; g.fillRect(0, 0, T, T);           // grout
@@ -9856,10 +9858,14 @@
                         const v = r() < 0.5 ? 'rgba(0,0,0,0.10)' : 'rgba(255,240,220,0.07)';
                         g.fillStyle = v; g.fillRect(r() * T | 0, r() * T | 0, 1, 1);
                     }
+                    const t = new BABYLON.DynamicTexture('backdropPaveTex', { width: TO, height: TO }, scene, true);
+                    const tg = t.getContext();
+                    tg.imageSmoothingEnabled = true; tg.imageSmoothingQuality = 'high';
+                    tg.drawImage(src, 0, 0, TO, TO);
                     t.update();
                     t.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
                     t.wrapU = t.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
-                    t.uScale = t.vScale = GW / 1.6;   // 1.6u per tile = the gatehouse wall's texel density
+                    t.uScale = t.vScale = GW / 1.6;   // 1.6u per tile: same brick size as the gatehouse wall, half its texels
                     paveMat.diffuseTexture = t;
                     return (paveTexReady = true);
                 };
