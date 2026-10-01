@@ -1064,6 +1064,14 @@
                 if (this.mesh && !this.mesh.isDisposed()) this.mesh.dispose();
             }
         }
+        // Which spell streak to build, decided when the spell is cast: the camera-facing BillboardTrail only
+        // for the spectate TV cam (the angle it exists for); everywhere else the original Babylon TrailMesh,
+        // whose look the owner prefers in normal play.
+        const useBillboardTrail = () => !!(window.isSpectating && window.isSpectating() && window._specCam === 'tv');
+        function makeSpellTrail(name, anchor, scene, width, length) {
+            return useBillboardTrail() ? new BillboardTrail(name, anchor, scene, width, length)
+                                       : new BABYLON.TrailMesh(name, anchor, scene, width, length, false);
+        }
 
 
         // New parry system - window-based
@@ -6095,7 +6103,7 @@
             // masked to the band plus each pickle's silhouette grown a little, so the lines run slightly past the
             // outline. A repeat-x tile of tapered white streaks; geometry + mask set per wipe in setupWipeBookends.
             const wipeLines = document.createElement('div');
-            wipeLines.style.cssText = 'position:absolute;left:0;top:0;display:none;pointer-events:none;background-repeat:repeat-x;' +
+            wipeLines.style.cssText = 'position:absolute;left:0;top:0;display:none;opacity:0;will-change:opacity;pointer-events:none;background-repeat:repeat-x;' +
                 '-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat';
             wipeTrack.append(wipeBand, wipeLines, wipeTitle);
             wipeEl.appendChild(wipeTrack);
@@ -6264,6 +6272,9 @@
             // above fades in on top by the fraction, so the smear grows smoothly instead of popping between steps.
             window.setWipeBlur = (b) => {
                 b = Math.max(0, Math.min(BLUR_LEVELS.length - 1, b));
+                // speed lines are MOTION only: they ride the same speed curve as the blur, so they're gone while the
+                // band holds on the stage name and streak in only on the way in and out
+                wipeLines.style.opacity = Math.min(1, b / 0.8).toFixed(3);
                 const lo = Math.floor(b), f = b - lo;
                 for (const v of activeWipe) v.imgs.forEach((img, i) => {
                     img.style.opacity = i === lo ? '1' : (i === lo + 1 && f > 0.02) ? f.toFixed(3) : '0';
@@ -6297,6 +6308,7 @@
             window.setupWipeBookends = (movingRight, leadColor, trailColor) => {
                 for (const k in variants) variants[k].imgs.forEach(img => { img.style.display = 'none'; });
                 wipeLines.style.display = 'none';
+                wipeLines.style.opacity = '0';                                  // shows only once the band is moving (setWipeBlur)
                 activeWipe = []; bandInsetPx = [];
                 wipeBand.style.transform = 'none';
                 wipeEl.style.display = 'block';
@@ -13283,12 +13295,12 @@
                 // render loop. Auto-updating at render rate (~120fps) while the anchor only
                 // moves at sim rate (60fps) sampled duplicate points, and any sim stall
                 // collapsed the whole ribbon to a dot (tail vanished mid-flight).
-                proj.trail = new BillboardTrail("fireTrail_" + Date.now(), proj.trailAnchor, scene, trailWidth, trailLength);   // camera-facing streak
+                proj.trail = makeSpellTrail("fireTrail_" + Date.now(), proj.trailAnchor, scene, trailWidth, trailLength);
                 const trailMat = new BABYLON.StandardMaterial("trailMat_" + Date.now(), scene);
                 trailMat.emissiveColor = new BABYLON.Color3(1, 0.3, 0.05);
-                // One flat ribbon layer vs the old Babylon tube's two overlapping layers: the old trail (0.6, then
-                // x0.65 once the spell model attaches) read ~0.63 opaque, so this lands on that after the same x0.65.
-                trailMat.alpha = 0.97;
+                // The TV ribbon is ONE flat layer vs the tube's two overlapping ones: 0.97 lands on the tube's
+                // ~0.63 after the spell model's x0.65 dim.
+                trailMat.alpha = (proj.trail instanceof BillboardTrail) ? 0.97 : 0.6;
                 trailMat.diffuseColor = new BABYLON.Color3(0, 0, 0);
                 trailMat.backFaceCulling = false;
                 proj.trail.material = trailMat;
@@ -13471,11 +13483,11 @@
                 proj.trailAnchor.position.copyFrom(proj.mesh.position);
                 proj.lastTrailSamplePos = proj.mesh.position.clone();
                 proj.trailAnchor.computeWorldMatrix(true);  // seed sections at spawn, not origin (see fire trail)
-                proj.trail = new BillboardTrail("iceTrail_" + Date.now(), proj.trailAnchor, scene, 0.18, 25);  // camera-facing streak, driven from fixed sim step
+                proj.trail = makeSpellTrail("iceTrail_" + Date.now(), proj.trailAnchor, scene, 0.18, 25);  // driven from fixed sim step
                 const trailMat = new BABYLON.StandardMaterial("iceTrailMat_" + Date.now(), scene);
                 trailMat.emissiveColor = new BABYLON.Color3(0.4, 0.7, 1);
                 trailMat.diffuseColor = new BABYLON.Color3(0, 0, 0);
-                trailMat.alpha = 0.84;   // = the old tube's two overlapping 0.5 layers after the model's x0.65 (~0.55)
+                trailMat.alpha = (proj.trail instanceof BillboardTrail) ? 0.84 : 0.5;   // TV ribbon: one layer = the tube's two
                 trailMat.backFaceCulling = false;
                 proj.trail.material = trailMat;
                 proj.trailMat = trailMat;
