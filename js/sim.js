@@ -338,10 +338,25 @@
                 // Gated on teamSize so rare same-owner geometry in singles keeps today's behavior
                 // (golden-protected).
                 if (consts.teamSize === 2 && proj.owner === other.owner) continue;
-                if (other.type === 'frostbolt') continue;        // frostbolts pass through each other
+                // (Chill Dill vs Chill Dill cancels too since 2026-10-01: a counter-Chill homes onto the incoming one)
                 if (toDestroy.includes(other)) continue;
                 // Head-on: opposite X velocities
                 if ((proj.velX > 0 && other.velX > 0) || (proj.velX < 0 && other.velX < 0)) continue;
+                // Chill vs Chill: SWEPT check - two Chills close at ~72 u/s (~1.2u a frame), so they can pass through
+                // each other between frames; cancel if they swapped sides THIS frame (or overlap) while lined up in Z.
+                if (other.type === 'frostbolt') {
+                    const dtS = ctx.dt || (1 / 60);
+                    const dxNow = other.x - proj.x;
+                    const dxPrev = (other.x - other.velX * dtS) - (proj.x - proj.velX * dtS);
+                    const cd = (proj.hitboxRadius || 0.3) + (other.hitboxRadius || 0.3);
+                    if ((dxPrev * dxNow <= 0 || Math.abs(dxNow) < cd) && Math.abs(other.z - proj.z) < cd) {
+                        toDestroy.push(proj);
+                        toDestroy.push(other);
+                        if (!isResimulating) D.onFrostboltCancel((proj.x + other.x) * 0.5, (proj.z + other.z) * 0.5);
+                        break;
+                    }
+                    continue;
+                }
                 // Moving toward each other (not already past)
                 const dx = other.x - proj.x;
                 if (proj.velX > 0 && dx < 0) continue;
@@ -467,9 +482,19 @@
             // slips it, and a head-on cast still cancels it. Pure +-*/ and comparisons: rollback-safe.
             const H = ctx.consts && ctx.consts.frostHoming;
             if (H && proj.type === 'frostbolt') {
+                // INTERCEPT first: if an enemy Chill Dill is flying straight at this one (head-on, still ahead),
+                // home onto it - casting your own Chill Dill is a counter (they cancel). Else home on the wizard.
+                let foe = null;
+                for (const o of projectiles) {
+                    if (o === proj || o.type !== 'frostbolt' || o.owner === proj.owner) continue;
+                    if ((o.velX > 0) === (proj.velX > 0)) continue;                  // must be head-on
+                    const ahead = (o.x - proj.x) * (proj.velX > 0 ? 1 : -1);
+                    if (ahead <= 0) continue;                                        // already passed
+                    if (!foe || ahead < (foe.x - proj.x) * (proj.velX > 0 ? 1 : -1)) foe = o;
+                }
                 const tgt = proj.velX > 0 ? combatants.right : combatants.left;
-                if (tgt) {
-                    const aimZ = (tgt.paddleZ || 0) - ((ctx.consts.arc && ctx.consts.arc.ZPERSP) || 0);
+                if (foe || tgt) {
+                    const aimZ = foe ? foe.z : (tgt.paddleZ || 0) - ((ctx.consts.arc && ctx.consts.arc.ZPERSP) || 0);
                     let want = (aimZ - proj.z) * H.gain;
                     if (want > H.maxLat) want = H.maxLat; else if (want < -H.maxLat) want = -H.maxLat;
                     let dv = want - proj.velZ;

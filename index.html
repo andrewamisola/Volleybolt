@@ -761,7 +761,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=47-chill-dill-homing"></script>
+    <script type="module" src="js/sim.js?v=49-chill-dill-swept"></script>
 
     <script>
         // Build identifier for bug reports (audit #6). Date-based: bump on every player-facing
@@ -14650,6 +14650,16 @@
                 // One threat at a time: the biggest (most-rallied), tie-break closest.
                 const threat = _aiPrimaryThreat(view, true);   // or null
 
+                // CHILL DILL COUNTER (owner 2026-10-01): an incoming enemy Chill Dill HOMES, so standing still or a
+                // single dodge gets you frozen. Once it has been seen for dodgeSightFrames (same reaction gate as
+                // before): answer it with our own Chill Dill (instant; it homes onto theirs and both cancel), else
+                // Thunderstorm (instant zap), and keep MOVING regardless (see the movement override below).
+                let chill = null;
+                for (const p of view.projectiles) {
+                    if (p.type === 'frostbolt' && p.velX > 0 && p.owner !== 'ai'
+                        && (p.sightFrames || 0) >= profile.dodgeSightFrames && (!chill || p.x > chill.x)) chill = p;
+                }
+
                 // ---- Movement (every frame) ----
                 let targetZ = null;   // null = no reason to move → hold
                 let awayZ = 0;        // return direction chosen for the current threat (see AIMED RETURNS)
@@ -14699,6 +14709,13 @@
                 // already steers its lane AWAY from the opponent's paddle = connecting.)
                 if (view.opp && view.opp.juiceActive) {
                     targetZ = view.opp.paddleZ;
+                }
+                // Chill Dill incoming: never stand still. Run away from it, switching direction every 18 frames
+                // (keyed to how long this bolt has been seen: deterministic, per bolt), wall to wall.
+                if (chill) {
+                    const k = Math.floor(((chill.sightFrames || 0) - profile.dodgeSightFrames) / 18);
+                    const away = chill.z >= s.paddleZ ? -1 : 1;
+                    targetZ = ((k % 2) === 0 ? away : -away) * halfD;
                 }
                 let moveDir = 0;
                 if (targetZ !== null) {
@@ -14847,6 +14864,11 @@
                     frostbolt    = canFrostbolt;
                     fireball     = canFireball && !frostbolt;
                     thunderstorm = canThunderstorm;
+                }
+                // Chill Dill counter-casts (instant, any frame once it's been seen): our own Chill Dill first, else Thunderstorm.
+                if (chill && !s.casting) {
+                    if ((s.cooldowns.frostbolt || 0) <= 0 && s.mana >= 1) { frostbolt = true; fireball = false; }
+                    else if ((s.cooldowns.thunderstorm || 0) <= 0 && s.mana >= 2) thunderstorm = true;
                 }
 
                 // ---- Juice (Overdrive) : fire the ult at an EFFECTIVE moment, not just on full ----
