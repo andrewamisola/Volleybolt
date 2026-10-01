@@ -9531,11 +9531,11 @@
                 const PROP_FILES = {
                     tree: 'tree.glb?v=1', pine: 'pine.glb?v=1', rock: 'rock.glb?v=1',
                     // v2: the gatehouse's own textured stone (M_keep tower_stone / M_wall castle_wall, same texel size)
-                    stump: 'stump.glb?v=2', guard_tower: 'guard_tower.glb?v=2', hall_wall: 'hall_wall.glb?v=2',
-                    hall_wall_tall: 'hall_wall_tall.glb?v=1',   // the core's full-height hall wall (true-size bricks)
-                    banner: 'banner.glb?v=2', brazier: 'brazier.glb?v=2', rubble: 'rubble.glb?v=2', wall_broken: 'wall_broken.glb?v=2',
+                    stump: 'stump.glb?v=2', guard_tower: 'guard_tower.glb?v=3', hall_wall: 'hall_wall.glb?v=3',
+                    hall_wall_tall: 'hall_wall_tall.glb?v=2',   // the core's full-height hall wall (true-size bricks)
+                    banner: 'banner.glb?v=2', brazier: 'brazier.glb?v=3', rubble: 'rubble.glb?v=3', wall_broken: 'wall_broken.glb?v=3',
                     // crenellated curtain wall (tiles every 4u) + its two end pieces that tuck into a guard tower
-                    curtain_wall: 'curtain_wall.glb?v=1', curtain_wall_end: 'curtain_wall_end.glb?v=1', curtain_wall_end_r: 'curtain_wall_end_r.glb?v=1',
+                    curtain_wall: 'curtain_wall.glb?v=2', curtain_wall_end: 'curtain_wall_end.glb?v=2', curtain_wall_end_r: 'curtain_wall_end_r.glb?v=2',
                 };
                 const KINDS = Object.keys(PROP_FILES);
                 window.refreshEerieFog = () => scene.markAllMaterialsAsDirty(BABYLON.Constants.MATERIAL_AllDirtyFlag);
@@ -9612,7 +9612,7 @@
                     }
                     // flame meshes flicker with them
                     const f = 0.85 + 0.15 * Math.sin(t * 11.3) * Math.sin(t * 4.7 + 1.1);
-                    for (const m of flameMats) { m.emissiveColor.set(1.0 * f, 0.62 * f, 0.26 * f); m.albedoColor.set(1.0 * f, 0.72 * f, 0.32 * f); }
+                    for (const m of flameMats) { m.emissiveColor.set(1.0 * f, 0.62 * f, 0.26 * f); m.albedoColor.set(1.0 * f, 0.62 * f, 0.22 * f); }
                 });
                 window.eerieLightGain = 1.0;
                 class EerieFogPlugin extends BABYLON.MaterialPluginBase {
@@ -9907,7 +9907,7 @@
                 const glowMat = new BABYLON.StandardMaterial('backdropGlowMat', scene);
                 glowMat.disableLighting = true;
                 glowMat.diffuseColor = BABYLON.Color3.Black();
-                glowMat.emissiveColor = new BABYLON.Color3(1.0, 0.72, 0.38);
+                glowMat.emissiveColor = new BABYLON.Color3(1.0, 0.64, 0.16);   // warm amber firelight / low sun (pure orange went pink over the purple floor)
                 glowMat.opacityTexture = glowTex;
                 glowMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
                 glowMat.zOffset = -3;
@@ -10446,7 +10446,7 @@
                         // breach daylight cuts across it in warm streaks; fine cracks in the floor.
                         // (tried propFog false + stoneFill to un-fog the walls - owner prefers the fogged look; depth comes
                         // from baked AO + banner shadows instead)
-                        eerie: { color: [0.10, 0.045, 0.15], max: 0.6, z0: 7, dim: 0.8, desat: 0.08, nearHaze: 0.3, farHaze: 0.42 }, ground: 'pave', glow: 'breach',
+                        eerie: { color: [0.10, 0.045, 0.15], max: 0.6, z0: 7, dim: 0.8, desat: 0.08, nearHaze: 1.0, farHaze: 0.75 }, ground: 'pave', glow: 'breach',
                         // the hall walls sit in shade, far darker than the lit floor (owner): a dark purple-grey base and
                         // no scene fog on them (the purple fog lifted them back up to a flat lavender)
                         stoneDim: [0.28, 0.26, 0.32], propFog: false,
@@ -10465,10 +10465,11 @@
                                 // hung high on the tall wall, just proud of its camera-side face (~zw-0.44)
                                 for (let x = BX + 8; x < 48; x += 8) add('banner', x, zw - 0.6, 0, 1.3, 1, 4.6, true);
                                 // braziers in front of the wall, fixed fires
-                                for (const bx of [-7, 7, 23]) {
-                                    const bz = zw - (zw > 0 ? 1.4 : 1.2);
+                                // braziers only INSIDE the hall: the camera sees the near wall's OUTER face
+                                if (zw > 0) for (const bx of [-7, 7, 23]) {
+                                    const bz = zw - 1.4;
                                     add('brazier', bx, bz, 0, 1, 1, 0, true);
-                                    fires.push({ x: bx, y: 1.4, z: bz, reach: 7, col: [1.0, 0.55, 0.22], w: 0.6 });
+                                    fires.push({ x: bx, y: 1.4, z: bz, reach: 10, col: [1.0, 0.48, 0.14], w: 1.5 });   // warm vs the purple stone
                                 }
                             }
                             // tumbled blocks spilling in from the breach across the floor
@@ -10491,7 +10492,7 @@
                         grd.addColorStop(0, `rgba(255,255,255,${a})`); grd.addColorStop(0.35, `rgba(255,255,255,${a * 0.45})`); grd.addColorStop(1, 'rgba(255,255,255,0)');
                         g.fillStyle = grd; g.fillRect(0, 0, 512, 512);
                     };
-                    for (const f of fires) pool(f.x, f.z, 4.2, 0.55);
+                    for (const f of fires) pool(f.x, f.z, 6.5, 1.0);   // a big warm pool of firelight on the floor
                     if (set.def.glow === 'breach') {
                         const s = set.mirror ? -1 : 1;
                         // light STREAKS: long soft bands thrown from the breach along the daylight's ground direction
@@ -10643,8 +10644,8 @@
                                     // pure fire like the fireball: unlit, full-bright, never fogged
                                     mat.unlit = true;
                                     mat.fogEnabled = false;
-                                    mat.albedoColor = new BABYLON.Color3(1.0, 0.7, 0.3);
-                                    mat.emissiveColor = new BABYLON.Color3(1.0, 0.62, 0.26);
+                                    mat.albedoColor = new BABYLON.Color3(1.0, 0.62, 0.22);
+                                    mat.emissiveColor = new BABYLON.Color3(1.0, 0.55, 0.18);
                                     if (mat.name === 'M_flame') flameMats.push(mat);
                                     m._noShadowCast = true;
                                 } else if (!mat.pluginManager || !mat.pluginManager.getPlugin('EerieFog')) {

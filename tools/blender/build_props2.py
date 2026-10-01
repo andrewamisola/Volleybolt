@@ -30,6 +30,7 @@ Materials: M_bark M_stumpcut | M_keep M_wall (textured) | M_iron M_banner M_sigi
 """
 import bpy, bmesh, math, random, os
 from mathutils import Vector, Euler
+from mathutils.bvhtree import BVHTree
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 OUT_DIR = os.path.join(ROOT, 'models', 'props')
@@ -117,6 +118,8 @@ class MB:
 
     def __init__(self, ao_h=1.0, xoff=0.0, ushift=0.0):
         self.v, self.f, self.mat, self.kind, self.uv, self.smooth = [], [], [], [], [], []
+        self.parent, self.auto = [], []            # source face index (tint / UV check); uv came from auto_uv
+        self.tris_pre = None                        # tri count before the AO subdivision pass (report only)
         self.ao_h = ao_h
         self.xoff, self.ushift = xoff, ushift      # planar-UV x offset / u phase (tiling wall modules)
 
@@ -149,6 +152,8 @@ class MB:
         self.kind.append(kind)
         self.uv.append(uv if uv is not None else self.auto_uv(idx))
         self.smooth.append(smooth)
+        self.parent.append(len(self.f) - 1)
+        self.auto.append(uv is None)
 
     def tri_count(self):
         return sum(len(f) - 2 for f in self.f)
@@ -271,7 +276,200 @@ def shade(kind, nrm, co, tint, ao_h):
     return (1, 1, 1)                                               # flame / sigil / sigil_dark: full bright
 
 
+# ---------------------------------------------------------------- baked ambient occlusion (post-process)
+# Low-poly stone has verts only at corners, so a vertex-colour AO would have nothing to interpolate between. For
+# the props listed in AO_CFG: (a) subdivide every stone face into a grid so no edge is longer than ~SUB_L (UVs
+# bilinearly interpolated, so castle_wall / tower_stone stay put -- checked per face), then (b) ray-cast cosine-
+# weighted hemispheres from every face corner (per LOOP, so a corner shared by a wall face and a pilaster face gets
+# a different value on each) against the ORIGINAL coarse geometry + an infinite ground plane at z=0, and multiply
+# the result into COLOR_0. Tiling modules also see copies of themselves shifted along X so the seam matches.
+SUB_L = 0.35            # target max edge length on stone faces (edges up to 1.5 * SUB_L are left whole)
+SUB_L_NGON = 0.75       # coarser grid for n-gon caps (fan-triangulated about the centroid)
+AO_RAYS = 64            # cosine-weighted rays per face corner (fixed Fibonacci set -> spatially coherent, no noise)
+AO_DIST = 1.5           # max occluder distance
+AO_EPS = 0.02           # origin pushed this far along the face normal (clears coplanar / hair-thin overlays)
+AO_STRENGTH = 0.55      # fully occluded corner -> 1 - 0.55 = 0.45 multiplier
+AO_OCC_REF = 0.50       # occlusion fraction that counts as "fully occluded" (a 90-degree crevice is ~0.5)
+AO_GROUND = 0.8         # how much the z=0 ground plane counts relative to real geometry
+AO_SKIP_KINDS = ('flame', 'coal', 'sigil', 'sigil_dark')     # never occlude
+# prop name -> X offsets of the occluder copies (0 = itself). Tiling modules see their neighbours.
+AO_CFG = {
+    'hall_wall': (-4.0, 0.0, 4.0), 'hall_wall_tall': (-4.0, 0.0, 4.0), 'wall_broken': (0.0,),
+    'curtain_wall': (-4.0, 0.0, 4.0), 'curtain_wall_end': (0.0, 4.0), 'curtain_wall_end_r': (-4.0, 0.0),
+    'guard_tower': (0.0,), 'brazier': (0.0,), 'rubble': (0.0,),
+}
+STONE_MATS = (MATS.index('M_keep'), MATS.index('M_wall'))
+
+
+def _seg(length, L):
+    return max(1, int(length / L + 0.5))
+
+
+GRADE_MIN = 1.5                 # axes at least this long get edge-graded cells (fine near the borders)
+GRADE_EDGE = (0.09, 0.26, 0.52)  # breakpoints measured in from each end of a long axis (where the AO gradients live)
+
+
+def _breaks(length, L):
+    """Parameter values 0..1 for the grid lines along one quad axis. Short axes: uniform (~L). Long axes (big wall
+    faces): dense near both ends -- that is where the face meets plinth / coping / pilaster and the AO changes
+    fastest -- and uniform (~1.2 L) in the middle, for roughly the same cell count as a plain L grid."""
+    if length < GRADE_MIN:
+        n = _seg(length, L)
+        return [i / n for i in range(n + 1)]
+    ends = [c for c in GRADE_EDGE if c < length / 2 - 0.08]
+    lo, hi = ends[-1], length - ends[-1]
+    n = _seg(hi - lo, L * 1.2)
+    pos = ends + [lo + (hi - lo) * i / n for i in range(1, n)] + [length - c for c in reversed(ends)]
+    return [0.0] + [x / length for x in pos] + [1.0]
+
+
+def _push(out, ids, uvs, meta):
+    out.f.append(ids)
+    out.mat.append(meta[0]); out.kind.append(meta[1]); out.smooth.append(meta[2])
+    out.uv.append([tuple(u) for u in uvs]); out.parent.append(meta[3]); out.auto.append(meta[4])
+
+
+def _quad_grid(out, P, UV, meta, L):
+    ss = _breaks(max((P[1] - P[0]).length, (P[2] - P[3]).length), L)
+    ts = _breaks(max((P[3] - P[0]).length, (P[2] - P[1]).length), L)
+    nu, nv = len(ss) - 1, len(ts) - 1
+    ids, uvg = {}, {}
+    for i, s in enumerate(ss):
+        for j, t in enumerate(ts):
+            pos = (P[0] * (1 - s) + P[1] * s) * (1 - t) + (P[3] * (1 - s) + P[2] * s) * t
+            uvg[i, j] = (UV[0] * (1 - s) + UV[1] * s) * (1 - t) + (UV[3] * (1 - s) + UV[2] * s) * t
+            ids[i, j] = out.vert(pos)
+    for i in range(nu):
+        for j in range(nv):
+            c = ((i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1))
+            _push(out, [ids[k] for k in c], [uvg[k] for k in c], meta)
+
+
+def _tri_grid(out, P, UV, meta, L):
+    n = _seg(max((P[1] - P[0]).length, (P[2] - P[1]).length, (P[0] - P[2]).length), L)
+    ids, uvg = {}, {}
+    for a in range(n + 1):
+        for b in range(n + 1 - a):
+            uvg[a, b] = UV[0] + (UV[1] - UV[0]) * (a / n) + (UV[2] - UV[0]) * (b / n)
+            ids[a, b] = out.vert(P[0] + (P[1] - P[0]) * (a / n) + (P[2] - P[0]) * (b / n))
+    for a in range(n):
+        for b in range(n - a):
+            c = ((a, b), (a + 1, b), (a, b + 1))
+            _push(out, [ids[k] for k in c], [uvg[k] for k in c], meta)
+            if a + b < n - 1:
+                c = ((a + 1, b), (a + 1, b + 1), (a, b + 1))
+                _push(out, [ids[k] for k in c], [uvg[k] for k in c], meta)
+
+
+def subdivide(m):
+    """New MB with every stone face (M_keep / M_wall) replaced by a grid of cells ~SUB_L; other faces copied."""
+    out = MB(ao_h=m.ao_h, xoff=m.xoff, ushift=m.ushift)
+    for fi, idx in enumerate(m.f):
+        meta = (m.mat[fi], m.kind[fi], m.smooth[fi], fi, m.auto[fi])
+        P = [m.v[i] for i in idx]
+        UV = [Vector(u) for u in m.uv[fi]]
+        if m.mat[fi] not in STONE_MATS:
+            _push(out, [out.vert(p) for p in P], UV, meta)
+        elif len(P) == 4:
+            _quad_grid(out, P, UV, meta, SUB_L)
+        elif len(P) == 3:
+            _tri_grid(out, P, UV, meta, SUB_L)
+        else:                                                      # n-gon cap: fan about the centroid
+            C = sum(P, Vector()) / len(P)
+            CU = sum(UV, Vector((0, 0))) / len(P)
+            for i in range(len(P)):
+                j = (i + 1) % len(P)
+                _tri_grid(out, [C, P[i], P[j]], [CU, UV[i], UV[j]], meta, SUB_L_NGON)
+    return out
+
+
+def check_uvs(src, out, name):
+    """UV sanity after subdivision: auto-UV faces must match auto_uv() of each child (planar faces: exact; the few
+    slightly non-planar tumbled blocks may differ by a sliver), explicit-UV faces (lathes) must stay inside the
+    parent's UV box. Returns the worst deviation in texture repeats."""
+    worst = 0.0
+    boxes = {}
+    for fi, uv in enumerate(src.uv):
+        us = [u[0] for u in uv]
+        vs = [u[1] for u in uv]
+        boxes[fi] = (min(us), max(us), min(vs), max(vs))
+    for ci, idx in enumerate(out.f):
+        par = out.parent[ci]
+        if src.mat[par] not in STONE_MATS:
+            continue
+        if out.auto[ci]:
+            for (u, v), (eu, ev) in zip(out.uv[ci], out.auto_uv(idx)):
+                worst = max(worst, abs(u - eu), abs(v - ev))
+        else:
+            b = boxes[par]
+            for (u, v) in out.uv[ci]:
+                worst = max(worst, b[0] - u, u - b[1], b[2] - v, v - b[3])
+    print(f'  {name}: UV check worst deviation {worst:.5f} repeats', flush=True)
+    assert worst < 0.06, f'{name}: subdivision shifted the UVs ({worst})'
+    return worst
+
+
+def _hemisphere(n):
+    """Cosine-weighted Fibonacci hemisphere (local z = normal)."""
+    out = []
+    ga = math.pi * (3 - math.sqrt(5))
+    for i in range(n):
+        u = (i + 0.5) / n
+        r = math.sqrt(u)
+        out.append((r * math.cos(i * ga), r * math.sin(i * ga), math.sqrt(1 - u)))
+    return out
+
+
+def occluder_bvh(m, offsets):
+    verts, polys = [], []
+    for off in offsets:
+        base = len(verts)
+        o = Vector((off, 0.0, 0.0))
+        verts += [v + o for v in m.v]
+        for f, k in zip(m.f, m.kind):
+            if k in AO_SKIP_KINDS:
+                continue
+            for i in range(1, len(f) - 1):
+                polys.append((base + f[0], base + f[i], base + f[i + 1]))
+    return BVHTree.FromPolygons(verts, polys)
+
+
+def ao_multiplier(bvh, dirs, pos, n):
+    t = Vector((1.0, 0.0, 0.0)) if abs(n.z) > 0.99 else Vector((-n.y, n.x, 0.0)).normalized()
+    b = n.cross(t)
+    o = pos + n * AO_EPS
+    occ = 0.0
+    for (lx, ly, lz) in dirs:
+        d = t * lx + b * ly + n * lz
+        hit = bvh.ray_cast(o, d, AO_DIST)
+        dist = hit[3] if hit[0] is not None else None
+        w_scale = 1.0
+        if d.z < 0.0 and o.z >= -1e-6:                              # infinite ground plane at z = 0
+            tg = max(0.0, -o.z / d.z)
+            if tg < AO_DIST and (dist is None or tg < dist):
+                dist, w_scale = tg, AO_GROUND
+        if dist is not None:
+            x = dist / AO_DIST
+            occ += (1.0 - x * x * (3 - 2 * x)) * w_scale             # smooth distance falloff
+    occ /= len(dirs)
+    return 1.0 - AO_STRENGTH * min(1.0, occ / AO_OCC_REF)
+
+
+def postprocess_ao(name, m):
+    """Build the occluder BVH from the coarse mesh, then subdivide m IN PLACE. Returns the BVH."""
+    bvh = occluder_bvh(m, AO_CFG[name])
+    pre = m.tri_count()
+    sub = subdivide(m)
+    check_uvs(m, sub, name)
+    m.__dict__.update(sub.__dict__)
+    m.tris_pre = pre
+    return bvh
+
+
 def to_object(name, m, mats, seed):
+    bvh = postprocess_ao(name, m) if name in AO_CFG else None      # subdivides m in place
+    dirs = _hemisphere(AO_RAYS) if bvh is not None else None
+    ao_cache = {}
     used = sorted(set(m.mat))
     remap = {old: new for new, old in enumerate(used)}
     me = bpy.data.meshes.new(name)
@@ -283,14 +481,23 @@ def to_object(name, m, mats, seed):
     me.update()
     assert len(me.polygons) == len(m.f), f'{name}: degenerate faces were dropped'
     rng = random.Random(seed)
+    tint_of = [rng.random() for _ in range(max(m.parent) + 1)]      # one tint per SOURCE face (children share it)
     cols, uvs = [], []
     for pi, p in enumerate(me.polygons):
-        tint = rng.random()
+        tint = tint_of[m.parent[pi]]
         nrm = p.normal
         for j, li in enumerate(p.loop_indices):
             uvs += m.uv[pi][j]
-            c = shade(m.kind[pi], nrm, m.v[me.loops[li].vertex_index], tint, m.ao_h)
-            cols += (min(1.0, c[0]), min(1.0, c[1]), min(1.0, c[2]), 1.0)
+            co = m.v[me.loops[li].vertex_index]
+            c = shade(m.kind[pi], nrm, co, tint, m.ao_h)
+            k = 1.0
+            if bvh is not None and m.kind[pi] in STONE_KINDS:
+                key = (round(co.x, 3), round(co.y, 3), round(co.z, 3),
+                       round(nrm.x, 2), round(nrm.y, 2), round(nrm.z, 2))
+                if key not in ao_cache:
+                    ao_cache[key] = ao_multiplier(bvh, dirs, co, nrm)
+                k = ao_cache[key]
+            cols += (min(1.0, c[0] * k), min(1.0, c[1] * k), min(1.0, c[2] * k), 1.0)
     me.polygons.foreach_set('material_index', [remap[i] for i in m.mat])
     me.polygons.foreach_set('use_smooth', m.smooth)
     me.uv_layers['UVMap'].data.foreach_set('uv', uvs)
@@ -685,8 +892,8 @@ def export_one(obj, fname):
         export_animations=False)
 
 
-BUDGET = {'stump': 80, 'guard_tower': 900, 'hall_wall': 200, 'hall_wall_tall': 260, 'banner': 60, 'brazier': 260,
-          'rubble': 160, 'wall_broken': 160, 'curtain_wall': 200, 'curtain_wall_end': 200, 'curtain_wall_end_r': 200}
+BUDGET = {'stump': 80, 'guard_tower': 2500, 'hall_wall': 1500, 'hall_wall_tall': 2500, 'banner': 60, 'brazier': 700,
+          'rubble': 500, 'wall_broken': 1100, 'curtain_wall': 2200, 'curtain_wall_end': 2200, 'curtain_wall_end_r': 2200}
 
 
 def report(obj, m):
@@ -694,7 +901,8 @@ def report(obj, m):
     ys = [v.y for v in m.v]
     zs = [v.z for v in m.v]
     mats = sorted({MATS[i] for i in m.mat})
-    print(f'{obj.name}: {m.tri_count()} tris (budget {BUDGET[obj.name]}), '
+    pre = f' (was {m.tris_pre})' if m.tris_pre is not None else ''
+    print(f'{obj.name}: {m.tri_count()} tris{pre} (budget {BUDGET[obj.name]}), '
           f'size x {max(xs) - min(xs):.2f} y {max(ys) - min(ys):.2f} z {max(zs) - min(zs):.2f} | '
           f'x {min(xs):.2f}..{max(xs):.2f} y {min(ys):.2f}..{max(ys):.2f} z {min(zs):.2f}..{max(zs):.2f} | {mats}',
           flush=True)
