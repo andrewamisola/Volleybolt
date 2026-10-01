@@ -9223,11 +9223,26 @@
                 territory: new BABYLON.Texture('textures/backdrop_territory.jpg?v=2', scene),
                 core: new BABYLON.Texture('textures/backdrop_core.jpg?v=2', scene),
             };
-            // The TV-cam painting (spectate TV mode): generated from the exact TV camera plate (art/plates),
-            // forest dressing for now; per-stage TV paintings can follow.
-            window.tvBackdropTexture = new BABYLON.Texture('textures/backdrop_forest_tv.jpg?v=1', scene, true);
+            // The TV-cam paintings (spectate TV mode): the forest one generated from the exact TV camera plate
+            // (art/plates), the stage ones edited from it (art/tv_gen). A perspective shot can't be mirrored
+            // like the arena paintings, so Territory has one per defender: castle at the far end (Red defends)
+            // or the near end (Blue defends). Core's torch-lit courtyard serves both. Loaded lazily.
+            const TV_SRC = {
+                forest: 'textures/backdrop_forest_tv.jpg?v=1',
+                core: 'textures/backdrop_core_tv.jpg?v=1',
+                territoryFar: 'textures/backdrop_territory_tv_far.jpg?v=1',
+                territoryNear: 'textures/backdrop_territory_tv_near.jpg?v=1',
+            };
+            const tvTex = {};
+            const tvBackdropFor = (kind, blueDefends) => {
+                const key = kind === 'territory' ? (blueDefends ? 'territoryNear' : 'territoryFar')
+                          : kind === 'core' ? 'core' : 'forest';
+                return tvTex[key] || (tvTex[key] = new BABYLON.Texture(TV_SRC[key], scene, true));
+            };
+            window.tvBackdropTexture = tvBackdropFor('forest', false);
             window.setStageBackdrop = (kind, mirror) => {
                 const tex = BACKDROPS[kind] || BACKDROPS.forest;
+                window.tvBackdropTexture = tvBackdropFor(kind, !!mirror);
                 backdropLayer.texture = tex;
                 if (window._tvBackdropActive) { window._tvSavedLayerTex = tex; backdropLayer.texture = window.tvBackdropTexture; }
                 window._backdropMirror = !!mirror && tex !== BACKDROPS.forest;
