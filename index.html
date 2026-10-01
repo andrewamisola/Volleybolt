@@ -1073,17 +1073,17 @@
         // move together — a left/player wizard shifts -MODEL_BACK in X, a right/AI wizard +MODEL_BACK.
         const MODEL_BACK = 0.6;
 
-        // CHILL DILL homing missile (owner design 2026-10-01; js/sim.js updateNetworkProjectiles). Launches SLOW and
-        // straight (speedStart u/s), ACQUIRES startBefore units short of the centre line, then ramps its forward speed
-        // up to speedMax (speedAccel u/s^2) while steering toward the target wizard: gain = how hard it wants to close
+        // CHILL DILL homing missile (owner design 2026-10-01; js/sim.js updateNetworkProjectiles). Flies at ONE
+        // constant speed (owner: persistent speed, no ramp - speedStart = speedMax), straight at first, ACQUIRES
+        // startBefore units short of the centre line, then steers toward the target wizard: gain = how hard it wants to close
         // the Z gap (1/s), maxLat = top sideways speed (u/s), accel = how fast that sideways speed can change (u/s^2).
         // Owner spec (option A of the trade-off): a STILL target is always hit, even edge to edge (11u apart); a single
         // late dash from standing is caught; constant movement / a well-timed JUKE can escape (the low `accel` is what
         // lets a reversal make it overshoot); counters: juke, Thunderstorm, parry, or your own Chill.
-        // Tuned by sim search: still 25/25, late dash caught at 5u and 3u, jukes escape 14/20. (Acquiring at the centre
+        // Tuned by sim search (constant 30 u/s): still 25/25, late dash caught at 5u and 3u, jukes escape 14/20. (Acquiring at the centre
         // line instead left either no juke escapes or misses on still far-edge targets - physics, not a knob.)
-        const CHILL_DILL_HOMING = { gain: 10.0, maxLat: 34.0, accel: 90.0,
-                                    startBefore: 7.0, speedStart: 14.0, speedMax: 50.0, speedAccel: 90.0 };
+        const CHILL_DILL_HOMING = { gain: 10.0, maxLat: 34.0, accel: 60.0,
+                                    startBefore: 7.0, speedStart: 30.0, speedMax: 30.0, speedAccel: 0.0 };
         const modelBackFor = (side) => (side === 'left' ? -MODEL_BACK : MODEL_BACK);
 
         // Projectile system (replaces single ball)
