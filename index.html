@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=83-spectate-summary">
+    <link rel="stylesheet" href="styles.css?v=84-achievements">
 </head>
 <body>
 
@@ -91,6 +91,7 @@
                     <span class="menu-btn-accent" aria-hidden="true"></span>
                     <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
                     <span class="menu-btn-label">Career</span>
+                    <span class="ach-dot" id="careerMenuDot" hidden aria-label="New achievement"></span>
                 </button>
                 <button class="game-btn menu-btn" id="domBtnSettings">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
@@ -318,7 +319,12 @@
                 <h1 class="arcane-title" data-text="Career">Career</h1>
             </div>
             <div class="arcane-buttons settings-panel">
+                <div class="career-tabs" role="tablist">
+                    <button type="button" class="career-tab active" id="careerTabStats" role="tab" aria-selected="true">Stats</button>
+                    <button type="button" class="career-tab" id="careerTabAch" role="tab" aria-selected="false">Achievements<span class="ach-dot" id="achTabDot" hidden></span></button>
+                </div>
                 <div id="careerList" class="career-list"></div>
+                <div id="achList" class="ach-list" hidden></div>
                 <button class="game-btn menu-btn menu-btn-ghost" id="careerBack">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
                     <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
@@ -5065,6 +5071,9 @@
             if (leftEdge || rightEdge) {
                 if (root.id === 'howToPlayScreen' && window.htpSetPage && typeof window.htpPage === 'number') {
                     htpSetPage(window.htpPage + (rightEdge ? 1 : -1));
+                    if (window.ToneSFX) ToneSFX.uiHover();
+                } else if (root.id === 'careerScreen' && window.careerSetTab) {
+                    careerSetTab(rightEdge ? 1 : 0);
                     if (window.ToneSFX) ToneSFX.uiHover();
                 } else if (root.id === 'lobbyDoublesView') {
                     if (window.doublesLocalPick) doublesLocalPick(rightEdge ? 'red' : 'blue');
@@ -22570,6 +22579,92 @@
             }
         }
 
+        // Achievements tab: the four groups as career-card windows. Unlocked = gold rim + date;
+        // milestones show a progress bar while locked; a red dot marks cards not yet seen.
+        const ACH_GROUPS = [
+            ['milestones', 'Milestones'], ['feats', 'Feats'], ['mastery', 'Spell Mastery'], ['pressure', 'Pressure'],
+        ];
+        function populateAchievements() {
+            const list = document.getElementById('achList');
+            if (!list || !window.Achievements) return;
+            const unseen = new Set(Achievements.unseenIds());
+            list.innerHTML = '';
+            for (const [group, title] of ACH_GROUPS) {
+                const card = document.createElement('div');
+                card.className = 'career-card ach-card';
+                const head = document.createElement('div');
+                head.className = 'career-card-title';
+                head.textContent = title;
+                card.appendChild(head);
+                for (const a of Achievements.LIST) {
+                    if (a.group !== group) continue;
+                    const at = Achievements.unlockedAt(a.id);
+                    const row = document.createElement('div');
+                    row.className = 'ach-row ' + (at ? 'is-unlocked' : 'is-locked');
+                    const top = document.createElement('div');
+                    top.className = 'ach-top';
+                    const name = document.createElement('span');
+                    name.className = 'ach-name';
+                    name.textContent = a.name;
+                    top.appendChild(name);
+                    if (at && unseen.has(a.id)) {
+                        const dot = document.createElement('span');
+                        dot.className = 'ach-dot';
+                        top.appendChild(dot);
+                    }
+                    const meta = document.createElement('span');
+                    meta.className = 'ach-meta';
+                    const prog = !at ? Achievements.progress(a.id) : null;
+                    meta.textContent = at ? new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+                        : prog ? prog[0].toLocaleString() + ' / ' + prog[1].toLocaleString() : '';
+                    top.appendChild(meta);
+                    row.appendChild(top);
+                    const desc = document.createElement('div');
+                    desc.className = 'ach-desc';
+                    desc.textContent = a.desc;
+                    row.appendChild(desc);
+                    if (prog) {
+                        const bar = document.createElement('div');
+                        bar.className = 'ach-progress';
+                        const fill = document.createElement('i');
+                        fill.style.width = Math.round(100 * prog[0] / prog[1]) + '%';
+                        bar.appendChild(fill);
+                        row.appendChild(bar);
+                    }
+                    card.appendChild(row);
+                }
+                list.appendChild(card);
+            }
+        }
+        window.populateAchievements = populateAchievements;
+
+        // Red dot on the main-menu Career button and the Achievements tab while anything is unseen.
+        function refreshAchievementDots() {
+            const on = !!(window.Achievements && Achievements.unseenIds().length);
+            for (const id of ['careerMenuDot', 'achTabDot']) {
+                const d = document.getElementById(id);
+                if (d) d.hidden = !on;
+            }
+        }
+        window.refreshAchievementDots = refreshAchievementDots;
+
+        // Career tabs: 0 = Stats, 1 = Achievements (opening it marks everything seen).
+        function careerSetTab(i) {
+            const ach = i === 1;
+            const stats = document.getElementById('careerList'), achList = document.getElementById('achList');
+            const tS = document.getElementById('careerTabStats'), tA = document.getElementById('careerTabAch');
+            if (!stats || !achList || !tS || !tA) return;
+            stats.hidden = ach; achList.hidden = !ach;
+            tS.classList.toggle('active', !ach); tA.classList.toggle('active', ach);
+            tS.setAttribute('aria-selected', String(!ach)); tA.setAttribute('aria-selected', String(ach));
+            if (ach) {
+                populateAchievements();             // draws this visit's dots first...
+                if (window.Achievements) Achievements.markAllSeen();
+                refreshAchievementDots();           // ...then clears the menu/tab dots
+            }
+        }
+        window.careerSetTab = careerSetTab;
+
         let domMenuWired = false;
         function wireDOMMenu() {
             if (domMenuWired) return;
@@ -22633,7 +22728,19 @@
             const creditsBack = document.getElementById('creditsBack');
             if (creditsBack) creditsBack.addEventListener('click', () => closeMenuScreen());
             const btnCareer = document.getElementById('domBtnCareer');
-            if (btnCareer) btnCareer.addEventListener('click', () => { populateCareer(); showMenuScreen('careerScreen', 'menu'); });
+            if (btnCareer) btnCareer.addEventListener('click', () => { populateCareer(); careerSetTab(0); refreshAchievementDots(); showMenuScreen('careerScreen', 'menu'); });
+            const tabStats = document.getElementById('careerTabStats');
+            const tabAch = document.getElementById('careerTabAch');
+            if (tabStats) tabStats.addEventListener('click', () => careerSetTab(0));
+            if (tabAch) tabAch.addEventListener('click', () => careerSetTab(1));
+            document.addEventListener('keydown', (e) => {
+                const screen = document.getElementById('careerScreen');
+                if (!screen || !screen.classList.contains('visible')) return;
+                if (e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
+                careerSetTab(e.code === 'ArrowRight' ? 1 : 0);
+                if (window.ToneSFX) ToneSFX.uiHover();
+                e.preventDefault();
+            });
             const careerBack = document.getElementById('careerBack');
             if (careerBack) careerBack.addEventListener('click', () => closeMenuScreen());
         }
@@ -22699,6 +22806,7 @@
                 const ms = document.getElementById('domModeSelect');
                 if (ms) ms.classList.remove('visible');
                 if (window.setGamepadPrompts) setGamepadPrompts([{ action: 'navigate' }, { action: 'confirm' }]);
+                if (window.refreshAchievementDots) refreshAchievementDots();
             }
             // Keep the legacy Babylon GUI menu permanently hidden — DOM owns this view now.
             if (window.guiElements) {
@@ -22775,6 +22883,7 @@
             if (window.setGamepadPrompts) {
                 if (id === 'settingsScreen') setGamepadPrompts([{ action: 'navigate' }, { action: 'adjust' }, { action: 'confirm' }, { action: 'back' }]);
                 else if (id === 'howToPlayScreen') setGamepadPrompts([{ action: 'page' }, { action: 'back' }]);
+                else if (id === 'careerScreen') setGamepadPrompts([{ action: 'page' }, { action: 'back' }]);
                 else setGamepadPrompts([{ action: 'navigate' }, { action: 'back' }]);   // credits, career
             }
         }

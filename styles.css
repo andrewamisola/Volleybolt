@@ -3286,6 +3286,49 @@ body.gp-cursor-hidden * {
 .career-row > .career-val { color: #ffe39a; }
 #careerScreen .menu-btn.menu-btn-ghost { margin-left: 0; }
 
+/* ---- Career tabs: Stats / Achievements ---- */
+.career-tabs { display: flex; gap: 10px; margin-bottom: 14px; }
+.career-tab {
+    font: inherit; font-size: 22px; letter-spacing: 1px; cursor: pointer;
+    color: #9aa0b3; background: none; border: 2px solid transparent; border-radius: 8px;
+    padding: 6px 18px 7px;
+}
+.career-tab:hover { color: #fff4c2; }
+.career-tab.active {
+    color: #ffe39a;
+    background: linear-gradient(180deg, rgba(52, 62, 84, 0.9) 0%, rgba(22, 27, 40, 0.92) 100%);
+    border-color: rgba(224, 230, 240, 0.85);
+}
+.career-list[hidden], .ach-list[hidden] { display: none; }
+.ach-dot {
+    display: inline-block; width: 11px; height: 11px; margin-left: 8px; vertical-align: super;
+    border-radius: 50%; background: #e2463c; box-shadow: 0 0 0 2px rgba(16, 24, 40, 0.9);
+}
+.ach-dot[hidden] { display: none; }
+
+/* ---- Achievements tab: four group windows, 2x2 like the stats ---- */
+.ach-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(420px, auto));
+    gap: 16px 18px;
+    max-height: 64vh;
+    overflow-y: auto;
+}
+.ach-row { padding: 5px 0 6px 12px; border-left: 3px solid transparent; }
+.ach-row + .ach-row { border-top: 1px solid rgba(224, 230, 240, 0.12); }
+.ach-top { display: flex; align-items: baseline; gap: 8px; }
+.ach-name { font-size: 19px; }
+.ach-meta { margin-left: auto; font-size: 15px; color: #9aa0b3; white-space: nowrap; }
+.ach-desc { font-size: 15px; color: #c8c3d8; }
+.ach-row.is-locked .ach-name { color: #9aa0b3; }
+.ach-row.is-locked .ach-desc { opacity: 0.7; }
+.ach-row.is-unlocked { border-left-color: #f0c050; }
+.ach-row.is-unlocked .ach-name { color: #ffe39a; }
+.ach-row.is-unlocked .ach-meta { color: #f0c050; }
+.ach-row .ach-dot { margin-left: 0; vertical-align: middle; }
+.ach-progress { height: 5px; margin-top: 5px; background: rgba(224, 230, 240, 0.15); border-radius: 3px; overflow: hidden; }
+.ach-progress > i { display: block; height: 100%; background: #c9a8ff; }
+
 /* ---- Multiplayer (1v1 views): left-aligned like every other screen ---- */
 #multiplayerLobby .arcane-buttons > .lobby-view { align-items: flex-start !important; }   /* 1v1 views only; the doubles split stays centred */
 .lobby-code { border-color: rgba(224, 230, 240, 0.85); border-radius: 8px; color: #ffe39a; }
