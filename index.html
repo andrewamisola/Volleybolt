@@ -18818,7 +18818,7 @@
                     for (const side of ['left', 'right']) {
                         const m = structShadows[side];
                         const info = window.getActiveStructMeshes ? window.getActiveStructMeshes(side) : null;
-                        if (!info || info.kind === 'ram' || info.kind === 'catapult') { m.setEnabled(false); structPlaced[side] = null; continue; }
+                        if (!info || info.kind === 'ram' || info.kind === 'catapult' || info.kind === 'core') { m.setEnabled(false); structPlaced[side] = null; continue; }
                         const key = info.kind + ':' + info.shown;
                         if (key !== structPlaced[side]) {
                             const b = ramBodyBounds({ shownMeshes: info.shownMeshes }, 40);   // gatehouses span the lane
@@ -18835,6 +18835,68 @@
                 // the ram/catapult pools in the same overcast purple
                 ramShMat.emissiveColor = new BABYLON.Color3(0.11, 0.05, 0.19);
                 catShadow.material.emissiveColor = new BABYLON.Color3(0.11, 0.05, 0.19);
+                // PROJECTED STRUCTURE SHADOWS (core): the ram's and the jar's REAL silhouettes, flattened onto the floor
+                // along the breach light (planar projection: each shown mesh cloned with a squash-to-the-ground world
+                // matrix) and rendered top-down ONCE into a texture whenever the stage / damage state changes - a baked
+                // shadow in the structure's true shape, laid on the floor as one even dusk-purple decal.
+                const PS_W = 64, PS_D = 26, PS_LAYER = 0x10000000;
+                const psRTT = new BABYLON.RenderTargetTexture('structProjShadowRTT', { width: 2048, height: 832 }, scene, false);
+                psRTT.clearColor = new BABYLON.Color4(0, 0, 0, 1);
+                psRTT.refreshRate = BABYLON.RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+                const psCam = new BABYLON.FreeCamera('structProjShadowCam', new BABYLON.Vector3(0, 40, 0), scene);
+                psCam.setTarget(new BABYLON.Vector3(0, 0, 0.0001));
+                psCam.upVector = new BABYLON.Vector3(0, 0, 1);
+                psCam.mode = BABYLON.Camera.ORTHOGRAPHIC_CAMERA;
+                psCam.orthoLeft = -PS_W / 2; psCam.orthoRight = PS_W / 2; psCam.orthoTop = PS_D / 2; psCam.orthoBottom = -PS_D / 2;
+                psCam.layerMask = PS_LAYER;
+                psRTT.activeCamera = psCam;
+                scene.customRenderTargets.push(psRTT);
+                const psCasterMat = new BABYLON.StandardMaterial('structProjCasterMat', scene);
+                psCasterMat.disableLighting = true; psCasterMat.emissiveColor = BABYLON.Color3.White();
+                psCasterMat.backFaceCulling = false; psCasterMat.fogEnabled = false;
+                const psDecalMat = new BABYLON.StandardMaterial('structProjShadowMat', scene);
+                psDecalMat.disableLighting = true;
+                psDecalMat.diffuseColor = BABYLON.Color3.Black(); psDecalMat.specularColor = BABYLON.Color3.Black();
+                psDecalMat.emissiveColor = new BABYLON.Color3(0.1, 0.03, 0.17);
+                psDecalMat.opacityTexture = psRTT; psRTT.getAlphaFromRGB = true;
+                psDecalMat.alpha = 0.72; psDecalMat.fogEnabled = false;
+                const psDecal = BABYLON.MeshBuilder.CreateGround('structProjShadow', { width: PS_W, height: PS_D }, scene);
+                psDecal.material = psDecalMat;
+                // on the FLOOR layer (group 0, depth-tested against the ram/jar standing in it - group 1 starts with a
+                // cleared depth buffer and painted over them), just above the stage paving
+                psDecal.position.y = 0.09;
+                psDecalMat.zOffset = -4;
+                psDecal.renderingGroupId = 0; psDecal.isPickable = false;
+                psDecal.setEnabled(false);
+                window.structProjShadowTune = { alpha: 0.72, elev: -0.62 };
+                let psClones = [], psKey = null;
+                const psProject = (dirX) => {
+                    // light travels (dirX, elev, 0): p' = p - d * (p.y - h0) / d.y, as a row-vector matrix
+                    const d = new BABYLON.Vector3(dirX, window.structProjShadowTune.elev, 0), h0 = 0.0;
+                    const kx = d.x / d.y, kz = d.z / d.y;
+                    return BABYLON.Matrix.FromValues(1, 0, 0, 0, -kx, 0, -kz, 0, 0, 0, 1, 0, kx * h0, h0, kz * h0, 1);
+                };
+                const psRebuild = (lightDir) => {
+                    psClones.forEach(c => c.dispose(false, false)); psClones = [];
+                    const P = psProject(lightDir);
+                    for (const side of ['left', 'right']) {
+                        const info = window.getActiveStructMeshes ? window.getActiveStructMeshes(side) : null;
+                        if (!info || (info.kind !== 'ram' && info.kind !== 'core')) continue;
+                        for (const m of info.shownMeshes) {
+                            if (!m.getTotalVertices || !m.getTotalVertices() || !m.isEnabled()) continue;
+                            const bb = m.getBoundingInfo().boundingBox;
+                            if (bb.maximumWorld.z - bb.minimumWorld.z > 10) continue;   // the rail-to-rail wall chunks
+                            const c = m.clone(m.name + '_psh', null, true);
+                            c.parent = null; c.material = psCasterMat; c.layerMask = PS_LAYER; c.isPickable = false;
+                            c.freezeWorldMatrix(m.computeWorldMatrix(true).multiply(P));
+                            psClones.push(c);
+                        }
+                    }
+                    psRTT.renderList = psClones.slice();
+                    psRTT.resetRefreshCounter();
+                    setTimeout(() => psRTT.resetRefreshCounter(), 300);
+                    return psClones.length > 0;
+                };
                 const wizShadowMat = makeShadowMat('wizLongShadowMat', 1);
                 const wizShadows = [0, 1].map(i => {
                     const m = BABYLON.MeshBuilder.CreateGround('wizLongShadow' + i, { width: 1, height: 1.0 }, scene);
@@ -18844,7 +18906,7 @@
                 });
                 let longShadow = null;                                // { dir: +1|-1, gateX, attacker }
                 scene.onBeforeRenderObservable.add(() => {
-                    if (!longShadow) return;
+                    if (!longShadow) { if (psDecal.isEnabled()) { psDecal.setEnabled(false); psKey = null; } return; }
                     const { dir, gateX, attacker } = longShadow;
                     // Ram: its own silhouette, re-baked when the damage state changes (the wreck casts its own).
                     const info = window.getStructInfo ? window.getStructInfo(attacker) : null;
@@ -18852,7 +18914,15 @@
                     if (parts && ramLit !== attacker) { setRamLighting(attacker, parts); ramLit = attacker; }
                     const key = parts ? attacker + ':' + parts.shown : null;
                     if (parts && key !== ramBaked) ramBaked = bakeRamShadow(parts, dir) ? key : null;
-                    ramShadow.setEnabled(!!(parts && ramBaked === key));
+                    // the real projected silhouettes replace the soft ram blob in the core
+                    {
+                        const lInfo = window.getActiveStructMeshes ? [window.getActiveStructMeshes('left'), window.getActiveStructMeshes('right')] : [];
+                        const k2 = dir + ':' + lInfo.map(i => i ? i.kind + i.shown : '-').join('|');
+                        if (k2 !== psKey) { psKey = k2; psDecal._ok = psRebuild(dir); }
+                        psDecal.setEnabled(!!psDecal._ok);
+                        psDecalMat.alpha = window.structProjShadowTune.alpha;
+                    }
+                    ramShadow.setEnabled(false);
                     // Wizards: stretched shadows pointing away from the gate, fading deeper into the hall.
                     const blobs = window.blobShadows || [];
                     wizShadows.forEach((m, i) => {
