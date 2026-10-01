@@ -9855,10 +9855,11 @@
                     img.src = url;
                     return t;
                 };
-                const gTex = lowResTex('textures/grass_field_seamless.png?v=2', 'backdropGrassLow', 32);
+                // the court's own pixel-first grass at the court's texel size (~0.1u texels): seamless across the rail
+                const gTex = new BABYLON.Texture('textures/grass_field_seamless.png?v=2', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPNEAREST);
                 // Same grass as the court floor (floorMat): ~13u tiles, same tint and black-point lift, so the
                 // ground right past the rails continues the stage seamlessly before the murk takes over.
-                gTex.uScale = 21; gTex.vScale = 21;   // ~6.7u tiles (half the old size), 32px: chunky PS1 grass
+                gTex.uScale = 10.5; gTex.vScale = 10.5;   // 13.3u tiles = the court floor's grass tile
                 groundMat.diffuseTexture = gTex;
                 groundMat.diffuseColor = new BABYLON.Color3(1.0, 0.98, 0.9);
                 groundMat.emissiveColor = new BABYLON.Color3(0.16, 0.16, 0.12);
@@ -9867,8 +9868,8 @@
                 // Dirt patches over it (the lane road's dirt, through a blotchy blurred mask) - the paintings' open
                 // ground is mostly worn earth with grass between.
                 const dirtMat = new BABYLON.StandardMaterial('forestDirtMat', scene);
-                const dTex = lowResTex('textures/dirt_road_seamless.png?v=2', 'backdropDirtLow', 32);
-                dTex.uScale = 32; dTex.vScale = 32;   // ~4.4u tiles = the lane road's dirt size, 32px
+                const dTex = new BABYLON.Texture('textures/dirt_road_seamless.png?v=2', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPNEAREST);
+                dTex.uScale = 32; dTex.vScale = 32;   // ~4.4u tiles = the lane road's dirt tile (same texels)
                 dirtMat.diffuseTexture = dTex;
                 dirtMat.specularColor = BABYLON.Color3.Black();
                 dirtMat.emissiveColor = new BABYLON.Color3(0.12, 0.10, 0.07);   // = lane road
