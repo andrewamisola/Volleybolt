@@ -761,7 +761,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=50-chill-dill-missile"></script>
+    <script type="module" src="js/sim.js?v=51-chill-clash-fx"></script>
 
     <script>
         // Build identifier for bug reports (audit #6). Date-based: bump on every player-facing
@@ -14015,6 +14015,25 @@
                 vd.applyToMesh(mesh);
                 return mesh;
             };
+            // Frost shockwave: a thin icy ring racing out over the ground from a Chill-vs-Chill clash, fading as it grows.
+            window.createFrostShockwave = (x, z) => {
+                if (window._simSkipPres || window._reduceMotion) return;
+                const ring = BABYLON.MeshBuilder.CreateTorus('frostRing', { diameter: 1, thickness: 0.08, tessellation: 32 }, scene);
+                const mat = new BABYLON.StandardMaterial('frostRingMat', scene);
+                mat.emissiveColor = new BABYLON.Color3(0.7, 0.93, 1.0);
+                mat.disableLighting = true; mat.fogEnabled = false;
+                mat.alphaMode = BABYLON.Engine.ALPHA_ADD;
+                ring.material = mat; ring.isPickable = false; ring.renderingGroupId = 2;
+                ring.position.set(x, 0.12, z);
+                const t0 = performance.now(), LIFE = 380, MAXD = 7;
+                const obs = scene.onBeforeRenderObservable.add(() => {
+                    const k = Math.min(1, (performance.now() - t0) / LIFE);
+                    const d = 1 + (MAXD - 1) * (1 - Math.pow(1 - k, 3));   // fast out, easing
+                    ring.scaling.set(d, 1, d);
+                    mat.alpha = 0.9 * (1 - k);
+                    if (k >= 1) { scene.onBeforeRenderObservable.remove(obs); ring.dispose(); mat.dispose(); }
+                });
+            };
             window.createImpactFlash = (position, color, size = 1.5) => {
                 if (window._simSkipPres) return;   // match simulator: visuals only
                 const reduce = !!window._reduceMotion;
@@ -14870,8 +14889,14 @@
                     fireball     = canFireball && !frostbolt;
                     thunderstorm = canThunderstorm;
                 }
-                // Chill Dill counter-casts (instant, any frame once it's been seen): our own Chill Dill first, else Thunderstorm.
-                if (chill && !s.casting) {
+                // Chill Dill counter-casts: our own Chill Dill first, else Thunderstorm - but only after a HUMAN-LIKE
+                // decision time (owner 2026-10-01: instant counters read as superhuman). Per bolt, a stable hash of its
+                // id (+ slotSalt, rollback-safe like the parry buckets) picks ~0.3s / ~0.4s / ~0.5s of sight - or no
+                // counter at all (it just dodges). On top of the usual reaction lag. Dodging still starts at
+                // dodgeSightFrames: a player starts moving before deciding to cast.
+                const CHILL_COUNTER_SIGHT = [18, 24, 30, Infinity];
+                const counterAt = chill ? CHILL_COUNTER_SIGHT[Math.imul(((chill.id | 0) + 11) ^ (profile.slotSalt || 0), 2654435761) >>> 30] : Infinity;
+                if (chill && !s.casting && (chill.sightFrames || 0) >= counterAt) {
                     if ((s.cooldowns.frostbolt || 0) <= 0 && s.mana >= 1) { frostbolt = true; fireball = false; }
                     else if ((s.cooldowns.thunderstorm || 0) <= 0 && s.mana >= 2) thunderstorm = true;
                 }
@@ -18219,6 +18244,30 @@
                     hotL.mat.diffuseColor = BABYLON.Color3.Black();
                     hotL.mat.alphaMode = BABYLON.Engine.ALPHA_ADD;
                     layers.push({ ...hotL, role: 'ember', color: new BABYLON.Color3(1.0, 0.55, 0.15), alpha: 1, glow: 1.6 });
+                } else if (type === 'chill') {
+                    // Chill-vs-Chill clash: a big GLOWING frost patch - a soft rime glow under two crossed crystal
+                    // layers, all additive and staying bright (role 'iceGlow'), lingering ~10s.
+                    life = 10;
+                    const size = rnd(7.0, 7.8);
+                    const rot = Math.random() * Math.PI * 2;
+                    const rime = makeDecalPlane("chillRime", size * 1.1, size * 1.1, x, z, rot,
+                        decalTexture('rime', 128, 128, (g, S) => {
+                            const grd = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+                            grd.addColorStop(0, 'rgba(255,255,255,0.9)'); grd.addColorStop(0.45, 'rgba(255,255,255,0.45)');
+                            grd.addColorStop(1, 'rgba(255,255,255,0)');
+                            g.fillStyle = grd; g.fillRect(0, 0, S, S);
+                        }, true));
+                    layers.push({ ...rime, role: 'iceGlow', color: new BABYLON.Color3(0.35, 0.6, 0.8), alpha: 0.7 });
+                    const f1 = makeDecalPlane("chillDecal", size, size, x, z, rot,
+                        decalTexture('frost', 128, 128, (g, S) => drawFrost(g, S), true));
+                    layers.push({ ...f1, role: 'iceGlow', color: new BABYLON.Color3(0.75, 0.93, 1.0), alpha: 1 });
+                    const f2 = makeDecalPlane("chillDecal2", size * 0.7, size * 0.7, x, z, rot + 0.8,
+                        decalTexture('frost', 128, 128, (g, S) => drawFrost(g, S), true));
+                    layers.push({ ...f2, role: 'iceGlow', color: new BABYLON.Color3(0.9, 0.98, 1.0), alpha: 0.9 });
+                    for (const l of layers) {   // additive light, not a tinted stain: it glows on any ground
+                        l.mat.diffuseColor = BABYLON.Color3.Black();
+                        l.mat.alphaMode = BABYLON.Engine.ALPHA_ADD;
+                    }
                 } else if (type === 'frost') {
                     life = 6;
                     const size = rnd(2.2, 2.7);
@@ -18264,6 +18313,10 @@
                         l.mat.emissiveColor.copyFrom(l.color).scaleInPlace(k * k * flick);
                         l.mat.alpha = k > 0 ? 1 : 0;
                         if (k <= 0) l.plane.isVisible = false;
+                    } else if (l.role === 'iceGlow') {
+                        const flash = Math.max(0, 1 - d.t / 0.35);                   // bright pop, then a steady icy glow
+                        l.mat.emissiveColor.copyFrom(l.color).scaleInPlace(0.85 + flash * 0.8);
+                        l.mat.alpha = l.alpha * out;
                     } else if (l.role === 'frost') {
                         const flash = Math.max(0, 1 - d.t / 0.35);                   // icy flash, then settles
                         l.mat.emissiveColor.copyFrom(l.color).scaleInPlace(0.25 + flash * 0.9);
@@ -24631,6 +24684,23 @@
             // proj-vs-proj FX (gated by !isResimulating at the sim call sites).
             // createImpactFlash/showCombatTextAt need a Babylon Vector3 (copyFrom/clone);
             // createImpactDecal accepts a plain {x, z}.
+            // Chill Dill vs Chill Dill: a special ICY clash (presentation only) - a big ice burst with an after-pop,
+            // a frost shockwave ring racing out over the ground, and a large lingering frost patch.
+            onChillClash: (midX, midZ) => {
+                const pos = new BABYLON.Vector3(midX, 0.6, midZ);
+                const ice = new BABYLON.Color3(0.62, 0.9, 1.0);
+                if (window.createImpactFlash) {
+                    createImpactFlash(pos, ice, 3.0);
+                    setTimeout(() => { if (window.createImpactFlash) createImpactFlash(pos, new BABYLON.Color3(0.85, 0.97, 1.0), 1.8); }, 90);
+                }
+                if (window.createImpactDecal) createImpactDecal({ x: midX, z: midZ }, 'chill');
+                if (window.createFrostShockwave) createFrostShockwave(midX, midZ);
+                if (window.showCombatTextAt) showCombatTextAt(pos, 'Shatter!', 'frozen');
+                if (window.logNeutral) window.logNeutral('Ice clash!');
+                if (window.screenShake) window.screenShake(0.22, 0.18);
+                playSound('iceShatter', midX, 0.9);
+                playSound('cancel', midX, 0.5);
+            },
             onFrostboltCancel: (midX, midZ) => {
                 const pos = new BABYLON.Vector3(midX, 0.6, midZ);
                 if (window.createImpactFlash) createImpactFlash(pos, new BABYLON.Color3(0.5, 0.8, 1), 1.5);

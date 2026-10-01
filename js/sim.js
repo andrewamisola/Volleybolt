@@ -352,7 +352,7 @@
                     if ((dxPrev * dxNow <= 0 || Math.abs(dxNow) < cd) && Math.abs(other.z - proj.z) < cd) {
                         toDestroy.push(proj);
                         toDestroy.push(other);
-                        if (!isResimulating) D.onFrostboltCancel((proj.x + other.x) * 0.5, (proj.z + other.z) * 0.5);
+                        if (!isResimulating) (D.onChillClash || D.onFrostboltCancel)((proj.x + other.x) * 0.5, (proj.z + other.z) * 0.5);
                         break;
                     }
                     continue;
