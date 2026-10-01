@@ -848,11 +848,10 @@
         // across the beam, so it can't run away). Reads totalRoundsPlayed (synced stage state), so online peers agree.
         function overtimeDamageBonus() { return Math.max(0, (totalRoundsPlayed | 0) - 6); }
         window.overtimeDamageBonus = overtimeDamageBonus;
-        // In-battle stage label: the stage name plus the live overtime bonus, e.g. "Midfield (+2)".
+        // In-battle stage label text (the overtime "(+N)" sits beside it in orange: stageBonusText).
         window.stageLabelText = (idx) => {
             const name = window.stageNames ? window.stageNames[idx] : '';
-            const ot = overtimeDamageBonus();
-            return ot > 0 ? name + ' (+' + ot + ')' : name;
+            return name;   // the overtime "(+N)" is its own orange TextBlock beside it (stageBonusText)
         };
         // SPECTATE (AI vs AI): Blue is driven by the same AI as Red and the player just watches.
         // Set by startSpectateMatch(), cleared by startSinglesMatch() and on return to the main menu;
@@ -5915,6 +5914,43 @@
             stageNameText.isVisible = false;  // Start hidden (menu state)
             guiTexture.addControl(stageNameText);
             window.guiElements.stageNameText = stageNameText;
+            // Overtime bonus "(+N)" in the wipe's orange, hung just right of the (centred) stage name. Its own
+            // TextBlock so it can be coloured; it mirrors the name's visibility and text every frame (cheap: it
+            // only re-measures when the name or bonus changes).
+            {
+                const BONUS_W = 120;
+                const stageBonusText = new BABYLON.GUI.TextBlock();
+                stageBonusText.color = "#ff8a3d";
+                stageBonusText.fontSize = "18px";
+                stageBonusText.fontFamily = "'FF9UI', sans-serif";
+                stageBonusText.top = "120px";
+                stageBonusText.height = "24px";
+                stageBonusText.width = BONUS_W + "px";
+                stageBonusText.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
+                stageBonusText.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+                stageBonusText.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+                stageBonusText.shadowColor = "#000";
+                stageBonusText.shadowOffsetX = 2;
+                stageBonusText.shadowOffsetY = 2;
+                stageBonusText.isVisible = false;
+                guiTexture.addControl(stageBonusText);
+                window.guiElements.stageBonusText = stageBonusText;
+                const measure = document.createElement('canvas').getContext('2d');
+                let lastKey = '';
+                scene.onBeforeRenderObservable.add(() => {
+                    const ot = window.overtimeDamageBonus ? overtimeDamageBonus() : 0;
+                    const show = stageNameText.isVisible && ot > 0;
+                    if (stageBonusText.isVisible !== show) stageBonusText.isVisible = show;
+                    if (!show) return;
+                    const key = stageNameText.text + '|' + ot;
+                    if (key === lastKey) return;
+                    lastKey = key;
+                    measure.font = "18px 'FF9UI', sans-serif";
+                    const nameW = measure.measureText(stageNameText.text).width;   // GUI ideal px (same font size)
+                    stageBonusText.text = '(+' + ot + ')';
+                    stageBonusText.left = (nameW / 2 + 6 + BONUS_W / 2) + "px";
+                });
+            }
 
             // Update stage indicator function
             window.updateStageIndicator = function() {
