@@ -10034,8 +10034,8 @@
                 // OVERCAST (owner 2026-10-01: long sun shadows looked silly - even lighting, sun high overhead): faint
                 // soft cast shadows pooled under things, ambient-occlusion-style contact darkness doing most of the work
                 window.forestShadow = { cast: 0.3, contact: 0.42, treeShade: 0.2, treeDark: 0.7, len: 1.0, blur: 7 };
-                window.forestSunElev = 89;    // straight overhead: shadows pool directly under things, no offset
-                window.forestSunSwing = 0;
+                window.forestSunElev = 80;    // nearly overhead: shadows pool under things with just a slight lean
+                window.forestSunSwing = 14;   // territories: the sun drifts a touch to the side we travelled from (owner likes it)
                 window.forestOvercast = { sun: 0.55, fill: 0.62 };   // key light x, prop fill intensity
                 // Shadow proxies per model (unit scale, Babylon local axes after import: the Blender +X of the
                 // models lands on Babylon -X). canopy: hc/r/trunk; box: [cx, cz, lx, lz, h] parts; cyl: r, h.
@@ -13792,6 +13792,14 @@
             let dressStage = null;
             window.getStructInfo = (side) => { const st = activeStruct(side); return st ? { kind: st.kind, shown: st.shown } : null; };
             window.getStructRoot = (side) => { const st = activeStruct(side); return st ? st.root : null; };   // spectate TV cutaway
+            // the DISPLAYED structure's shown-state meshes (any kind, castle included) - for its baked ground shadow
+            window.getActiveStructMeshes = (side) => {
+                const st = activeStruct(side);
+                if (!st || !st.ready) return null;
+                const node = st.states[st.shown] || null;
+                return { kind: st.kind, shown: st.shown,
+                         shownMeshes: node ? [...(node.getTotalVertices ? [node] : []), ...node.getChildMeshes(false)] : [] };
+            };
             // HUD HP labels name the structure you're actually hitting (owner, 2026-09-28: "not everything is
             // a tower anymore"): Castle / Gatehouse / Catapult / Ram / Pickle Jar, prefixed as before (your
             // name on your side, Blue / Red otherwise). Follows the DISPLAYED structure (activeStruct), so it
@@ -18448,14 +18456,14 @@
                 let ramBaked = null;                                  // 'side:shown' last placed
                 // The ram body's world bounds (the shown damage state), skipping the broken wall chunks on the
                 // rails, which span the whole lane.
-                const ramBodyBounds = (parts) => {
+                const ramBodyBounds = (parts, maxZ = 10) => {
                     let min = null, max = null;
                     for (const m of parts.shownMeshes) {
                         if (!m.getBoundingInfo || !m.isEnabled()) continue;
                         m.computeWorldMatrix(true);
                         if (m.refreshBoundingInfo) m.refreshBoundingInfo();
                         const bb = m.getBoundingInfo().boundingBox;
-                        if (bb.maximumWorld.z - bb.minimumWorld.z > 10) continue;   // rail-to-rail wall chunk
+                        if (bb.maximumWorld.z - bb.minimumWorld.z > maxZ) continue;   // rail-to-rail wall chunk
                         min = min ? BABYLON.Vector3.Minimize(min, bb.minimumWorld) : bb.minimumWorld.clone();
                         max = max ? BABYLON.Vector3.Maximize(max, bb.maximumWorld) : bb.maximumWorld.clone();
                     }
@@ -18584,6 +18592,45 @@
                     }
                     catShadow.setEnabled(on);
                 });
+                // BAKED STRUCTURE SHADOWS (overcast, like the backdrop props): every end structure - castle keeps,
+                // gatehouse, the pickle jar's plinth - sits in a soft dusk-purple pool of shade hugging its footprint
+                // (the light is high and even, so it pools straight under it). Rebuilt only when the stage dressing
+                // or damage state changes. The ram and the catapult keep their own (above); presentation only.
+                const structShMat = ramShMat.clone('structShadowMat');
+                structShMat.diffuseTexture = ramShTex;                 // share the blob (a clone would be blank)
+                structShMat.emissiveColor = new BABYLON.Color3(0.11, 0.05, 0.19);
+                structShMat.alpha = 0.55;
+                const structShadows = { left: null, right: null }, structPlaced = { left: null, right: null };
+                for (const side of ['left', 'right']) {
+                    const m = BABYLON.MeshBuilder.CreateGround('structShadow_' + side, { width: 1, height: 1 }, scene);
+                    m.material = structShMat;
+                    // group 0 WITH the structures (depth-tested against them): group 1 starts with a cleared depth
+                    // buffer, so a pool there painted over the jar / gatehouse standing in it
+                    m.renderingGroupId = 0; m.isPickable = false; m.setEnabled(false);
+                    structShadows[side] = m;
+                }
+                window.structShadowTune = { alpha: 0.7, pad: 1.25, rebake: () => { structPlaced.left = structPlaced.right = null; } };
+                scene.onBeforeRenderObservable.add(() => {
+                    for (const side of ['left', 'right']) {
+                        const m = structShadows[side];
+                        const info = window.getActiveStructMeshes ? window.getActiveStructMeshes(side) : null;
+                        if (!info || info.kind === 'ram' || info.kind === 'catapult') { m.setEnabled(false); structPlaced[side] = null; continue; }
+                        const key = info.kind + ':' + info.shown;
+                        if (key !== structPlaced[side]) {
+                            const b = ramBodyBounds({ shownMeshes: info.shownMeshes }, 40);   // gatehouses span the lane
+                            if (!b) { m.setEnabled(false); continue; }
+                            const T = window.structShadowTune;
+                            m.scaling.set((b.max.x - b.min.x) * T.pad, 1, (b.max.z - b.min.z) * T.pad);
+                            m.position.set((b.min.x + b.max.x) / 2, 0.33, (b.min.z + b.max.z) / 2);
+                            structShMat.alpha = T.alpha;
+                            structPlaced[side] = key;
+                        }
+                        m.setEnabled(true);
+                    }
+                });
+                // the ram/catapult pools in the same overcast purple
+                ramShMat.emissiveColor = new BABYLON.Color3(0.11, 0.05, 0.19);
+                catShadow.material.emissiveColor = new BABYLON.Color3(0.11, 0.05, 0.19);
                 const wizShadowMat = makeShadowMat('wizLongShadowMat', 1);
                 const wizShadows = [0, 1].map(i => {
                     const m = BABYLON.MeshBuilder.CreateGround('wizLongShadow' + i, { width: 1, height: 1.0 }, scene);
