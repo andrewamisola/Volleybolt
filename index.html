@@ -851,9 +851,10 @@
         // peers always see the defaults.
         //   lanes:        'moba' (live: destroyable territories, home gates never heal, Midfield resets)
         //                 'regen50' (previous rule: no destruction, gates below 50% lift to 50% on return)
+        //                 'fresh' (moba, but a held territory is back to full next visit; only the core keeps damage)
         //   defenderMana: the defender's extra max mana at its territory (4) / core (5)
         //   overtime:     the +1-per-round damage escalation from round 13
-        const SIM_RULES_DEFAULT = { lanes: 'moba', defenderMana: true, overtime: true };
+        const SIM_RULES_DEFAULT = { lanes: 'moba', defenderMana: true, overtime: true, territoryHp: 0 };   // territoryHp 0 = TERRITORY_HP
         const SIM_RULES = { ...SIM_RULES_DEFAULT };
         window.SIM_RULES = SIM_RULES;
         window.SIM_RULES_DEFAULT = SIM_RULES_DEFAULT;
@@ -1432,7 +1433,7 @@
             if (stage === undefined) stage = currentStage;
             const own = (side === 'left' || side === 'player');
             if (stage === (own ? 0 : 4)) return CORE_HP;
-            if (stage === (own ? 1 : 3)) return TERRITORY_HP;
+            if (stage === (own ? 1 : 3)) return SIM_RULES.territoryHp || TERRITORY_HP;   // simulator switch (live: unset)
             return maxTowerHealth;   // base (20)
         }
         function stageHealthArray(side) { return [0, 1, 2, 3, 4].map(st => stageMaxHealth(side, st)); }
@@ -25452,7 +25453,9 @@
                 healthArray[stage] = hp;
                 return hp;
             }
-            const hp = isHomeStage(side, stage) ? healthArray[stage] : stageMaxHealth(side, stage);
+            // 'fresh' (owner proposal 2026-09-30): every zone is a fresh fight, only the CORE keeps its damage
+            const keeps = SIM_RULES.lanes === 'fresh' ? isOwnCore(side, stage) : isHomeStage(side, stage);
+            const hp = keeps ? healthArray[stage] : stageMaxHealth(side, stage);
             healthArray[stage] = hp;
             return hp;
         }
@@ -27558,7 +27561,7 @@
             // fanfare, no defeat styling; the title names the winning team) and stage messages name who took it.
             const presWon = spectating || localWon;
             // A territory falls when the ATTACKER wins there (Blue at Red Territory, Red at Blue Territory).
-            const territoryFalls = SIM_RULES.lanes === 'moba'
+            const territoryFalls = (SIM_RULES.lanes === 'moba' || SIM_RULES.lanes === 'fresh')
                 && ((currentStage === 3 && winnerSide === 'left') || (currentStage === 1 && winnerSide === 'right'));
             if (territoryFalls) territoryDown[currentStage] = true;
             const stageMsg = territoryFalls ? (stageName + ' Destroyed!')
