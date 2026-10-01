@@ -1049,7 +1049,7 @@
                     camPos.subtractToRef(p, toCam);                  // toward the camera
                     BABYLON.Vector3.CrossToRef(dir, toCam, side);
                     const len = side.length();
-                    const taper = Math.min(1, 2 * (1 - i / (n - 1)));   // full width for the first half, then down to the tail
+                    const taper = Math.min(1, 5 * (1 - i / (n - 1)));   // full width like Babylon's tube, soft only over the last fifth
                     if (len > 1e-6) side.scaleInPlace((this._w * 0.5 * taper) / len);
                     else side.setAll(0);
                     const o = i * 6;
@@ -6091,7 +6091,13 @@
             const wipeTitle = document.createElement('div');
             wipeTitle.style.cssText = "position:absolute;left:0;top:0;width:1920px;height:1080px;display:flex;flex-direction:column;align-items:center;" +
                 "justify-content:center;font-family:'Ferrum',serif;font-size:52px;color:#f0c050;text-shadow:3px 3px 0 #000;white-space:nowrap";
-            wipeTrack.append(wipeBand, wipeTitle);
+            // ANIME SPEED LINES: ONE layer streaking over everything that moves (the band AND both pickle ends),
+            // masked to the band plus each pickle's silhouette grown a little, so the lines run slightly past the
+            // outline. A repeat-x tile of tapered white streaks; geometry + mask set per wipe in setupWipeBookends.
+            const wipeLines = document.createElement('div');
+            wipeLines.style.cssText = 'position:absolute;left:0;top:0;display:none;pointer-events:none;background-repeat:repeat-x;' +
+                '-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat';
+            wipeTrack.append(wipeBand, wipeLines, wipeTitle);
             wipeEl.appendChild(wipeTrack);
             {
                 const hud = document.getElementById('hudScaleLayer');
@@ -6102,7 +6108,7 @@
                 const img = document.createElement('img');
                 img.alt = '';
                 img.style.cssText = 'position:absolute;left:0;top:0;display:none;opacity:0;will-change:opacity';
-                wipeTrack.insertBefore(img, wipeTitle);           // over the band (rim glow overlaps its edge), under the title
+                wipeTrack.insertBefore(img, wipeLines);           // over the band (the rim overlaps its edge), under the speed lines
                 return img;
             };
             // Silhouette halves, rimmed + glowing in a team colour. All four variants (front/back x direction)
@@ -6129,49 +6135,17 @@
                 const full = document.createElement('canvas'); full.width = W; full.height = H;
                 const g = full.getContext('2d');
                 if (!faceRight) { g.translate(W, 0); g.scale(-1, 1); }
-                // the team-colour rim + glow, on its own canvas so the blurred copies can lay it back on crisp
-                let rimC = null, rg = null;
-                if (color) {
-                    rimC = document.createElement('canvas'); rimC.width = W; rimC.height = H;
-                    rg = rimC.getContext('2d');
-                    if (!faceRight) { rg.translate(W, 0); rg.scale(-1, 1); }
-                    rg.shadowColor = color; rg.shadowBlur = 22;                  // glow
-                    for (let k = 0; k < 16; k++) {                               // rim: dilate by ~7px
-                        const a = k / 16 * Math.PI * 2;
-                        rg.drawImage(tint, P + Math.cos(a) * 7, PY + Math.sin(a) * 7);
+                // the team-colour rim: a SOLID outline (silhouette dilated ~10px, no glow)
+                const dilate = (ctx, img, r, steps) => {
+                    ctx.drawImage(img, P, PY);
+                    for (let k = 0; k < steps; k++) {
+                        const a = k / steps * Math.PI * 2;
+                        ctx.drawImage(img, P + Math.cos(a) * r, PY + Math.sin(a) * r);
                     }
-                    rg.shadowBlur = 0;
-                    g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(rimC, 0, 0); g.restore();
-                }
+                };
+                if (color) dilate(g, tint, 10, 32);
                 g.drawImage(silImg, P, PY);                                       // the black silhouette
-                // ANIME SPEED LINES on the pickle itself (the band stays plain black): glowing white horizontal
-                // streaks, tapered at both ends, clipped to the black body so the rim stays clean.
-                const lc = document.createElement('canvas'); lc.width = W; lc.height = H;
-                const lg = lc.getContext('2d');
-                let seed = 1337;
-                const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-                lg.globalCompositeOperation = 'lighter';
-                for (let i = 0; i < 42; i++) {
-                    const y = rnd() * H;
-                    const th = rnd() < 0.18 ? 2.5 + rnd() * 3 : 0.7 + rnd() * 1.6;    // a few heavy, many fine
-                    const len = W * (0.3 + rnd() * 0.7);
-                    const sx = -0.2 * W + rnd() * W;
-                    const a = 0.3 + rnd() * 0.7;
-                    const grd = lg.createLinearGradient(sx, 0, sx + len, 0);
-                    grd.addColorStop(0, 'rgba(255,255,255,0)');
-                    grd.addColorStop(0.25 + rnd() * 0.2, `rgba(255,255,255,${a.toFixed(2)})`);
-                    grd.addColorStop(0.75, `rgba(255,255,255,${(a * 0.8).toFixed(2)})`);
-                    grd.addColorStop(1, 'rgba(255,255,255,0)');
-                    lg.shadowColor = 'rgba(255,255,255,0.9)'; lg.shadowBlur = th * 3;
-                    lg.fillStyle = grd;
-                    lg.fillRect(sx, y - th / 2, len, th);
-                }
-                lg.shadowBlur = 0;
-                lg.globalCompositeOperation = 'destination-in';                 // keep only inside the body
-                if (!faceRight) { lg.translate(W, 0); lg.scale(-1, 1); }
-                lg.drawImage(silImg, P, PY);
                 g.setTransform(1, 0, 0, 1, 0, 0);
-                g.drawImage(lc, 0, 0);
                 const cutRaw = P + SIL_CUT * W0;
                 const cut = Math.round(faceRight ? cutRaw : W - cutRaw);
                 const takeRight = (front === faceRight);                         // front of a right-runner = its right part
@@ -6185,28 +6159,34 @@
                 const out = document.createElement('canvas'); out.width = w; out.height = H;
                 let src = full;
                 if (blurR > 0) {
-                    // box blur along x: 16 shifted copies averaged ('lighter' at 1/16 each sums back to opaque).
+                    // box blur along x: N shifted copies averaged ('lighter' at 1/N each sums back to opaque).
                     // Blurred BEFORE the cut, so the cut edge (under the band) stays solid.
                     const bf = document.createElement('canvas'); bf.width = W; bf.height = H;
                     const bg = bf.getContext('2d');
                     bg.globalCompositeOperation = 'lighter';
-                    const N = 16; bg.globalAlpha = 1 / N;
+                    const N = Math.max(16, Math.ceil(blurR / 3)); bg.globalAlpha = 1 / N;   // ~3px steps: no visible ghost copies
+                    // A straight HORIZONTAL smear (box, not gaussian): the rim smears with the body like a long
+                    // exposure, so the edges streak too.
                     for (let k = 0; k < N; k++) bg.drawImage(full, -blurR + 2 * blurR * k / (N - 1), 0);
-                    // The smear would spread the thin rim to nothing (a 7px edge over ~2x blurR px), and the
-                    // team-colour leading edge is the read, so lay it back on crisp: the rim ring (body punched
-                    // out, nothing on the band side) over the smeared body and lines.
-                    if (rimC) {
-                        rg.globalCompositeOperation = 'destination-out';
-                        rg.drawImage(silImg, P, PY);
-                        rg.setTransform(1, 0, 0, 1, 0, 0);
-                        rg.clearRect(takeRight ? 0 : cut, 0, takeRight ? cut : W - cut, H);
-                        bg.globalCompositeOperation = 'source-over'; bg.globalAlpha = 1;
-                        bg.drawImage(rimC, 0, 0);
-                    }
                     src = bf;
                 }
                 out.getContext('2d').drawImage(src, x0, 0, w, H, 0, 0, w, H);
-                return (halfCache[key] = { url: out.toDataURL('image/png'), aspect: w / H, extFrac: EXT / H, hPx: H });
+                const res = { url: out.toDataURL('image/png'), aspect: w / H, extFrac: EXT / H, hPx: H };
+                if (blurR === 0) {
+                    // Speed-line mask for this half: the silhouette grown ~34px (lines spill slightly past the
+                    // outline) plus the band strip, same layout/cut as the image so it overlays exactly.
+                    const mc = document.createElement('canvas'); mc.width = W; mc.height = H;
+                    const mg = mc.getContext('2d');
+                    if (!faceRight) { mg.translate(W, 0); mg.scale(-1, 1); }
+                    dilate(mg, silImg, 34, 32);
+                    mg.setTransform(1, 0, 0, 1, 0, 0);
+                    mg.fillStyle = '#000';
+                    mg.fillRect(takeRight ? 0 : cut, 0, takeRight ? cut : W - cut, H);
+                    const mo = document.createElement('canvas'); mo.width = w; mo.height = H;
+                    mo.getContext('2d').drawImage(mc, x0, 0, w, H, 0, 0, w, H);
+                    res.maskUrl = mo.toDataURL('image/png');
+                }
+                return (halfCache[key] = res);
             };
             window.wipeTeamColors = () => {
                 const TRc = window.TEAM_RIGHT;
@@ -6226,6 +6206,7 @@
                     img.src = h.url;
                     if (img.decode) img.decode().catch(() => {});      // decoded now, not on the wipe's first frame
                     v.aspect = h.aspect; v.extFrac = h.extFrac; v.hPx = h.hPx; v.colors[lvl] = want;
+                    if (h.maskUrl) v.maskUrl = h.maskUrl;
                 }
                 return v;
             };
@@ -6233,6 +6214,39 @@
                 for (let l = 0; l < BLUR_LEVELS.length; l++) ensureLevel(movingRight, front, color, l);
                 return variants[vKey(movingRight, front)];
             };
+            // Speed-line tile: white streaks tapered at both ends, a few heavy and many fine, wrapped so it
+            // repeats seamlessly in x. Height = the bookends' height (they overhang the screen top/bottom).
+            const LINES_TILE_W = 2048, LINES_H = Math.round(REF_H * 1.5);
+            let linesTileUrl = null;
+            const bakeLinesTile = () => {
+                const c = document.createElement('canvas'); c.width = LINES_TILE_W; c.height = LINES_H;
+                const lg = c.getContext('2d');
+                let seed = 1337;
+                const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+                lg.globalCompositeOperation = 'lighter';
+                for (let i = 0; i < 70; i++) {
+                    const y = rnd() * LINES_H;
+                    const th = rnd() < 0.18 ? 3 + rnd() * 4 : 1 + rnd() * 2;
+                    const len = LINES_TILE_W * (0.15 + rnd() * 0.45);
+                    const sx = rnd() * LINES_TILE_W;
+                    const a = 0.3 + rnd() * 0.7;
+                    for (const off of [0, -LINES_TILE_W]) {                   // wrap: seamless repeat-x
+                        const x = sx + off;
+                        const grd = lg.createLinearGradient(x, 0, x + len, 0);
+                        grd.addColorStop(0, 'rgba(255,255,255,0)');
+                        grd.addColorStop(0.35, `rgba(255,255,255,${a.toFixed(2)})`);
+                        grd.addColorStop(0.75, `rgba(255,255,255,${(a * 0.8).toFixed(2)})`);
+                        grd.addColorStop(1, 'rgba(255,255,255,0)');
+                        lg.shadowColor = 'rgba(255,255,255,0.9)'; lg.shadowBlur = th * 3;
+                        lg.fillStyle = grd;
+                        lg.fillRect(x, y - th / 2, len, th);
+                    }
+                }
+                linesTileUrl = c.toDataURL('image/png');
+                wipeLines.style.backgroundImage = 'url(' + linesTileUrl + ')';
+                wipeLines.style.backgroundSize = LINES_TILE_W + 'px ' + LINES_H + 'px';
+            };
+            setTimeout(bakeLinesTile, 0);
             silImg.onload = () => {
                 // 12 images (4 halves x 3 blur levels): bake one per tick so loading never hitches
                 const c = window.wipeTeamColors();
@@ -6282,6 +6296,7 @@
             // Returns the extra screen % each end needs so the pickle starts and ends fully off-screen.
             window.setupWipeBookends = (movingRight, leadColor, trailColor) => {
                 for (const k in variants) variants[k].imgs.forEach(img => { img.style.display = 'none'; });
+                wipeLines.style.display = 'none';
                 activeWipe = []; bandInsetPx = [];
                 wipeBand.style.transform = 'none';
                 wipeEl.style.display = 'block';
@@ -6301,6 +6316,7 @@
                         img.style.opacity = i === 0 ? '1' : '0';
                         img.style.display = 'block';
                     });
+                    v._left = left; v._w = w;                                    // for the speed-line layer
                     return (w - ovl) / REF_W * 100;                              // how far it sticks out, % of width
                 };
                 const leadV = ensureVariant(movingRight, true, leadColor), trailV = ensureVariant(movingRight, false, trailColor);
@@ -6308,10 +6324,27 @@
                 bandInsetPx = BLUR_LEVELS.map(r => r / leadV.hPx * H);
                 const lead = place(leadV, movingRight ? 'right' : 'left');
                 const trail = place(trailV, movingRight ? 'left' : 'right');
+                // Speed lines span both ends and the band; masked to band + each grown silhouette.
+                if (linesTileUrl && leadV.maskUrl && trailV.maskUrl) {
+                    const ox = Math.min(0, leadV._left, trailV._left);
+                    const ow = Math.max(REF_W, leadV._left + leadV._w, trailV._left + trailV._w) - ox;
+                    const L = wipeLines.style;
+                    L.left = ox.toFixed(1) + 'px'; L.top = top.toFixed(1) + 'px';
+                    L.width = ow.toFixed(1) + 'px'; L.height = H + 'px';
+                    const img = 'linear-gradient(#000,#000), url(' + leadV.maskUrl + '), url(' + trailV.maskUrl + ')';
+                    const size = REF_W + 'px ' + REF_H + 'px, ' + leadV._w.toFixed(1) + 'px ' + H + 'px, ' + trailV._w.toFixed(1) + 'px ' + H + 'px';
+                    const pos = (-ox).toFixed(1) + 'px ' + (-top).toFixed(1) + 'px, ' + (leadV._left - ox).toFixed(1) + 'px 0px, ' +
+                                (trailV._left - ox).toFixed(1) + 'px 0px';
+                    L.webkitMaskImage = img; L.maskImage = img;
+                    L.webkitMaskSize = size; L.maskSize = size;
+                    L.webkitMaskPosition = pos; L.maskPosition = pos;
+                    L.display = 'block';
+                }
                 return { lead, trail };
             };
             window.clearWipeBookends = () => {
                 wipeEl.style.display = 'none';
+                wipeLines.style.display = 'none';
                 for (const k in variants) variants[k].imgs.forEach(img => { img.style.display = 'none'; });
                 activeWipe = []; bandInsetPx = [];
                 wipeBand.style.transform = 'none';
@@ -13253,7 +13286,9 @@
                 proj.trail = new BillboardTrail("fireTrail_" + Date.now(), proj.trailAnchor, scene, trailWidth, trailLength);   // camera-facing streak
                 const trailMat = new BABYLON.StandardMaterial("trailMat_" + Date.now(), scene);
                 trailMat.emissiveColor = new BABYLON.Color3(1, 0.3, 0.05);
-                trailMat.alpha = 0.84;   // one flat ribbon layer = the old tube's two overlapping 0.6 layers
+                // One flat ribbon layer vs the old Babylon tube's two overlapping layers: the old trail (0.6, then
+                // x0.65 once the spell model attaches) read ~0.63 opaque, so this lands on that after the same x0.65.
+                trailMat.alpha = 0.97;
                 trailMat.diffuseColor = new BABYLON.Color3(0, 0, 0);
                 trailMat.backFaceCulling = false;
                 proj.trail.material = trailMat;
@@ -13440,7 +13475,7 @@
                 const trailMat = new BABYLON.StandardMaterial("iceTrailMat_" + Date.now(), scene);
                 trailMat.emissiveColor = new BABYLON.Color3(0.4, 0.7, 1);
                 trailMat.diffuseColor = new BABYLON.Color3(0, 0, 0);
-                trailMat.alpha = 0.75;   // one flat ribbon layer = the old tube's two overlapping 0.5 layers
+                trailMat.alpha = 0.84;   // = the old tube's two overlapping 0.5 layers after the model's x0.65 (~0.55)
                 trailMat.backFaceCulling = false;
                 proj.trail.material = trailMat;
                 proj.trailMat = trailMat;
