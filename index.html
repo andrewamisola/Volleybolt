@@ -13334,6 +13334,337 @@
             // === PICKLE WIZARD QUICK SWAP (idle only) ===
             // Loads the single rigged pickle GLB for both players at the same paddle transform
             // as the current characters.
+            // ============================================================
+            // MODULAR PICKLE (CHARACTER_VERSION 2) - spec: docs/superpowers/specs/2026-10-01-modular-pickle-design.md
+            // ============================================================
+            // One shared skeleton (PickleRig, tools/blender/build_pickle.py): the base (body + clips) plus parts that
+            // are skinned to the same rig, a face painted at runtime from pixel-art strips (eyes + mouth, with
+            // expression frames), and team colour only on each part's M_team areas. Presentation only - never read
+            // by the sim. Falls back to the v1 pickle if the v2 files are missing.
+            const CHARACTER_VERSION = 2;
+            window.CHARACTER_VERSION = CHARACTER_VERSION;
+            const PICKLE2_DIR = 'models/pickle2/';
+            const PICKLE2_V = '?v=1';
+            // The catalogue: every cosmetic. id = stable (unlocks / a future Steam inventory key off it).
+            const COSMETICS = [
+                { id: 'hat_none',      name: 'No Hat',          slot: 'hat' },
+                { id: 'hat_wizard',    name: 'Wizard Hat',      slot: 'hat',    file: 'parts/hat_wizard.glb' },
+                { id: 'outfit_none',   name: 'Bare Pickle',     slot: 'outfit' },
+                { id: 'outfit_robe',   name: 'Wizard Robe',     slot: 'outfit', file: 'parts/outfit_robe.glb' },
+                { id: 'neck_none',     name: 'None',            slot: 'neck' },
+                { id: 'face_acc_none', name: 'None',            slot: 'face_acc' },
+                { id: 'staff_classic', name: 'Classic Staff',   slot: 'staff',  file: 'parts/staff_classic.glb' },
+                { id: 'eyes_classic',  name: 'Classic Eyes',    slot: 'eyes',   strip: 'textures/face/eyes_classic.png' },
+                { id: 'mouth_smile',   name: 'Smile',           slot: 'mouth',  strip: 'textures/face/mouth_smile.png' },
+            ];
+            const COSMETIC_SLOTS = ['hat', 'outfit', 'neck', 'face_acc', 'staff', 'eyes', 'mouth'];
+            const DEFAULT_LOADOUT = { hat: 'hat_wizard', outfit: 'outfit_robe', neck: 'neck_none', face_acc: 'face_acc_none',
+                                      staff: 'staff_classic', eyes: 'eyes_classic', mouth: 'mouth_smile' };
+            const cosmeticById = (id) => COSMETICS.find(c => c.id === id) || null;
+            // a loadout with every slot valid (unknown / wrong-slot ids fall back to the default)
+            const sanitizeLoadout = (lo) => {
+                const out = {};
+                for (const s of COSMETIC_SLOTS) {
+                    const c = lo && cosmeticById(lo[s]);
+                    out[s] = c && c.slot === s ? c.id : DEFAULT_LOADOUT[s];
+                }
+                return out;
+            };
+            const LOADOUT_KEY = 'volleybolt_loadout';
+            const loadLoadout = () => { try { return sanitizeLoadout(JSON.parse(localStorage.getItem(LOADOUT_KEY) || 'null')); } catch (e) { return { ...DEFAULT_LOADOUT }; } };
+            const saveLoadout = (lo) => { try { localStorage.setItem(LOADOUT_KEY, JSON.stringify(sanitizeLoadout(lo))); } catch (e) {} };
+            window.PickleKit = { COSMETICS, COSMETIC_SLOTS, DEFAULT_LOADOUT, sanitizeLoadout, loadLoadout, saveLoadout };
+
+            // Team colour for a slot's M_team areas (colour-blind aware red; back-row variants read apart).
+            const teamColorFor = (side) => {
+                const isPlayer = side.startsWith('left'), isBack = side.endsWith('Back');
+                if (isPlayer) return isBack ? new BABYLON.Color3(0.16, 0.36, 0.78) : new BABYLON.Color3(0.24, 0.6, 0.95);
+                const R = window.TEAM_RIGHT || { r: 1.0, g: 0.42, b: 0.33 };
+                return isBack ? new BABYLON.Color3(R.r * 0.78, R.g * 0.78, R.b * 0.78) : new BABYLON.Color3(R.r, R.g, R.b);
+            };
+
+            // ---- face strips (cached images) ----
+            const FACE = { W: 64, H: 64, eyes: { w: 48, h: 20, x: 8, y: 10, frames: ['open', 'blink', 'hurt', 'focus', 'happy'] },
+                           mouth: { w: 32, h: 14, x: 16, y: 36, frames: ['neutral', 'open', 'grimace', 'grin'] } };
+            const stripCache = {};
+            const loadStrip = (src) => stripCache[src] || (stripCache[src] = new Promise((res) => {
+                const img = new Image(); img.onload = () => res(img); img.onerror = () => res(null); img.src = src + PICKLE2_V;
+            }));
+            // A per-wizard face: a 64x64 canvas (skin fill + eye frame + mouth frame) on the M_face material.
+            const makeFace = (mat, skin, loadout) => {
+                // invertY false: glTF UVs are top-left origin (like the model's own textures), else the face lands upside down
+                const tex = new BABYLON.DynamicTexture('pickleFace', { width: FACE.W, height: FACE.H }, scene, false, BABYLON.Texture.NEAREST_SAMPLINGMODE, BABYLON.Engine.TEXTUREFORMAT_RGBA, false);
+                tex.hasAlpha = false;
+                const face = { tex, eyes: null, mouth: null, eyeState: 'open', mouthState: 'neutral', drawn: '', blinkAt: 0, hurtUntil: 0, lastHp: null };
+                face.draw = () => {
+                    const key = face.eyeState + '|' + face.mouthState + '|' + !!face.eyes + !!face.mouth;
+                    if (key === face.drawn) return;
+                    face.drawn = key;
+                    const g = tex.getContext();
+                    g.imageSmoothingEnabled = false;
+                    g.fillStyle = skin; g.fillRect(0, 0, FACE.W, FACE.H);
+                    const E = FACE.eyes, M = FACE.mouth;
+                    if (face.eyes) g.drawImage(face.eyes, Math.max(0, E.frames.indexOf(face.eyeState)) * E.w, 0, E.w, E.h, E.x, E.y, E.w, E.h);
+                    if (face.mouth) g.drawImage(face.mouth, Math.max(0, M.frames.indexOf(face.mouthState)) * M.w, 0, M.w, M.h, M.x, M.y, M.w, M.h);
+                    tex.update(false);   // no Y flip (glTF UV origin is top-left)
+                };
+                face.setStyle = async (lo) => {
+                    const e = cosmeticById(lo.eyes), m = cosmeticById(lo.mouth);
+                    face.eyes = e && e.strip ? await loadStrip(e.strip) : null;
+                    face.mouth = m && m.strip ? await loadStrip(m.strip) : null;
+                    face.drawn = ''; face.draw();
+                };
+                if (mat.albedoTexture !== undefined) { mat.albedoTexture = tex; mat.albedoColor = BABYLON.Color3.White(); }
+                else { mat.diffuseTexture = tex; mat.diffuseColor = BABYLON.Color3.White(); }
+                face.setStyle(loadout);
+                return face;
+            };
+            // Expressions from what the wizard is doing (visual only): blink timer, hurt when its structure is hit,
+            // focus while casting, open on release, happy+grin on victory, hurt+grimace on defeat.
+            const faceTick = (c, teamC, now) => {
+                const f = c.face; if (!f) return;
+                if (teamC) {
+                    const hp = teamC.towerHealth;
+                    if (f.lastHp != null && hp < f.lastHp) f.hurtUntil = now + 500;
+                    f.lastHp = hp;
+                }
+                const a = c.currentAnim;
+                let eye = 'open', mouth = 'neutral';
+                if (a === 'victory') { eye = 'happy'; mouth = 'grin'; }
+                else if (a === 'defeat' || a === 'defeat_fall') { eye = 'hurt'; mouth = 'grimace'; }
+                else if (now < f.hurtUntil) { eye = 'hurt'; mouth = 'grimace'; }
+                else if (a === 'cast_release' || a === 'parry_release') { eye = 'focus'; mouth = 'open'; }
+                else if (a === 'cast_loop' || a === 'parry') { eye = 'focus'; }
+                if (f.override && now < f.override.until) { eye = f.override.eye; mouth = f.override.mouth; }
+                if (eye === 'open') {
+                    if (!f.blinkAt) f.blinkAt = now + 3000 + Math.random() * 3000;
+                    if (now > f.blinkAt) { eye = 'blink'; if (now > f.blinkAt + 120) f.blinkAt = now + 3000 + Math.random() * 3000; }
+                }
+                f.eyeState = eye; f.mouthState = mouth; f.draw();
+            };
+            scene.onBeforeRenderObservable.add(() => {
+                const now = performance.now();
+                for (const k of ['left', 'right', 'leftBack', 'rightBack']) {
+                    const c = combatants[k];
+                    if (c && c.face) faceTick(c, combatants[k.startsWith('left') ? 'left' : 'right'], now);
+                }
+                if (window._labChar && window._labChar.face) faceTick(window._labChar, null, now);
+            });
+
+            // Style a material like the rest of the scene: matte, crisp texels, no PS1 vertex wobble on characters.
+            const stylePickleMat = (mat) => {
+                if (mat.roughness !== undefined) mat.roughness = 1;
+                if (mat.metallic !== undefined) mat.metallic = 0;
+                if (mat.environmentIntensity !== undefined) mat.environmentIntensity = 0;
+                if (mat.specularIntensity !== undefined) mat.specularIntensity = 0;
+                if (mat.emissiveColor) mat.emissiveColor = new BABYLON.Color3(0, 0, 0);
+                if (mat.ps1Snap) mat.ps1Snap.isEnabled = false;
+                const tex = mat.albedoTexture || mat.diffuseTexture;
+                if (tex && tex.updateSamplingMode) tex.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPNEAREST);
+            };
+
+            // Build one modular pickle into `target` (combatant or a lab bag): base + parts + face + team colour.
+            // Resolves with { modelRoot, skeleton, meshes, animations } or rejects (caller falls back to v1).
+            const buildPickle2 = async (prefix, side, loadout, bust) => {
+                const v = bust ? '?v=' + Date.now() : PICKLE2_V;
+                const base = await BABYLON.SceneLoader.ImportMeshAsync('', PICKLE2_DIR, 'pickle_base.glb' + v, scene);
+                const modelRoot = new BABYLON.TransformNode(prefix + 'Pickle2Root', scene);
+                const glRoot = base.meshes[0];                 // glTF __root__ (handedness)
+                glRoot.parent = modelRoot;
+                const skeleton = base.skeletons[0] || null;
+                const meshes = base.meshes.filter(m => m.getTotalVertices && m.getTotalVertices() > 0);
+                const team = teamColorFor(side);
+                const lo = sanitizeLoadout(loadout);
+                let face = null;
+                for (const m of meshes) {
+                    if (!m.material) continue;
+                    // per-wizard material copies (team tint / face canvas differ per wizard)
+                    m.material = m.material.clone(m.material.name + '_' + prefix, true);   // true: multi-materials clone their children too
+                    stylePickleMat(m.material);
+                }
+                // M_face may be a sub-material of a multi-material: find it either way
+                const allMats = (ms) => ms.flatMap(m => m.material ? (m.material.subMaterials || [m.material]) : []).filter(Boolean);
+                for (const mat of allMats(meshes)) {
+                    if (/^M_face/.test(mat.name) && !face) {
+                        // glTF base colours are LINEAR; the canvas is sRGB
+                        const bc = (mat.albedoColor || mat.diffuseColor || new BABYLON.Color3(0.105, 0.262, 0.036)).toGammaSpace();
+                        const skin = `rgb(${Math.round(bc.r * 255)},${Math.round(bc.g * 255)},${Math.round(bc.b * 255)})`;
+                        face = makeFace(mat, skin, lo);
+                    }
+                }
+                // parts: skinned to this wizard's skeleton, parented like the base mesh
+                const meshParent = meshes[0] ? meshes[0].parent : glRoot;
+                for (const slot of COSMETIC_SLOTS) {
+                    const c = cosmeticById(lo[slot]);
+                    if (!c || !c.file) continue;
+                    try {
+                        const part = await BABYLON.SceneLoader.ImportMeshAsync('', PICKLE2_DIR, c.file + v, scene);
+                        const pm = part.meshes.filter(m => m.getTotalVertices && m.getTotalVertices() > 0);
+                        for (const m of pm) {
+                            const local = m.parent ? m.parent : null;
+                            m.parent = meshParent;
+                            if (local && local !== part.meshes[0]) m.parent = meshParent;   // flatten to the base's frame
+                            if (skeleton && m.skeleton) m.skeleton = skeleton;
+                            if (m.material) {
+                                m.material = m.material.clone(m.material.name + '_' + prefix, true);
+                                for (const mat of (m.material.subMaterials || [m.material])) {
+                                    if (!mat) continue;
+                                    stylePickleMat(mat);
+                                    if (/^M_team/.test(mat.name)) {
+                                        if (mat.albedoColor) mat.albedoColor = team.clone(); else mat.diffuseColor = team.clone();
+                                    }
+                                }
+                            }
+                            m._pickleSlot = slot;
+                            meshes.push(m);
+                        }
+                        part.skeletons.forEach(s => { if (s !== skeleton) s.dispose(); });
+                        part.animationGroups.forEach(g => g.dispose());
+                        part.transformNodes.forEach(n => n.dispose());
+                        part.meshes[0].dispose(true, false);          // the part's own __root__ (children moved)
+                    } catch (e) { console.warn('[pickle2] part "' + c.id + '" failed to load - slot left empty', e); }
+                }
+                for (const m of meshes) { m.renderingGroupId = 1; m.isPickable = false; }
+                // clips: name the base's animation groups by the contract names
+                const animations = {};
+                for (const g of base.animationGroups) {
+                    const key = g.name.replace(/^.*\|/, '');
+                    g.stop();
+                    g.name = prefix + '_' + key;
+                    animations[key] = g;
+                }
+                // derived clips (same contract as v1): parry fitted to the parry window; parry_release = a snappy
+                // release flourish; defeat_fall = defeat, reaching the floor within ~2.2 s
+                const fpsOf = (g) => { const ta = g.targetedAnimations[0]; return (ta && ta.animation && ta.animation.framePerSecond) || 60; };
+                if (animations.parry) animations.parry.speedRatio = ((animations.parry.to - animations.parry.from) / fpsOf(animations.parry)) / (PARRY_ACTIVE_FRAMES / 60);
+                if (animations.cast_release) {
+                    try { const pr = animations.cast_release.clone(prefix + '_parry_release'); pr.speedRatio = 2.0; animations.parry_release = pr; } catch (e) {}
+                }
+                if (animations.defeat) {
+                    try { const df = animations.defeat.clone(prefix + '_defeat_fall'); df.speedRatio = Math.max(1, ((df.to - df.from) / fpsOf(df)) / 2.2); animations.defeat_fall = df; } catch (e) {}
+                }
+                return { modelRoot, skeleton, meshes, animations, face, loadout: lo };
+            };
+            window.buildPickle2 = buildPickle2;
+
+            // ============================================================
+            // CHARACTER LAB (index.html?lab) - view/try the modular pickle without starting a match. Built as the
+            // future wardrobe: slot pickers save the loadout; the dev extras (clip stepping, reload, camera presets)
+            // are part of the ?lab build. Real renderer, lighting and textures - what you see is what the match shows.
+            // ============================================================
+            window.openCharacterLab = () => {
+                if (window._labOpen) return;
+                window._labOpen = true;
+                const LAB = { side: 'left', loadout: loadLoadout(), clip: 'idle', loop: true, char: null, building: false };
+                // hide the menus / loading screen / HUD, park the match wizards
+                document.querySelectorAll('.arcane-overlay, #loadingScreen').forEach(e => { e.style.display = 'none'; });
+                if (window.guiTexture) window.guiTexture.rootContainer.isVisible = false;
+                for (const k of ['left', 'right']) { const c = combatants[k]; if (c && c.modelRoot) c.modelRoot.setEnabled(false); }
+                // the lab pickle stands mid-court; a free orbit camera around it
+                const stand = new BABYLON.TransformNode('labStand', scene);
+                stand.position.set(0, 0, 0);
+                const cvs = engine.getRenderingCanvas();
+                cvs.style.visibility = 'visible';   // hidden during boot until the menu flow reveals it
+                const cam = new BABYLON.ArcRotateCamera('labCam', Math.PI / 2 - 0.5, 1.2, 4.6, new BABYLON.Vector3(0, 0.95, 0), scene);   // in front (the pickle faces +Z)
+                cam.lowerRadiusLimit = 1.6; cam.upperRadiusLimit = 12; cam.wheelPrecision = 40; cam.minZ = 0.05;
+                cam.attachControl(cvs, true);
+                scene.onBeforeRenderObservable.add(() => { if (window._labOpen && scene.activeCamera !== cam) scene.activeCamera = cam; });
+                scene.activeCamera = cam;
+
+                // ---- panel ----
+                const css = `#labPanel{position:fixed;top:12px;right:12px;width:270px;max-height:calc(100vh - 24px);overflow:auto;z-index:99999;
+                    background:rgba(20,24,34,.92);color:#e8e6dc;font:13px/1.35 Manrope,system-ui,sans-serif;border:2px solid #dfe6f2;border-radius:10px;padding:10px 12px}
+                    #labPanel h3{margin:10px 0 4px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#f0c050}
+                    #labPanel select{width:100%;margin:2px 0 4px;background:#2b3446;color:#e8e6dc;border:1px solid #556;border-radius:4px;padding:3px}
+                    #labPanel button{margin:2px 2px 2px 0;background:#2b3446;color:#e8e6dc;border:1px solid #556;border-radius:4px;padding:3px 7px;cursor:pointer}
+                    #labPanel button.on{background:#f0c050;color:#181818}
+                    #labPanel label{font-size:12px;opacity:.85} #labMsg{font-size:12px;color:#ff9b7a;margin-top:6px}`;
+                const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
+                const P = document.createElement('div'); P.id = 'labPanel'; document.body.appendChild(P);
+                const SLOT_NAMES = { hat: 'Hat', outfit: 'Outfit', neck: 'Neck', face_acc: 'Face accessory', staff: 'Staff', eyes: 'Eyes', mouth: 'Mouth' };
+                let html = '<div style="font-weight:700;font-size:15px">Character Lab</div><div style="opacity:.7;font-size:11px">drag to spin · wheel to zoom</div><h3>Loadout</h3>';
+                for (const s of COSMETIC_SLOTS) {
+                    html += `<label>${SLOT_NAMES[s]}</label><select data-slot="${s}">` +
+                        COSMETICS.filter(c => c.slot === s).map(c => `<option value="${c.id}">${c.name}</option>`).join('') + '</select>';
+                }
+                html += '<h3>Team</h3><button data-team="left">Blue</button><button data-team="right">Red</button>';
+                html += '<h3>Animation</h3><div id="labClips"></div><div><label><input type="checkbox" id="labLoop" checked> loop</label> ' +
+                        '<button id="labPause">pause</button><button id="labStep">step</button></div>';
+                html += '<h3>Expression</h3>' + [['blink', 'open'], ['hurt', 'grimace'], ['focus', 'open'], ['happy', 'grin'], ['open', 'neutral']]
+                    .map(([e, m]) => `<button data-eye="${e}" data-mouth="${m}">${e}</button>`).join('');
+                html += '<h3>Camera</h3><button data-cam="front">front</button><button data-cam="three">3/4</button><button data-cam="side">side</button><button data-cam="game">game angle</button>';
+                html += '<h3>Dev</h3><button id="labReload">reload files</button><button id="labExit">exit lab</button><div id="labMsg"></div>';
+                P.innerHTML = html;
+                const msg = (t) => { P.querySelector('#labMsg').textContent = t || ''; };
+                P.querySelectorAll('select[data-slot]').forEach(sel => {
+                    sel.value = LAB.loadout[sel.dataset.slot];
+                    sel.onchange = () => { LAB.loadout[sel.dataset.slot] = sel.value; saveLoadout(LAB.loadout); rebuild(false); };
+                });
+                const markTeam = () => P.querySelectorAll('[data-team]').forEach(b => b.classList.toggle('on', b.dataset.team === LAB.side));
+                P.querySelectorAll('[data-team]').forEach(b => b.onclick = () => { LAB.side = b.dataset.team; markTeam(); rebuild(false); });
+                markTeam();
+
+                const clipKeys = ['idle', 'left', 'right', 'cast_loop', 'cast_release', 'parry', 'parry_release', 'victory', 'defeat', 'defeat_fall'];
+                const playClip = (k) => {
+                    const ch = LAB.char; if (!ch) return;
+                    LAB.clip = k;
+                    Object.values(ch.animations).forEach(a => a && a.stop && a.stop());
+                    const a = ch.animations[k]; if (!a) { msg('no clip "' + k + '"'); return; }
+                    a.play(P.querySelector('#labLoop').checked);
+                    window._labChar.currentAnim = k;
+                    P.querySelectorAll('#labClips button').forEach(b => b.classList.toggle('on', b.dataset.clip === k));
+                };
+                P.querySelector('#labClips').innerHTML = clipKeys.map(k => `<button data-clip="${k}">${k}</button>`).join('');
+                P.querySelectorAll('[data-clip]').forEach(b => b.onclick = () => playClip(b.dataset.clip));
+                P.querySelector('#labPause').onclick = () => { const a = LAB.char && LAB.char.animations[LAB.clip]; if (!a) return; if (a.isPlaying) a.pause(); else a.play(P.querySelector('#labLoop').checked); };
+                P.querySelector('#labStep').onclick = () => {
+                    const a = LAB.char && LAB.char.animations[LAB.clip]; if (!a) return;
+                    a.pause();
+                    const ta = a.targetedAnimations[0], rt = ta && a.animatables[0];
+                    const fps = (ta && ta.animation.framePerSecond) || 30;
+                    const cur = rt ? rt.masterFrame : a.from;
+                    a.goToFrame(Math.min(a.to, cur + fps / 15));          // one 15fps step
+                };
+                P.querySelectorAll('[data-eye]').forEach(b => b.onclick = () => {
+                    const f = LAB.char && LAB.char.face; if (!f) return;
+                    f.override = { eye: b.dataset.eye, mouth: b.dataset.mouth, until: performance.now() + 2000 };
+                });
+                const CAMS = { front: [Math.PI / 2, 1.35, 4.2], three: [Math.PI / 2 - 0.75, 1.15, 4.6], side: [0, 1.3, 4.4], game: [-Math.PI / 2, Math.PI / 3, 6.5] };
+                P.querySelectorAll('[data-cam]').forEach(b => b.onclick = () => { const [a, be, r] = CAMS[b.dataset.cam]; cam.alpha = a; cam.beta = be; cam.radius = r; });
+                P.querySelector('#labReload').onclick = () => rebuild(true);
+                P.querySelector('#labExit').onclick = () => { location.href = location.pathname; };
+
+                const dispose = (ch) => {
+                    if (!ch) return;
+                    Object.values(ch.animations).forEach(a => a && a.dispose && a.dispose());
+                    ch.meshes.forEach(m => m.dispose(false, true));
+                    if (ch.skeleton) ch.skeleton.dispose();
+                    ch.modelRoot.dispose(false, true);
+                    if (ch.face && ch.face.tex) ch.face.tex.dispose();
+                };
+                const rebuild = async (bust) => {
+                    if (LAB.building) return;
+                    LAB.building = true; msg('loading...');
+                    try {
+                        const ch = await buildPickle2('lab', LAB.side, LAB.loadout, bust);
+                        dispose(LAB.char);
+                        LAB.char = ch;
+                        ch.modelRoot.parent = stand;
+                        window._labChar = { face: ch.face, currentAnim: 'idle', animations: ch.animations };
+                        playClip(LAB.clip in ch.animations ? LAB.clip : 'idle');
+                        const tris = ch.meshes.reduce((n, m) => n + (m.getTotalIndices ? m.getTotalIndices() / 3 : 0), 0);
+                        msg(`${ch.meshes.length} meshes · ${Math.round(tris)} tris · clips: ${Object.keys(ch.animations).length}`);
+                        P.querySelector('#labMsg').style.color = '#b7e3a1';
+                    } catch (e) {
+                        msg('Could not load models/pickle2/ (run tools/blender/build_pickle.py): ' + (e && e.message || e));
+                        P.querySelector('#labMsg').style.color = '#ff9b7a';
+                    }
+                    LAB.building = false;
+                };
+                rebuild(false);
+            };
+            if (new URLSearchParams(location.search).has('lab')) setTimeout(() => window.openCharacterLab(), 0);
+
             const loadPickleWizard = () => {
                 // side is a SLOT key: 'left'/'right' (front, unchanged) or 'leftBack'/'rightBack'
                 // (Task 6 doubles backs). isPlayer = team (left side); isBack = back-row slot.
@@ -13345,7 +13676,7 @@
                 // finished bag is cached (module-scope backModelCache) and attachBackModelCache()
                 // copies it onto whichever back combatant object is live AT THAT MOMENT — used both
                 // right here (first load) and by startDoublesMatch on every later match (cache hit).
-                const loadOne = (side, paddle, facingRotation, onComplete) => {
+                const loadOneV1 = (side, paddle, facingRotation, onComplete) => {
                     const isPlayer = side.startsWith('left');
                     const isBack = side.endsWith('Back');
                     const prefix = (isPlayer ? 'player' : 'ai') + (isBack ? 'Back' : '');
@@ -13578,6 +13909,73 @@
                             onComplete();
                         }
                     );
+                };
+                // v2: the modular pickle (base + parts + face). Same target contract as v1; on any failure (files
+                // missing, bad export) it falls back to the v1 pickle so a wizard always appears.
+                const loadOneV2 = (side, paddle, facingRotation, onComplete) => {
+                    const isPlayer = side.startsWith('left');
+                    const isBack = side.endsWith('Back');
+                    const prefix = (isPlayer ? 'player' : 'ai') + (isBack ? 'Back' : '');
+                    const target = isBack ? { animations: {} } : combatants[side];
+                    const animStore = isBack ? null : (isPlayer ? playerAnimations : aiAnimations);
+                    // the local player wears their saved loadout; everyone else the default (online: the peer's,
+                    // once exchanged)
+                    const loadout = (side === 'left') ? loadLoadout() : { ...DEFAULT_LOADOUT };
+                    buildPickle2(prefix, side, loadout).then(pk => {
+                        pk.modelRoot.parent = paddle;
+                        pk.modelRoot.position.set(0, 0, 0);
+                        pk.modelRoot.rotation.y = facingRotation + (window.PICKLE2_FACING || 0);
+                        paddle.visibility = 0;
+                        target.modelRoot = pk.modelRoot;
+                        target.skeleton = pk.skeleton;
+                        target.flashMeshes = pk.meshes.filter(m => m.material);
+                        target.face = pk.face;
+                        target.loadout = pk.loadout;
+                        target.animations = target.animations || {};
+                        for (const k in pk.animations) { target.animations[k] = pk.animations[k]; if (animStore) animStore[k] = pk.animations[k]; }
+                        if (!isBack) {
+                            if (isPlayer) { playerModelRoot = pk.modelRoot; playerFlashMeshes = target.flashMeshes; }
+                            else { aiModelRoot = pk.modelRoot; aiFlashMeshes = target.flashMeshes; }
+                        }
+                        if (target.animations.idle) { target.animations.idle.play(true); target.currentAnim = 'idle'; }
+                        console.log(`[pickle2 ${prefix}] ready:`, Object.keys(target.animations), pk.loadout);
+                        if (isBack) { backModelCache[side] = target; attachBackModelCache(side); }
+                        onComplete();
+                    }).catch(err => {
+                        console.warn(`[pickle2 ${prefix}] unavailable, using the v1 pickle:`, err && err.message || err);
+                        loadOneV1(side, paddle, facingRotation, onComplete);
+                    });
+                };
+                const loadOne = CHARACTER_VERSION === 2 ? loadOneV2 : loadOneV1;
+                // Re-dress a FRONT wizard with another loadout (online: the peer's / the local player's on the
+                // right). Visual only. Keeps the model's offset/facing and the clip that was playing.
+                window.restylePickle = async (side, loadout) => {
+                    const target = combatants[side];
+                    if (CHARACTER_VERSION !== 2 || !target || !target.face || !target.modelRoot) return;   // v1 fallback: no-op
+                    const lo = sanitizeLoadout(loadout);
+                    if (JSON.stringify(lo) === JSON.stringify(target.loadout)) return;
+                    const isPlayer = side === 'left', prefix = (isPlayer ? 'player' : 'ai');
+                    let pk;
+                    try { pk = await buildPickle2(prefix + 'R', side, lo); } catch (e) { console.warn('[pickle2] restyle failed', e); return; }
+                    const old = { root: target.modelRoot, anims: target.animations, meshes: target.flashMeshes, skel: target.skeleton, face: target.face };
+                    pk.modelRoot.parent = old.root.parent;
+                    pk.modelRoot.position.copyFrom(old.root.position);
+                    pk.modelRoot.rotation.copyFrom(old.root.rotation);
+                    const cur = target.currentAnim || 'idle';
+                    target.modelRoot = pk.modelRoot; target.skeleton = pk.skeleton; target.face = pk.face; target.loadout = pk.loadout;
+                    target.flashMeshes = pk.meshes.filter(m => m.material);
+                    target.animations = pk.animations;
+                    const store = isPlayer ? playerAnimations : aiAnimations;
+                    for (const k in pk.animations) store[k] = pk.animations[k];
+                    if (isPlayer) { playerModelRoot = pk.modelRoot; playerFlashMeshes = target.flashMeshes; }
+                    else { aiModelRoot = pk.modelRoot; aiFlashMeshes = target.flashMeshes; }
+                    const a = pk.animations[cur] || pk.animations.idle;
+                    if (a) a.play(cur === 'idle' || cur === 'left' || cur === 'right' || cur === 'cast_loop');
+                    Object.values(old.anims || {}).forEach(g => { try { g.stop(); g.dispose(); } catch (e) {} });
+                    (old.meshes || []).forEach(m => m.dispose(false, true));
+                    if (old.skel) old.skel.dispose();
+                    if (old.face && old.face.tex) old.face.tex.dispose();
+                    old.root.dispose(false, true);
                 };
                 // Load sequentially (player, then AI) so each cleanly collects its own
                 // imported clips — concurrent imports race on scene.animationGroups indexing.
@@ -19982,6 +20380,9 @@
                 // surfaced until a real controller was tested against the actual game loop.
                 if (window.pollGamepadMenuNav) window.pollGamepadMenuNav();
 
+                // Character Lab (?lab): just draw the scene - no sim, no menus
+                if (window._labOpen) { scene.animationsEnabled = true; scene.render(); return; }
+
                 // 2D menu/lobby/boot: the DOM owns the screen — skip 3D rendering entirely
                 // (this is what keeps any menu camera from ever showing).
                 if (GameSM.state === 'menu' || GameSM.state === 'lobby' || GameSM.state === 'boot') return;
@@ -21782,6 +22183,7 @@
             c.skeleton    = artifacts.skeleton;
             c.flashMeshes = artifacts.flashMeshes;
             c.animations  = artifacts.animations;
+            c.face        = artifacts.face || null;      // modular pickle's painted face (expressions)
             c.modelLoaded = true;
             const idle = artifacts.animations && artifacts.animations['idle'];
             if (idle) {
@@ -22354,7 +22756,19 @@
             const upgradeToShare = selectedUpgrade || 'default';
             startMultiplayerMatch(sharedSeed, upgradeToShare);
             const startHash = (typeof hashStartState === 'function') ? hashStartState() : 0;
-            conn.send({ type: 'START_MATCH', seed: sharedSeed, upgrade: upgradeToShare, hash: startHash });
+            conn.send({ type: 'START_MATCH', seed: sharedSeed, upgrade: upgradeToShare, hash: startHash,
+                        loadout: window.PickleKit ? PickleKit.loadLoadout() : null });
+            applyMatchLoadouts(null);
+        }
+
+        // Cosmetic loadouts for an online duel (visual only - never in the sim / hash / rollback): the local
+        // wizard wears the local loadout, the other side the peer's (default until it arrives).
+        function applyMatchLoadouts(peerLoadout) {
+            if (!window.PickleKit || !window.restylePickle) return;
+            const local = (typeof getLocalSide === 'function') ? getLocalSide() : 'left';
+            const other = local === 'left' ? 'right' : 'left';
+            restylePickle(local, PickleKit.loadLoadout());
+            restylePickle(other, peerLoadout || PickleKit.DEFAULT_LOADOUT);
         }
 
         window.startDoublesOnlineMatch = async function () {
@@ -23279,6 +23693,13 @@
                     refreshReadyUI();
                     break;
 
+                case 'LOADOUT':
+                    // the peer's cosmetic loadout (visual only)
+                    if (window.restylePickle && typeof getLocalSide === 'function') {
+                        restylePickle(getLocalSide() === 'left' ? 'right' : 'left', data.loadout || null);
+                    }
+                    break;
+
                 case 'LEAVE':
                     // Opponent intentionally left (clicked Disconnect or closed tab).
                     // Show clearer reason than the generic "Connection lost".
@@ -23323,6 +23744,8 @@
                         // doubles lockstep loop (netMode==='doubles') with no lockstep state.
                         if (netMode === 'doubles') guestPromoteLobbyToDuel();
                         startMultiplayerMatch(data.seed, data.upgrade || 'default');
+                        applyMatchLoadouts(data.loadout || null);
+                        try { conn.send({ type: 'LOADOUT', loadout: window.PickleKit ? PickleKit.loadLoadout() : null }); } catch (e) {}
                         // Validate state hash to detect early divergence
                         if (typeof hashStartState === 'function' && typeof data.hash === 'number') {
                             const localHash = hashStartState();
