@@ -247,7 +247,7 @@
                     <div class="htp-title">Mana is momentum</div>
                     <div class="htp-note">Spells cost mana &mdash; and the losing side draws more.</div>
                     <div class="htp-note">Parry a spell to send it back faster and steal 1 mana.</div>
-                    <div class="htp-note">Every new stage is a fresh fight &mdash; but a core never heals, so press your advantage.</div>
+                    <div class="htp-note">Damage to a territory or core is permanent &mdash; nothing heals, so press your advantage.</div>
                 </div>
                 <div class="htp-page">
                     <div class="htp-title">Controls</div>
@@ -850,14 +850,15 @@
         // MATCH-RULE SWITCHES for the headless match simulator (dbg.simBatch). The defaults ARE the live game;
         // only the simulator changes them, and it puts them back. Read by deterministic code, so both online
         // peers always see the defaults.
-        //   lanes:        'fresh' (live: every zone full on arrival except the core; territories destroyable)
-        //                 'moba' (2026-09-30 interim: a held territory kept its damage between visits)
+        //   lanes:        'moba' (live: territory + core damage is permanent; Midfield and the attacker's gate full)
+        //                 'fresh' (2026-09-30 interim: every zone full on arrival except the core)
         //                 'regen50' (previous rule: no destruction, gates below 50% lift to 50% on return)
         //   defenderMana: the defender's extra max mana at its territory (4) / core (5)
         //   overtime:     the +1-per-round damage escalation from round overtimeStart (10)
-        const SIM_RULES_DEFAULT = { lanes: 'fresh', defenderMana: true, overtime: true, territoryHp: 0, overtimeStart: 10,
+        const SIM_RULES_DEFAULT = { lanes: 'moba', defenderMana: true, overtime: true, territoryHp: 0, overtimeStart: 10,
                                     aiPath: 'mixed', phaseSide: 'alt',
-                                    liveSalts: false };   // true: keep the live game's fixed AI salts (vary only the sim RNG + ball ids)   // spectate AI-driver experiments (see runSinglePlayerFrame)   // territoryHp 0 = TERRITORY_HP
+                                    liveSalts: false,
+                                    liveTiming: false };   // true: between rounds, wait the live wipe's frames (in 23 + 1 + hold 120 + out 24 + prep 90)   // true: keep the live game's fixed AI salts (vary only the sim RNG + ball ids)   // spectate AI-driver experiments (see runSinglePlayerFrame)   // territoryHp 0 = TERRITORY_HP
         const SIM_RULES = { ...SIM_RULES_DEFAULT };
         window.SIM_RULES = SIM_RULES;
         window.SIM_RULES_DEFAULT = SIM_RULES_DEFAULT;
@@ -902,16 +903,15 @@
         let playerGateHealthByStage = [SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH];
         let aiGateHealthByStage = [SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH];
 
-        // LANE RULES - "FRESH ZONES" (owner design, 2026-09-30; replaced the 50%-regen tug of war, whose
-        // comebacks ran matches to 30-40 rounds):
-        //   Every zone is a fresh fight: both gates start FULL whenever play arrives (Midfield, a territory,
-        //   the attacker's ram/catapult) - EXCEPT the core.
-        //   Territory - if the attacker breaks it, it is DESTROYED (territoryDown) for the rest of the match:
-        //               every later push skips straight over it, and its stage-bar box shows a pixel X.
-        //   Core      - the base: the home core keeps its damage and never heals; destroying it wins.
-        // Each territory can fall once and the cores only ever lose HP, so every match winds down.
-        // Tuned with the match simulator (dbg.simBatchAsync): territory 20 HP; at 30 HP fresh zones let a
-        // held territory stall (40 seeds: max 60 rounds), at 20 the median match is ~6 sim-minutes.
+        // LANE RULES - "PERMANENT DAMAGE" (owner design, 2026-10-01; replaced the 50%-regen tug of war, whose
+        // comebacks ran matches to 30-40 rounds, then the interim "fresh zones"):
+        //   Midfield  - neutral ground: both gates start FULL every time play arrives.
+        //   Territory - your HOME gate keeps every scratch and never heals. If the attacker breaks it, it is
+        //               DESTROYED (territoryDown) for the match: pushes skip over it, the stage bar shows a pixel X.
+        //   Core      - the base: keeps its damage, never heals; destroying it wins.
+        //   The VISITING side's gate (ram / catapult) is full every round.
+        // Tuned with the match simulator (dbg.simBatchAsync, live timing, 120 seeds): territory 20 HP, overtime
+        // from round 10 -> median 7.9 min, 12% over 10 min, longest 11.8 (fresh zones: 8.5 / 22% / 16.5).
         let totalRoundsPlayed = 0;
         let lastRoundAtStage = [0, 0, 0, 0, 0];  // When we last played at each stage (kept for state/hash)
         let territoryDown = [false, false, false, false, false];   // [1] Blue Territory, [3] Red Territory
@@ -1430,7 +1430,7 @@
         // is: its own core (the relic) 40 HP, its own territory (the gatehouse) 20 HP, anywhere else
         // (midfield castle, the attacker's catapult/ram) the base 20. Derived only from shared state
         // (currentStage), so both peers agree. Home gates never heal (see gateHealthForRound / MOBA lane rules).
-        const TERRITORY_HP = 20;   // was 30; with fresh zones a 30 HP territory could hold forever (see LANE RULES)
+        const TERRITORY_HP = 20;   // was 30 (see LANE RULES)
         const CORE_HP = 40;   // was 50; trimmed 2026-09-30 (the core siege is what stretched the longest matches)
         function isOwnCore(side, stage) { return (side === 'left' || side === 'player') ? stage === 0 : stage === 4; }
         function stageMaxHealth(side, stage) {
@@ -25596,7 +25596,12 @@
         function doStageTransition(stageName, callback, prevStage = null, nextStage = null) {
             if (window._simHeadless) {   // match simulator: no wipe, just the reset and the next serve
                 roundTransitioning = true; waitingToServe = true;
-                afterFrames(1, () => { resetRound(); hideMessage(); if (callback) callback(); roundTransitioning = false; });
+                if (SIM_RULES.liveTiming) {   // the same frame budget as the live wipe (the AIs' cast rhythm keeps ticking through it)
+                    afterFrames(24, () => { resetRound(); hideMessage(); });
+                    afterFrames(24 + 120 + 24 + 90, () => { if (callback) callback(); roundTransitioning = false; });
+                } else {
+                    afterFrames(1, () => { resetRound(); hideMessage(); if (callback) callback(); roundTransitioning = false; });
+                }
                 return;
             }
             const overlay = window.guiElements?.transitionOverlay;
