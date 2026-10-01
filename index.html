@@ -6528,6 +6528,9 @@
             menuTitle.left = "18%";  // Percentage to account for letterboxing
             menuTitle.top = "120px";
             menuTitle.alpha = 0;  // DOM menu owns this view
+            // RETIRED for good: the DOM menu draws the title. This legacy pixel-font "Dueling Pickles" kept
+            // leaking over matches on Safari/iPhone (alpha writes from old menu paths), so it never renders.
+            menuTitle.isVisible = false;
             menuTitle.zIndex = 500;  // High zIndex to be on top
             guiTexture.addControl(menuTitle);
             window.guiElements.menuTitle = menuTitle;
@@ -6748,7 +6751,6 @@
                 modeSelectOverlay.isVisible = false;
                 // Show menu and title again
                 menuContainer.isVisible = true;
-                if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 1;
                 if (window.guiElements.menuLeftPanel) window.guiElements.menuLeftPanel.isVisible = true;
                 if (window.setDOMMenuVisible) window.setDOMMenuVisible(true);
             });
@@ -18517,7 +18519,6 @@
 
             // Show GUI menu elements
             if (window.guiElements) {
-                if (window.guiElements.menuTitle) window.guiElements.menuTitle.alpha = 1;
                 if (window.guiElements.menuContainer) window.guiElements.menuContainer.isVisible = true;
                 if (window.guiElements.menuLeftPanel) window.guiElements.menuLeftPanel.isVisible = true;
                 if (window.setDOMMenuVisible) window.setDOMMenuVisible(true);
