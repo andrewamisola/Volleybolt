@@ -27262,6 +27262,7 @@
         }
 
         function resetGame() {
+            if (window.Achievements) Achievements.resetMatch();   // quitting mid-match earns nothing; fresh flags
             roundLog = [];
             matchClockFrames = 0;
             presTimers.length = 0;              // an abandoned stage transition's frames never fire into this match
@@ -27359,6 +27360,7 @@
 
             if (combatants.left) combatants.left.towerHealth = playerGateHealth;
             if (combatants.right) combatants.right.towerHealth = aiGateHealth;
+            if (window.Achievements) Achievements.note('roundStart', { stage: currentStage, hp: { left: playerGateHealth, right: aiGateHealth } });
 
             // Reset paddle positions to center
             if (playerPaddle) playerPaddle.position.z = 0;
@@ -29457,6 +29459,7 @@
                     StatTracker.increment('rounds_lost');
                 }
             }
+            if (window.Achievements) Achievements.note('roundEnd', { winnerSide, territoryFalls, roundNo: totalRoundsPlayed, hp: { left: playerHealth, right: aiHealth } });
 
             // Tug of war: win = push forward, lose = pushed back, hopping over destroyed territories
             // (nextStageAfterPush).
@@ -29489,6 +29492,7 @@
                     // Track match win and commit stats
                     if (meSide) StatTracker.increment(winnerSide === meSide ? 'matches_won' : 'matches_lost');
                     StatTracker.commitMatch();
+                    if (window.Achievements) Achievements.evaluateMatchEnd(winnerSide);   // after commit: milestones read the new career
                     // Show victory screen instantly
                     // (No spectate camera reset here: snapping back from a zoomed/turned view read as a jolt. The
                     // cinematic snapshots whatever the camera is and returns to it; the next match's Ready/Go and
@@ -29527,6 +29531,7 @@
                     // Track match loss and commit stats
                     if (meSide) StatTracker.increment(winnerSide === meSide ? 'matches_won' : 'matches_lost');
                     StatTracker.commitMatch();
+                    if (window.Achievements) Achievements.evaluateMatchEnd(winnerSide);   // after commit: milestones read the new career
                     // Show defeat screen instantly
                     // (No spectate camera reset here: snapping back from a zoomed/turned view read as a jolt. The
                     // cinematic snapshots whatever the camera is and returns to it; the next match's Ready/Go and
