@@ -18907,8 +18907,9 @@
                         if (!info || (info.kind !== 'ram' && info.kind !== 'core')) continue;
                         for (const m of info.shownMeshes) {
                             if (!m.getTotalVertices || !m.getTotalVertices() || !m.isEnabled()) continue;
-                            // (the broken gate wall + its columns are one rail-to-rail mesh - included: they shade the
-                            // floor at both rails and the light pours through the gap between them)
+                            // the gate COLUMNS (M_stone) cast; the broken wall chunks (M_wall) don't - you barely see them
+                            // from this camera, so their jagged shadow read as coming from nothing (owner)
+                            if (m.material && m.material.name === 'M_wall') continue;
                             const c = m.clone(m.name + '_psh', null, true);
                             c.parent = null; c.material = psCasterMat; c.layerMask = PS_LAYER; c.isPickable = false;
                             c.useVertexColors = false;   // the baked AO tints would leave grey holes in the shadow
