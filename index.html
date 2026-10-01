@@ -9552,7 +9552,7 @@
                     x0: 16, xRange: 18,        // and toward the sides (|x| past x0)
                     color: [0.10, 0.07, 0.13], max: 0.85,
                     dim: 0.72, desat: 0.22,    // the murky dusk grade (owner likes it); depth comes from the deep shadows
-                    nearHaze: 0.6,             // scene-fog haze added past the NEAR rail (the far side gets it from distance)
+                    nearHaze: 1.0,             // near side takes its far-side mirror's scene fog (1 = exact match)
                 };
                 const EERIE = window.eerieFog = { ...EERIE_DEFAULT };   // each set overrides some (SETS[..].eerie)
                 // + JUICE TINT: the old painted backdrop dimmed/tinted toward the beaming team's colour (blue / red /
@@ -9626,8 +9626,8 @@
                     getUniforms() {
                         const ubo = [{ name: 'eerieA', size: 4, type: 'vec4' }, { name: 'eerieB', size: 4, type: 'vec4' },
                                      { name: 'eerieC', size: 4, type: 'vec4' }, { name: 'eerieT', size: 4, type: 'vec4' },
-                                     { name: 'eerieD', size: 4, type: 'vec4' }, { name: 'eerieF', size: 4, type: 'vec4' }];
-                        let decl = '#ifdef EERIEFOG\nuniform vec4 eerieA;\nuniform vec4 eerieB;\nuniform vec4 eerieC;\nuniform vec4 eerieT;\nuniform vec4 eerieD;\nuniform vec4 eerieF;\n';
+                                     { name: 'eerieD', size: 4, type: 'vec4' }, { name: 'eerieF', size: 4, type: 'vec4' }, { name: 'eerieG', size: 4, type: 'vec4' }, { name: 'eerieH', size: 4, type: 'vec4' }];
+                        let decl = '#ifdef EERIEFOG\nuniform vec4 eerieA;\nuniform vec4 eerieB;\nuniform vec4 eerieC;\nuniform vec4 eerieT;\nuniform vec4 eerieD;\nuniform vec4 eerieF;\nuniform vec4 eerieG;\nuniform vec4 eerieH;\n';
                         for (let i = 0; i < EERIE_NL * 2; i++) { ubo.push({ name: 'eerieL' + i, size: 4, type: 'vec4' }); decl += 'uniform vec4 eerieL' + i + ';\n'; }
                         return { ubo, fragment: decl + '#endif' };
                     }
@@ -9640,6 +9640,9 @@
                         ubo.updateFloat4('eerieD', PUNCH.contrast, PUNCH.sat, PUNCH.detail, PUNCH.detailScale);
                         const fc = scene.fogColor;
                         ubo.updateFloat4('eerieF', fc.r, fc.g, fc.b, EERIE.nearHaze);
+                        const cp = scene.activeCamera ? scene.activeCamera.globalPosition : BABYLON.Vector3.Zero();
+                        ubo.updateFloat4('eerieG', cp.x, cp.y, cp.z, 0);
+                        ubo.updateFloat4('eerieH', scene.fogStart, scene.fogEnd, 0, 0);
                         for (let i = 0; i < EERIE_NL * 2; i++) {
                             const o = i * 4;
                             ubo.updateFloat4('eerieL' + i, eerieLights[o], eerieLights[o + 1], eerieLights[o + 2], eerieLights[o + 3]);
@@ -9695,12 +9698,17 @@
                                 eK = eK * eK * (3.0 - 2.0 * eK);
                                 // murkTint (eerieC.w): 1 = sink into the murk colour, 0 = just darken (keeps the hue - greens stay green)
                                 ${c}.rgb = mix(${c}.rgb, mix(${c}.rgb * 0.22, eerieB.rgb, eerieC.w), eK * eerieB.w);
-                                // NEAR-SIDE HAZE: the scene's distance fog is measured from the camera, so the far treeline
-                                // sinks into purple haze but the near one (close to the camera) barely gets any. Past the
-                                // near rail the same fog colour is added back by depth, so both treelines share the murk.
-                                {
-                                    float eNz = clamp((-vPositionW.z - eerieA.x - 4.0) / 16.0, 0.0, 1.0);
-                                    ${c}.rgb = mix(${c}.rgb, eerieF.rgb, eNz * eerieF.w);
+                                // MIRRORED HAZE: the scene's linear fog is measured from the camera, so the far half sinks
+                                // into purple haze while the near half (close to the camera) gets almost none - the two
+                                // sides of the court never matched. A near-side point instead takes EXACTLY the fog its
+                                // mirror image across the court (z -> -z) gets: c = fog + (c - fog) * f_mirror / f_own.
+                                if (vPositionW.z < 0.0) {
+                                    float eFr = max(eerieH.y - eerieH.x, 0.001);
+                                    float eOwn = clamp((eerieH.y - distance(vPositionW, eerieG.xyz)) / eFr, 0.0, 1.0);
+                                    vec3 eMir = vec3(vPositionW.x, vPositionW.y, -vPositionW.z);
+                                    float eMf = clamp((eerieH.y - distance(eMir, eerieG.xyz)) / eFr, 0.0, 1.0);
+                                    float eK2 = eOwn > 0.001 ? min(1.0, eMf / eOwn) : 1.0;
+                                    ${c}.rgb = mix(eerieF.rgb, ${c}.rgb, mix(1.0, eK2, eerieF.w));
                                 }
                                 // Juice: the backdrop dims + tints toward the beaming team
                                 ${c}.rgb *= eerieT.rgb;
@@ -9739,10 +9747,26 @@
                 };
                 window.rewarpGround = () => warpedGrounds.forEach(setWarpUV);
                 const groundMat = new BABYLON.StandardMaterial('forestGroundMat', scene);
-                const gTex = new BABYLON.Texture('textures/grass_field_seamless.png?v=1', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
+                // LOW-RES copies of the court's grass/dirt (owner: PS1-soft like the flagstone, and smaller features
+                // to match the stage): the image box-filtered down to `res` px, crisp nearest texels.
+                const lowResTex = (url, name, res) => {
+                    const t = new BABYLON.DynamicTexture(name, { width: res, height: res }, scene, true);
+                    t.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
+                    t.wrapU = t.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+                    const img = new Image();
+                    img.onload = () => {
+                        const g = t.getContext();
+                        g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+                        g.drawImage(img, 0, 0, res, res);
+                        t.update();
+                    };
+                    img.src = url;
+                    return t;
+                };
+                const gTex = lowResTex('textures/grass_field_seamless.png?v=1', 'backdropGrassLow', 32);
                 // Same grass as the court floor (floorMat): ~13u tiles, same tint and black-point lift, so the
                 // ground right past the rails continues the stage seamlessly before the murk takes over.
-                gTex.uScale = 10.5; gTex.vScale = 10.5;
+                gTex.uScale = 21; gTex.vScale = 21;   // ~6.7u tiles (half the old size), 32px: chunky PS1 grass
                 groundMat.diffuseTexture = gTex;
                 groundMat.diffuseColor = new BABYLON.Color3(1.0, 0.98, 0.9);
                 groundMat.emissiveColor = new BABYLON.Color3(0.16, 0.16, 0.12);
@@ -9751,8 +9775,8 @@
                 // Dirt patches over it (the lane road's dirt, through a blotchy blurred mask) - the paintings' open
                 // ground is mostly worn earth with grass between.
                 const dirtMat = new BABYLON.StandardMaterial('forestDirtMat', scene);
-                const dTex = new BABYLON.Texture('textures/dirt_road_seamless.png?v=1', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
-                dTex.uScale = 24; dTex.vScale = 24;
+                const dTex = lowResTex('textures/dirt_road_seamless.png?v=1', 'backdropDirtLow', 32);
+                dTex.uScale = 32; dTex.vScale = 32;   // ~4.4u tiles = the lane road's dirt size, 32px
                 dirtMat.diffuseTexture = dTex;
                 dirtMat.specularColor = BABYLON.Color3.Black();
                 dirtMat.emissiveColor = new BABYLON.Color3(0.12, 0.10, 0.07);   // = lane road
@@ -10363,13 +10387,16 @@
                         shadowCol: [0.12, 0.04, 0.2], cast: 0.66, contact: 0.36, len: 1.0, paveTint: [0.36, 0.32, 0.42], cracks: true, shafts: true,
                         build: (R, add, halfD, fires) => {
                             const zF = halfD + 9, zN = -halfD - 13, BX = -19;    // far wall, near wall, breach end
+                            const HALL_SY = 2.6;
                             for (const zw of [zF, zN]) {
-                                for (let x = BX + 4; x < 48; x += 4) add('hall_wall', x, zw, 0, 1, 1, 0, true);
+                                // INSIDE the fortress: full-height hall walls (owner: not knee-high ramparts) - the wall
+                                // module stretched 2.6x tall (~5.7u), pillars and all
+                                for (let x = BX + 4; x < 48; x += 4) add('hall_wall', x, zw, 0, 1, HALL_SY, 0, true);
                                 // the broken end, crumbling toward the breach
-                                add('wall_broken', BX + 2, zw, 0, 1, 1, 0, false);   // not 'facing': mirrored it turns to point at the breach
+                                add('wall_broken', BX + 2, zw, 0, 1, HALL_SY, 0, false);   // not 'facing': mirrored it turns to point at the breach
                                 for (let i = 0; i < 4; i++) add('rubble', BX - 0.5 - R() * 4, zw + (R() - 0.5) * 3, R() * Math.PI * 2, 0.8 + R() * 0.6, 0.8 + R() * 0.5);
                                 // banners on the camera-facing face, every other bay
-                                for (let x = BX + 8; x < 48; x += 8) add('banner', x, zw - 0.45, 0, 1, 1, 2.05, true);
+                                for (let x = BX + 8; x < 48; x += 8) add('banner', x, zw - 0.45, 0, 1.3, 1, 4.6, true);   // hung high on the tall wall
                                 // braziers in front of the wall, fixed fires
                                 for (const bx of [-7, 7, 23]) {
                                     const bz = zw - (zw > 0 ? 1.4 : 1.2);
@@ -19034,6 +19061,12 @@
                 const FREE = { yawMax: 35 * Math.PI / 180, tiltDown: -10 * Math.PI / 180, tiltUp: 15 * Math.PI / 180,
                                zoomMin: 0.55, zoomMax: 1 };
                 const free = { yaw: 0, tilt: 0, zoom: 1 };        // targets (input writes these)
+                // keep the spectator's turn/zoom inside FREE's limits (input calls this after every change)
+                const clampFree = () => {
+                    free.yaw  = Math.max(-FREE.yawMax, Math.min(FREE.yawMax, free.yaw));
+                    free.tilt = Math.max(FREE.tiltDown, Math.min(FREE.tiltUp, free.tilt));
+                    free.zoom = Math.max(FREE.zoomMin, Math.min(FREE.zoomMax, free.zoom));
+                };
                 // TV cam: the classic broadcast tennis shot from behind Blue's baseline, looking down the court at
                 // Red, through a tele-ish PERSPECTIVE lens. Fixed numbers: the TV backdrop painting (and its plate,
                 // exportTVPlate) are made for exactly this camera. The distance fog (tuned for the game camera at
