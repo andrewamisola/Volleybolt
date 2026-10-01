@@ -9551,7 +9551,7 @@
                     z0: 2.5, zRange: 24,       // starts this far past each rail, full over zRange
                     x0: 16, xRange: 18,        // and toward the sides (|x| past x0)
                     color: [0.10, 0.07, 0.13], max: 0.85,
-                    dim: 0.62, desat: 0.08,    // darker but NOT greyed out past the rails (greying is what flattened it)
+                    dim: 0.72, desat: 0.22,    // the murky dusk grade (owner likes it); depth comes from the deep shadows
                 };
                 const EERIE = window.eerieFog = { ...EERIE_DEFAULT };   // each set overrides some (SETS[..].eerie)
                 // + JUICE TINT: the old painted backdrop dimmed/tinted toward the beaming team's colour (blue / red /
@@ -9567,7 +9567,7 @@
                 // Tuned in-game against the textured structures (owner: the backdrops were flat next to them):
                 // contrast + saturation back, painted leaf/bark/rock grain, and the murk DARKENS rather than paints
                 // everything purple (murkTint 0.4), so greens stay green into the shadows.
-                const PUNCH = window.backdropPunch = { contrast: 1.3, sat: 1.15, detail: 0.5, detailScale: 6.0, murkTint: 0.4 };
+                const PUNCH = window.backdropPunch = { contrast: 1.25, sat: 1.05, detail: 0.5, detailScale: 6.0, murkTint: 0.85 };
                 const EERIE_NL = 8;
                 const eerieLights = new Float32Array(EERIE_NL * 8);   // per light: pos.xyz, reach | colour.rgb, -
                 const eerieTint = [1, 1, 1];
@@ -9926,7 +9926,9 @@
                 // strengths (rebakeForest() after changing). treeShade: whole-tree darkening for a tree inside a
                 // neighbour's shadow (reads as the forest interior); treeDark: shadow-map darkness on the props
                 // (0 = black, 1 = none)
-                window.forestShadow = { cast: 0.62, contact: 0.5, treeShade: 0.35, treeDark: 0.35 };
+                // Outdoors matched to the core's deep shade (owner: "how far and deep the shadows run"): darker cast +
+                // contact, ground shadows stretched 1.8x, darker shaded sides on the props.
+                window.forestShadow = { cast: 0.82, contact: 0.65, treeShade: 0.45, treeDark: 0.2, len: 1.8 };
                 // Shadow proxies per model (unit scale, Babylon local axes after import: the Blender +X of the
                 // models lands on Babylon -X). canopy: hc/r/trunk; box: [cx, cz, lx, lz, h] parts; cyl: r, h.
                 const SHAPE = {
@@ -9976,7 +9978,7 @@
                         propAmb.diffuse = amb.diffuse.clone(); propAmb.specular = BABYLON.Color3.Black();
                         propAmb.groundColor = new BABYLON.Color3(0.12, 0.08, 0.16);
                     }
-                    propAmb.intensity = 0.26;
+                    propAmb.intensity = 0.2;
                     propAmb.includedOnlyMeshes = meshes;
                     for (const m of meshes) if (!amb.excludedMeshes.includes(m)) amb.excludedMeshes.push(m);
                 };
@@ -10011,11 +10013,14 @@
                     const SF = { ...window.forestShadow };
                     if (curSet && curSet.def.cast != null) SF.cast = curSet.def.cast;
                     if (curSet && curSet.def.contact != null) SF.contact = curSet.def.contact;
-                    shadowMat.emissiveColor = BABYLON.Color3.FromArray(curSet && curSet.def.shadowCol || [0.035, 0.025, 0.06]);
+                    if (curSet && curSet.def.len != null) SF.len = curSet.def.len;
+                    shadowMat.emissiveColor = BABYLON.Color3.FromArray(curSet && curSet.def.shadowCol || [0.04, 0.02, 0.08]);   // deep dusk purple
                     const L = S.dir;
                     const hl = Math.hypot(L.x, L.z) || 1e-3;
                     const dX = L.x / hl, dZ = L.z / hl;            // where shadows fall on the ground
-                    const tanE = Math.max(0.2, -L.y / hl), sinE = Math.max(0.2, -L.y);
+                    // SF.len stretches the ground shadows (a lower-sun look, like the core's long hall shadows) without
+                    // turning the light that shades the props themselves
+                    const tanE = Math.max(0.2, -L.y / hl) / (SF.len || 1), sinE = Math.max(0.2, -L.y) / Math.sqrt(SF.len || 1);
                     const g = shadowTex.getContext();
                     g.clearRect(0, 0, SH_S, SH_S);
                     const sx = (x) => (x + GW / 2) * SH_K, sz = (z) => (GW / 2 - z) * SH_K;   // CreateGround UVs
@@ -10222,7 +10227,7 @@
                         // Like the painting: the hall sits in deep PURPLE shade (shadows, murk, the stone's cast) and the
                         // breach daylight cuts across it in warm streaks; fine cracks in the floor.
                         eerie: { color: [0.10, 0.045, 0.15], max: 0.6, z0: 7, dim: 0.8, desat: 0.08 }, ground: 'pave', glow: 'breach',
-                        shadowCol: [0.09, 0.025, 0.15], cast: 0.78, contact: 0.6, paveTint: [0.36, 0.32, 0.42], cracks: true, shafts: true,
+                        shadowCol: [0.09, 0.025, 0.15], cast: 0.78, contact: 0.6, len: 1.0, paveTint: [0.36, 0.32, 0.42], cracks: true, shafts: true,
                         build: (R, add, halfD, fires) => {
                             const zF = halfD + 9, zN = -halfD - 13, BX = -19;    // far wall, near wall, breach end
                             for (const zw of [zF, zN]) {
