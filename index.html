@@ -9678,32 +9678,51 @@
                 shadowPlane.material = shadowMat; shadowPlane.isPickable = false;
                 shadowPlane.alphaIndex = 2; // after the dirt patches
                 shadowPlane.setEnabled(false);
-                window.forestShadow = { cast: 0.62, contact: 0.5, treeShade: 0.5 };   // strengths (re-place to rebake)
+                // strengths (rebakeForest() after changing). treeShade: whole-tree darkening for a tree inside a
+                // neighbour's shadow (reads as the forest interior); treeDark: shadow-map darkness on the trees
+                // (0 = black, 1 = none)
+                window.forestShadow = { cast: 0.62, contact: 0.5, treeShade: 0.35, treeDark: 0.35 };
                 // canopy proxies per model (unit scale): centre height, radius, trunk-top height
                 const CANOPY = { tree: { hc: 3.8, r: 1.7, trunk: 2.4 }, pine: { hc: 2.5, r: 1.3, trunk: 0.8 }, rock: { hc: 0.3, r: 0.6, trunk: 0 } };
-                // A forest-only key light (when window.forestSunDir is set): the props stop taking the stage sun and
-                // take this one instead, so their lit/shadowed sides agree with the baked shadows.
-                let propSun = null;
+                // The FOREST'S OWN KEY LIGHT: a copy of the Midfield sun (captured once, so a rebake after a Core
+                // stage - whose sun points elsewhere - still uses Midfield's) that lights ONLY the props; the stage sun
+                // skips them. It carries a shadow map rendered ONCE (the trees never move): trees shade each other
+                // and their own trunks, part-canopy where it falls, at no per-frame cost beyond a lookup. Nothing
+                // else receives it, so the court/towers/wizards are untouched. window.forestSunDir overrides the
+                // direction (testing a back-lit forest).
+                let propSun = null, propSG = null, midSun = null;
                 const applyForestSun = (L, sunL) => {
                     const meshes = Object.values(protos).flat();
                     if (!sunL) return;
-                    if (!window.forestSunDir) {
-                        if (propSun) { propSun.dispose(); propSun = null; }
-                        sunL.excludedMeshes = sunL.excludedMeshes.filter(m => !meshes.includes(m));
-                        return;
-                    }
                     if (!propSun) propSun = new BABYLON.DirectionalLight('forestSun', L.clone(), scene);
                     propSun.direction = L.clone();
-                    propSun.intensity = sunL.intensity; propSun.diffuse = sunL.diffuse.clone(); propSun.specular = BABYLON.Color3.Black();
+                    propSun.position = L.scale(-80);
+                    propSun.intensity = midSun.intensity; propSun.diffuse = midSun.diffuse.clone(); propSun.specular = BABYLON.Color3.Black();
                     propSun.includedOnlyMeshes = meshes;
                     for (const m of meshes) if (!sunL.excludedMeshes.includes(m)) sunL.excludedMeshes.push(m);
+                    if (!propSG) {
+                        propSG = new BABYLON.ShadowGenerator(2048, propSun);
+                        propSG.usePercentageCloserFiltering = true;
+                        propSG.filteringQuality = BABYLON.ShadowGenerator.QUALITY_MEDIUM;
+                        propSG.bias = 0.003; propSG.normalBias = 0.02;
+                        propSG.getShadowMap().refreshRate = BABYLON.RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+                    }
+                    propSG.setDarkness(window.forestShadow.treeDark);
+                    propSG.getShadowMap().renderList = meshes.slice();
+                    for (const m of meshes) m.receiveShadows = true;
+                    // re-render once for the new layout - and again a little later, in case the first pass ran
+                    // before every tree shader had compiled (a render-once map would otherwise stay empty)
+                    const sm = propSG.getShadowMap();
+                    sm.resetRefreshCounter();
+                    for (const ms of [400, 1500, 4000]) setTimeout(() => sm.resetRefreshCounter(), ms);
                 };
                 const bakeShadows = (recs) => {
                     const SF = window.forestShadow;
                     const sunL = scene.getLightByName('sun');
                     // window.forestSunDir: a forest-only sun (props lit + shadows baked from it); else the stage sun
+                    if (!midSun && sunL) midSun = { dir: sunL.direction.clone(), intensity: sunL.intensity, diffuse: sunL.diffuse.clone() };
                     const L = (window.forestSunDir ? window.forestSunDir.clone()
-                             : sunL ? sunL.direction.clone() : new BABYLON.Vector3(-25, -22, 20)).normalize();
+                             : midSun ? midSun.dir.clone() : new BABYLON.Vector3(-25, -22, 20)).normalize();
                     applyForestSun(L, sunL);
                     const hl = Math.hypot(L.x, L.z) || 1e-3;
                     const dX = L.x / hl, dZ = L.z / hl;            // where shadows fall on the ground
@@ -9882,7 +9901,8 @@
                 }
                 // kind: the stage backdrop kind ('forest' | 'territory' | 'core'). Only the forest is built so far.
                 window.setPropsBackdrop = (kind) => { want = kind === 'forest'; apply(); };
-                window.refreshPropsBackdrop = () => { builtFor = null; apply(); };
+                window.refreshPropsBackdrop = () => apply();   // place() rebuilds only if the table depth changed
+                window.rebakeForest = () => { builtFor = null; apply(); };
             }
 
             // ============================================================
