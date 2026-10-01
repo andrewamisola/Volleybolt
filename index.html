@@ -9708,11 +9708,33 @@
 
                 // ---------------- GROUND: grass + dirt patches, and a flagstone sheet for fortress ground ----------------
                 const GW = 140;   // every ground sheet (and the baked layers) covers 140 x 140 around the court
+                // FAKED PERSPECTIVE for the ground textures. The game camera is orthographic, so a tiled texture is the
+                // same size everywhere on screen and the ground reads like flat wallpaper. The backdrop grounds carry a
+                // second UV set warped like a perspective view: texture density grows with depth (k = e^(z/L), far =
+                // +z = up-screen), and the u lines converge toward the far side. Masks / baked layers stay on the
+                // linear UV0 (they're world-mapped); only the surface textures read UV1. L: window.groundPersp.
+                window.groundPersp = 45;
+                const warpedGrounds = [];
+                const setWarpUV = (m) => {
+                    const L = window.groundPersp, pos = m.getVerticesData(BABYLON.VertexBuffer.PositionKind), uv2 = [];
+                    for (let i = 0; i < pos.length; i += 3) {
+                        const x = pos[i], z = pos[i + 2], k = Math.exp(z / L);
+                        uv2.push(x * k / GW + 0.5, L * (k - 1) / GW + 0.5);
+                    }
+                    m.setVerticesData(BABYLON.VertexBuffer.UV2Kind, uv2, true);
+                };
+                const warpGround = (name) => {
+                    const m = BABYLON.MeshBuilder.CreateGround(name, { width: GW, height: GW, subdivisionsX: 8, subdivisionsY: 140, updatable: true }, scene);
+                    setWarpUV(m);
+                    warpedGrounds.push(m);
+                    return m;
+                };
+                window.rewarpGround = () => warpedGrounds.forEach(setWarpUV);
                 const groundMat = new BABYLON.StandardMaterial('forestGroundMat', scene);
                 const gTex = new BABYLON.Texture('textures/grass_field_seamless.png?v=1', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
                 // Same grass as the court floor (floorMat): ~13u tiles, same tint and black-point lift, so the
                 // ground right past the rails continues the stage seamlessly before the murk takes over.
-                gTex.uScale = 10.5; gTex.vScale = 10.5;
+                gTex.uScale = 10.5; gTex.vScale = 10.5; gTex.coordinatesIndex = 1;   // perspective-warped UVs
                 groundMat.diffuseTexture = gTex;
                 groundMat.diffuseColor = new BABYLON.Color3(1.0, 0.98, 0.9);
                 groundMat.emissiveColor = new BABYLON.Color3(0.16, 0.16, 0.12);
@@ -9722,7 +9744,7 @@
                 // ground is mostly worn earth with grass between.
                 const dirtMat = new BABYLON.StandardMaterial('forestDirtMat', scene);
                 const dTex = new BABYLON.Texture('textures/dirt_road_seamless.png?v=1', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
-                dTex.uScale = 24; dTex.vScale = 24;
+                dTex.uScale = 24; dTex.vScale = 24; dTex.coordinatesIndex = 1;
                 dirtMat.diffuseTexture = dTex;
                 dirtMat.specularColor = BABYLON.Color3.Black();
                 dirtMat.emissiveColor = new BABYLON.Color3(0.12, 0.10, 0.07);   // = lane road
@@ -9758,17 +9780,17 @@
                     mask.update();
                     mask.getAlphaFromRGB = true;
                     mask.wrapU = mask.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
-                    mask.uScale = mask.vScale = REP;
+                    mask.uScale = mask.vScale = REP; mask.coordinatesIndex = 1;   // the patches recede with the ground
                     dirtMat.opacityTexture = mask;
                 }
                 dirtMat.zOffset = -1;
                 new EerieFogPlugin(dirtMat);
-                const dirt = BABYLON.MeshBuilder.CreateGround('forestDirt', { width: GW, height: GW }, scene);
+                const dirt = warpGround('forestDirt');
                 dirt.position.y = -0.06;
                 dirt.material = dirtMat; dirt.isPickable = false;
                 dirt.alphaIndex = 1;   // under the paving and the baked shadow layer
                 dirt.setEnabled(false);
-                const ground = BABYLON.MeshBuilder.CreateGround('forestGround', { width: GW, height: GW }, scene);
+                const ground = warpGround('forestGround');
                 ground.position.y = -0.08;   // just under the arena floor's top
                 ground.material = groundMat; ground.isPickable = false;
                 ground.setEnabled(false);
@@ -9783,7 +9805,7 @@
                 const paveMaskTex = new BABYLON.DynamicTexture('backdropPaveMask', { width: 512, height: 512 }, scene, true);
                 paveMaskTex.getAlphaFromRGB = true;
                 paveMat.opacityTexture = paveMaskTex;
-                const pave = BABYLON.MeshBuilder.CreateGround('backdropPave', { width: GW, height: GW }, scene);
+                const pave = warpGround('backdropPave');
                 pave.position.y = -0.05;
                 pave.material = paveMat; pave.isPickable = false;
                 pave.alphaIndex = 1.5;
@@ -9828,6 +9850,7 @@
                     t.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
                     t.wrapU = t.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
                     t.uScale = t.vScale = GW / 6.0;   // 6u per tile -> slabs ~0.6-1.4 x 0.75u, like the painting's
+                    t.coordinatesIndex = 1;           // perspective-warped (the forecourt mask stays on UV0)
                     paveMat.diffuseTexture = t;
                     return (paveTexReady = true);
                 };
@@ -9876,7 +9899,7 @@
                     crackTex.update();
                     crackTex.hasAlpha = true;
                     crackTex.wrapU = crackTex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
-                    crackTex.uScale = crackTex.vScale = GW / 9;
+                    crackTex.uScale = crackTex.vScale = GW / 9; crackTex.coordinatesIndex = 1;
                 }
                 const crackMat = new BABYLON.StandardMaterial('backdropCrackMat', scene);
                 crackMat.disableLighting = true;
@@ -9885,48 +9908,84 @@
                 crackMat.opacityTexture = crackTex;
                 crackMat.zOffset = -1.7;
                 new EerieFogPlugin(crackMat, { lights: false });
-                const cracks = BABYLON.MeshBuilder.CreateGround('backdropCracks', { width: GW, height: GW }, scene);
+                const cracks = warpGround('backdropCracks');
                 cracks.position.y = -0.045;
                 cracks.material = crackMat; cracks.isPickable = false;
                 cracks.alphaIndex = 1.6;
                 cracks.setEnabled(false);
-                // Dusty light shafts over the OUTER floors at the breach end (the lane already has the gate's own
-                // three): tall soft additive planes leaning back toward the breach, same look as the gate shafts.
-                let shaftMatB = null;
-                const outerShafts = [];
-                const ensureShafts = () => {
-                    if (shaftMatB) return true;
-                    const tex = scene.getTextureByName('gateShaftTex');
-                    if (!tex) return false;
-                    shaftMatB = new BABYLON.StandardMaterial('backdropShaftMat', scene);
-                    shaftMatB.disableLighting = true;
-                    shaftMatB.diffuseColor = BABYLON.Color3.Black();
-                    shaftMatB.emissiveColor = new BABYLON.Color3(1.0, 0.8, 0.5);
-                    shaftMatB.opacityTexture = tex;
-                    shaftMatB.alphaMode = BABYLON.Engine.ALPHA_ADD;
-                    shaftMatB.alpha = 0.26;
-                    shaftMatB.backFaceCulling = false;
-                    shaftMatB.fogEnabled = false;
-                    for (let i = 0; i < 8; i++) {
-                        const p = BABYLON.MeshBuilder.CreatePlane('backdropShaft' + i, { width: 1.6 + (i % 3) * 0.7, height: 11 }, scene);
-                        p.material = shaftMatB; p.isPickable = false; p.renderingGroupId = 2;
-                        p.setEnabled(false);
-                        outerShafts.push(p);
+                // SUN RAYS (core): volumetric-looking beams that START at the breached end wall and travel along the
+                // real daylight direction (the core sun of sunFor) down to the floor, landing where the baked floor
+                // streaks are. Each is two crossed soft quads along the ray (one flat, one upright) so it reads from the
+                // high camera as a hazy wedge of light, fading in from the opening and out toward the floor. None in
+                // the lane: the battering ram stands in the breach there and blocks the light (and nothing slants down
+                // onto the players). Additive, depth-tested against the props/structures, built per set.
+                const rayTex = new BABYLON.DynamicTexture('backdropRayTex', { width: 64, height: 256 }, scene, false);
+                {
+                    const g = rayTex.getContext();
+                    g.fillStyle = 'black'; g.fillRect(0, 0, 64, 256);
+                    for (let y = 0; y < 256; y++) {
+                        const t = y / 255;                                          // 0 = the opening, 1 = the floor
+                        const a = Math.min(1, t / 0.12) * Math.pow(1 - t, 0.7) * (0.75 + 0.25 * Math.sin(t * 19.0));
+                        const grd = g.createLinearGradient(0, 0, 64, 0);
+                        grd.addColorStop(0, 'rgba(255,255,255,0)');
+                        grd.addColorStop(0.5, `rgba(255,255,255,${a.toFixed(3)})`);
+                        grd.addColorStop(1, 'rgba(255,255,255,0)');
+                        g.fillStyle = grd; g.fillRect(0, y, 64, 1);
                     }
-                    return true;
-                };
+                    rayTex.update();
+                }
+                const rayMat = new BABYLON.StandardMaterial('backdropRayMat', scene);
+                rayMat.disableLighting = true;
+                rayMat.diffuseColor = BABYLON.Color3.Black();
+                rayMat.emissiveColor = new BABYLON.Color3(1.0, 0.78, 0.48);
+                rayMat.opacityTexture = rayTex; rayTex.getAlphaFromRGB = true;
+                rayMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
+                rayMat.alpha = 0.38;
+                rayMat.backFaceCulling = false;
+                rayMat.disableDepthWrite = true;
+                rayMat.fogEnabled = false;
+                window.sunRays = { alpha: 0.38 };
+                let rayMesh = null;
                 const placeShafts = (set, halfD) => {
-                    const on = set.def.shafts && ensureShafts();
-                    if (!on) { outerShafts.forEach(p => p.setEnabled(false)); return; }
+                    if (rayMesh) { rayMesh.dispose(); rayMesh = null; }
+                    if (!set.def.shafts) return;
+                    const S = sunFor(set), d = S.dir.clone().normalize();
+                    const up = new BABYLON.Vector3(0, 1, 0);
+                    const hW = BABYLON.Vector3.Cross(d, up).normalize();        // across the ray, flat
+                    const vW = BABYLON.Vector3.Cross(hW, d).normalize();        // across the ray, upright
                     const s = set.mirror ? -1 : 1;
-                    const zs = [halfD + 2.5, halfD + 5.5, halfD + 8.5, halfD + 11, -halfD - 3, -halfD - 6.5, -halfD - 10, -halfD - 13];
-                    outerShafts.forEach((p, i) => {
-                        p.position.set(s * (-15.5 + (i % 4) * 2.4), 4.6, zs[i]);
-                        p.rotation.z = s * 0.62;                       // top leans back toward the breach
-                        p.scaling.y = 0.8 + (i % 3) * 0.15;
-                        p.setEnabled(true);
-                    });
+                    let sd = 515; const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+                    const pos = [], uv = [], idx = [];
+                    const quad = (p0, p1, w0, w1, axis) => {
+                        const b = pos.length / 3;
+                        for (const [p, w, v] of [[p0, w0, 0], [p1, w1, 1]]) {
+                            const a = p.add(axis.scale(-w / 2)), c = p.add(axis.scale(w / 2));
+                            pos.push(a.x, a.y, a.z, c.x, c.y, c.z); uv.push(0, 1 - v, 1, 1 - v);
+                        }
+                        idx.push(b, b + 1, b + 3, b, b + 3, b + 2);
+                    };
+                    const zMin = -halfD - 12, zMax = halfD + 8, lane = halfD + 1.2;
+                    for (let i = 0; i < 22; i++) {
+                        const z0 = zMin + r() * (zMax - zMin);
+                        if (Math.abs(z0) < lane) continue;                      // the ram blocks the breach in the lane
+                        const y0 = 5 + r() * 8;                                  // through the tall breach (the keep's broken end)
+                        const p0 = new BABYLON.Vector3(s * (-24 - r() * 5), y0, z0);
+                        const len = y0 / Math.max(0.2, -d.y);                    // down to the floor
+                        const p1 = p0.add(d.scale(len));
+                        const w0 = 1.2 + r() * 2.4, w1 = w0 * (1.6 + r() * 0.9); // broad soft bands, spreading as they travel
+                        quad(p0, p1, w0, w1, hW);
+                        quad(p0, p1, w0 * 0.8, w1 * 0.8, vW);
+                    }
+                    if (!idx.length) return;
+                    rayMesh = new BABYLON.Mesh('backdropSunRays', scene);
+                    const vd = new BABYLON.VertexData();
+                    vd.positions = pos; vd.uvs = uv; vd.indices = idx;
+                    vd.applyToMesh(rayMesh);
+                    rayMesh.material = rayMat; rayMesh.isPickable = false;
+                    rayMesh.alwaysSelectAsActiveMesh = true;
+                    rayMat.alpha = window.sunRays.alpha;
                 };
+                const outerShafts = { forEach: (f) => { if (rayMesh) f(rayMesh); } };   // enable/disable hook used by apply()
                 const rng = (seed) => () => {   // mulberry32: the same stage every load
                     seed = (seed + 0x6D2B79F5) | 0;
                     let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
@@ -10411,8 +10470,7 @@
                     ground.setEnabled(on && layers.grass); dirt.setEnabled(on && layers.grass);
                     pave.setEnabled(on && layers.pave); glow.setEnabled(on && layers.glow);
                     cracks.setEnabled(on && !!cracks._want);
-                    if (!on) outerShafts.forEach(p => p.setEnabled(false));
-                    else if (curSet) placeShafts(curSet, (window.getEffectiveTableDepth ? getEffectiveTableDepth() : 14) / 2);
+                    outerShafts.forEach(p => p.setEnabled(on));
                     shadowPlane.setEnabled(on);
                     for (const kind of KINDS) for (const m of (protos[kind] || [])) m.setEnabled(on && !!m._propUsed);
                     window._propsBackdropActive = on;
@@ -18564,7 +18622,7 @@
                     window._stageFogColor = core ? CORE.fog : null;
                     if (window.backdropLayer && OUT.backdrop) window.backdropLayer.color = (core ? CORE.backdrop : OUT.backdrop).clone();
                     spill.setEnabled(core);
-                    shafts.forEach(p => p.setEnabled(core && !!window._propsBackdropActive));   // the 3D hall needs real beams (a painting carried its own)
+                    shafts.forEach(p => p.setEnabled(false));   // replaced by the 3D hall's breach rays (backdropSunRays)
                     if (core) {
                         const attacker = defender === 'right' ? 'left' : 'right';
                         longShadow = { dir: attacker === 'left' ? 1 : -1, gateX: (attacker === 'left' ? -1 : 1) * (tableWidth / 2), attacker };
