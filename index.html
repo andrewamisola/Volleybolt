@@ -6104,18 +6104,31 @@
                 out.getContext('2d').drawImage(src, x0, 0, w, H, 0, 0, w, H);
                 const res = { url: out.toDataURL('image/png'), aspect: w / H, extFrac: EXT / H, hPx: H };
                 if (blurR === 0) {
-                    // Speed-line mask for this half: the silhouette grown ~34px (lines spill slightly past the
-                    // outline) plus the band strip, same layout/cut as the image so it overlays exactly.
-                    const mc = document.createElement('canvas'); mc.width = W; mc.height = H;
+                    // Speed-line mask for this half: the silhouette grown a little all round, then SLID sideways
+                    // both ways with a fading alpha, so the lines trail well off the pickle (and off its tail end)
+                    // and thin out, instead of stopping at the outline. Plus the band strip. Same layout/cut as the
+                    // image, with MX px of extra room each side (maskPad) for the trails.
+                    const MX = 420;
+                    const mc = document.createElement('canvas'); mc.width = W + 2 * MX; mc.height = H;
                     const mg = mc.getContext('2d');
+                    mg.translate(MX, 0);
                     if (!faceRight) { mg.translate(W, 0); mg.scale(-1, 1); }
-                    dilate(mg, silImg, 34, 32);
+                    dilate(mg, silImg, 30, 24);
+                    const NT = 28;
+                    for (let k = 1; k <= NT; k++) {
+                        const f = k / NT;
+                        mg.globalAlpha = Math.pow(1 - f, 1.5);
+                        mg.drawImage(silImg, P + f * MX, PY);
+                        mg.drawImage(silImg, P - f * MX, PY);
+                    }
+                    mg.globalAlpha = 1;
                     mg.setTransform(1, 0, 0, 1, 0, 0);
                     mg.fillStyle = '#000';
-                    mg.fillRect(takeRight ? 0 : cut, 0, takeRight ? cut : W - cut, H);
-                    const mo = document.createElement('canvas'); mo.width = w; mo.height = H;
-                    mo.getContext('2d').drawImage(mc, x0, 0, w, H, 0, 0, w, H);
+                    mg.fillRect(MX + (takeRight ? 0 : cut), 0, takeRight ? cut : W - cut, H);
+                    const mo = document.createElement('canvas'); mo.width = w + 2 * MX; mo.height = H;
+                    mo.getContext('2d').drawImage(mc, x0, 0, w + 2 * MX, H, 0, 0, w + 2 * MX, H);
                     res.maskUrl = mo.toDataURL('image/png');
+                    res.maskPad = MX / w;                                        // extra room each side, in image widths
                 }
                 return (halfCache[key] = res);
             };
@@ -6137,7 +6150,7 @@
                     img.src = h.url;
                     if (img.decode) img.decode().catch(() => {});      // decoded now, not on the wipe's first frame
                     v.aspect = h.aspect; v.extFrac = h.extFrac; v.hPx = h.hPx; v.colors[lvl] = want;
-                    if (h.maskUrl) v.maskUrl = h.maskUrl;
+                    if (h.maskUrl) { v.maskUrl = h.maskUrl; v.maskPad = h.maskPad || 0; }
                 }
                 return v;
             };
@@ -6262,15 +6275,17 @@
                 const trail = place(trailV, movingRight ? 'left' : 'right');
                 // Speed lines span both ends and the band; masked to band + each grown silhouette.
                 if (linesTileUrl && leadV.maskUrl && trailV.maskUrl) {
-                    const ox = Math.min(0, leadV._left, trailV._left);
-                    const ow = Math.max(REF_W, leadV._left + leadV._w, trailV._left + trailV._w) - ox;
+                    // each mask is the image's box widened by maskPad on both sides (the trail room)
+                    const mL = (v) => v._left - v._w * v.maskPad, mW = (v) => v._w * (1 + 2 * v.maskPad);
+                    const ox = Math.min(0, mL(leadV), mL(trailV));
+                    const ow = Math.max(REF_W, mL(leadV) + mW(leadV), mL(trailV) + mW(trailV)) - ox;
                     const L = wipeLines.style;
                     L.left = ox.toFixed(1) + 'px'; L.top = top.toFixed(1) + 'px';
                     L.width = ow.toFixed(1) + 'px'; L.height = H + 'px';
                     const img = 'linear-gradient(#000,#000), url(' + leadV.maskUrl + '), url(' + trailV.maskUrl + ')';
-                    const size = REF_W + 'px ' + REF_H + 'px, ' + leadV._w.toFixed(1) + 'px ' + H + 'px, ' + trailV._w.toFixed(1) + 'px ' + H + 'px';
-                    const pos = (-ox).toFixed(1) + 'px ' + (-top).toFixed(1) + 'px, ' + (leadV._left - ox).toFixed(1) + 'px 0px, ' +
-                                (trailV._left - ox).toFixed(1) + 'px 0px';
+                    const size = REF_W + 'px ' + REF_H + 'px, ' + mW(leadV).toFixed(1) + 'px ' + H + 'px, ' + mW(trailV).toFixed(1) + 'px ' + H + 'px';
+                    const pos = (-ox).toFixed(1) + 'px ' + (-top).toFixed(1) + 'px, ' + (mL(leadV) - ox).toFixed(1) + 'px 0px, ' +
+                                (mL(trailV) - ox).toFixed(1) + 'px 0px';
                     L.webkitMaskImage = img; L.maskImage = img;
                     L.webkitMaskSize = size; L.maskSize = size;
                     L.webkitMaskPosition = pos; L.maskPosition = pos;
@@ -25716,7 +25731,7 @@
                         // Unlock inputs after the transition and callback complete
                         roundTransitioning = false;
                     });
-                }, 0.25, { max: 1, from: 0.45 });                          // leave with a kick; lighter, later blur
+                }, 0.25, { max: 2, from: 0.2 });                           // leave with a kick; same blur as the way in (owner)
             }
         }
 
