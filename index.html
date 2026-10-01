@@ -986,7 +986,14 @@
         // presNow() adds the accumulator fraction so on-screen motion interpolates between ticks.
         let presFrame = 0;
         const presTimers = [];                  // { at, fn }, sorted by `at` (FIFO within a frame)
+        // MATCH CLOCK: counts the match's fixed 60Hz frames (sim time, not wall-clock): it pauses with the game,
+        // runs at spectate speed, and keeps running through the between-round pauses; stops at game over.
+        // Ticked from the SP fixed step (presTick) and from both online fixed-step loops. Presentation only.
+        let matchClockFrames = 0;
+        function matchClockTick() { if (gameState === 'playing' && !gameOver) matchClockFrames++; }
+        window.getMatchClockFrames = () => matchClockFrames;
         function presTick() {
+            matchClockTick();
             presFrame++;
             while (presTimers.length && presTimers[0].at <= presFrame) presTimers.shift().fn();
         }
@@ -5934,6 +5941,31 @@
             stageNameText.isVisible = false;  // Start hidden (menu state)
             guiTexture.addControl(stageNameText);
             window.guiElements.stageNameText = stageNameText;
+            // Match clock (m:ss) centred under the stage name; follows the stage name's visibility.
+            {
+                const clockText = new BABYLON.GUI.TextBlock();
+                clockText.color = "#cdd8ef";
+                clockText.fontSize = "15px";
+                clockText.fontFamily = "'FF9UI', sans-serif";
+                clockText.top = "122px";
+                clockText.height = "20px";
+                clockText.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
+                clockText.verticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+                clockText.shadowColor = "#000"; clockText.shadowOffsetX = 2; clockText.shadowOffsetY = 2;
+                clockText.isVisible = false;
+                guiTexture.addControl(clockText);
+                window.guiElements.matchClockText = clockText;
+                let lastSecs = -1;
+                scene.onBeforeRenderObservable.add(() => {
+                    const show = stageNameText.isVisible;
+                    if (clockText.isVisible !== show) clockText.isVisible = show;
+                    if (!show) return;
+                    const secs = Math.floor((window.getMatchClockFrames ? getMatchClockFrames() : 0) / 60);
+                    if (secs === lastSecs) return;
+                    lastSecs = secs;
+                    clockText.text = Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
+                });
+            }
             // Overtime bonus "(+N)" in the wipe's orange, hung just right of the (centred) stage name. Its own
             // TextBlock so it can be coloured; it mirrors the name's visibility and text every frame (cheap: it
             // only re-measures when the name or bonus changes).
@@ -24179,6 +24211,7 @@
                     }
                 }
                 runNetworkFrame();
+                matchClockTick();
                 netAccumulator -= TICK_MS;
             }
 
@@ -24386,6 +24419,7 @@
                 }
                 cleanupOldHistory();   // trims localInputHistory (redundancy source) + the unused remote array
 
+                matchClockTick();
                 netAccumulator -= TICK_MS;
             }
 
@@ -25641,6 +25675,7 @@
 
         function resetGame() {
             roundLog = [];
+            matchClockFrames = 0;
             presTimers.length = 0;              // an abandoned stage transition's frames never fire into this match
             if (window.clearWipeBookends) window.clearWipeBookends();
             playerScore = 0;
