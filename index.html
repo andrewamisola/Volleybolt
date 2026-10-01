@@ -887,13 +887,16 @@
         let playerGateHealthByStage = [SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH];
         let aiGateHealthByStage = [SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH, SINGLES_MAX_HEALTH];
 
-        // Gate regeneration system — 50% FLOOR rule (owner design, round 4)
+        // Gate regeneration system — PARTIAL heal toward a 50% cap (owner design, 2026-09-30; was a full
+        // lift to 50% on any return, which made every comeback too strong and matches ran 30-40 rounds).
         let totalRoundsPlayed = 0;
         let lastRoundAtStage = [0, 0, 0, 0, 0];  // When we last played at each stage
-        // GATE_REGEN_FLOOR: a bout without one-shots; wounded towers stay wounded. On returning to a
-        // stage, a gate below this fraction of max is lifted UP TO the floor — never higher; a gate
-        // at/above the floor keeps its stored (wounded) health. Nothing ever regens above 50%.
-        const GATE_REGEN_FLOOR = 0.5;  // 50% of max health — the only floor gates ever regen to
+        // On returning to a stage, a gate below the cap heals GATE_REGEN_STEP of its max per round spent
+        // away, never past the cap; a gate at/above the cap keeps its stored (wounded) health. Every round
+        // moves the stage one step, so a quick bounce (Midfield -> Territory -> Midfield) is 1 round away
+        // = +25%, and a trip to the core and back (3 rounds away) is back up to the 50% cap.
+        const GATE_REGEN_FLOOR = 0.5;   // the cap: nothing ever regens above 50% of max
+        const GATE_REGEN_STEP = 0.25;   // heal per round away, as a fraction of max
 
         let ball, playerPaddle, aiPaddle;
         // Doubles (M1): back-row paddle meshes, created lazily by ensureDoublesPaddles() on the
@@ -25284,12 +25287,11 @@
             }
         }
 
-        // Gate health on returning to a stage — the 50% FLOOR rule (owner design, round 4:
-        // "a bout without one-shots; wounded towers stay wounded"). A gate below 50% of max is
-        // lifted UP TO the 50% floor; a gate already at/above 50% keeps its stored (wounded)
-        // health — NOTHING ever regens above 50%. No per-round scaling, no full heal. Deterministic
-        // (derived from shared state only). Applies on stage RETURN (roundsAway > 0); consecutive
-        // rounds at the same stage (roundsAway === 0) persist health unchanged.
+        // Gate health on returning to a stage: a gate below 50% of max heals 25% of max per round spent
+        // away, capped at 50%; a gate already at/above 50% keeps its stored (wounded) health. NOTHING
+        // ever regens above 50%. Same rule for both sides (symmetric). Deterministic (derived from shared
+        // state only). Applies on stage RETURN (roundsAway > 0); consecutive rounds at the same stage
+        // (roundsAway === 0) persist health unchanged.
         function getGateHealthWithRegen(healthArray, stage, roundsAway, side) {
             const storedHealth = healthArray[stage];
             if (isOwnCore(side, stage)) return storedHealth;   // the core relic never regenerates
@@ -25298,8 +25300,10 @@
                 : (totalRoundsPlayed - lastRoundAtStage[stage]);
 
             if (roundsSinceLastVisit > 0) {
-                const floor = Math.floor(GATE_REGEN_FLOOR * stageMaxHealth(side, stage));   // 50% of this gate's max (integer HP)
-                const finalHealth = Math.max(storedHealth, floor);            // lift to floor, never above
+                const max = stageMaxHealth(side, stage);
+                const cap = Math.floor(GATE_REGEN_FLOOR * max);                 // 50% of this gate's max (integer HP)
+                const heal = Math.floor(GATE_REGEN_STEP * max * roundsSinceLastVisit);
+                const finalHealth = storedHealth >= cap ? storedHealth : Math.min(cap, storedHealth + heal);
                 healthArray[stage] = finalHealth;  // Update stored health
                 return finalHealth;
             }
@@ -25338,9 +25342,8 @@
                 c.moveDir = 0;
             }
 
-            // MOBA-style: restore gate health via the 50% FLOOR rule (round 4)
-            // On returning to this stage, sub-50% gates lift to the 50% floor; wounded gates
-            // at/above 50% stay wounded. Same rule for both gates and both modes.
+            // MOBA-style: partial gate heal on returning to this stage (25% per round away, capped at 50%;
+            // gates at/above 50% stay wounded). Same rule for both gates and both modes.
             const roundsAway = totalRoundsPlayed - lastRoundAtStage[currentStage];
             const playerGateHealth = getGateHealthWithRegen(playerGateHealthByStage, currentStage, roundsAway, 'left');
             const aiGateHealth = getGateHealthWithRegen(aiGateHealthByStage, currentStage, roundsAway, 'right');
