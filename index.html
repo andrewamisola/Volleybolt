@@ -10071,9 +10071,14 @@
                     // Outdoors: the stage sun's compass direction, but sitting LOW over the backdrop (window.forestSunElev
                     // degrees above the horizon; the stage sun is ~35) - a late-dusk sun that rakes long shadows across
                     // the clearings. Only the backdrop takes it; the court lighting is untouched.
+                    // Compass (owner): Midfield = the sun dead centre behind the camera (shadows run straight up-screen);
+                    // a territory = the sun swung to one side, as if the camera had travelled along the lane under a
+                    // fixed sky - moving right toward Red puts the sun on the left (light travels +x), toward Blue on
+                    // the right. window.forestSunSwing = that swing in degrees.
                     if (!window.forestSunDir) {
-                        const m = midSun.dir, hl = Math.hypot(m.x, m.z) || 1, e = (window.forestSunElev || 16) * Math.PI / 180;
-                        return { dir: new BABYLON.Vector3(m.x / hl * Math.cos(e), -Math.sin(e), m.z / hl * Math.cos(e)),
+                        const e = (window.forestSunElev || 16) * Math.PI / 180;
+                        const sw = set.kind === 'territory' ? (set.mirror ? -1 : 1) * (window.forestSunSwing || 32) * Math.PI / 180 : 0;
+                        return { dir: new BABYLON.Vector3(Math.sin(sw) * Math.cos(e), -Math.sin(e), Math.cos(sw) * Math.cos(e)),
                                  intensity: midSun.intensity * 1.15, diffuse: midSun.diffuse.clone() };
                     }
                     return { dir: (window.forestSunDir ? window.forestSunDir.clone() : midSun.dir.clone()).normalize(),
