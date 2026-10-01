@@ -461,6 +461,24 @@
                 continue;
             }
 
+            // CHILL DILL lazy homing (owner design 2026-10-01): it steers toward the wizard on the side it's
+            // flying at, aiming where a hit actually counts (the shield's Z offset), with a CAPPED sideways
+            // acceleration and speed - a still or drifting target gets frozen, a sharp late sidestep still
+            // slips it, and a head-on cast still cancels it. Pure +-*/ and comparisons: rollback-safe.
+            const H = ctx.consts && ctx.consts.frostHoming;
+            if (H && proj.type === 'frostbolt') {
+                const tgt = proj.velX > 0 ? combatants.right : combatants.left;
+                if (tgt) {
+                    const aimZ = (tgt.paddleZ || 0) - ((ctx.consts.arc && ctx.consts.arc.ZPERSP) || 0);
+                    let want = (aimZ - proj.z) * H.gain;
+                    if (want > H.maxLat) want = H.maxLat; else if (want < -H.maxLat) want = -H.maxLat;
+                    let dv = want - proj.velZ;
+                    const dmax = H.accel * dt;
+                    if (dv > dmax) dv = dmax; else if (dv < -dmax) dv = -dmax;
+                    proj.velZ += dv;
+                }
+            }
+
             // Move projectile (pure sim position; mesh is mirrored at the end of the loop)
             proj.x += proj.velX * dt;
             proj.z += proj.velZ * dt;

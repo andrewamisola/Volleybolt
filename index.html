@@ -761,7 +761,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=46-clash-mana-overtime"></script>
+    <script type="module" src="js/sim.js?v=47-chill-dill-homing"></script>
 
     <script>
         // Build identifier for bug reports (audit #6). Date-based: bump on every player-facing
@@ -858,7 +858,8 @@
         const SIM_RULES_DEFAULT = { lanes: 'moba', defenderMana: true, overtime: true, territoryHp: 0, overtimeStart: 10,
                                     aiPath: 'mixed', phaseSide: 'alt',
                                     liveSalts: false,
-                                    liveTiming: false };   // true: between rounds, wait the live wipe's frames (in 23 + 1 + hold 120 + out 24 + prep 90)   // true: keep the live game's fixed AI salts (vary only the sim RNG + ball ids)   // spectate AI-driver experiments (see runSinglePlayerFrame)   // territoryHp 0 = TERRITORY_HP
+                                    liveTiming: false,
+                                    frostHoming: true };   // Chill Dill lazy homing (false = the old straight shot, for A/B)   // true: between rounds, wait the live wipe's frames (in 23 + 1 + hold 120 + out 24 + prep 90)   // true: keep the live game's fixed AI salts (vary only the sim RNG + ball ids)   // spectate AI-driver experiments (see runSinglePlayerFrame)   // territoryHp 0 = TERRITORY_HP
         const SIM_RULES = { ...SIM_RULES_DEFAULT };
         window.SIM_RULES = SIM_RULES;
         window.SIM_RULES_DEFAULT = SIM_RULES_DEFAULT;
@@ -1071,6 +1072,12 @@
         // its block arc. Shared so the model AND its on-body VFX (freeze crystal, juice aura, ice light)
         // move together — a left/player wizard shifts -MODEL_BACK in X, a right/AI wizard +MODEL_BACK.
         const MODEL_BACK = 0.6;
+
+        // CHILL DILL lazy homing (owner design 2026-10-01; js/sim.js updateNetworkProjectiles): sideways steering
+        // toward the targeted wizard. gain = how hard it wants to close the Z gap (1/s), maxLat = its top sideways
+        // speed (u/s), accel = how fast it can change that (u/s^2) - the "lazy" part: it can't follow a sharp, late
+        // sidestep. It flies at 36 u/s, so a full crossing is ~0.55s.
+        const CHILL_DILL_HOMING = { gain: 4.0, maxLat: 7.0, accel: 30.0 };
         const modelBackFor = (side) => (side === 'left' ? -MODEL_BACK : MODEL_BACK);
 
         // Projectile system (replaces single ball)
@@ -18348,9 +18355,18 @@
             // clock), with no rendering, until the match ends or maxFrames pass. Returns frames run.
             window._simRunFrames = (maxFrames) => {
                 let n = 0;
+                const st = window._simStats;   // optional per-match counters (Chill Dill casts / freezes)
                 while (n < maxFrames && gameState === 'playing' && !gameOver) {
                     runSinglePlayerFrame(FIXED_DT);
                     presTick();
+                    if (st) {
+                        for (const p of projectiles) if (p.type === 'frostbolt' && !st.seen.has(p.id)) { st.seen.add(p.id); st.frostCasts++; }
+                        for (const k of ['left', 'right']) {
+                            const ft = (combatants[k] && combatants[k].freezeTime) || 0;
+                            if (ft > (st.lastFt[k] || 0) + 0.5) st.frozen++;
+                            st.lastFt[k] = ft;
+                        }
+                    }
                     n++;
                 }
                 return n;
@@ -22809,12 +22825,15 @@
                 specPaused = true;                                 // the live loop must not step it between chunks
                 window._simSkipPres = window._simPresOn ? false : true;   // _simPresOn: dev switch to A/B the skip
                 sim = { seed, frames: 0 };
+                window._simStats = { frostCasts: 0, frozen: 0, lastFt: {}, seen: new Set() };
             };
             const result = () => ({
                 seed: sim.seed, winner: gameOver ? (currentStage >= 4 ? 'left' : 'right') : null,
                 rounds: totalRoundsPlayed, frames: sim.frames, minutes: +(sim.frames / 3600).toFixed(1),
                 stages: window._simTrace.join(''), log: roundLog.map(w => w === 'left' ? 'B' : 'R').join(''),
                 territoriesDown: territoryDown.map((v, i) => v ? i : -1).filter(i => i >= 0),
+                frostCasts: window._simStats ? window._simStats.frostCasts : 0,
+                frozen: window._simStats ? window._simStats.frozen : 0,
             });
             const end = () => {
                 if (sfxSaved) { Object.assign(ToneSFX, sfxSaved); sfxSaved = null; }
@@ -24485,7 +24504,8 @@
             return {
                 projectiles, combatants, abilities, pvpParryState, isResimulating,
                 consts: { parryWindow, parryFailCooldown, parrySuccessCooldown, parryHitboxExtend, manaRegenTime, juice: window.JUICE, overdrive: window.OVERDRIVE, arc: BLOCK_ARC, maxTowerHealth: maxTowerHealth, teamSize: teamSize,
-                          dmgBonus: overtimeDamageBonus() },
+                          dmgBonus: overtimeDamageBonus(),
+                          frostHoming: SIM_RULES.frostHoming ? CHILL_DILL_HOMING : null },
                 deps: SIM_DEPS,
                 backInputs: null,  // Task 5's doubles input driver fills this in; sim treats null as "no back wizards act"
             };
