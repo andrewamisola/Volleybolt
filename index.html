@@ -9713,33 +9713,63 @@
                     const cx = (x) => (x + SH_W / 2) * SH_K, cy = (z) => (SH_W / 2 - z) * SH_K;   // CreateGround UVs
                     const ang = Math.atan2(-dZ, dX);                                              // canvas y = -z
                     const all = [...recs.tree, ...recs.pine, ...recs.rock];
-                    const blob = (x, z, rx, ry, a, rot) => {        // soft elliptical shadow, alpha a at the centre
-                        g.save();
-                        g.translate(cx(x), cy(z)); g.rotate(rot); g.scale(rx / ry, 1);
-                        const R = ry * SH_K;
-                        const grd = g.createRadialGradient(0, 0, 0, 0, 0, R);
-                        grd.addColorStop(0, `rgba(0,0,0,${a})`); grd.addColorStop(0.55, `rgba(0,0,0,${a * 0.8})`); grd.addColorStop(1, 'rgba(0,0,0,0)');
-                        g.fillStyle = grd; g.beginPath(); g.arc(0, 0, R, 0, Math.PI * 2); g.fill();
-                        g.restore();
+                    // Cast shadows are drawn as SOLID silhouettes on their own layer (overlaps merge like real shadows
+                    // instead of stacking darker), then laid down once at SF.cast. Shapes follow each model: a pine's
+                    // cone throws a pointed spike, the round tree a lumpy canopy, a rock an oval.
+                    const cast = document.createElement('canvas'); cast.width = cast.height = SH_S;
+                    const cg = cast.getContext('2d');
+                    cg.fillStyle = '#000';
+                    const P = (x, z) => [cx(x), cy(z)];
+                    const disc = (x, z, rx, ry, rot) => {        // a sun-stretched disc (sphere shadow) on the cast layer
+                        cg.save(); cg.translate(cx(x), cy(z)); cg.rotate(rot); cg.scale(rx / ry, 1);
+                        cg.beginPath(); cg.arc(0, 0, ry * SH_K, 0, Math.PI * 2); cg.fill(); cg.restore();
                     };
+                    const pX = -dZ, pZ = dX;                      // across the light
                     for (const r of all) {
                         const c = CANOPY[r.kind];
-                        const hc = Math.max(0.15, c.hc * r.sc * r.sy + r.y), rad = c.r * r.sc;
-                        const off = hc / tanE;
-                        // cast shadow of the canopy (sun-thrown ellipse) + the trunk's streak to it
-                        blob(r.x + dX * off, r.z + dZ * off, rad / sinE, rad, SF.cast, ang);
-                        if (c.trunk && r.y >= 0) {
-                            const t = c.trunk * r.sc * r.sy / tanE;
-                            g.strokeStyle = `rgba(0,0,0,${SF.cast * 0.7})`; g.lineWidth = Math.max(2, 0.22 * r.sc * SH_K); g.lineCap = 'round';
-                            g.beginPath(); g.moveTo(cx(r.x), cy(r.z)); g.lineTo(cx(r.x + dX * t), cy(r.z + dZ * t)); g.stroke();
+                        const sc = r.sc, h = (v) => (v * sc * r.sy + r.y) / tanE;   // ground offset of a point at model height v
+                        if (r.kind === 'pine') {
+                            // cone: base ring (h 0.8, r 1.3) to apex (h 5.9) -> a spike pointing away from the sun
+                            const bo = Math.max(0, h(0.8)), rr = 1.3 * sc, ao = h(5.9);
+                            const bx = r.x + dX * bo, bz = r.z + dZ * bo;
+                            disc(bx, bz, rr, rr, 0);
+                            cg.beginPath();
+                            cg.moveTo(...P(bx + pX * rr, bz + pZ * rr));
+                            cg.lineTo(...P(r.x + dX * ao, r.z + dZ * ao));
+                            cg.lineTo(...P(bx - pX * rr, bz - pZ * rr));
+                            cg.closePath(); cg.fill();
+                        } else if (r.kind === 'tree') {
+                            // main canopy + two satellite lumps (placed by yaw, like the model's side blobs)
+                            const rad = c.r * sc, o = Math.max(0, h(c.hc));
+                            const mx = r.x + dX * o, mz = r.z + dZ * o;
+                            disc(mx, mz, rad / sinE, rad, ang);
+                            for (const k of [0, 1]) {
+                                const a = r.yaw + k * 2.4, lr = rad * 0.6, lo = Math.max(0, h(c.hc - 0.6));
+                                const lx = r.x + Math.cos(a) * rad * 0.75 + dX * lo, lz = r.z + Math.sin(a) * rad * 0.75 + dZ * lo;
+                                disc(lx, lz, lr / sinE, lr, ang);
+                            }
+                        } else {
+                            const rad = c.r * sc * Math.min(1, 0.6 + r.sy * 0.4), o = h(c.hc);
+                            disc(r.x + dX * o * 0.5, r.z + dZ * o * 0.5, rad * (1 + 0.6 * (1 / sinE - 1)), rad, ang);
                         }
-                        // contact darkness right under it (ambient occlusion of the forest floor)
-                        blob(r.x, r.z, rad * 1.3, rad * 1.3, SF.contact, 0);
+                        // trunk streak to the canopy
+                        if (c.trunk && r.y >= 0) {
+                            const t = h(c.trunk);
+                            cg.strokeStyle = '#000'; cg.lineWidth = Math.max(2, 0.22 * sc * SH_K); cg.lineCap = 'round';
+                            cg.beginPath(); cg.moveTo(cx(r.x), cy(r.z)); cg.lineTo(cx(r.x + dX * t), cy(r.z + dZ * t)); cg.stroke();
+                        }
                     }
-                    // soften: blur a copy back in
-                    const tmp = document.createElement('canvas'); tmp.width = tmp.height = SH_S;
-                    tmp.getContext('2d').drawImage(g.canvas, 0, 0);
-                    g.clearRect(0, 0, SH_S, SH_S); g.filter = 'blur(4px)'; g.drawImage(tmp, 0, 0); g.filter = 'none';
+                    // contact darkness right under each prop (soft AO of the forest floor) - this one may stack
+                    for (const r of all) {
+                        const rad = CANOPY[r.kind].r * r.sc * 1.3, R = rad * SH_K;
+                        const grd = g.createRadialGradient(cx(r.x), cy(r.z), 0, cx(r.x), cy(r.z), R);
+                        grd.addColorStop(0, `rgba(0,0,0,${SF.contact})`); grd.addColorStop(0.4, `rgba(0,0,0,${SF.contact})`); grd.addColorStop(1, 'rgba(0,0,0,0)');
+                        g.fillStyle = grd; g.beginPath(); g.arc(cx(r.x), cy(r.z), R, 0, Math.PI * 2); g.fill();
+                    }
+                    // the merged silhouettes, edges just anti-aliased (readable shapes, not mush)
+                    g.filter = 'blur(1.2px)'; g.globalAlpha = SF.cast;
+                    g.drawImage(cast, 0, 0);
+                    g.filter = 'none'; g.globalAlpha = 1;
                     shadowTex.update();
                     // per-instance shade: is this canopy centre in another canopy's shadow?
                     const cent = all.map(r => { const c = CANOPY[r.kind]; return { x: r.x, y: Math.max(0.15, c.hc * r.sc * r.sy + r.y), z: r.z, rad: c.r * r.sc }; });
@@ -9776,7 +9806,7 @@
                     const recs = { tree: [], pine: [], rock: [] };   // parallel to mats: what was placed, for the bake
                     const add = (kind, x, z, yaw, sc, sy, y) => {
                         mats[kind].push(M(x, z, yaw, sc, sy, y));
-                        recs[kind].push({ kind, x, z, sc, sy: sy || 1, y: y || 0 });
+                        recs[kind].push({ kind, x, z, yaw, sc, sy: sy || 1, y: y || 0 });
                     };
                     // Trees: far band (z > 0 = up-screen) and near band (z < 0), jittered grid.
                     const CELL = 3.4;
