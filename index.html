@@ -9400,7 +9400,7 @@
                 window._backdropMirror = !!mirror && tex !== BACKDROPS.forest;
                 window.alignBackdrop();
                 if (window.updateBackdropProxy) updateBackdropProxy(BACKDROPS[kind] ? kind : 'forest', window._backdropMirror);
-                if (window.refreshPropsBackdrop) { setPropsBackdrop(BACKDROPS[kind] ? kind : 'forest'); refreshPropsBackdrop(); }
+                if (window.setPropsBackdrop) setPropsBackdrop(BACKDROPS[kind] ? kind : 'forest', !!mirror);
             };
 
             // ============================================================
@@ -9518,43 +9518,54 @@
             }
 
             // ============================================================
-            // 3D FOREST PROPS (replace the painted forest backdrop on Midfield)
+            // 3D STAGE BACKDROPS (replace the painted backdrops) - one SET per stage
             // ============================================================
-            // One tree, one pine and one rock (tools/blender/build_props.py) are loaded ONCE and drawn as
-            // thin instances: a whole forest is 3 meshes' worth of draw calls. Placement is a seeded
-            // jittered grid in two bands (past the far rail, and far enough past the near rail that the
-            // canopies never cover the court in the game view), with random yaw / scale. A flat ground sheet
-            // under everything replaces the painting's ground. Because it's real geometry it works from any
-            // camera (TV cam, orbits), so the painting and its proxy step aside while it's shown.
-            // Presentation only - never read by the sim.
+            // forest (Midfield), territory and core (each built for a defender on the right and mirrored for a
+            // blue defender). A handful of low-poly props (tools/blender/build_props*.py) are loaded ONCE and
+            // drawn as thin instances, so a whole stage is a few meshes' worth of draw calls. Each set has its own
+            // layout, ground (grass + dirt patches / flagstone), sun (props are lit and shadows are baked from the
+            // stage's REAL key light: the Midfield sun outdoors, the low breach light inside the core), murk
+            // colour and fixed light sources (tower torches, braziers). Real geometry works from any camera (TV
+            // cam, orbits), so the paintings and their proxy step aside. Presentation only - never read by the sim.
             {
-                const PROP_FILES = { tree: 'tree.glb?v=1', pine: 'pine.glb?v=1', rock: 'rock.glb?v=1' };
+                const PROP_FILES = {
+                    tree: 'tree.glb?v=1', pine: 'pine.glb?v=1', rock: 'rock.glb?v=1',
+                    stump: 'stump.glb?v=1', guard_tower: 'guard_tower.glb?v=1', hall_wall: 'hall_wall.glb?v=1',
+                    banner: 'banner.glb?v=1', brazier: 'brazier.glb?v=1', rubble: 'rubble.glb?v=1', wall_broken: 'wall_broken.glb?v=1',
+                };
+                const KINDS = Object.keys(PROP_FILES);
                 window.refreshEerieFog = () => scene.markAllMaterialsAsDirty(BABYLON.Constants.MATERIAL_AllDirtyFlag);
                 const protos = {};            // kind -> [meshes baked to world space at the origin]
-                let loaded = 0, want = true, builtFor = null;   // the boot backdrop is the forest
-                // EERIE FOG: the painting's dark dusk vignette, rebuilt in the world. Backdrop surfaces (ground +
-                // props, never the court) are dimmed/desaturated, then sink toward a near-black purple the
+                let loaded = 0, failed = 0, wantKey = 'forest', builtKey = null;   // the boot backdrop is the forest
+                const flameMats = [];
+
+                // EERIE FOG: the paintings' dark dusk vignette, rebuilt in the world. Backdrop surfaces (ground +
+                // props, never the court) are dimmed/desaturated, then sink toward a near-black murk colour the
                 // further they are from the court - past the rails (|z|) and toward the screen sides (|x|) - so
-                // the screen edges and corners fall into murk like the painting, wherever the camera looks.
-                // Per-pixel, after scene fog. Live-tunable: window.eerieFog (then nothing to rebuild).
-                const EERIE = window.eerieFog = {
+                // the screen edges and corners fall into murk like the paintings, wherever the camera looks.
+                // Per-pixel, after scene fog. Live-tunable: window.eerieFog (each set sets its colour).
+                const EERIE_DEFAULT = {
                     z0: 2.5, zRange: 24,       // starts this far past each rail, full over zRange
                     x0: 16, xRange: 18,        // and toward the sides (|x| past x0)
                     color: [0.10, 0.07, 0.13], max: 0.8,
-                    dim: 0.8, desat: 0.25,     // the painting's murky grade, ramping in past the rails
+                    dim: 0.8, desat: 0.25,     // the paintings' murky grade, ramping in past the rails
                 };
+                const EERIE = window.eerieFog = { ...EERIE_DEFAULT };   // each set overrides some (SETS[..].eerie)
                 // + JUICE TINT: the old painted backdrop dimmed/tinted toward the beaming team's colour (blue / red /
                 //   purple when both) through backdropLayer.color; the 3D backdrop takes the very same tint (the
                 //   ratio of that live colour to its original) as a multiplier here.
-                // + LIGHT THROUGH THE MURK: the spell lights (fireballs, Juice beams + charge orbs) already light the
-                //   props for real, but the dusk murk swallows them past the rails. The strongest few are passed in
-                //   and added back on top, scaled by the surface's own lit colour, so nearby trees, rocks and ground
-                //   visibly catch the fire / beam glow. The shadow layer opts out (lights: false).
-                const EERIE_NL = 6;
+                // + LIGHT THROUGH THE MURK: the spell lights (fireballs, Juice beams + charge orbs) light the props
+                //   for real, but the murk swallows them past the rails; the strongest few are added back on top,
+                //   scaled by the surface's own lit colour, so nearby props visibly catch the glow. The set's own
+                //   fixed fires (tower torches, braziers) go through the same path, flickering. The shadow layer
+                //   opts out (lights: false).
+                const EERIE_NL = 8;
                 const eerieLights = new Float32Array(EERIE_NL * 8);   // per light: pos.xyz, reach | colour.rgb, -
                 const eerieTint = [1, 1, 1];
+                let setLights = [];                                   // the shown set's fixed fires
                 scene.onBeforeRenderObservable.add(() => {
                     if (!window._propsBackdropActive) return;
+                    const t = performance.now() / 1000;
                     // Juice tint: ratio of the live backdrop colour to its original
                     const d = window._odBgDim;
                     if (d && d.cur && d.origColor) {
@@ -9562,23 +9573,34 @@
                         eerieTint[1] = d.cur.g / Math.max(0.01, d.origColor.g);
                         eerieTint[2] = d.cur.b / Math.max(0.01, d.origColor.b);
                     } else { eerieTint[0] = eerieTint[1] = eerieTint[2] = 1; }
-                    // the strongest spell lights this frame
                     const picks = [];
+                    // the set's fires (flickering; never culled by spell lights - they're listed first)
+                    for (let i = 0; i < setLights.length; i++) {
+                        const L = setLights[i];
+                        const fl = 0.86 + 0.09 * Math.sin(t * 9.1 + i * 2.3) + 0.05 * Math.sin(t * 23.7 + i * 5.1);
+                        picks.push({ x: L.x, y: L.y, z: L.z, reach: L.reach, r: L.col[0] * L.w * fl, g: L.col[1] * L.w * fl, b: L.col[2] * L.w * fl, w: 99 });
+                    }
+                    // the strongest spell lights this frame
                     for (const l of scene.lights) {
                         if (!(l instanceof BABYLON.PointLight) || !l.isEnabled() || l.intensity <= 0) continue;
                         const n = l.name;
                         const fire = n.startsWith('fireLight_');
                         const k = fire ? 0.045 : /_bLight\d/.test(n) ? 0.07 : /_orbLight$/.test(n) ? 0.11 : 0;   // tuned in-game
                         if (!k) continue;
-                        picks.push({ l, w: l.intensity * k, reach: fire ? l.range * 1.1 : l.range * 0.8 });
+                        const q = l.getAbsolutePosition(), w = l.intensity * k;
+                        picks.push({ x: q.x, y: q.y, z: q.z, reach: fire ? l.range * 1.1 : l.range * 0.8,
+                                     r: l.diffuse.r * w, g: l.diffuse.g * w, b: l.diffuse.b * w, w });
                     }
                     picks.sort((a, b) => b.w - a.w);
                     eerieLights.fill(0);
                     for (let i = 0; i < Math.min(EERIE_NL, picks.length); i++) {
-                        const { l, w, reach } = picks[i], q = l.getAbsolutePosition(), o = i * 8;
-                        eerieLights[o] = q.x; eerieLights[o + 1] = q.y; eerieLights[o + 2] = q.z; eerieLights[o + 3] = reach;
-                        eerieLights[o + 4] = l.diffuse.r * w; eerieLights[o + 5] = l.diffuse.g * w; eerieLights[o + 6] = l.diffuse.b * w;
+                        const p = picks[i], o = i * 8;
+                        eerieLights[o] = p.x; eerieLights[o + 1] = p.y; eerieLights[o + 2] = p.z; eerieLights[o + 3] = p.reach;
+                        eerieLights[o + 4] = p.r; eerieLights[o + 5] = p.g; eerieLights[o + 6] = p.b;
                     }
+                    // flame meshes flicker with them
+                    const f = 0.85 + 0.15 * Math.sin(t * 11.3) * Math.sin(t * 4.7 + 1.1);
+                    for (const m of flameMats) m.emissiveColor.set(1.0 * f, 0.62 * f, 0.26 * f);
                 });
                 window.eerieLightGain = 1.0;
                 class EerieFogPlugin extends BABYLON.MaterialPluginBase {
@@ -9635,7 +9657,7 @@
                                 // Juice: the backdrop dims + tints toward the beaming team
                                 ${c}.rgb *= eerieT.rgb;
                                 #ifdef EERIELIGHTS
-                                // spell light cutting through the murk (reflected off the surface's own colour)
+                                // spell light / fixed fires cutting through the murk (reflected off the surface's own colour)
                                 vec3 eAdd = vec3(0.0);
                                 ${lightCode}
                                 ${c}.rgb += (eBase * 1.6 + vec3(0.04)) * eAdd * eerieC.z;
@@ -9645,6 +9667,9 @@
                         ` };
                     }
                 }
+
+                // ---------------- GROUND: grass + dirt patches, and a flagstone sheet for fortress ground ----------------
+                const GW = 140;   // every ground sheet (and the baked layers) covers 140 x 140 around the court
                 const groundMat = new BABYLON.StandardMaterial('forestGroundMat', scene);
                 const gTex = new BABYLON.Texture('textures/grass_field_seamless.png?v=1', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
                 // Same grass as the court floor (floorMat): ~13u tiles, same tint and black-point lift, so the
@@ -9655,8 +9680,8 @@
                 groundMat.emissiveColor = new BABYLON.Color3(0.16, 0.16, 0.12);
                 groundMat.specularColor = BABYLON.Color3.Black();
                 new EerieFogPlugin(groundMat);
-                // Dirt patches over it (the lane road's dirt, through a blotchy blurred mask) - the painting's
-                // open ground is mostly worn earth with grass between.
+                // Dirt patches over it (the lane road's dirt, through a blotchy blurred mask) - the paintings' open
+                // ground is mostly worn earth with grass between.
                 const dirtMat = new BABYLON.StandardMaterial('forestDirtMat', scene);
                 const dTex = new BABYLON.Texture('textures/dirt_road_seamless.png?v=1', scene, false, true, BABYLON.Texture.NEAREST_NEAREST_MIPLINEAR);
                 dTex.uScale = 24; dTex.vScale = 24;
@@ -9700,31 +9725,75 @@
                 }
                 dirtMat.zOffset = -1;
                 new EerieFogPlugin(dirtMat);
-                const dirt = BABYLON.MeshBuilder.CreateGround('forestDirt', { width: 140, height: 140 }, scene);
+                const dirt = BABYLON.MeshBuilder.CreateGround('forestDirt', { width: GW, height: GW }, scene);
                 dirt.position.y = -0.06;
                 dirt.material = dirtMat; dirt.isPickable = false;
-                dirt.alphaIndex = 1;   // under the baked shadow layer
+                dirt.alphaIndex = 1;   // under the paving and the baked shadow layer
                 dirt.setEnabled(false);
-                const ground = BABYLON.MeshBuilder.CreateGround('forestGround', { width: 140, height: 140 }, scene);
+                const ground = BABYLON.MeshBuilder.CreateGround('forestGround', { width: GW, height: GW }, scene);
                 ground.position.y = -0.08;   // just under the arena floor's top
                 ground.material = groundMat; ground.isPickable = false;
                 ground.setEnabled(false);
-                const rng = (seed) => () => {   // mulberry32: the same forest every load
+                // Flagstone: the lane paving's own generated slab texture (stagePaveTex, buildStageGround), same
+                // 6u tile and stone tints, through a per-set mask (territory: the defender's half with a ragged edge;
+                // core: everywhere).
+                const paveMat = new BABYLON.StandardMaterial('backdropPaveMat', scene);
+                paveMat.specularColor = BABYLON.Color3.Black();
+                paveMat.emissiveColor = new BABYLON.Color3(0.1, 0.09, 0.08);   // = lane paving's black-point lift
+                paveMat.zOffset = -1.5;
+                new EerieFogPlugin(paveMat);
+                const paveMaskTex = new BABYLON.DynamicTexture('backdropPaveMask', { width: 512, height: 512 }, scene, true);
+                paveMaskTex.getAlphaFromRGB = true;
+                paveMat.opacityTexture = paveMaskTex;
+                const pave = BABYLON.MeshBuilder.CreateGround('backdropPave', { width: GW, height: GW }, scene);
+                pave.position.y = -0.05;
+                pave.material = paveMat; pave.isPickable = false;
+                pave.alphaIndex = 1.5;
+                pave.setEnabled(false);
+                let paveTexReady = false;
+                const ensurePaveTex = () => {
+                    if (paveTexReady) return true;
+                    const src = scene.getTextureByName('stagePaveTex');
+                    if (!src || !src.getContext) return false;
+                    const t = new BABYLON.DynamicTexture('backdropPaveTex', { width: 512, height: 512 }, scene, true);
+                    t.getContext().drawImage(src.getContext().canvas, 0, 0, 512, 512);
+                    t.update();
+                    t.wrapU = t.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+                    t.uScale = t.vScale = GW / 6.0;   // = the lane paving's 6u tile
+                    paveMat.diffuseTexture = t;
+                    return (paveTexReady = true);
+                };
+                // A warm additive light pool on the floor (the core's breach light fanning in): baked per set.
+                const glowTex = new BABYLON.DynamicTexture('backdropGlowTex', { width: 512, height: 512 }, scene, true);
+                glowTex.getAlphaFromRGB = true;
+                const glowMat = new BABYLON.StandardMaterial('backdropGlowMat', scene);
+                glowMat.disableLighting = true;
+                glowMat.diffuseColor = BABYLON.Color3.Black();
+                glowMat.emissiveColor = new BABYLON.Color3(1.0, 0.72, 0.38);
+                glowMat.opacityTexture = glowTex;
+                glowMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
+                glowMat.zOffset = -3;
+                const glow = BABYLON.MeshBuilder.CreateGround('backdropGlow', { width: GW, height: GW }, scene);
+                glow.position.y = -0.03;
+                glow.material = glowMat; glow.isPickable = false;
+                glow.alphaIndex = 3;
+                glow.setEnabled(false);
+                const rng = (seed) => () => {   // mulberry32: the same stage every load
                     seed = (seed + 0x6D2B79F5) | 0;
                     let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
                     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
                     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
                 };
+                const cx = (x) => (x + GW / 2) * (512 / GW), cy = (z) => (GW / 2 - z) * (512 / GW);   // 512px ground canvases
 
-                // BAKED SHADOWS (no shadow maps): computed ONCE from the real Midfield sun when the forest is placed.
-                //  - a ground shadow layer: soft contact darkness under every canopy (so a dense treeline's floor goes
-                //    dark) + each prop's cast shadow, an ellipse thrown along the sun's direction (a sphere's shadow on
-                //    the ground: r along the cross axis, r / sin(elevation) along the light) + a trunk streak to it;
-                //  - per-instance shade: a tree whose canopy centre sits in a neighbour canopy's shadow (ray toward the
-                //    sun hits it) is darkened as a whole, so the forest interior reads as shaded.
-                // The sun sits on the camera's side (up-right), so shadows fall up-screen and to the left: the near
-                // treeline throws its shadows onto the open ground toward the court; the far one darkens its own floor.
-                const SH_W = 140, SH_S = 2048, SH_K = SH_S / SH_W;          // texture covers the ground sheet
+                // ---------------- BAKED SHADOWS ----------------
+                // Computed ONCE per set from that stage's key light (no shadow maps for the ground):
+                //  - a ground shadow layer: soft contact darkness under every prop (a dense treeline's floor goes
+                //    dark) + each prop's cast shadow thrown along the light, shaped like the model (a pine's cone ->
+                //    a spike, a canopy -> lumpy discs, a tower -> a capsule, a wall/pillar -> its swept box), drawn as
+                //    solid silhouettes that MERGE where they overlap, then laid down once;
+                //  - per-instance shade: a tree whose canopy centre sits in a neighbour canopy's shadow is darkened.
+                const SH_S = 2048, SH_K = SH_S / GW;
                 const shadowTex = new BABYLON.DynamicTexture('forestShadowTex', { width: SH_S, height: SH_S }, scene, true);
                 shadowTex.hasAlpha = true;
                 const shadowMat = new BABYLON.StandardMaterial('forestShadowMat', scene);
@@ -9734,33 +9803,59 @@
                 shadowMat.opacityTexture = shadowTex;
                 shadowMat.zOffset = -2;
                 new EerieFogPlugin(shadowMat, { lights: false });
-                const shadowPlane = BABYLON.MeshBuilder.CreateGround('forestShadow', { width: SH_W, height: SH_W }, scene);
-                shadowPlane.position.y = -0.04;   // over ground + dirt, still under the arena floor's top
+                const shadowPlane = BABYLON.MeshBuilder.CreateGround('forestShadow', { width: GW, height: GW }, scene);
+                shadowPlane.position.y = -0.04;   // over ground + dirt + paving, still under the arena floor's top
                 shadowPlane.material = shadowMat; shadowPlane.isPickable = false;
-                shadowPlane.alphaIndex = 2; // after the dirt patches
+                shadowPlane.alphaIndex = 2;
                 shadowPlane.setEnabled(false);
                 // strengths (rebakeForest() after changing). treeShade: whole-tree darkening for a tree inside a
-                // neighbour's shadow (reads as the forest interior); treeDark: shadow-map darkness on the trees
+                // neighbour's shadow (reads as the forest interior); treeDark: shadow-map darkness on the props
                 // (0 = black, 1 = none)
                 window.forestShadow = { cast: 0.62, contact: 0.5, treeShade: 0.35, treeDark: 0.35 };
-                // canopy proxies per model (unit scale): centre height, radius, trunk-top height
-                const CANOPY = { tree: { hc: 3.8, r: 1.7, trunk: 2.4 }, pine: { hc: 2.5, r: 1.3, trunk: 0.8 }, rock: { hc: 0.3, r: 0.6, trunk: 0 } };
-                // The FOREST'S OWN KEY LIGHT: a copy of the Midfield sun (captured once, so a rebake after a Core
-                // stage - whose sun points elsewhere - still uses Midfield's) that lights ONLY the props; the stage sun
-                // skips them. It carries a shadow map rendered ONCE (the trees never move): trees shade each other
-                // and their own trunks, part-canopy where it falls, at no per-frame cost beyond a lookup. Nothing
-                // else receives it, so the court/towers/wizards are untouched. window.forestSunDir overrides the
-                // direction (testing a back-lit forest).
+                // Shadow proxies per model (unit scale, Babylon local axes after import: the Blender +X of the
+                // models lands on Babylon -X). canopy: hc/r/trunk; box: [cx, cz, lx, lz, h] parts; cyl: r, h.
+                const SHAPE = {
+                    tree: { canopy: { hc: 3.8, r: 1.7, trunk: 2.4 }, ao: 1.7 },
+                    pine: { canopy: { hc: 2.5, r: 1.3, trunk: 0.8 }, ao: 1.3 },
+                    rock: { canopy: { hc: 0.3, r: 0.6, trunk: 0 }, ao: 0.6 },
+                    stump: { cyl: { r: 0.3, h: 0.4 }, ao: 0.45 },
+                    guard_tower: { cyl: { r: 2.05, h: 5.2 }, ao: 2.6 },
+                    hall_wall: { box: [[0, 0, 4.0, 0.8, 2.2], [2.0, 0, 0.9, 0.9, 2.8]], ao: 0 },
+                    wall_broken: { box: [[-0.8, 0, 1.6, 0.8, 1.9], [-1.9, 0, 0.8, 0.8, 0.9]], ao: 0 },
+                    brazier: { box: [[0, 0, 0.8, 0.8, 1.3]], ao: 0.7 },
+                    rubble: { cyl: { r: 0.75, h: 0.55 }, ao: 1.0 },
+                    banner: {},
+                };
+                const BOX_AO = 0.9;   // contact darkness band hugging walls / pillars
+
+                // ---------------- THE STAGE'S KEY LIGHT FOR THE PROPS ----------------
+                // A copy of the stage's sun that lights ONLY the props (the stage sun skips them), so a rebake can
+                // run before applyStageLighting has turned the real sun. It carries a shadow map rendered ONCE per
+                // set (props never move): trees/walls/towers shade each other, at no per-frame cost beyond a lookup.
+                // window.forestSunDir overrides the outdoor direction (testing).
                 let propSun = null, propSG = null, midSun = null;
-                const applyForestSun = (L, sunL) => {
+                const sunFor = (set) => {
+                    const sunL = scene.getLightByName('sun');
+                    if (!midSun) midSun = sunL && set.kind !== 'core'
+                        ? { dir: sunL.direction.clone(), intensity: sunL.intensity, diffuse: sunL.diffuse.clone() }
+                        : { dir: new BABYLON.Vector3(-25, -22, 20).normalize(), intensity: 2.1, diffuse: new BABYLON.Color3(1.0, 0.92, 0.82) };
+                    if (set.kind === 'core') {
+                        // = applyStageLighting's core sun: low daylight through the breach, travelling away from it
+                        const sgn = set.mirror ? -1 : 1;
+                        return { dir: new BABYLON.Vector3(sgn, -0.62, 0.34).normalize(), intensity: 1.6, diffuse: new BABYLON.Color3(1.0, 0.8, 0.52) };
+                    }
+                    return { dir: (window.forestSunDir ? window.forestSunDir.clone() : midSun.dir.clone()).normalize(),
+                             intensity: midSun.intensity, diffuse: midSun.diffuse.clone() };
+                };
+                const applyPropSun = (S) => {
+                    const sunL = scene.getLightByName('sun');
                     const meshes = Object.values(protos).flat();
-                    if (!sunL) return;
-                    if (!propSun) propSun = new BABYLON.DirectionalLight('forestSun', L.clone(), scene);
-                    propSun.direction = L.clone();
-                    propSun.position = L.scale(-80);
-                    propSun.intensity = midSun.intensity; propSun.diffuse = midSun.diffuse.clone(); propSun.specular = BABYLON.Color3.Black();
+                    if (!propSun) propSun = new BABYLON.DirectionalLight('forestSun', S.dir.clone(), scene);
+                    propSun.direction = S.dir.clone();
+                    propSun.position = S.dir.scale(-80);
+                    propSun.intensity = S.intensity; propSun.diffuse = S.diffuse.clone(); propSun.specular = BABYLON.Color3.Black();
                     propSun.includedOnlyMeshes = meshes;
-                    for (const m of meshes) if (!sunL.excludedMeshes.includes(m)) sunL.excludedMeshes.push(m);
+                    if (sunL) for (const m of meshes) if (!sunL.excludedMeshes.includes(m)) sunL.excludedMeshes.push(m);
                     if (!propSG) {
                         propSG = new BABYLON.ShadowGenerator(2048, propSun);
                         propSG.usePercentageCloserFiltering = true;
@@ -9769,82 +9864,104 @@
                         propSG.getShadowMap().refreshRate = BABYLON.RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
                     }
                     propSG.setDarkness(window.forestShadow.treeDark);
-                    propSG.getShadowMap().renderList = meshes.slice();
-                    for (const m of meshes) m.receiveShadows = true;
+                    propSG.getShadowMap().renderList = meshes.filter(m => !m._noShadowCast);
+                    for (const m of meshes) m.receiveShadows = !m._noShadowCast;
                     // re-render once for the new layout - and again a little later, in case the first pass ran
-                    // before every tree shader had compiled (a render-once map would otherwise stay empty)
+                    // before every shader had compiled (a render-once map would otherwise stay empty)
                     const sm = propSG.getShadowMap();
                     sm.resetRefreshCounter();
                     for (const ms of [400, 1500, 4000]) setTimeout(() => sm.resetRefreshCounter(), ms);
                 };
-                const bakeShadows = (recs) => {
+
+                const bakeShadows = (recs, S) => {
                     const SF = window.forestShadow;
-                    const sunL = scene.getLightByName('sun');
-                    // window.forestSunDir: a forest-only sun (props lit + shadows baked from it); else the stage sun
-                    if (!midSun && sunL) midSun = { dir: sunL.direction.clone(), intensity: sunL.intensity, diffuse: sunL.diffuse.clone() };
-                    const L = (window.forestSunDir ? window.forestSunDir.clone()
-                             : midSun ? midSun.dir.clone() : new BABYLON.Vector3(-25, -22, 20)).normalize();
-                    applyForestSun(L, sunL);
+                    const L = S.dir;
                     const hl = Math.hypot(L.x, L.z) || 1e-3;
                     const dX = L.x / hl, dZ = L.z / hl;            // where shadows fall on the ground
                     const tanE = Math.max(0.2, -L.y / hl), sinE = Math.max(0.2, -L.y);
                     const g = shadowTex.getContext();
                     g.clearRect(0, 0, SH_S, SH_S);
-                    const cx = (x) => (x + SH_W / 2) * SH_K, cy = (z) => (SH_W / 2 - z) * SH_K;   // CreateGround UVs
-                    const ang = Math.atan2(-dZ, dX);                                              // canvas y = -z
-                    const all = [...recs.tree, ...recs.pine, ...recs.rock];
-                    // Cast shadows are drawn as SOLID silhouettes on their own layer (overlaps merge like real shadows
-                    // instead of stacking darker), then laid down once at SF.cast. Shapes follow each model: a pine's
-                    // cone throws a pointed spike, the round tree a lumpy canopy, a rock an oval.
+                    const sx = (x) => (x + GW / 2) * SH_K, sz = (z) => (GW / 2 - z) * SH_K;   // CreateGround UVs
+                    const ang = Math.atan2(-dZ, dX);                                          // canvas y = -z
                     const cast = document.createElement('canvas'); cast.width = cast.height = SH_S;
                     const cg = cast.getContext('2d');
                     cg.fillStyle = '#000';
-                    const P = (x, z) => [cx(x), cy(z)];
+                    const P = (x, z) => [sx(x), sz(z)];
+                    const poly = (pts) => { cg.beginPath(); cg.moveTo(...P(pts[0][0], pts[0][1])); for (let i = 1; i < pts.length; i++) cg.lineTo(...P(pts[i][0], pts[i][1])); cg.closePath(); cg.fill(); };
                     const disc = (x, z, rx, ry, rot) => {        // a sun-stretched disc (sphere shadow) on the cast layer
-                        cg.save(); cg.translate(cx(x), cy(z)); cg.rotate(rot); cg.scale(rx / ry, 1);
+                        cg.save(); cg.translate(sx(x), sz(z)); cg.rotate(rot); cg.scale(rx / ry, 1);
                         cg.beginPath(); cg.arc(0, 0, ry * SH_K, 0, Math.PI * 2); cg.fill(); cg.restore();
                     };
+                    const circ = (x, z, r) => { cg.beginPath(); cg.arc(sx(x), sz(z), r * SH_K, 0, Math.PI * 2); cg.fill(); };
                     const pX = -dZ, pZ = dX;                      // across the light
-                    for (const r of all) {
-                        const c = CANOPY[r.kind];
+                    const rotP = (r, lx, lz) => {                 // model-local (x, z) -> world, by the instance yaw
+                        const c = Math.cos(r.yaw), s = Math.sin(r.yaw);
+                        return [r.x + (lx * c + lz * s) * r.sc, r.z + (-lx * s + lz * c) * r.sc];
+                    };
+                    const ao = [];                                // contact-darkness stamps
+                    for (const r of recs) {
+                        const sh = SHAPE[r.kind]; if (!sh) continue;
                         const sc = r.sc, h = (v) => (v * sc * r.sy + r.y) / tanE;   // ground offset of a point at model height v
-                        if (r.kind === 'pine') {
-                            // cone: base ring (h 0.8, r 1.3) to apex (h 5.9) -> a spike pointing away from the sun
-                            const bo = Math.max(0, h(0.8)), rr = 1.3 * sc, ao = h(5.9);
-                            const bx = r.x + dX * bo, bz = r.z + dZ * bo;
-                            disc(bx, bz, rr, rr, 0);
-                            cg.beginPath();
-                            cg.moveTo(...P(bx + pX * rr, bz + pZ * rr));
-                            cg.lineTo(...P(r.x + dX * ao, r.z + dZ * ao));
-                            cg.lineTo(...P(bx - pX * rr, bz - pZ * rr));
-                            cg.closePath(); cg.fill();
-                        } else if (r.kind === 'tree') {
-                            // main canopy + two satellite lumps (placed by yaw, like the model's side blobs)
-                            const rad = c.r * sc, o = Math.max(0, h(c.hc));
-                            const mx = r.x + dX * o, mz = r.z + dZ * o;
-                            disc(mx, mz, rad / sinE, rad, ang);
-                            for (const k of [0, 1]) {
-                                const a = r.yaw + k * 2.4, lr = rad * 0.6, lo = Math.max(0, h(c.hc - 0.6));
-                                const lx = r.x + Math.cos(a) * rad * 0.75 + dX * lo, lz = r.z + Math.sin(a) * rad * 0.75 + dZ * lo;
-                                disc(lx, lz, lr / sinE, lr, ang);
+                        if (sh.canopy) {
+                            const c = sh.canopy;
+                            if (r.kind === 'pine') {
+                                // cone: base ring (h 0.8, r 1.3) to apex (h 5.9) -> a spike pointing away from the sun
+                                const bo = Math.max(0, h(0.8)), rr = 1.3 * sc, ao2 = h(5.9);
+                                const bx = r.x + dX * bo, bz = r.z + dZ * bo;
+                                disc(bx, bz, rr, rr, 0);
+                                poly([[bx + pX * rr, bz + pZ * rr], [r.x + dX * ao2, r.z + dZ * ao2], [bx - pX * rr, bz - pZ * rr]]);
+                            } else if (r.kind === 'tree') {
+                                // main canopy + two satellite lumps (placed by yaw, like the model's side blobs)
+                                const rad = c.r * sc, o = Math.max(0, h(c.hc));
+                                disc(r.x + dX * o, r.z + dZ * o, rad / sinE, rad, ang);
+                                for (const k of [0, 1]) {
+                                    const a = r.yaw + k * 2.4, lr = rad * 0.6, lo = Math.max(0, h(c.hc - 0.6));
+                                    disc(r.x + Math.cos(a) * rad * 0.75 + dX * lo, r.z + Math.sin(a) * rad * 0.75 + dZ * lo, lr / sinE, lr, ang);
+                                }
+                            } else {
+                                const rad = c.r * sc * Math.min(1, 0.6 + r.sy * 0.4), o = h(c.hc);
+                                disc(r.x + dX * o * 0.5, r.z + dZ * o * 0.5, rad * (1 + 0.6 * (1 / sinE - 1)), rad, ang);
                             }
-                        } else {
-                            const rad = c.r * sc * Math.min(1, 0.6 + r.sy * 0.4), o = h(c.hc);
-                            disc(r.x + dX * o * 0.5, r.z + dZ * o * 0.5, rad * (1 + 0.6 * (1 / sinE - 1)), rad, ang);
+                            if (c.trunk && r.y >= 0) {         // trunk streak to the canopy
+                                const t = h(c.trunk);
+                                cg.strokeStyle = '#000'; cg.lineWidth = Math.max(2, 0.22 * sc * SH_K); cg.lineCap = 'round';
+                                cg.beginPath(); cg.moveTo(sx(r.x), sz(r.z)); cg.lineTo(sx(r.x + dX * t), sz(r.z + dZ * t)); cg.stroke();
+                            }
+                        } else if (sh.cyl) {
+                            // an upright cylinder: base disc + top disc thrown along the light + the band between
+                            const rr = sh.cyl.r * sc, o = h(sh.cyl.h);
+                            const tx = r.x + dX * o, tz = r.z + dZ * o;
+                            circ(r.x, r.z, rr); circ(tx, tz, rr);
+                            poly([[r.x + pX * rr, r.z + pZ * rr], [tx + pX * rr, tz + pZ * rr], [tx - pX * rr, tz - pZ * rr], [r.x - pX * rr, r.z - pZ * rr]]);
+                        } else if (sh.box) {
+                            // each box part: its footprint swept along the light up to its height (footprint, top,
+                            // and the four side quads - their union is the exact shadow of a box)
+                            for (const [bcx, bcz, lx, lz, bh] of sh.box) {
+                                const o = h(bh);
+                                const cs = [[-lx / 2, -lz / 2], [lx / 2, -lz / 2], [lx / 2, lz / 2], [-lx / 2, lz / 2]]
+                                    .map(([a, b]) => rotP(r, bcx + a, bcz + b));
+                                const tp = cs.map(([a, b]) => [a + dX * o, b + dZ * o]);
+                                poly(cs); poly(tp);
+                                for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; poly([cs[i], cs[j], tp[j], tp[i]]); }
+                                ao.push({ box: cs });
+                            }
                         }
-                        // trunk streak to the canopy
-                        if (c.trunk && r.y >= 0) {
-                            const t = h(c.trunk);
-                            cg.strokeStyle = '#000'; cg.lineWidth = Math.max(2, 0.22 * sc * SH_K); cg.lineCap = 'round';
-                            cg.beginPath(); cg.moveTo(cx(r.x), cy(r.z)); cg.lineTo(cx(r.x + dX * t), cy(r.z + dZ * t)); cg.stroke();
-                        }
+                        if (sh.ao) ao.push({ x: r.x, z: r.z, rad: sh.ao * sc * 1.3 });
                     }
-                    // contact darkness right under each prop (soft AO of the forest floor) - this one may stack
-                    for (const r of all) {
-                        const rad = CANOPY[r.kind].r * r.sc * 1.3, R = rad * SH_K;
-                        const grd = g.createRadialGradient(cx(r.x), cy(r.z), 0, cx(r.x), cy(r.z), R);
+                    // contact darkness right under each prop (soft AO of the floor) - this one may stack
+                    for (const a of ao) {
+                        if (a.box) {
+                            g.save(); g.filter = 'blur(' + (BOX_AO * SH_K * 0.5).toFixed(1) + 'px)';
+                            g.fillStyle = `rgba(0,0,0,${SF.contact})`;
+                            g.beginPath(); g.moveTo(sx(a.box[0][0]), sz(a.box[0][1]));
+                            for (let i = 1; i < 4; i++) g.lineTo(sx(a.box[i][0]), sz(a.box[i][1]));
+                            g.closePath(); g.fill(); g.restore();
+                            continue;
+                        }
+                        const R = a.rad * SH_K;
+                        const grd = g.createRadialGradient(sx(a.x), sz(a.z), 0, sx(a.x), sz(a.z), R);
                         grd.addColorStop(0, `rgba(0,0,0,${SF.contact})`); grd.addColorStop(0.4, `rgba(0,0,0,${SF.contact})`); grd.addColorStop(1, 'rgba(0,0,0,0)');
-                        g.fillStyle = grd; g.beginPath(); g.arc(cx(r.x), cy(r.z), R, 0, Math.PI * 2); g.fill();
+                        g.fillStyle = grd; g.beginPath(); g.arc(sx(a.x), sz(a.z), R, 0, Math.PI * 2); g.fill();
                     }
                     // the merged silhouettes, edges just anti-aliased (readable shapes, not mush)
                     g.filter = 'blur(1.2px)'; g.globalAlpha = SF.cast;
@@ -9852,43 +9969,34 @@
                     g.filter = 'none'; g.globalAlpha = 1;
                     shadowTex.update();
                     // per-instance shade: is this canopy centre in another canopy's shadow?
-                    const cent = all.map(r => { const c = CANOPY[r.kind]; return { x: r.x, y: Math.max(0.15, c.hc * r.sc * r.sy + r.y), z: r.z, rad: c.r * r.sc }; });
-                    const out = {};
-                    let k = 0;
-                    for (const kind of ['tree', 'pine', 'rock']) {
-                        const arr = out[kind] = new Float32Array(recs[kind].length * 4);
-                        for (let i = 0; i < recs[kind].length; i++, k++) {
-                            const a = cent[k];
-                            let cover = 0;
-                            for (let j = 0; j < cent.length && cover < 1; j++) {
-                                if (j === k) continue;
-                                const b = cent[j];
-                                const wx = b.x - a.x, wy = b.y - a.y, wz = b.z - a.z;
-                                const t = -(wx * L.x + wy * L.y + wz * L.z);   // along the ray toward the sun
-                                if (t <= 0) continue;
-                                const d2 = wx * wx + wy * wy + wz * wz - t * t;
-                                if (d2 < b.rad * b.rad) cover += 1 - Math.sqrt(d2) / b.rad;
-                            }
-                            const f = 1 - SF.treeShade * Math.min(1, cover);
-                            arr.set([f, f, f * 0.98 + 0.02, 1], i * 4);    // shaded = darker, a touch cooler
+                    const cent = recs.map(r => {
+                        const c = SHAPE[r.kind] && SHAPE[r.kind].canopy;
+                        return c ? { x: r.x, y: Math.max(0.15, c.hc * r.sc * r.sy + r.y), z: r.z, rad: c.r * r.sc } : null;
+                    });
+                    const shade = new Float32Array(recs.length);
+                    for (let i = 0; i < recs.length; i++) {
+                        const a = cent[i];
+                        let cover = 0;
+                        if (a) for (let j = 0; j < recs.length && cover < 1; j++) {
+                            const b = cent[j];
+                            if (j === i || !b) continue;
+                            const wx = b.x - a.x, wy = b.y - a.y, wz = b.z - a.z;
+                            const t = -(wx * L.x + wy * L.y + wz * L.z);   // along the ray toward the sun
+                            if (t <= 0) continue;
+                            const d2 = wx * wx + wy * wy + wz * wz - t * t;
+                            if (d2 < b.rad * b.rad) cover += 1 - Math.sqrt(d2) / b.rad;
                         }
+                        shade[i] = 1 - SF.treeShade * Math.min(1, cover);
                     }
-                    return out;
+                    return shade;
                 };
-                const place = () => {
-                    const halfD = (window.getEffectiveTableDepth ? getEffectiveTableDepth() : 14) / 2;
-                    if (builtFor === halfD) return;
-                    builtFor = halfD;
-                    const R = rng(1337);
-                    const mats = { tree: [], pine: [], rock: [] };
-                    const M = (x, z, yaw, sc, sy, y) => BABYLON.Matrix.Compose(new BABYLON.Vector3(sc, sc * (sy || 1), sc),
-                        BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, yaw), new BABYLON.Vector3(x, y || 0, z));
-                    const recs = { tree: [], pine: [], rock: [] };   // parallel to mats: what was placed, for the bake
-                    const add = (kind, x, z, yaw, sc, sy, y) => {
-                        mats[kind].push(M(x, z, yaw, sc, sy, y));
-                        recs[kind].push({ kind, x, z, yaw, sc, sy: sy || 1, y: y || 0 });
-                    };
-                    // Trees: far band (z > 0 = up-screen) and near band (z < 0), jittered grid.
+
+                // ---------------- THE SETS ----------------
+                // Each builder places props for a DEFENDER ON THE RIGHT (x > 0 = the defender's end); a blue
+                // defender mirrors x. add(kind, x, z, yaw, scale, yScale, y). `facing` props (towers, banners,
+                // braziers) keep their camera-facing yaw when mirrored; the rest are random-yaw anyway.
+                const forestBands = (R, add, halfD, x0, x1) => {
+                    // Trees: far band (z > 0 = up-screen) and near band (z < 0), jittered grid, within [x0, x1].
                     const CELL = 3.4;
                     const band = (z0, z1) => {
                         for (let z = z0; z < z1; z += CELL) for (let x = -46; x < 46; x += CELL) {
@@ -9896,50 +10004,210 @@
                             const px = x + (R() - 0.5) * CELL * 0.9, pz = z + (R() - 0.5) * CELL * 0.9;
                             const r = R();
                             const kind = r < 0.5 ? 'pine' : r < 0.93 ? 'tree' : 'rock';
-                            const sc = kind === 'rock' ? 0.9 + R() * 1.2 : 0.75 + R() * 0.5;
-                            add(kind, px, pz, R() * Math.PI * 2, sc, kind === 'rock' ? 0.7 + R() * 0.6 : 1);
+                            const sc = kind === 'rock' ? 0.9 + R() * 1.2 : 0.75 + R() * 0.5, yaw = R() * Math.PI * 2, sy = kind === 'rock' ? 0.7 + R() * 0.6 : 1;
+                            if (px < x0 || px > x1) continue;
+                            add(kind, px, pz, yaw, sc, sy);
                         }
                     };
                     band(halfD + 6.5, halfD + 34);          // far: a rocky clearing first, like the painting
                     band(-halfD - 34, -halfD - 10.5);       // near: canopies stay below the near rail on screen
-                    // Loose rocks in the open ground between the rails and the treelines.
-                    for (let i = 0; i < 36; i++) {
-                        const far = i % 2 === 0;
-                        const pz = far ? halfD + 1.8 + R() * 2.4 : -halfD - 1.8 - R() * 8;
-                        const px = (R() - 0.5) * 90;
-                        add('rock', px, pz, R() * Math.PI * 2, 0.45 + R() * 0.9, 0.6 + R() * 0.6);
-                    }
+                };
+                const railBushes = (R, add, halfD, x0, x1) => {
                     // Bushes hugging the rails: the round tree, small and sunk so only its canopy shows.
                     for (let x = -46; x < 46; x += 1.6 + R() * 2.6) {
-                        if (R() < 0.35) continue;
-                        const sc = 0.22 + R() * 0.14;
-                        add('tree', x, halfD + 0.9 + R() * 1.1, R() * Math.PI * 2, sc, 0.8, -sc * 2.6);
+                        const skip = R() < 0.35, sc = 0.22 + R() * 0.14, z = halfD + 0.9 + R() * 1.1, yaw = R() * Math.PI * 2;
+                        if (!skip && x >= x0 && x <= x1) add('tree', x, z, yaw, sc, 0.8, -sc * 2.6);
                     }
                     for (let x = -46; x < 46; x += 2.5 + R() * 4) {
-                        if (R() < 0.45) continue;
-                        const sc = 0.14 + R() * 0.08;
-                        add('tree', x, -halfD - 0.8 - R() * 0.8, R() * Math.PI * 2, sc, 0.7, -sc * 2.6);
-                    }
-                    const shade = bakeShadows(recs);
-                    for (const kind in protos) for (const m of protos[kind]) {
-                        const list = mats[kind];
-                        const buf = new Float32Array(list.length * 16);
-                        list.forEach((mx, i) => mx.copyToArray(buf, i * 16));
-                        m.thinInstanceSetBuffer('matrix', buf, 16, true);
-                        m.thinInstanceSetBuffer('color', shade[kind], 4, true);   // baked: in a neighbour's shadow or not
-                        m.alwaysSelectAsActiveMesh = true;   // thin instances span the map: skip per-frame culling
+                        const skip = R() < 0.45, sc = 0.14 + R() * 0.08, z = -halfD - 0.8 - R() * 0.8, yaw = R() * Math.PI * 2;
+                        if (!skip && x >= x0 && x <= x1) add('tree', x, z, yaw, sc, 0.7, -sc * 2.6);
                     }
                 };
+                const looseRocks = (R, add, halfD, x0, x1, n) => {
+                    for (let i = 0; i < n; i++) {
+                        const far = i % 2 === 0;
+                        const pz = far ? halfD + 1.8 + R() * 2.4 : -halfD - 1.8 - R() * 8;
+                        const px = (R() - 0.5) * 90, yaw = R() * Math.PI * 2, sc = 0.45 + R() * 0.9, sy = 0.6 + R() * 0.6;
+                        if (px >= x0 && px <= x1) add('rock', px, pz, yaw, sc, sy);
+                    }
+                };
+                const SETS = {
+                    forest: {
+                        eerie: {}, ground: 'grass',
+                        build: (R, add, halfD) => {
+                            forestBands(R, add, halfD, -99, 99);
+                            looseRocks(R, add, halfD, -99, 99, 36);
+                            railBushes(R, add, halfD, -99, 99);
+                        },
+                    },
+                    // TERRITORY: the attacker's half is forest (trees, stumps, rocks); the defender's half is their
+                    // flagstone forecourt, guarded by a round tower at each rail corner (torch + crowned banner),
+                    // each with its curtain wall running off-screen.
+                    territory: {
+                        eerie: {}, ground: 'grass', paveFrom: 5.5,
+                        build: (R, add, halfD, fires) => {
+                            forestBands(R, add, halfD, -99, 2.5);
+                            looseRocks(R, add, halfD, -99, 4, 36);
+                            railBushes(R, add, halfD, -99, 3);
+                            for (let i = 0; i < 26; i++) {      // felled-tree stumps across the clearing, both halves
+                                const far = i % 2 === 0;
+                                const pz = far ? halfD + 1.5 + R() * 9 : -halfD - 1.5 - R() * 12;
+                                const px = -30 + R() * 50, yaw = R() * Math.PI * 2, sc = 0.8 + R() * 0.6;
+                                add('stump', px, pz, yaw, sc, 0.8 + R() * 0.5);
+                            }
+                            // far tower set back so it stands clear above the gatehouse; near one low enough that its
+                            // battlements stay under the near rail on screen
+                            // the far one stands out on the forecourt (the gatehouse would hide it at the corner), its
+                            // curtain wall running back to the gate; the near one at the corner, low enough that its
+                            // battlements stay under the near rail on screen, its wall running off-screen
+                            const towers = [{ x: 11, z: halfD + 6.5, wall: 'x' }, { x: 17.5, z: -halfD - 10.8, wall: 'z' }];
+                            for (const T of towers) {
+                                add('guard_tower', T.x, T.z, 0, 1, 1, 0, true);
+                                // its torch (camera side, beside the banner) - a fixed fire
+                                fires.push({ x: T.x - 1.0, y: 3.2, z: T.z - 2.3, reach: 8, col: [1.0, 0.55, 0.2], w: 0.55 });
+                                if (T.wall === 'x') for (let x = T.x + 4.2; x < 46; x += 4) add('hall_wall', x, T.z + 0.8, 0, 1, 1, 0, true);
+                                else for (let z = T.z - 4.6; z > -46; z -= 4) add('hall_wall', T.x + 0.6, z, Math.PI / 2, 1, 1, 0, true);
+                            }
+                        },
+                    },
+                    // CORE: inside the defender's fortress - a paved hall walled along both sides (pillars every 4u,
+                    // crimson banners, braziers on pedestals), its end wall BREACHED at the attacker's end (rubble,
+                    // broken wall ends) where the low daylight pours in.
+                    core: {
+                        // indoors the painting is lit, not lost in dusk: lighter, later murk so the walls/banners read
+                        eerie: { color: [0.09, 0.055, 0.06], max: 0.55, z0: 7, dim: 0.95, desat: 0.15 }, ground: 'pave', glow: 'breach',
+                        build: (R, add, halfD, fires) => {
+                            const zF = halfD + 9, zN = -halfD - 13, BX = -19;    // far wall, near wall, breach end
+                            for (const zw of [zF, zN]) {
+                                for (let x = BX + 4; x < 48; x += 4) add('hall_wall', x, zw, 0, 1, 1, 0, true);
+                                // the broken end, crumbling toward the breach
+                                add('wall_broken', BX + 2, zw, 0, 1, 1, 0, true);
+                                for (let i = 0; i < 4; i++) add('rubble', BX - 0.5 - R() * 4, zw + (R() - 0.5) * 3, R() * Math.PI * 2, 0.8 + R() * 0.6, 0.8 + R() * 0.5);
+                                // banners on the camera-facing face, every other bay
+                                for (let x = BX + 8; x < 48; x += 8) add('banner', x, zw - 0.45, 0, 1, 1, 2.05, true);
+                                // braziers in front of the wall, fixed fires
+                                for (const bx of [-7, 7, 23]) {
+                                    const bz = zw - (zw > 0 ? 1.4 : 1.2);
+                                    add('brazier', bx, bz, 0, 1, 1, 0, true);
+                                    fires.push({ x: bx, y: 1.4, z: bz, reach: 7, col: [1.0, 0.55, 0.22], w: 0.6 });
+                                }
+                            }
+                            // tumbled blocks spilling in from the breach across the floor
+                            for (let i = 0; i < 14; i++) {
+                                const far = i % 2 === 0;
+                                const pz = far ? halfD + 1.5 + R() * 9 : -halfD - 1.5 - R() * 12;
+                                add('rubble', BX - 4 + R() * 9, pz, R() * Math.PI * 2, 0.5 + R() * 0.6, 0.7 + R() * 0.5);
+                            }
+                        },
+                    },
+                };
+                // Baked floor light (additive, warm): a pool of firelight under every fixed fire (braziers, tower
+                // torches) and, in the core, the daylight flooding in through the breach and fading down the hall.
+                const drawGlow = (set, halfD, fires) => {
+                    const g = glowTex.getContext();
+                    g.fillStyle = 'black'; g.fillRect(0, 0, 512, 512);
+                    g.globalCompositeOperation = 'lighter';
+                    const pool = (x, z, r, a) => {
+                        const grd = g.createRadialGradient(cx(x), cy(z), 0, cx(x), cy(z), r * 512 / GW);
+                        grd.addColorStop(0, `rgba(255,255,255,${a})`); grd.addColorStop(0.35, `rgba(255,255,255,${a * 0.45})`); grd.addColorStop(1, 'rgba(255,255,255,0)');
+                        g.fillStyle = grd; g.fillRect(0, 0, 512, 512);
+                    };
+                    for (const f of fires) pool(f.x, f.z, 4.2, 0.55);
+                    if (set.def.glow === 'breach') {
+                        const s = set.mirror ? -1 : 1;
+                        pool(s * -23, halfD + 6, 20, 1.0);     // over the far floor
+                        pool(s * -23, -halfD - 7, 20, 1.0);    // and the near floor
+                        pool(s * -26, 0, 26, 0.6);
+                    }
+                    g.globalCompositeOperation = 'source-over';
+                    glowTex.update();
+                    return fires.length > 0 || set.def.glow === 'breach';
+                };
+                const drawPaveMask = (set) => {
+                    const g = paveMaskTex.getContext();
+                    g.fillStyle = 'black'; g.fillRect(0, 0, 512, 512);
+                    if (set.def.ground === 'pave') { g.fillStyle = 'white'; g.fillRect(0, 0, 512, 512); paveMaskTex.update(); return true; }
+                    if (set.def.paveFrom == null) { paveMaskTex.update(); return false; }
+                    // the defender's forecourt: from paveFrom to their end, ragged worn edge (mirrored for blue)
+                    const s = set.mirror ? -1 : 1;
+                    g.fillStyle = 'white';
+                    g.beginPath();
+                    g.moveTo(s > 0 ? 512 : 0, 0);
+                    for (let z = GW / 2; z >= -GW / 2; z -= 1) {
+                        const wob = Math.sin(z * 0.37 + 0.4) * 1.3 + Math.sin(z * 1.13) * 0.5;
+                        g.lineTo(cx(s * (set.def.paveFrom + wob)), cy(z));
+                    }
+                    g.lineTo(s > 0 ? 512 : 0, 512);
+                    g.closePath(); g.fill();
+                    const tmp = document.createElement('canvas'); tmp.width = tmp.height = 512;
+                    tmp.getContext('2d').drawImage(g.canvas, 0, 0);
+                    g.fillStyle = 'black'; g.fillRect(0, 0, 512, 512);
+                    g.filter = 'blur(3px)'; g.drawImage(tmp, 0, 0); g.filter = 'none';
+                    paveMaskTex.update();
+                    return true;
+                };
+
+                const parseKey = (key) => { const [kind, side] = key.split(':'); return { key, kind, mirror: side === 'L', def: SETS[kind] }; };
+                const M = (x, z, yaw, sc, sy, y) => BABYLON.Matrix.Compose(new BABYLON.Vector3(sc, sc * (sy || 1), sc),
+                    BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, yaw), new BABYLON.Vector3(x, y || 0, z));
+                let layers = { pave: false, glow: false, grass: true };
+                const place = () => {
+                    const halfD = (window.getEffectiveTableDepth ? getEffectiveTableDepth() : 14) / 2;
+                    const key = wantKey + '@' + halfD;
+                    if (builtKey === key) return;
+                    const set = parseKey(wantKey);
+                    if (!set.def) return;
+                    if (set.def.ground === 'pave' || set.def.paveFrom != null) { if (!ensurePaveTex()) return; }   // lane paving not built yet: retry later
+                    builtKey = key;
+                    const R = rng(set.kind === 'forest' ? 1337 : set.kind === 'territory' ? 4242 : 9001);
+                    const mats = {}, idx = {};
+                    for (const k of KINDS) { mats[k] = []; idx[k] = []; }
+                    const recs = [];
+                    const s = set.mirror ? -1 : 1;
+                    const add = (kind, x, z, yaw, sc, sy, y, facing) => {
+                        const wx = s * x, wyaw = facing ? yaw : (s > 0 ? yaw : Math.PI - yaw);
+                        idx[kind].push(recs.length);
+                        mats[kind].push(M(wx, z, wyaw, sc, sy, y));
+                        recs.push({ kind, x: wx, z, yaw: wyaw, sc, sy: sy || 1, y: y || 0 });
+                    };
+                    const fires = [];
+                    set.def.build(R, add, halfD, fires);
+                    setLights = fires.map(f => ({ ...f, x: s * f.x }));
+                    Object.assign(EERIE, EERIE_DEFAULT, set.def.eerie);
+                    const S = sunFor(set);
+                    applyPropSun(S);
+                    const shade = bakeShadows(recs, S);
+                    for (const kind of KINDS) for (const m of (protos[kind] || [])) {
+                        const list = mats[kind];
+                        const buf = new Float32Array(Math.max(1, list.length) * 16);
+                        list.forEach((mx, i) => mx.copyToArray(buf, i * 16));
+                        const col = new Float32Array(Math.max(1, list.length) * 4);
+                        idx[kind].forEach((ri, i) => { const f = shade[ri]; col.set([f, f, f * 0.98 + 0.02, 1], i * 4); });
+                        m.thinInstanceSetBuffer('matrix', buf, 16, true);
+                        m.thinInstanceSetBuffer('color', col, 4, true);   // baked: in a neighbour's shadow or not
+                        m.thinInstanceCount = list.length;
+                        m.alwaysSelectAsActiveMesh = true;   // thin instances span the map: skip per-frame culling
+                        m._propUsed = list.length > 0;
+                    }
+                    // = the lane paving's stone tints (dark on purpose: brighter clips to a pinkish grey under the sun)
+                    paveMat.diffuseColor = set.kind === 'core' ? new BABYLON.Color3(0.44, 0.44, 0.46) : new BABYLON.Color3(0.44, 0.43, 0.41);
+                    layers = { grass: set.def.ground !== 'pave', pave: drawPaveMask(set), glow: drawGlow(set, halfD, setLights) };
+                };
                 const apply = () => {
-                    const on = want && loaded === 3;
-                    if (on) place();
-                    ground.setEnabled(on); dirt.setEnabled(on); shadowPlane.setEnabled(on);
-                    for (const kind in protos) for (const m of protos[kind]) m.setEnabled(on);
+                    const ready = loaded + failed === KINDS.length;
+                    const set = wantKey && SETS[wantKey.split(':')[0]];
+                    if (ready && set) place();
+                    const on = !!(ready && set && builtKey && builtKey.startsWith(wantKey + '@'));
+                    ground.setEnabled(on && layers.grass); dirt.setEnabled(on && layers.grass);
+                    pave.setEnabled(on && layers.pave); glow.setEnabled(on && layers.glow);
+                    shadowPlane.setEnabled(on);
+                    for (const kind of KINDS) for (const m of (protos[kind] || [])) m.setEnabled(on && !!m._propUsed);
                     window._propsBackdropActive = on;
                     if (window.setBackdropProxyEnabled) setBackdropProxyEnabled(true);   // re-evaluates against the flag
                     if (window.backdropLayer) backdropLayer.isEnabled = !on;
+                    if (!on && ready && set) setTimeout(apply, 250);   // a dependency (lane paving) wasn't there yet
                 };
-                for (const kind in PROP_FILES) {
+                for (const kind of KINDS) {
                     BABYLON.SceneLoader.ImportMeshAsync('', 'models/props/', PROP_FILES[kind], scene).then(res => {
                         protos[kind] = [];
                         for (const m of res.meshes) {
@@ -9950,7 +10218,15 @@
                             if (m.material) {
                                 const mat = m.material;
                                 mat.metallic = 0; mat.roughness = 1; mat.environmentIntensity = 0;
-                                if (!mat.pluginManager || !mat.pluginManager.getPlugin('EerieFog')) new EerieFogPlugin(mat);
+                                if (mat.name === 'M_banner') mat.emissiveColor = new BABYLON.Color3(0.16, 0.025, 0.02);   // cloth catches the firelight
+                                if (mat.name === 'M_sigil') mat.emissiveColor = new BABYLON.Color3(0.18, 0.13, 0.02);
+                                if (mat.name === 'M_flame' || mat.name === 'M_coal') {
+                                    // fire: self-lit, flickers (see the frame hook), casts no shadow
+                                    mat.unlit = true;
+                                    mat.emissiveColor = new BABYLON.Color3(1.0, 0.62, 0.26);
+                                    if (mat.name === 'M_flame') flameMats.push(mat);
+                                    m._noShadowCast = true;
+                                } else if (!mat.pluginManager || !mat.pluginManager.getPlugin('EerieFog')) new EerieFogPlugin(mat);
                             }
                             m.setEnabled(false);
                             protos[kind].push(m);
@@ -9958,12 +10234,16 @@
                         res.meshes[0].dispose(false, false);   // the empty __root__
                         loaded++;
                         apply();
-                    }).catch(e => console.warn('[props] ' + kind + ' load failed', e));
+                    }).catch(e => { failed++; protos[kind] = []; console.warn('[props] ' + kind + ' load failed', e); apply(); });
                 }
-                // kind: the stage backdrop kind ('forest' | 'territory' | 'core'). Only the forest is built so far.
-                window.setPropsBackdrop = (kind) => { want = kind === 'forest'; apply(); };
-                window.refreshPropsBackdrop = () => apply();   // place() rebuilds only if the table depth changed
-                window.rebakeForest = () => { builtFor = null; apply(); };
+                // kind: the stage backdrop kind ('forest' | 'territory' | 'core'); mirror: a blue (left) defender.
+                // Anything else (e.g. 'painted') shows the old painting - kept for A/B checks.
+                window.setPropsBackdrop = (kind, mirror) => {
+                    wantKey = SETS[kind] ? (kind === 'forest' ? 'forest' : kind + (mirror ? ':L' : ':R')) : null;
+                    apply();
+                };
+                window.refreshPropsBackdrop = () => apply();   // place() rebuilds only if the set or table depth changed
+                window.rebakeForest = window.rebakeProps = () => { builtKey = null; apply(); };
             }
 
             // ============================================================
@@ -18064,7 +18344,7 @@
                     window._stageFogColor = core ? CORE.fog : null;
                     if (window.backdropLayer && OUT.backdrop) window.backdropLayer.color = (core ? CORE.backdrop : OUT.backdrop).clone();
                     spill.setEnabled(core);
-                    shafts.forEach(p => p.setEnabled(false));   // the painted beams carry this now (kept for tuning)
+                    shafts.forEach(p => p.setEnabled(core && !!window._propsBackdropActive));   // the 3D hall needs real beams (a painting carried its own)
                     if (core) {
                         const attacker = defender === 'right' ? 'left' : 'right';
                         longShadow = { dir: attacker === 'left' ? 1 : -1, gateX: (attacker === 'left' ? -1 : 1) * (tableWidth / 2), attacker };
