@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=86-wardrobe-achievements">
+    <link rel="stylesheet" href="styles.css?v=87-wardrobe-inventory">
 </head>
 <body>
 
@@ -221,15 +221,18 @@
         </div>
     </div>
 
-    <!-- Wardrobe - dress your pickle. Live 3D preview over the arena (left), panel on the right; the rows are
-         built from COSMETICS (window.openWardrobe). -->
+    <!-- Wardrobe - an inventory: live 3D pickle on the left (arena shows through), tabs + item grid + info on the right.
+         Tiles are built from COSMETICS (window.openWardrobe). -->
     <div id="wardrobeScreen" class="arcane-overlay crt-screen in-match">
         <div class="arcane-content">
             <div class="arcane-title-wrap">
                 <h1 class="arcane-title" data-text="Wardrobe">Wardrobe</h1>
             </div>
             <div class="arcane-buttons settings-panel" id="wardrobePanel">
-                <div id="wardrobeRows"></div>
+                <div id="wardrobeTabs" role="tablist"></div>
+                <div id="wardrobeGrid"></div>
+                <div id="wardrobeInfo"></div>
+                <div id="wardrobePreviewRows"></div>
                 <div class="wardrobe-actions">
                     <button class="game-btn menu-btn" id="wardrobeRandom">
                         <span class="menu-btn-accent" aria-hidden="true"></span>
@@ -5023,6 +5026,31 @@
             for (let i = 0; i < pads.length; i++) { if (pads[i]) { gp = pads[i]; break; } }
             if (!gp) return;
 
+            // Wardrobe inventory: a 2D grid + category tabs, driven by window.wardrobePad (not the linear list).
+            if (root.id === 'wardrobeScreen' && window.wardrobePad) {
+                const pr = (i) => !!(gp.buttons[i] && gp.buttons[i].pressed);
+                if (root !== window._navRoot) {
+                    window._navRoot = root;
+                    document.querySelectorAll('.gp-focused').forEach(el => el.classList.remove('gp-focused'));
+                    for (const [k, i] of [['confirm', 0], ['back', 1], ['wx', 2], ['wy', 3], ['wlb', 4], ['wrb', 5], ['start', 9]]) _navPadPrev[k] = pr(i);
+                }
+                const ax = gp.axes[0] || 0, ay = gp.axes[GP.stickY] || 0;   // left stick X is axis 0
+                const dirs = [['up', pr(GP.dpadUp) || ay < -0.5], ['down', pr(GP.dpadDown) || ay > 0.5],
+                              ['left', pr(14) || ax < -0.5], ['right', pr(15) || ax > 0.5]];
+                let any = false;
+                for (const [d, now] of dirs) if (navDirEdge(d, now)) { wardrobePad(d); any = true; }
+                for (const [k, i, act] of [['confirm', 0, 'confirm'], ['wx', 2, 'x'], ['wy', 3, 'y'], ['wlb', 4, 'lb'], ['wrb', 5, 'rb']]) {
+                    const now = pr(i);
+                    if (now && !_navPadPrev[k]) { wardrobePad(act); any = true; }
+                    _navPadPrev[k] = now;
+                }
+                const backNow = pr(1);
+                if (backNow && !_navPadPrev.back) { const b = document.getElementById('wardrobeBack'); if (b) b.click(); any = true; }
+                _navPadPrev.back = backNow;
+                if (any && window._lastInputMode !== 'pad') setLastInputMode('pad');
+                return;
+            }
+
             const list = getNavFocusables(root);
             if (list.length === 0) { window._navRoot = root; return; }
 
@@ -5265,6 +5293,8 @@
             back:     { glyph: 'Esc', label: 'Back' },
             adjust:   { glyph: '←→', label: 'Adjust' },
             page:     { glyph: '←→', label: 'Page' },
+            browse:   { glyph: '↑↓←→', label: 'Browse' },
+            tabs:     { glyph: 'Q E', label: 'Category' },
         };
         let _gpPromptEntries = [];
         function renderGamepadPromptBar() {
@@ -5295,9 +5325,13 @@
                     // the player the wrong button entirely.
                     return '<span class="gp-prompt-item">' + padGlyphHTML(padType, 1) + '<span>Back</span></span>';
                 }
-                // navigate/adjust/page: pad-agnostic D-pad glyphs (Standard Gamepad D-pad doesn't
+                if (entry.action === 'tabs') {   // shoulder pair, named per vendor
+                    const pr = padType === 'playstation' ? ['L1', 'R1'] : padType === 'nintendo' ? ['L', 'R'] : ['LB', 'RB'];
+                    return '<span class="gp-prompt-item"><span class="pgl sh">' + pr[0] + '</span><span class="pgl sh">' + pr[1] + '</span><span>Category</span></span>';
+                }
+                // navigate/adjust/page/browse: pad-agnostic D-pad glyphs (Standard Gamepad D-pad doesn't
                 // vary by vendor the way face buttons do).
-                const dpadGlyph = (entry.action === 'navigate') ? '↑↓' : '←→';
+                const dpadGlyph = (entry.action === 'navigate') ? '↑↓' : (entry.action === 'browse') ? '↑↓←→' : '←→';
                 return '<span class="gp-prompt-item"><span class="gp-prompt-glyph">' + dpadGlyph + '</span>' + kb.label + '</span>';
             }).join('');
         }
@@ -13612,6 +13646,9 @@
             const DEFAULT_LOADOUT = { hat: 'hat_wizard', outfit: 'outfit_robe', neck: 'neck_none', face_acc: 'face_acc_none',
                                       staff: 'staff_classic', eyes: 'eyes_classic', brows: 'brows_classic', mouth: 'mouth_smile' };
             const cosmeticById = (id) => COSMETICS.find(c => c.id === id) || null;
+            // An item with `unlock: '<ACHIEVEMENT_ID>'` is owned once that achievement is unlocked; no `unlock` =
+            // starter item. (None are linked yet.)
+            const cosmeticUnlocked = (c) => !!c && (!c.unlock || !!(window.Achievements && Achievements.unlockedAt(c.unlock)));
             // a loadout with every slot valid (unknown / wrong-slot ids fall back to the default)
             const sanitizeLoadout = (lo) => {
                 const out = {};
@@ -13622,9 +13659,11 @@
                 return out;
             };
             const LOADOUT_KEY = 'volleybolt_loadout';
-            const loadLoadout = () => { try { return sanitizeLoadout(JSON.parse(localStorage.getItem(LOADOUT_KEY) || 'null')); } catch (e) { return { ...DEFAULT_LOADOUT }; } };
+            // the LOCAL player's loadout: anything not (or no longer) owned falls back to the default for that slot
+            const ownedOnly = (lo) => { for (const s of COSMETIC_SLOTS) if (!cosmeticUnlocked(cosmeticById(lo[s]))) lo[s] = DEFAULT_LOADOUT[s]; return lo; };
+            const loadLoadout = () => { try { return ownedOnly(sanitizeLoadout(JSON.parse(localStorage.getItem(LOADOUT_KEY) || 'null'))); } catch (e) { return { ...DEFAULT_LOADOUT }; } };
             const saveLoadout = (lo) => { try { localStorage.setItem(LOADOUT_KEY, JSON.stringify(sanitizeLoadout(lo))); } catch (e) {} };
-            window.PickleKit = { COSMETICS, COSMETIC_SLOTS, DEFAULT_LOADOUT, sanitizeLoadout, loadLoadout, saveLoadout };
+            window.PickleKit = { COSMETICS, COSMETIC_SLOTS, DEFAULT_LOADOUT, sanitizeLoadout, loadLoadout, saveLoadout, cosmeticUnlocked };
 
             // Team colour for a slot's M_team areas (colour-blind aware red; back-row variants read apart).
             const teamColorFor = (side) => {
@@ -13975,24 +14014,110 @@
             if (new URLSearchParams(location.search).has('lab')) setTimeout(() => window.openCharacterLab(), 0);
 
             // ============================================================
-            // WARDROBE (main menu -> Wardrobe): dress your pickle. The live 3D pickle stands mid-court in the
-            // real arena (same renderer the match uses) with a turntable camera; the DOM panel is built from
-            // COSMETICS, so new items appear here automatically. Choices save to the loadout the local player
-            // wears in every match (and sends to an online opponent). Presentation only - never read by the sim.
+            // WARDROBE (main menu -> Wardrobe): an inventory. The live 3D pickle stands mid-court in the real arena
+            // (drag to spin); the panel has a tab per slot and a grid of tiles, each a little portrait of the pickle
+            // wearing that item (rendered off-screen once, then cached). Hover / cursor = try it on + read how it
+            // unlocks; click / confirm = equip (saved to the loadout every match uses). Locked items can be tried on
+            // but not equipped. Built from COSMETICS, so new items appear automatically. Presentation only.
             // ============================================================
             (() => {
-                const W = { open: false, side: 'left', pose: 'idle', char: null, building: false, pending: false,
-                            cam: null, stand: null, obs: null, prevCam: null, prevVis: '', prevAnims: true,
-                            prevGui: true, parked: [] };
-                const SLOT_LABEL = { hat: 'Hat', outfit: 'Outfit', neck: 'Neck', face_acc: 'Face', staff: 'Staff',
-                                     eyes: 'Eyes', brows: 'Brows', mouth: 'Mouth' };
-                const SECTIONS = [['Outfit', ['hat', 'outfit', 'neck', 'face_acc', 'staff']], ['Face', ['eyes', 'brows', 'mouth']]];
+                const W = { open: false, side: 'left', pose: 'idle', tab: 'hat', cursor: 0, preview: null, char: null,
+                            building: false, pending: false, cam: null, stand: null, obs: null, prevCam: null,
+                            prevVis: '', prevAnims: true, prevGui: true, parked: [] };
+                const TABS = [['hat', 'Hat'], ['outfit', 'Outfit'], ['neck', 'Neck'], ['face_acc', 'Face'], ['staff', 'Staff'],
+                              ['eyes', 'Eyes'], ['brows', 'Brows'], ['mouth', 'Mouth']];
                 const FACE_SLOTS = ['eyes', 'brows', 'mouth'];
                 const POSES = [['idle', 'Idle'], ['cast_loop', 'Casting'], ['victory', 'Victory']];
                 const TEAMS = [['left', 'Blue'], ['right', 'Red']];
+                const COLS = 4;
                 const optionsFor = (slot) => COSMETICS.filter(c => c.slot === slot);
+                const isNone = (c) => !c.file && !c.strip;
 
-                const disposeChar = disposePickle2;
+                // ---- thumbnails: the pickle wearing ONE item (bare otherwise), framed per slot, rendered into a
+                // small render target on its own (explicit render list) and read back to a data URL ----
+                const THUMB = 128;
+                const FRAME = {   // alpha offset from straight-on, beta, radius, target height
+                    hat: [-0.22, 1.36, 1.85, 1.74], face_acc: [0, 1.52, 1.0, 1.36], eyes: [0, 1.52, 0.95, 1.38],
+                    brows: [0, 1.52, 0.95, 1.40], mouth: [0, 1.52, 0.95, 1.22], neck: [-0.3, 1.45, 1.45, 1.05],
+                    outfit: [-0.35, 1.42, 2.25, 0.8], staff: [0.55, 1.42, 2.4, 0.9] };   // staff is in the right hand (-X): look from that side
+                const thumbCache = {};
+                let thumbQueue = Promise.resolve();
+                let thumbRig = null;
+                const getThumbRig = () => {
+                    if (thumbRig) return thumbRig;
+                    const cam = new BABYLON.ArcRotateCamera('wardrobeThumbCam', Math.PI / 2, 1.4, 2, BABYLON.Vector3.Zero(), scene);
+                    cam.minZ = 0.05;
+                    cam.layerMask = 0x20000000;             // sees nothing in the main pass
+                    // the camera would take the CANVAS aspect (16:9) even when drawing into the square target ->
+                    // squished portraits; pin a square projection instead
+                    const eng = scene.getEngine();
+                    const persp = scene.useRightHandedSystem ? BABYLON.Matrix.PerspectiveFovRH : BABYLON.Matrix.PerspectiveFovLH;
+                    cam.freezeProjectionMatrix(persp(cam.fov, 1, cam.minZ, cam.maxZ, eng.isNDCHalfZRange));
+                    const rtt = new BABYLON.RenderTargetTexture('wardrobeThumbRTT', THUMB, scene, false);
+                    rtt.activeCamera = cam;
+                    rtt.clearColor = new BABYLON.Color4(0, 0, 0, 0);
+                    rtt.renderParticles = false; rtt.renderSprites = false;
+                    const cv = document.createElement('canvas');
+                    cv.width = cv.height = THUMB;
+                    thumbRig = { cam, rtt, cv, g: cv.getContext('2d') };
+                    return thumbRig;
+                };
+                const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
+                const renderThumb = async (item) => {
+                    const lo = { ...DEFAULT_LOADOUT, hat: 'hat_none', outfit: 'outfit_none', neck: 'neck_none', face_acc: 'face_acc_none' };
+                    lo[item.slot] = item.id;
+                    const ch = await buildPickle2('thumb', 'left', lo);
+                    try {
+                        ch.modelRoot.getChildMeshes().forEach(m => {
+                            m.layerMask = 0x20000000;          // never drawn by the main camera
+                            if (m._pickleSlot === 'staff' && item.slot !== 'staff') m.setEnabled(false);   // keep portraits clean
+                        });
+                        const idle = ch.animations.idle;
+                        if (idle) { idle.play(false); idle.goToFrame(idle.from); idle.pause(); }
+                        if (ch.face) await ch.face.setStyle(lo);
+                        await nextFrame();                     // world matrices settle
+                        await Promise.all(ch.meshes.map(m => (m.material && m.material.forceCompilationAsync) ? m.material.forceCompilationAsync(m).catch(() => {}) : null));
+                        if (ch.skeleton) ch.skeleton.prepare(true);
+                        const { cam, rtt, cv, g } = getThumbRig();
+                        const [da, beta, radius, ty] = FRAME[item.slot] || FRAME.outfit;
+                        cam.alpha = Math.PI / 2 + da; cam.beta = beta; cam.radius = radius; cam.target.set(0, ty, 0);
+                        rtt.renderList = ch.meshes.filter(m => m.isEnabled());
+                        rtt.render(true);
+                        const px = await rtt.readPixels();
+                        const id = g.createImageData(THUMB, THUMB);
+                        const row = THUMB * 4;
+                        for (let y = 0; y < THUMB; y++) id.data.set(px.subarray((THUMB - 1 - y) * row, (THUMB - y) * row), y * row);   // GL rows are bottom-up
+                        g.putImageData(id, 0, 0);
+                        return cv.toDataURL('image/png');
+                    } finally { disposePickle2(ch); }
+                };
+                // One at a time (they share the rig); resolves with a data URL, or null if it failed.
+                const thumbFor = (item) => {
+                    if (isNone(item)) return Promise.resolve(null);
+                    if (!thumbCache[item.id]) {
+                        thumbCache[item.id] = thumbQueue = thumbQueue.then(() => renderThumb(item)).catch((e) => {
+                            console.warn('[wardrobe] thumbnail failed for', item.id, e);
+                            delete thumbCache[item.id];
+                            return null;
+                        });
+                    }
+                    return thumbCache[item.id];
+                };
+
+                // ---- unlocks (COSMETICS[].unlock = an achievement id; no unlock = starter item) ----
+                const achOf = (c) => (c.unlock && window.Achievements) ? Achievements.LIST.find(a => a.id === c.unlock) : null;
+                const isOwned = (c) => cosmeticUnlocked(c);
+                const unlockHTML = (c) => {
+                    if (!c.unlock) return '<span class="wi-ok">Starter item</span>';
+                    const a = achOf(c);
+                    const label = a ? `<b>${a.name}</b> &mdash; ${a.desc}` : c.unlock;
+                    if (isOwned(c)) return `<span class="wi-ok">Unlocked</span> &middot; ${label}`;
+                    const pr = (a && window.Achievements && Achievements.progress) ? Achievements.progress(a.id) : null;
+                    return `<span class="wi-lock">&#128274; Unlock:</span> ${label}` + (pr ? ` <span class="wi-prog">(${pr[0]}/${pr[1]})</span>` : '');
+                };
+
+                // ---- the preview pickle ----
+                const previewLoadout = () => W.preview || loadLoadout();
                 const playPose = () => {
                     const ch = W.char; if (!ch) return;
                     Object.values(ch.animations).forEach(a => a && a.stop && a.stop());
@@ -14000,21 +14125,19 @@
                     if (a) a.play(true);
                     if (window._labChar) window._labChar.currentAnim = W.pose;
                 };
-                // A little "ooh" when something changes: happy eyes + grin for a beat.
                 const cheer = () => {
                     const f = W.char && W.char.face;
                     if (f) f.override = { eye: 'happy', mouth: 'grin', until: performance.now() + 650 };
                 };
-                // Rebuild the preview pickle; changes made while one is loading coalesce into one more build.
                 const rebuild = async () => {
                     if (W.building) { W.pending = true; return; }
                     W.building = true;
                     try {
                         do {
                             W.pending = false;
-                            const ch = await buildPickle2('wardrobe', W.side, loadLoadout());
-                            if (!W.open) { disposeChar(ch); break; }
-                            disposeChar(W.char);
+                            const ch = await buildPickle2('wardrobe', W.side, previewLoadout());
+                            if (!W.open) { disposePickle2(ch); break; }
+                            disposePickle2(W.char);
                             W.char = ch;
                             ch.modelRoot.parent = W.stand;
                             window._labChar = { face: ch.face, currentAnim: W.pose, animations: ch.animations };
@@ -14023,75 +14146,184 @@
                     } catch (e) { console.warn('[wardrobe] preview build failed', e); }
                     W.building = false;
                 };
+                // Show `lo` on the pickle: face-only differences repaint the face, anything else rebuilds.
+                let shownLo = null;
+                const showLoadout = (lo) => {
+                    const prev = shownLo;
+                    shownLo = { ...lo };
+                    const diff = prev ? COSMETIC_SLOTS.filter(s => prev[s] !== lo[s]) : COSMETIC_SLOTS;
+                    if (!diff.length) return Promise.resolve();
+                    if (W.char && W.char.face && diff.every(s => FACE_SLOTS.includes(s))) return W.char.face.setStyle(lo);
+                    return rebuild();
+                };
 
                 // ---- the panel ----
-                const cycler = (key, label) =>
-                    `<div class="settings-row"><span>${label}</span>` +
-                    `<div class="fps-cycler wardrobe-cycler" tabindex="0" data-key="${key}">` +
-                    `<button class="fps-arrow" data-dir="-1" aria-label="Previous ${label}">&#9664;</button>` +
-                    `<span class="fps-val"></span>` +
-                    `<button class="fps-arrow" data-dir="1" aria-label="Next ${label}">&#9654;</button></div></div>`;
-                const valueText = (key) => {
-                    if (key === 'team') return TEAMS.find(t => t[0] === W.side)[1];
-                    if (key === 'pose') return POSES.find(p => p[0] === W.pose)[1];
-                    const c = cosmeticById(loadLoadout()[key]);
-                    return c ? c.name : '-';
+                const $ = (id) => document.getElementById(id);
+                const items = () => optionsFor(W.tab);
+                const renderTabs = () => {
+                    $('wardrobeTabs').innerHTML = TABS.map(([k, label]) =>
+                        `<button class="wardrobe-tab${k === W.tab ? ' is-active' : ''}" data-tab="${k}" tabindex="-1">${label}</button>`).join('');
+                    $('wardrobeTabs').querySelectorAll('.wardrobe-tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
                 };
-                const refreshValues = () => {
-                    document.querySelectorAll('#wardrobeRows .wardrobe-cycler').forEach(el => {
-                        el.querySelector('.fps-val').textContent = valueText(el.dataset.key);
+                const renderGrid = () => {
+                    const lo = loadLoadout();
+                    const list = items();
+                    $('wardrobeGrid').innerHTML = list.map((c, i) => {
+                        const cls = ['wardrobe-tile'];
+                        if (lo[W.tab] === c.id) cls.push('is-equipped');
+                        if (i === W.cursor) cls.push('is-cursor');
+                        if (!isOwned(c)) cls.push('is-locked');
+                        if (isNone(c)) cls.push('is-none');
+                        return `<button class="${cls.join(' ')}" data-i="${i}" tabindex="-1" aria-label="${c.name}">` +
+                               (isNone(c) ? '<span class="wt-slash"></span>' : '<img class="wt-img" alt="">') +
+                               (isOwned(c) ? '' : '<span class="wt-lock">&#128274;</span>') + '</button>';
+                    }).join('');
+                    $('wardrobeGrid').querySelectorAll('.wardrobe-tile').forEach(t => {
+                        const i = +t.dataset.i;
+                        t.addEventListener('mouseenter', () => setCursor(i));
+                        t.addEventListener('click', () => { setCursor(i); equip(); });
+                        const c = list[i];
+                        if (!isNone(c)) thumbFor(c).then(url => { const img = t.querySelector('.wt-img'); if (url && img) img.src = url; });
                     });
                 };
-                const step = (key, dir) => {
+                const renderInfo = () => {
+                    const c = items()[W.cursor];
+                    if (!c) return;
+                    const equipped = loadLoadout()[W.tab] === c.id;
+                    $('wardrobeInfo').innerHTML = `<div class="wi-name">${c.name}${equipped ? ' <span class="wi-tag">Equipped</span>' : ''}</div>` +
+                                                  `<div class="wi-unlock">${unlockHTML(c)}</div>`;
+                };
+                const markCursor = () => {
+                    $('wardrobeGrid').querySelectorAll('.wardrobe-tile').forEach(t => t.classList.toggle('is-cursor', +t.dataset.i === W.cursor));
+                };
+                const setCursor = (i) => {
+                    const list = items();
+                    if (!list.length) return;
+                    W.cursor = Math.max(0, Math.min(list.length - 1, i));
+                    markCursor();
+                    renderInfo();
+                    // try it on (locked ones too)
+                    const lo = { ...loadLoadout(), [W.tab]: list[W.cursor].id };
+                    W.preview = lo;
+                    showLoadout(lo);
+                };
+                const setTab = (k) => {
+                    W.tab = k;
+                    const lo = loadLoadout();
+                    W.cursor = Math.max(0, items().findIndex(c => c.id === lo[k]));
+                    renderTabs(); renderGrid(); renderInfo();
+                    W.preview = null; showLoadout(lo);
+                };
+                const stepTab = (d) => {
+                    const i = TABS.findIndex(t => t[0] === W.tab);
+                    setTab(TABS[(i + d + TABS.length) % TABS.length][0]);
+                    if (window.ToneSFX) ToneSFX.uiHover();
+                };
+                const moveCursor = (dx, dy) => {
+                    const n = items().length;
+                    let i = W.cursor + dx + dy * COLS;
+                    if (dx) i = (i + n) % n;                                       // left/right wrap through the list
+                    else if (i < 0 || i >= n) return;                              // up/down stop at the edges
+                    setCursor(i);
+                    if (window.ToneSFX) ToneSFX.uiHover();
+                };
+                const equip = () => {
+                    const c = items()[W.cursor];
+                    if (!c) return;
+                    if (!isOwned(c)) {
+                        const info = $('wardrobeInfo');
+                        info.classList.remove('is-denied'); void info.offsetWidth; info.classList.add('is-denied');
+                        if (window.ToneSFX && ToneSFX.uiBack) ToneSFX.uiBack();
+                        return;
+                    }
+                    const lo = loadLoadout();
+                    lo[W.tab] = c.id;
+                    saveLoadout(lo);
+                    W.preview = null;
+                    renderGrid(); renderInfo();
+                    showLoadout(lo).then(cheer);
+                    if (window.ToneSFX && ToneSFX.uiConfirm) ToneSFX.uiConfirm();
+                };
+                const revertPreview = () => { W.preview = null; showLoadout(loadLoadout()); };
+
+                // Team / Pose rows (preview only, not saved)
+                const cyclerText = (key) => key === 'team' ? TEAMS.find(t => t[0] === W.side)[1] : POSES.find(p => p[0] === W.pose)[1];
+                const refreshCyclers = () => document.querySelectorAll('#wardrobePreviewRows .wardrobe-cycler').forEach(el => {
+                    el.querySelector('.fps-val').textContent = cyclerText(el.dataset.key);
+                });
+                const stepCycler = (key, dir) => {
                     if (key === 'team') {
                         const i = TEAMS.findIndex(t => t[0] === W.side);
                         W.side = TEAMS[(i + dir + TEAMS.length) % TEAMS.length][0];
-                        refreshValues(); rebuild(); return;
-                    }
-                    if (key === 'pose') {
+                        refreshCyclers(); rebuild();
+                    } else {
                         const i = POSES.findIndex(p => p[0] === W.pose);
                         W.pose = POSES[(i + dir + POSES.length) % POSES.length][0];
-                        refreshValues(); playPose(); return;
+                        refreshCyclers(); playPose();
                     }
-                    const lo = loadLoadout();
-                    const opts = optionsFor(key);
-                    const i = Math.max(0, opts.findIndex(c => c.id === lo[key]));
-                    lo[key] = opts[(i + dir + opts.length) % opts.length].id;
-                    saveLoadout(lo);
-                    refreshValues();
-                    if (FACE_SLOTS.includes(key) && W.char && W.char.face) { W.char.face.setStyle(lo).then(cheer); }
-                    else { rebuild().then(cheer); }
                 };
+                const randomize = () => {
+                    const lo = {};
+                    for (const s of COSMETIC_SLOTS) { const o = optionsFor(s).filter(isOwned); lo[s] = o[Math.floor(Math.random() * o.length)].id; }
+                    saveLoadout(lo); W.preview = null;
+                    setTab(W.tab); showLoadout(loadLoadout()).then(cheer);
+                };
+
                 let wired = false;
                 const wirePanel = () => {
                     if (wired) return;
                     wired = true;
-                    let html = '';
-                    for (const [title, slots] of SECTIONS) {
-                        html += `<div class="settings-section-label">${title}</div>`;
-                        for (const s of slots) html += cycler(s, SLOT_LABEL[s]);
-                    }
-                    html += '<div class="settings-section-label">Preview</div>' + cycler('team', 'Team') + cycler('pose', 'Pose');
-                    document.getElementById('wardrobeRows').innerHTML = html;
-                    document.querySelectorAll('#wardrobeRows .wardrobe-cycler').forEach(el => {
-                        el.querySelectorAll('.fps-arrow').forEach(b => b.addEventListener('click', () => step(el.dataset.key, +b.dataset.dir)));
-                        // keyboard: left/right on a focused row
+                    const cyc = (key, label) =>
+                        `<div class="settings-row"><span>${label}</span>` +
+                        `<div class="fps-cycler wardrobe-cycler" tabindex="0" data-key="${key}">` +
+                        `<button class="fps-arrow" data-dir="-1" aria-label="Previous ${label}">&#9664;</button>` +
+                        `<span class="fps-val"></span>` +
+                        `<button class="fps-arrow" data-dir="1" aria-label="Next ${label}">&#9654;</button></div></div>`;
+                    $('wardrobePreviewRows').innerHTML = cyc('team', 'Team') + cyc('pose', 'Pose');
+                    document.querySelectorAll('#wardrobePreviewRows .wardrobe-cycler').forEach(el => {
+                        el.querySelectorAll('.fps-arrow').forEach(b => b.addEventListener('click', () => stepCycler(el.dataset.key, +b.dataset.dir)));
                         el.addEventListener('keydown', (e) => {
                             if (e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
-                            step(el.dataset.key, e.code === 'ArrowRight' ? 1 : -1);
-                            if (window.ToneSFX) ToneSFX.uiHover();
-                            e.preventDefault();
+                            stepCycler(el.dataset.key, e.code === 'ArrowRight' ? 1 : -1);
+                            e.preventDefault(); e.stopPropagation();
                         });
                     });
-                    document.getElementById('wardrobeRandom').addEventListener('click', () => {
-                        const lo = {};
-                        for (const s of COSMETIC_SLOTS) { const o = optionsFor(s); lo[s] = o[Math.floor(Math.random() * o.length)].id; }
-                        saveLoadout(lo); refreshValues(); rebuild().then(cheer);
+                    $('wardrobeGrid').addEventListener('mouseleave', () => {
+                        // back to what's equipped (the cursor parks on it)
+                        W.cursor = Math.max(0, items().findIndex(c => c.id === loadLoadout()[W.tab]));
+                        markCursor(); renderInfo(); revertPreview();
                     });
-                    document.getElementById('wardrobeReset').addEventListener('click', () => {
-                        saveLoadout({ ...DEFAULT_LOADOUT }); refreshValues(); rebuild();
+                    $('wardrobeRandom').addEventListener('click', randomize);
+                    $('wardrobeReset').addEventListener('click', () => { saveLoadout({ ...DEFAULT_LOADOUT }); W.preview = null; setTab(W.tab); });
+                    $('wardrobeBack').addEventListener('click', () => closeMenuScreen());
+                    // keyboard: arrows browse, Q/E switch category, Enter/Space equip (Esc = Back, handled globally)
+                    document.addEventListener('keydown', (e) => {
+                        if (!W.open || e.defaultPrevented) return;
+                        if (e.target && e.target.closest && e.target.closest('.wardrobe-cycler, input')) return;
+                        const k = e.code;
+                        if (k === 'ArrowLeft') moveCursor(-1, 0);
+                        else if (k === 'ArrowRight') moveCursor(1, 0);
+                        else if (k === 'ArrowUp') moveCursor(0, -1);
+                        else if (k === 'ArrowDown') moveCursor(0, 1);
+                        else if (k === 'KeyQ') stepTab(-1);
+                        else if (k === 'KeyE') stepTab(1);
+                        else if (k === 'Enter' || k === 'Space') { if (e.target && e.target.closest && e.target.closest('button.menu-btn')) return; equip(); }
+                        else return;
+                        e.preventDefault();
                     });
-                    document.getElementById('wardrobeBack').addEventListener('click', () => closeMenuScreen());
+                };
+                // Gamepad (from pollGamepadMenuNav): d-pad browses, LB/RB category, A equip, X randomize, Y team.
+                window.wardrobePad = (act) => {
+                    if (!W.open) return;
+                    if (act === 'left') moveCursor(-1, 0);
+                    else if (act === 'right') moveCursor(1, 0);
+                    else if (act === 'up') moveCursor(0, -1);
+                    else if (act === 'down') moveCursor(0, 1);
+                    else if (act === 'lb') stepTab(-1);
+                    else if (act === 'rb') stepTab(1);
+                    else if (act === 'confirm') equip();
+                    else if (act === 'x') randomize();
+                    else if (act === 'y') stepCycler('team', 1);
                 };
 
                 // ---- the 3D side ----
@@ -14122,7 +14354,8 @@
                     scene.activeCamera = W.cam;
                     W.obs = scene.onBeforeRenderObservable.add(() => { if (W.open && scene.activeCamera !== W.cam) scene.activeCamera = W.cam; });
                     window._wardrobeOpen = true;
-                    rebuild();
+                    shownLo = null;
+                    showLoadout(loadLoadout());
                 };
                 const exit3D = () => {
                     if (!W.open) return;
@@ -14132,7 +14365,7 @@
                     if (W.cam) W.cam.detachControl();
                     if (W.obs) { scene.onBeforeRenderObservable.remove(W.obs); W.obs = null; }
                     if (W.prevCam) scene.activeCamera = W.prevCam;
-                    disposeChar(W.char); W.char = null;
+                    disposePickle2(W.char); W.char = null; shownLo = null;
                     window._labChar = null;
                     W.parked.forEach(n => n.setEnabled(true)); W.parked = [];
                     cvs.style.visibility = W.prevVis;
@@ -14146,12 +14379,15 @@
                     if (W.open || window._labOpen) return;
                     wirePanel();
                     W.open = true;
-                    W.side = 'left'; W.pose = 'idle';
-                    refreshValues();
+                    W.side = 'left'; W.pose = 'idle'; W.preview = null;
+                    refreshCyclers();
+                    setTab(W.tab);
                     showMenuScreen('wardrobeScreen', 'menu');
                     document.getElementById('wardrobeScreen').classList.add('in-match');   // dark variant: the arena shows through
-                    if (window.setGamepadPrompts) setGamepadPrompts([{ action: 'navigate' }, { action: 'adjust' }, { action: 'back' }]);
+                    if (window.setGamepadPrompts) setGamepadPrompts([{ action: 'browse' }, { action: 'tabs' }, { action: 'confirm' }, { action: 'back' }]);
                     enter3D();
+                    // warm every tab's thumbnails in the background (the open tab's are already queued first)
+                    TABS.forEach(([k]) => optionsFor(k).forEach(c => thumbFor(c)));
                 };
             })();
 
