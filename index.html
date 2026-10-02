@@ -14421,19 +14421,19 @@
 
                 // ---- the 3D side ----
                 // Dusk skybox (2026-10-02). Owner: the wardrobe looked up at a bare purple haze; a faceted procedural
-                // sky "looked crazy" - wanted a baked, super-fantasy painted sky texture instead. textures/sky_dusk.png
-                // = a painted panorama (Higgsfield), mirrored side by side to wrap 360 seamlessly and run through the
-                // pixel-first pipeline (tools/pixelate_textures.py sky_dusk). Mapped on a dome by azimuth (u) and
+                // sky "looked crazy", a detailed painting was "too detailed" -> a SIMPLE baked sky texture:
+                // textures/sky_dusk.png = smooth dusk gradient + three flat two-tone clouds + a small moon (Higgsfield),
+                // looped and run pixel-first (tools/pixelate_textures.py sky_dusk). Mapped on a dome by azimuth (u) and
                 // elevation (v): the painting's bottom haze sits on the horizon, its top rows fill up to the zenith.
                 // Unlit, fog-free, infinite distance, NEAREST; presentation only, shown while the wardrobe / lab is open.
-                const SKY_TEX = 'textures/sky_dusk.png?v=2';
+                const SKY_TEX = 'textures/sky_dusk.png?v=3';
                 const SKY_YAW = -0.55;                                             // turns the painting around (the moon's spot)
                 const buildSkyDome = () => {
                     const R = 800, SEG = 64, rad = Math.PI / 180;
                     // The camera only sees the horizon up to ~30 deg, so the (looping) painting repeats 4x around - 90 deg
-                    // each, wider than the view, so one moon at a time - and, undistorted, rises ~44 deg: the whole
+                    // each, wider than the view, so one moon at a time - and, undistorted, rises ~38 deg: the whole
                     // painting sits in view; above it the top row (deep indigo) fills to the zenith.
-                    const U_REPEAT = 4, EL_LO = -2 * rad, EL_HI = 42 * rad;
+                    const U_REPEAT = 4, EL_LO = -2 * rad, EL_HI = 36.5 * rad;
                     const rings = [-20, -4];
                     for (let e = 0; e <= 90; e += 3) rings.push(e);
                     const pos = [], uvs = [], idx = [];
