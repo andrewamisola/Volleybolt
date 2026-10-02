@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=92-more-cosmetics">
+    <link rel="stylesheet" href="styles.css?v=93-ach-board">
 </head>
 <body>
 
@@ -182,9 +182,6 @@
                 <h1 class="arcane-title" data-text="Settings">Settings</h1>
             </div>
             <div class="arcane-buttons settings-panel">
-                <div class="settings-section-label">Player</div>
-                <label class="settings-row"><span>Name</span>
-                    <input type="text" class="settings-input" id="setName" maxlength="16" placeholder="Blue" autocomplete="off" spellcheck="false"></label>
                 <div class="settings-section-label">Audio</div>
                 <label class="settings-row"><span>Master</span>
                     <input type="range" class="settings-slider" id="setMaster" min="0" max="100"></label>
@@ -229,6 +226,9 @@
             <div class="wd-top">
                 <div class="wd-win wd-equip">
                     <div class="wd-tab">WARDROBE</div>
+                    <label class="wd-row wd-name-row"><span class="wd-label">Name</span>
+                        <input type="text" class="wd-name" id="wardrobeName" maxlength="16" placeholder="Blue" autocomplete="off" spellcheck="false"></label>
+                    <div class="wd-sep"></div>
                     <div id="wardrobeSlots"></div>
                     <div class="wd-sep"></div>
                     <button class="wd-row" id="wardrobeTeam"><span class="wd-label">Team</span><span class="wd-val" id="wardrobeTeamVal">Blue</span><span class="wd-key">T</span></button>
@@ -5037,6 +5037,27 @@
                 }
                 const backNow = pr(1);
                 if (backNow && !_navPadPrev.back) { const b = document.getElementById('wardrobeBack'); if (b) b.click(); any = true; }
+                _navPadPrev.back = backNow;
+                if (any && window._lastInputMode !== 'pad') setLastInputMode('pad');
+                return;
+            }
+
+            // Career > Achievements: the d-pad walks the badge board (window.achNav), B = back.
+            const achListEl = root.id === 'careerScreen' && document.getElementById('achList');
+            if (achListEl && !achListEl.hidden && window.achNav) {
+                const pr = (i) => !!(gp.buttons[i] && gp.buttons[i].pressed);
+                if (root !== window._navRoot) {
+                    window._navRoot = root;
+                    _navPadPrev.back = pr(1);
+                }
+                document.querySelectorAll('.gp-focused').forEach(el => el.classList.remove('gp-focused'));
+                const ax = gp.axes[0] || 0, ay = gp.axes[GP.stickY] || 0;
+                const dirs = [['up', pr(GP.dpadUp) || ay < -0.5], ['down', pr(GP.dpadDown) || ay > 0.5],
+                              ['left', pr(14) || ax < -0.5], ['right', pr(15) || ax > 0.5]];
+                let any = false;
+                for (const [d, now] of dirs) if (navDirEdge(d, now)) { achNav(d); any = true; }
+                const backNow = pr(1);
+                if (backNow && !_navPadPrev.back) { const b = document.getElementById('careerBack'); if (b) b.click(); any = true; }
                 _navPadPrev.back = backNow;
                 if (any && window._lastInputMode !== 'pad') setLastInputMode('pad');
                 return;
@@ -14346,6 +14367,27 @@
                     $('wardrobeRandom').addEventListener('click', randomize);
                     $('wardrobeReset').addEventListener('click', () => { saveLoadout({ ...DEFAULT_LOADOUT }); W.preview = null; setTab(W.tab); });
                     $('wardrobeBack').addEventListener('click', () => closeMenuScreen());
+                    // Name: saved with the other settings in localStorage (volleybolt_settings.playerName) for now;
+                    // an account will own it later. Enter / Esc leave the field (Esc doesn't also close the screen).
+                    const nameEl = $('wardrobeName');
+                    nameEl.addEventListener('input', () => {
+                        Settings.set('playerName', nameEl.value.slice(0, 16));
+                        if (window.refreshPlayerName) window.refreshPlayerName();
+                    });
+                    nameEl.addEventListener('keydown', (e) => {
+                        if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Escape') {
+                            nameEl.value = nameEl.value.trim();
+                            Settings.set('playerName', nameEl.value.slice(0, 16));
+                            if (window.refreshPlayerName) window.refreshPlayerName();
+                            nameEl.blur();
+                            e.preventDefault();
+                        }
+                        e.stopPropagation();   // typing never triggers the screen's hotkeys
+                    });
+                    nameEl.addEventListener('blur', () => {
+                        const v = nameEl.value.trim();
+                        if (v !== nameEl.value) { nameEl.value = v; Settings.set('playerName', v); if (window.refreshPlayerName) window.refreshPlayerName(); }
+                    });
                     // keyboard: arrows browse, Q/E switch category, Enter/Space equip (Esc = Back, handled globally)
                     document.addEventListener('keydown', (e) => {
                         if (!W.open || e.defaultPrevented) return;
@@ -14432,6 +14474,7 @@
                     wirePanel();
                     W.open = true;
                     W.side = 'left'; W.pose = 'idle'; W.preview = null;
+                    document.getElementById('wardrobeName').value = Settings.values.playerName || '';
                     refreshCyclers();
                     setTab(W.tab);
                     showMenuScreen('wardrobeScreen', 'menu');
@@ -23737,69 +23780,138 @@
             }
         }
 
-        // Achievements tab: the four groups as career-card windows. Unlocked = gold rim + date;
-        // milestones show a progress bar while locked; a red dot marks cards not yet seen.
+        // Achievements tab (2026-10-01): no scrolling. A badge board (one row of 16px pixel icons per
+        // group, tools/build_ach_icons.py) + a detail window for the hovered/selected badge.
+        // Unlocked = gold rim + full colour; locked = dimmed icon + a progress sliver; red dot = new.
         const ACH_GROUPS = [
             ['milestones', 'Milestones'], ['feats', 'Feats'], ['mastery', 'Spell Mastery'], ['pressure', 'Pressure'],
         ];
+        const ACH_ICON_ORDER = ['FIRST_BRINE', 'SEASONED', 'PICKLED', 'FERMENTED', 'WALL_OF_DILL', 'PYROMANCER',
+            'PICKLE_MONK', 'CLEAN_SWEEP', 'COMEBACK_KID', 'SPEED_BRINE', 'MARATHON', 'UNTOUCHED', 'RETURN_TO_SENDER',
+            'COLD_WAR', 'STORM_CHASER', 'MAX_RALLY', 'JUICE_CLASH_CHAMPION', 'PICKLED_IN_ICE', 'OVERTIME_HERO', 'DEMOLITION'];
+        const achIcon = (id, px) => {
+            const el = document.createElement('i');
+            el.className = 'ach-icon';
+            const i = Math.max(0, ACH_ICON_ORDER.indexOf(id));
+            el.style.width = el.style.height = px + 'px';
+            el.style.backgroundSize = (ACH_ICON_ORDER.length * px) + 'px ' + px + 'px';
+            el.style.backgroundPosition = (-i * px) + 'px 0';
+            return el;
+        };
+        window.achIcon = achIcon;
+        const achView = { rows: [], r: 0, c: 0 };   // rows = [[achievement, badgeEl], ...] per group
+        const mk = (tag, cls, text) => {
+            const el = document.createElement(tag);
+            if (cls) el.className = cls;
+            if (text != null) el.textContent = text;
+            return el;
+        };
+        function achShowDetail(a) {
+            const box = document.getElementById('achDetail');
+            if (!box || !a) return;
+            const at = Achievements.unlockedAt(a.id);
+            const prog = !at ? Achievements.progress(a.id) : null;
+            const rewards = window.PickleKit ? PickleKit.rewardsFor(a.id) : [];
+            const group = (ACH_GROUPS.find(g => g[0] === a.group) || [0, ''])[1];
+            box.className = 'career-card ach-detail ' + (at ? 'is-unlocked' : 'is-locked');
+            box.innerHTML = '';
+            const head = mk('div', 'ach-d-head');
+            const frame = mk('div', 'ach-d-badge');
+            frame.appendChild(achIcon(a.id, 96));
+            const titles = mk('div', 'ach-d-titles');
+            titles.append(mk('div', 'ach-d-group', group), mk('div', 'ach-d-name', a.name),
+                mk('div', 'ach-d-status', at ? 'Unlocked ' + new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Locked'));
+            head.append(frame, titles);
+            box.append(head, mk('div', 'ach-d-desc', a.desc));
+            if (prog) {
+                const row = mk('div', 'ach-d-prog');
+                const bar = mk('div', 'ach-progress');
+                const fill = mk('i');
+                fill.style.width = Math.round(100 * Math.min(1, prog[0] / prog[1])) + '%';
+                bar.appendChild(fill);
+                row.append(bar, mk('span', '', prog[0].toLocaleString() + ' / ' + prog[1].toLocaleString()));
+                box.appendChild(row);
+            }
+            if (rewards.length) {
+                const rw = mk('div', 'ach-d-reward');
+                rw.append(mk('span', 'ach-d-reward-k', at ? 'In your Wardrobe' : 'Reward'), mk('span', 'ach-d-reward-v', rewards.join(', ')));
+                box.appendChild(rw);
+            }
+        }
+        function achSelect(r, c) {
+            const rows = achView.rows;
+            if (!rows.length) return;
+            r = Math.max(0, Math.min(rows.length - 1, r));
+            c = Math.max(0, Math.min(rows[r].length - 1, c));
+            achView.r = r; achView.c = c;
+            document.querySelectorAll('#achList .ach-badge.is-sel').forEach(el => el.classList.remove('is-sel'));
+            const [a, el] = rows[r][c];
+            el.classList.add('is-sel');
+            achShowDetail(a);
+        }
+        // Arrow keys / d-pad on the Achievements tab move over the board; Left off column 0 = back to Stats.
+        window.achNav = (d) => {
+            const { r, c } = achView;
+            if (d === 'left' && c === 0) careerSetTab(0);
+            else if (d === 'left') achSelect(r, c - 1);
+            else if (d === 'right') achSelect(r, c + 1);
+            else if (d === 'up') achSelect(r - 1, c);
+            else if (d === 'down') achSelect(r + 1, c);
+            if (window.ToneSFX) ToneSFX.uiHover();
+        };
         function populateAchievements() {
             const list = document.getElementById('achList');
             if (!list || !window.Achievements) return;
             const unseen = new Set(Achievements.unseenIds());
             list.innerHTML = '';
+            achView.rows = [];
+            const board = mk('div', 'career-card ach-board');
+            const total = Achievements.LIST.length;
+            const got = Achievements.LIST.filter(a => Achievements.unlockedAt(a.id)).length;
+            const head = mk('div', 'ach-board-head');
+            head.append(mk('span', 'career-card-title', 'Achievements'), mk('span', 'ach-count', got + ' / ' + total));
+            const tbar = mk('div', 'ach-progress ach-total');
+            const tfill = mk('i');
+            tfill.style.width = Math.round(100 * got / total) + '%';
+            tbar.appendChild(tfill);
+            board.append(head, tbar);
+            let firstNew = null;
             for (const [group, title] of ACH_GROUPS) {
-                const card = document.createElement('div');
-                card.className = 'career-card ach-card';
-                const head = document.createElement('div');
-                head.className = 'career-card-title';
-                head.textContent = title;
-                card.appendChild(head);
+                const row = mk('div', 'ach-badges');
+                const rowItems = [];
                 for (const a of Achievements.LIST) {
                     if (a.group !== group) continue;
                     const at = Achievements.unlockedAt(a.id);
-                    const row = document.createElement('div');
-                    row.className = 'ach-row ' + (at ? 'is-unlocked' : 'is-locked');
-                    const top = document.createElement('div');
-                    top.className = 'ach-top';
-                    const name = document.createElement('span');
-                    name.className = 'ach-name';
-                    name.textContent = a.name;
-                    top.appendChild(name);
-                    if (at && unseen.has(a.id)) {
-                        const dot = document.createElement('span');
-                        dot.className = 'ach-dot';
-                        top.appendChild(dot);
-                    }
-                    const meta = document.createElement('span');
-                    meta.className = 'ach-meta';
                     const prog = !at ? Achievements.progress(a.id) : null;
-                    meta.textContent = at ? new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-                        : prog ? prog[0].toLocaleString() + ' / ' + prog[1].toLocaleString() : '';
-                    top.appendChild(meta);
-                    row.appendChild(top);
-                    const desc = document.createElement('div');
-                    desc.className = 'ach-desc';
-                    desc.textContent = a.desc;
-                    row.appendChild(desc);
-                    const rewards = window.PickleKit ? PickleKit.rewardsFor(a.id) : [];
-                    if (rewards.length) {
-                        const rw = document.createElement('div');
-                        rw.className = 'ach-reward';
-                        rw.textContent = (at ? 'Unlocked: ' : 'Reward: ') + rewards.join(', ');
-                        row.appendChild(rw);
-                    }
-                    if (prog) {
-                        const bar = document.createElement('div');
-                        bar.className = 'ach-progress';
-                        const fill = document.createElement('i');
-                        fill.style.width = Math.round(100 * prog[0] / prog[1]) + '%';
+                    const b = mk('div', 'ach-badge ' + (at ? 'is-unlocked' : 'is-locked'));
+                    b.appendChild(achIcon(a.id, 48));
+                    if (window.PickleKit && PickleKit.rewardsFor(a.id).length) b.appendChild(mk('span', 'ach-gift'));
+                    if (prog && prog[0] > 0) {
+                        const bar = mk('span', 'ach-sliver');
+                        const fill = mk('i');
+                        fill.style.width = Math.round(100 * Math.min(1, prog[0] / prog[1])) + '%';
                         bar.appendChild(fill);
-                        row.appendChild(bar);
+                        b.appendChild(bar);
                     }
-                    card.appendChild(row);
+                    if (at && unseen.has(a.id)) b.appendChild(mk('span', 'ach-dot'));
+                    const rr = achView.rows.length, cc = rowItems.length;
+                    if (at && unseen.has(a.id) && !firstNew) firstNew = [rr, cc];
+                    b.addEventListener('mouseenter', () => {
+                        if (achView.r === rr && achView.c === cc) return;
+                        achSelect(rr, cc);
+                        if (window.ToneSFX) ToneSFX.uiHover();
+                    });
+                    b.addEventListener('click', () => achSelect(rr, cc));
+                    rowItems.push([a, b]);
+                    row.appendChild(b);
                 }
-                list.appendChild(card);
+                achView.rows.push(rowItems);
+                board.append(mk('div', 'ach-group-label', title), row);
             }
+            const detail = mk('div');
+            detail.id = 'achDetail';
+            list.append(board, detail);
+            achSelect(...(firstNew || [0, 0]));
         }
         window.populateAchievements = populateAchievements;
 
@@ -23903,9 +24015,14 @@
             document.addEventListener('keydown', (e) => {
                 const screen = document.getElementById('careerScreen');
                 if (!screen || !screen.classList.contains('visible')) return;
-                if (e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
-                careerSetTab(e.code === 'ArrowRight' ? 1 : 0);
-                if (window.ToneSFX) ToneSFX.uiHover();
+                const dir = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }[e.code];
+                if (!dir) return;
+                const achOpen = !document.getElementById('achList').hidden;
+                if (achOpen) achNav(dir);
+                else if (dir === 'left' || dir === 'right') {
+                    careerSetTab(dir === 'right' ? 1 : 0);
+                    if (window.ToneSFX) ToneSFX.uiHover();
+                } else return;
                 e.preventDefault();
             });
             const careerBack = document.getElementById('careerBack');
@@ -24074,13 +24191,9 @@
             if (settingsWired) return;
             const $ = (id) => document.getElementById(id);
             const master = $('setMaster'), music = $('setMusic'), sfx = $('setSfx'),
-                  full = $('setFullscreen'), back = $('settingsBack'), name = $('setName');
+                  full = $('setFullscreen'), back = $('settingsBack');
             if (!master) return;
             settingsWired = true;
-            if (name) name.addEventListener('input', e => {
-                Settings.set('playerName', e.target.value.slice(0, 16));
-                if (window.refreshPlayerName) window.refreshPlayerName();
-            });
             master.addEventListener('input', e => Settings.set('master', parseInt(e.target.value, 10)));
             music.addEventListener('input',  e => Settings.set('music',  parseInt(e.target.value, 10)));
             sfx.addEventListener('input',    e => Settings.set('sfx',    parseInt(e.target.value, 10)));
@@ -24140,14 +24253,6 @@
             document.getElementById('setMaster').value = Settings.values.master;
             document.getElementById('setMusic').value = Settings.values.music;
             document.getElementById('setSfx').value = Settings.values.sfx;
-            const nameEl = document.getElementById('setName');
-            if (nameEl) {
-                nameEl.value = Settings.values.playerName || '';
-                // Lock name editing mid-match (Settings opened from pause) to avoid label desync.
-                const inMatch = (from === 'pause');
-                nameEl.disabled = inMatch;
-                nameEl.title = inMatch ? 'Name can only be changed outside of a match' : '';
-            }
             document.getElementById('setFullscreen').checked = !!document.fullscreenElement;
             { const rm = document.getElementById('setReduceMotion'); if (rm) rm.checked = !!Settings.values.reduceMotion;
               const cb = document.getElementById('setColorblind');   if (cb) cb.checked = !!Settings.values.colorblind;

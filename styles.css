@@ -3306,30 +3306,76 @@ body.gp-cursor-hidden * {
 }
 .ach-dot[hidden] { display: none; }
 
-/* ---- Achievements tab: four group windows, 2x2 like the stats ---- */
-.ach-list {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(420px, auto));
-    gap: 16px 18px;
-    max-height: 64vh;
-    overflow-y: auto;
+/* ---- Achievements tab: a badge board + a detail window, no scrolling (2026-10-01) ---- */
+.ach-list { display: flex; align-items: stretch; gap: 18px; }
+.ach-board {
+    display: grid; grid-template-columns: auto auto; align-items: center; gap: 10px 18px;
+    padding: 14px 22px 18px;
 }
-.ach-row { padding: 5px 0 6px 12px; border-left: 3px solid transparent; }
-.ach-row + .ach-row { border-top: 1px solid rgba(224, 230, 240, 0.12); }
-.ach-top { display: flex; align-items: baseline; gap: 8px; }
-.ach-name { font-size: 19px; }
-.ach-meta { margin-left: auto; font-size: 15px; color: #9aa0b3; white-space: nowrap; }
-.ach-desc { font-size: 15px; color: #c8c3d8; }
-.ach-row.is-locked .ach-name { color: #9aa0b3; }
-.ach-row.is-locked .ach-desc { opacity: 0.7; }
-.ach-reward { font-size: 13px; font-weight: 800; color: #f0c050; margin-top: 2px; }   /* the cosmetic it unlocks */
-.ach-row.is-locked .ach-reward { opacity: 0.85; }
-.ach-row.is-unlocked { border-left-color: #f0c050; }
-.ach-row.is-unlocked .ach-name { color: #ffe39a; }
-.ach-row.is-unlocked .ach-meta { color: #f0c050; }
-.ach-row .ach-dot { margin-left: 0; vertical-align: middle; }
-.ach-progress { height: 5px; margin-top: 5px; background: rgba(224, 230, 240, 0.15); border-radius: 3px; overflow: hidden; }
+.ach-board-head { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 14px; }
+.ach-board-head .career-card-title { margin-bottom: 0; }
+.ach-count { margin-left: auto; font-size: 19px; color: #ffe39a; }
+.ach-total { grid-column: 1 / -1; margin: -2px 0 6px; }
+.ach-group-label { font-size: 17px; font-weight: 800; color: #c9a8ff; white-space: nowrap; }
+.ach-badges { display: flex; gap: 10px; }
+.ach-icon {
+    display: block; flex: none;
+    background-image: url('textures/ach/icons.png'); background-repeat: no-repeat;
+    image-rendering: pixelated;
+}
+.ach-badge {
+    position: relative; width: 64px; height: 64px; box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    background: linear-gradient(180deg, rgba(30, 36, 52, 0.95), rgba(14, 18, 28, 0.95));
+    border: 2px solid rgba(154, 160, 179, 0.45); border-radius: 8px;
+}
+.ach-badge.is-locked .ach-icon { filter: grayscale(1) brightness(0.85) contrast(0.8); opacity: 0.55; }
+.ach-badge.is-unlocked {
+    border-color: #f0c050;
+    background: linear-gradient(180deg, rgba(92, 74, 40, 0.95), rgba(40, 30, 18, 0.95));
+    box-shadow: inset 0 0 0 1px rgba(255, 227, 154, 0.25);
+}
+.ach-badge.is-sel { outline: 3px solid #fff4c2; outline-offset: 2px; }
+.ach-badge:hover:not(.is-sel) { border-color: #fff4c2; }
+.ach-badge .ach-dot { position: absolute; top: -5px; right: -5px; margin: 0; vertical-align: baseline; }
+.ach-gift {                      /* a little gold diamond: this one unlocks a cosmetic */
+    position: absolute; left: 4px; top: 4px; width: 7px; height: 7px; transform: rotate(45deg);
+    background: #f0c050; box-shadow: 0 0 0 1px rgba(16, 24, 40, 0.9);
+}
+.ach-badge.is-locked .ach-gift { background: #a8742a; }
+.ach-sliver { position: absolute; left: 6px; right: 6px; bottom: 5px; height: 4px; border-radius: 2px; background: rgba(224, 230, 240, 0.15); overflow: hidden; }
+.ach-sliver > i { display: block; height: 100%; background: #c9a8ff; }
+.ach-progress { height: 6px; background: rgba(224, 230, 240, 0.15); border-radius: 3px; overflow: hidden; }
 .ach-progress > i { display: block; height: 100%; background: #c9a8ff; }
+.ach-total > i { background: #f0c050; }
+
+.ach-detail { width: 380px; box-sizing: border-box; padding: 18px 22px 20px; gap: 12px; }
+.ach-d-head { display: flex; align-items: center; gap: 16px; }
+.ach-d-badge {
+    flex: none; width: 112px; height: 112px; box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(180deg, rgba(30, 36, 52, 0.95), rgba(14, 18, 28, 0.95));
+    border: 2px solid rgba(154, 160, 179, 0.45); border-radius: 10px;
+}
+.ach-detail.is-unlocked .ach-d-badge {
+    border-color: #f0c050; background: linear-gradient(180deg, rgba(92, 74, 40, 0.95), rgba(40, 30, 18, 0.95));
+}
+.ach-detail.is-locked .ach-d-badge .ach-icon { filter: grayscale(1) brightness(0.85) contrast(0.8); opacity: 0.55; }
+.ach-d-titles { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ach-d-group { font-size: 14px; font-weight: 800; color: #c9a8ff; letter-spacing: 0.5px; }
+.ach-d-name { font-family: 'FF9UI', sans-serif; font-size: 26px; line-height: 1.1; color: #9aa0b3; text-shadow: var(--ff9-shadow); }
+.ach-detail.is-unlocked .ach-d-name { color: #ffe39a; }
+.ach-d-status { font-size: 15px; color: #9aa0b3; }
+.ach-detail.is-unlocked .ach-d-status { color: #f0c050; }
+.ach-d-desc { font-size: 17px; line-height: 1.35; color: #e0dcea; }
+.ach-d-prog { display: flex; align-items: center; gap: 12px; font-size: 15px; color: #c8c3d8; white-space: nowrap; }
+.ach-d-prog .ach-progress { flex: 1; }
+.ach-d-reward {
+    display: flex; flex-direction: column; gap: 1px; padding: 8px 12px;
+    border: 1px solid rgba(240, 192, 80, 0.45); border-radius: 8px; background: rgba(240, 192, 80, 0.08);
+}
+.ach-d-reward-k { font-size: 13px; font-weight: 800; color: #c9a8ff; }
+.ach-d-reward-v { font-size: 17px; font-weight: 800; color: #f0c050; }
 
 /* ---- Multiplayer (1v1 views): left-aligned like every other screen ---- */
 #multiplayerLobby .arcane-buttons > .lobby-view { align-items: flex-start !important; }   /* 1v1 views only; the doubles split stays centred */
@@ -4277,6 +4323,16 @@ body.gp-cursor-hidden * {
     font-size: 19px; color: #cdd8ef; text-shadow: 1px 1px 0 #000;
 }
 .wd-sep { height: 0; border-top: 1px solid rgba(223, 230, 242, 0.22); margin: 10px 6px; }
+/* Name: a text field in the row's value spot (gold, like an equipped item) */
+.wd-name-row { cursor: text; }
+.wd-name-row:focus-within::before { content: '\25B6'; position: absolute; left: 6px; font-size: 16px; color: #f0c050; }
+.wd-name {
+    width: 200px; height: 32px; padding: 0 10px; box-sizing: border-box; text-align: right;
+    background: rgba(16, 24, 40, 0.55); border: 1px solid rgba(206, 214, 230, 0.5); border-radius: 5px;
+    font-family: 'FF9UI', sans-serif; font-size: 20px; color: #f0c050; text-shadow: 1px 1px 0 #000; outline: none;
+}
+.wd-name::placeholder { color: #7c8598; }
+.wd-name:focus { border-color: #fff4c2; background: rgba(12, 18, 30, 0.85); }
 /* Item window: the grid of cream icon cards */
 .wd-items { width: 520px; padding: 26px 16px 16px; display: flex; flex-direction: column; }
 #wardrobeGrid {
