@@ -3322,6 +3322,8 @@ body.gp-cursor-hidden * {
 .ach-desc { font-size: 15px; color: #c8c3d8; }
 .ach-row.is-locked .ach-name { color: #9aa0b3; }
 .ach-row.is-locked .ach-desc { opacity: 0.7; }
+.ach-reward { font-size: 13px; font-weight: 800; color: #f0c050; margin-top: 2px; }   /* the cosmetic it unlocks */
+.ach-row.is-locked .ach-reward { opacity: 0.85; }
 .ach-row.is-unlocked { border-left-color: #f0c050; }
 .ach-row.is-unlocked .ach-name { color: #ffe39a; }
 .ach-row.is-unlocked .ach-meta { color: #f0c050; }
@@ -3945,6 +3947,7 @@ body.gp-cursor-hidden * {
     font-family: 'Manrope UI', 'Manrope', sans-serif; font-weight: 800; font-size: 24px; color: #ffe39a;
 }
 #endScreen .end-ach-desc { font-family: 'Manrope', sans-serif; font-size: 15px; color: #c8c3d8; }
+#endScreen .end-ach-reward { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 14px; color: #f0c050; margin-top: 4px; }
 #endScreen .end-ach-more {
     display: flex; align-items: center;
     font-family: 'Manrope UI', 'Manrope', sans-serif; font-weight: 800; font-size: 20px; color: #ffe39a;

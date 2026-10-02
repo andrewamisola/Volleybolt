@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=89-wardrobe-ff9">
+    <link rel="stylesheet" href="styles.css?v=90-cosmetic-unlocks">
 </head>
 <body>
 
@@ -13609,20 +13609,20 @@
             const COSMETICS = [
                 { id: 'hat_none',      name: 'No Hat',          slot: 'hat' },
                 { id: 'hat_wizard',    name: 'Wizard Hat',      slot: 'hat',    file: 'parts/hat_wizard.glb' },
-                { id: 'hat_witch',     name: 'Witch Hat',       slot: 'hat',    file: 'parts/hat_witch.glb' },
-                { id: 'hat_crown',     name: 'Crown',           slot: 'hat',    file: 'parts/hat_crown.glb' },
+                { id: 'hat_witch',     name: 'Witch Hat',       slot: 'hat',    file: 'parts/hat_witch.glb', unlock: 'COMEBACK_KID' },
+                { id: 'hat_crown',     name: 'Crown',           slot: 'hat',    file: 'parts/hat_crown.glb', unlock: 'CLEAN_SWEEP' },
                 { id: 'outfit_none',   name: 'Bare Pickle',     slot: 'outfit' },
                 { id: 'outfit_robe',   name: 'Wizard Robe',     slot: 'outfit', file: 'parts/outfit_robe.glb' },
-                { id: 'outfit_cape',   name: 'Short Cape',      slot: 'outfit', file: 'parts/outfit_cape.glb' },
+                { id: 'outfit_cape',   name: 'Short Cape',      slot: 'outfit', file: 'parts/outfit_cape.glb', unlock: 'SEASONED' },
                 { id: 'neck_none',     name: 'None',            slot: 'neck' },
-                { id: 'neck_scarf',    name: 'Knit Scarf',      slot: 'neck',   file: 'parts/neck_scarf.glb' },
+                { id: 'neck_scarf',    name: 'Knit Scarf',      slot: 'neck',   file: 'parts/neck_scarf.glb', unlock: 'PICKLED_IN_ICE' },
                 { id: 'face_acc_none', name: 'None',            slot: 'face_acc' },
-                { id: 'face_glasses',  name: 'Round Glasses',   slot: 'face_acc', file: 'parts/face_glasses.glb' },
+                { id: 'face_glasses',  name: 'Round Glasses',   slot: 'face_acc', file: 'parts/face_glasses.glb', unlock: 'PICKLE_MONK' },
                 { id: 'staff_classic', name: 'Classic Staff',   slot: 'staff',  file: 'parts/staff_classic.glb' },
-                { id: 'staff_branch',  name: 'Gnarled Branch',  slot: 'staff',  file: 'parts/staff_branch.glb' },
+                { id: 'staff_branch',  name: 'Gnarled Branch',  slot: 'staff',  file: 'parts/staff_branch.glb', unlock: 'STORM_CHASER' },
                 { id: 'eyes_classic',  name: 'Classic Eyes',    slot: 'eyes',   strip: 'textures/face/eyes_classic.png' },
                 { id: 'eyes_beady',    name: 'Beady Eyes',      slot: 'eyes',   strip: 'textures/face/eyes_beady.png' },
-                { id: 'eyes_sleepy',   name: 'Sleepy Eyes',     slot: 'eyes',   strip: 'textures/face/eyes_sleepy.png' },
+                { id: 'eyes_sleepy',   name: 'Sleepy Eyes',     slot: 'eyes',   strip: 'textures/face/eyes_sleepy.png', unlock: 'MARATHON' },
                 { id: 'eyes_shiny',    name: 'Shiny Eyes',      slot: 'eyes',   strip: 'textures/face/eyes_shiny.png' },
                 { id: 'brows_none',    name: 'None',            slot: 'brows' },
                 { id: 'brows_classic', name: 'Classic Brows',   slot: 'brows',  strip: 'textures/face/brows_classic.png' },
@@ -13630,7 +13630,7 @@
                 { id: 'brows_unibrow', name: 'Unibrow',         slot: 'brows',  strip: 'textures/face/brows_unibrow.png' },
                 { id: 'mouth_smile',   name: 'Smile',           slot: 'mouth',  strip: 'textures/face/mouth_smile.png' },
                 { id: 'mouth_buck',    name: 'Buck Teeth',      slot: 'mouth',  strip: 'textures/face/mouth_buck.png' },
-                { id: 'mouth_smirk',   name: 'Smirk',           slot: 'mouth',  strip: 'textures/face/mouth_smirk.png' },
+                { id: 'mouth_smirk',   name: 'Smirk',           slot: 'mouth',  strip: 'textures/face/mouth_smirk.png', unlock: 'RETURN_TO_SENDER' },
                 { id: 'mouth_cat',     name: 'Cat Mouth',       slot: 'mouth',  strip: 'textures/face/mouth_cat.png' },
             ];
             const COSMETIC_SLOTS = ['hat', 'outfit', 'neck', 'face_acc', 'staff', 'eyes', 'brows', 'mouth'];
@@ -13640,6 +13640,8 @@
             // An item with `unlock: '<ACHIEVEMENT_ID>'` is owned once that achievement is unlocked; no `unlock` =
             // starter item. (None are linked yet.)
             const cosmeticUnlocked = (c) => !!c && (!c.unlock || !!(window.Achievements && Achievements.unlockedAt(c.unlock)));
+            // the cosmetics an achievement unlocks (names), for the end-screen chips and the Career cards
+            const rewardsFor = (achId) => COSMETICS.filter(c => c.unlock === achId).map(c => c.name);
             // a loadout with every slot valid (unknown / wrong-slot ids fall back to the default)
             const sanitizeLoadout = (lo) => {
                 const out = {};
@@ -13654,7 +13656,7 @@
             const ownedOnly = (lo) => { for (const s of COSMETIC_SLOTS) if (!cosmeticUnlocked(cosmeticById(lo[s]))) lo[s] = DEFAULT_LOADOUT[s]; return lo; };
             const loadLoadout = () => { try { return ownedOnly(sanitizeLoadout(JSON.parse(localStorage.getItem(LOADOUT_KEY) || 'null'))); } catch (e) { return { ...DEFAULT_LOADOUT }; } };
             const saveLoadout = (lo) => { try { localStorage.setItem(LOADOUT_KEY, JSON.stringify(sanitizeLoadout(lo))); } catch (e) {} };
-            window.PickleKit = { COSMETICS, COSMETIC_SLOTS, DEFAULT_LOADOUT, sanitizeLoadout, loadLoadout, saveLoadout, cosmeticUnlocked };
+            window.PickleKit = { COSMETICS, COSMETIC_SLOTS, DEFAULT_LOADOUT, sanitizeLoadout, loadLoadout, saveLoadout, cosmeticUnlocked, rewardsFor };
 
             // Team colour for a slot's M_team areas (colour-blind aware red; back-row variants read apart).
             const teamColorFor = (side) => {
@@ -23635,6 +23637,13 @@
                     desc.className = 'ach-desc';
                     desc.textContent = a.desc;
                     row.appendChild(desc);
+                    const rewards = window.PickleKit ? PickleKit.rewardsFor(a.id) : [];
+                    if (rewards.length) {
+                        const rw = document.createElement('div');
+                        rw.className = 'ach-reward';
+                        rw.textContent = (at ? 'Unlocked: ' : 'Reward: ') + rewards.join(', ');
+                        row.appendChild(rw);
+                    }
                     if (prog) {
                         const bar = document.createElement('div');
                         bar.className = 'ach-progress';
@@ -28286,6 +28295,13 @@
                 desc.className = 'end-ach-desc';
                 desc.textContent = a.desc;
                 chip.append(kicker, name, desc);
+                const rewards = window.PickleKit ? PickleKit.rewardsFor(a.id) : [];
+                if (rewards.length) {
+                    const rw = document.createElement('div');
+                    rw.className = 'end-ach-reward';
+                    rw.textContent = 'New in the Wardrobe: ' + rewards.join(', ');
+                    chip.appendChild(rw);
+                }
                 strip.appendChild(chip);
             }
             if (list.length > END_ACH_MAX) {
