@@ -239,6 +239,34 @@ def bark_pixels():
         grid[y][x] = c
     return lambda x, y: grid[y][x]
 
+def hair_pixels():
+    """16x16 brown hair: strand stripes along v, a light sheen pixel here and there."""
+    W = H = 16
+    base, dark, light = map(hx, ('#4a3020', '#33201a', '#6b4a30'))
+    grid = [[base] * W for _ in range(H)]
+    for y in range(H):
+        for x in range(W):
+            if (x + (y // 4)) % 3 == 0:
+                grid[y][x] = dark
+            elif hash2(x, y, 41) > 0.9:
+                grid[y][x] = light
+    return lambda x, y: grid[y][x]
+
+
+def leaf_pixels():
+    """16x16 leaf green with a darker vein."""
+    W = H = 16
+    base, dark, light = map(hx, ('#6fae3c', '#4f8a2a', '#8fcb52'))
+    grid = [[base] * W for _ in range(H)]
+    for y in range(H):
+        for x in range(W):
+            if x == 8 or abs(x - 8) == (y % 8) // 2 + 3 and y % 4 == 0:
+                grid[y][x] = dark
+            elif hash2(x, y, 43) > 0.88:
+                grid[y][x] = light
+    return lambda x, y: grid[y][x]
+
+
 # ------------------------------------------------------------------ materials
 def make_mat(name, color=(1, 1, 1, 1), image=None):
     m = bpy.data.materials.new(name)
@@ -275,6 +303,8 @@ def build_materials():
         'M_knit': make_mat('M_knit', lin('#e8dcc0'), pixel_image('knit_16', 16, 16, knit_pixels())),
         'M_bark': make_mat('M_bark', lin('#6a5440'), pixel_image('bark_8x16', 8, 16, bark_pixels())),
         'M_frame': make_mat('M_frame', lin('#2a2230')),
+        'M_hair': make_mat('M_hair', lin('#4a3020'), pixel_image('hair_16', 16, 16, hair_pixels())),
+        'M_leaf': make_mat('M_leaf', lin('#6fae3c'), pixel_image('leaf_16', 16, 16, leaf_pixels())),
     }
 
 
@@ -285,10 +315,10 @@ def mirror(v, s):
 
 
 ARM_S = (0.30, -0.02, 1.05)       # shoulder
-ARM_E = (0.385, -0.065, 0.88)     # elbow
-ARM_W = (0.405, -0.11, 0.75)      # wrist
-HAND_C = (0.41, -0.12, 0.69)      # mitten centre
-HAND_T = (0.41, -0.125, 0.62)     # hand bone tail
+ARM_E = (0.46, -0.06, 0.90)       # elbow   (out past the pot belly, 2026-10-01)
+ARM_W = (0.52, -0.10, 0.79)       # wrist
+HAND_C = (0.53, -0.11, 0.73)      # mitten centre
+HAND_T = (0.53, -0.115, 0.66)     # hand bone tail
 LEG_X = 0.15
 
 BONES = [
@@ -488,9 +518,10 @@ def ellipsoid(mb, c, radii, lon, lat, wfn, mat, uspan=0.3, smooth=True, flat_bot
 
 # ------------------------------------------------------------------ the body (head + body = one cucumber)
 NSEG = 20
-BODY_RINGS = [  # z, radius
-    (0.20, 0.16), (0.27, 0.27), (0.38, 0.32), (0.52, 0.335), (0.70, 0.345), (0.90, 0.35), (0.975, 0.35),
-    (1.10, 0.352), (1.25, 0.347), (1.40, 0.33), (1.525, 0.295), (1.61, 0.235), (1.65, 0.17), (1.68, 0.095)]
+BODY_RINGS = [  # z, radius - a round pot belly low down (owner: the original model's big belly was funny)
+    (0.20, 0.18), (0.27, 0.30), (0.38, 0.385), (0.52, 0.425), (0.66, 0.43), (0.80, 0.41), (0.90, 0.38),
+    (0.975, 0.35), (1.10, 0.352), (1.25, 0.347), (1.40, 0.33), (1.525, 0.295), (1.61, 0.235), (1.65, 0.17),
+    (1.68, 0.095)]
 BOTTOM_Z, APEX_Z = 0.18, 1.70
 PATCH_K0, PATCH_K1 = 7, 12                 # patch vertex columns (5 segments = 90 degrees, centred on the front)
 PATCH_Z0, PATCH_Z1 = 0.975, 1.525          # 0.55 tall
@@ -565,13 +596,14 @@ def build_limbs(mb):
         # leg
         lup, llo, foot = f'leg_{side}_up', f'leg_{side}_lo', f'foot_{side}'
         lx = LEG_X * s
-        lz = [0.40, 0.33, 0.25, 0.18, 0.115]
-        ltw = [0.0, 0.2, 0.5, 0.85, 1.0]
-        tube(mb, [(lx, 0, z) for z in lz], [0.088, 0.085, 0.08, 0.076, 0.074], 8,
+        # stubby legs (owner: the original's stumps instead of feet were funny): a short fat tube + a round nub
+        lz = [0.36, 0.28, 0.20, 0.13]
+        ltw = [0.0, 0.35, 0.75, 1.0]
+        tube(mb, [(lx, -0.01, z) for z in lz], [0.112, 0.122, 0.124, 0.12], 10,
              lambda i, t, p, ltw=ltw, lup=lup, llo=llo: {lup: 1 - ltw[i], llo: ltw[i]} if 0 < ltw[i] < 1 else ({lup: 1} if ltw[i] == 0 else {llo: 1}),
-             'M_skin', uspan=0.25, cap0=True, cap1=False)
-        fw = lambda p, foot=foot: {foot: 1.0}
-        ellipsoid(mb, (lx, -0.07, 0.062), (0.118, 0.195, 0.064), 10, 6, fw, 'M_skin', uspan=0.4, flat_bottom_z=0.0)
+             'M_skin', uspan=0.3, cap0=True, cap1=False)
+        fw = lambda p, foot=foot, llo=llo: {foot: 0.6, llo: 0.4}
+        ellipsoid(mb, (lx, -0.025, 0.085), (0.128, 0.138, 0.09), 10, 6, fw, 'M_skin', uspan=0.4, flat_bottom_z=0.0)
 
 
 # ------------------------------------------------------------------ parts
@@ -1005,6 +1037,82 @@ def build_staff_branch(mb):
     pivot = Vector((hx_, hy_, HAND_C[2]))
     rot = Matrix.Rotation(math.radians(-9), 3, 'Y')
     mb.v = [pivot + rot @ (v - pivot) for v in mb.v]
+
+# ------------------------------------------------------------------ hair (2026-10-01): rigid to the head socket
+HEAD_C = Vector((0, 0, 1.40))     # rays from here find the real head surface (the body's ring profile)
+
+
+def head_point(pitch_deg, yaw_deg=0.0, lift=0.0):
+    """The point where a ray from HEAD_C leaves the pickle's surface (+ lift along the ray), and the ray direction.
+    pitch 0 = straight up, + = toward the back (+Y); yaw + = toward the wearer's left (+X)."""
+    p, y = math.radians(pitch_deg), math.radians(yaw_deg)
+    d = Vector((math.sin(y) * math.cos(p), math.sin(p), math.cos(p) * math.cos(y))).normalized()
+    t = 0.0
+    while t < 0.6:
+        q = HEAD_C + d * t
+        if q.z >= APEX_Z or math.hypot(q.x, q.y) >= body_radius(q.z):
+            break
+        t += 0.004
+    return HEAD_C + d * (t + lift), d
+
+
+def build_hair_sprout(mb):
+    """A pickle-vine stem curling out of the top of the head with one leaf (a pickle's 'hair')."""
+    W = {'sock_hat': 1.0}
+    wf = lambda *a: W
+    pts = [(0, 0.0, 1.66), (0.0, 0.01, 1.74), (0.02, 0.03, 1.82), (0.07, 0.05, 1.87), (0.12, 0.04, 1.86), (0.13, 0.02, 1.81)]
+    tube(mb, pts, [0.035, 0.03, 0.026, 0.022, 0.018, 0.012], 6, wf, 'M_skin', uspan=0.5, vscale=1 / 0.6, smooth=True,
+         cap0=False, cap1=True)
+    # the leaf: a flat ellipsoid, tilted, off the stem
+    leaf = MB()
+    ellipsoid(leaf, (0, 0, 0), (0.11, 0.015, 0.055), 10, 4, lambda q: W, 'M_leaf', uspan=1.0, smooth=True)
+    rot = Matrix.Rotation(math.radians(-25), 3, 'Y') @ Matrix.Rotation(math.radians(20), 3, 'X')
+    off = Vector((-0.08, 0.03, 1.80))
+    base = len(mb.v)
+    for v, w in zip(leaf.v, leaf.w):
+        mb.v.append(off + rot @ v); mb.w.append(w)
+    for f, m, uv, sm in zip(leaf.f, leaf.fm, leaf.fuv, leaf.fs):
+        mb.face([i + base for i in f], m, uv, sm)
+
+
+def build_hair_mohawk(mb):
+    """A row of team-coloured spikes front to back over the crown."""
+    W = {'sock_hat': 1.0}
+    wf = lambda *a: W
+    for i, pitch in enumerate(range(-50, 61, 22)):
+        p0, d = head_point(pitch, 0, -0.02)
+        length = 0.20 - abs(pitch) * 0.0012
+        tip = p0 + (d * 0.85 + Vector((0, 0.25, 0.4)).normalized() * 0.15).normalized() * length
+        tube(mb, [p0, tip], [0.06, 0.004], 5, wf, 'M_team', uspan=1.0, smooth=False, cap0=True, cap1=False)
+
+
+def build_hair_tuft(mb):
+    """Bedhead: a messy cluster of brown curls on top."""
+    W = {'sock_hat': 1.0}
+    rng = random.Random(7)
+    for pitch, yaw, r in ((0, 0, 0.075), (-28, 18, 0.062), (-22, -24, 0.06), (24, 14, 0.065), (20, -20, 0.058),
+                          (-45, 0, 0.05), (45, 4, 0.052)):
+        c, d = head_point(pitch, yaw, 0.01)
+        ellipsoid(mb, c + d * 0.02, (r, r, r * 0.8), 7, 4, lambda q: W, 'M_hair', uspan=0.6, smooth=False)
+    for k in range(4):                                   # a few stray curl spikes
+        c, d = head_point(rng.uniform(-35, 35), rng.uniform(-35, 35), 0.04)
+        tube(mb, [c, c + (d + Vector((rng.uniform(-.5, .5), rng.uniform(-.5, .5), 0.3))).normalized() * 0.11],
+             [0.025, 0.004], 4, lambda *a: W, 'M_hair', smooth=False, cap0=True, cap1=False)
+
+
+def build_hair_pigtails(mb):
+    """Two bunches off the sides of the head, tied with team-coloured bands (they show under hats too)."""
+    W = {'sock_hat': 1.0}
+    wf = lambda *a: W
+    for s in (1, -1):
+        root = Vector((0.27 * s, 0.05, 1.53))
+        pts = [root, Vector((0.38 * s, 0.06, 1.50)), Vector((0.47 * s, 0.07, 1.42)), Vector((0.50 * s, 0.07, 1.32)),
+               Vector((0.49 * s, 0.06, 1.24))]
+        tube(mb, pts, [0.04, 0.075, 0.085, 0.07, 0.02], 8, wf, 'M_hair', uspan=1.0, vscale=1 / 0.4, smooth=True,
+             cap0=True, cap1=True)
+        tube(mb, [Vector((0.34 * s, 0.055, 1.515)), Vector((0.37 * s, 0.06, 1.50))], [0.05, 0.05], 8, wf,
+             'M_team', smooth=False, cap0=True, cap1=True)
+
 
 # ------------------------------------------------------------------ animation
 def smooth01(a, b, x):
@@ -1505,7 +1613,11 @@ def main():
                                ('outfit_cape', build_cape, ['M_cape', 'M_team', 'M_gold']),
                                ('neck_scarf', build_scarf, ['M_knit', 'M_team']),
                                ('face_glasses', build_glasses, ['M_frame']),
-                               ('staff_branch', build_staff_branch, ['M_bark', 'M_team'])):
+                               ('staff_branch', build_staff_branch, ['M_bark', 'M_team']),
+                               ('hair_sprout', build_hair_sprout, ['M_skin', 'M_leaf']),
+                               ('hair_mohawk', build_hair_mohawk, ['M_team']),
+                               ('hair_tuft', build_hair_tuft, ['M_hair']),
+                               ('hair_pigtails', build_hair_pigtails, ['M_hair', 'M_team'])):
         m = MB(); fn(m)
         extra.append(to_object(name, m, mats, matnames, arm)); tris[name] = m.tris()
     for k, v in tris.items():

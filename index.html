@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=90-cosmetic-unlocks">
+    <link rel="stylesheet" href="styles.css?v=92-more-cosmetics">
 </head>
 <body>
 
@@ -13605,12 +13605,12 @@
             const CHARACTER_VERSION = 2;
             window.CHARACTER_VERSION = CHARACTER_VERSION;
             const PICKLE2_DIR = 'models/pickle2/';
-            const PICKLE2_V = '?v=9';
+            const PICKLE2_V = '?v=11';
             // The catalogue: every cosmetic. id = stable (unlocks / a future Steam inventory key off it).
             const COSMETICS = [
                 { id: 'hat_none',      name: 'No Hat',          slot: 'hat' },
                 { id: 'hat_wizard',    name: 'Wizard Hat',      slot: 'hat',    file: 'parts/hat_wizard.glb' },
-                { id: 'hat_witch',     name: 'Witch Hat',       slot: 'hat',    file: 'parts/hat_witch.glb', unlock: 'COMEBACK_KID' },
+                { id: 'hat_witch',     name: 'Witch Hat',       slot: 'hat',    file: 'parts/hat_witch.glb' },
                 { id: 'hat_crown',     name: 'Crown',           slot: 'hat',    file: 'parts/hat_crown.glb', unlock: 'CLEAN_SWEEP' },
                 { id: 'outfit_none',   name: 'Bare Pickle',     slot: 'outfit' },
                 { id: 'outfit_robe',   name: 'Wizard Robe',     slot: 'outfit', file: 'parts/outfit_robe.glb' },
@@ -13633,10 +13633,34 @@
                 { id: 'mouth_buck',    name: 'Buck Teeth',      slot: 'mouth',  strip: 'textures/face/mouth_buck.png' },
                 { id: 'mouth_smirk',   name: 'Smirk',           slot: 'mouth',  strip: 'textures/face/mouth_smirk.png', unlock: 'RETURN_TO_SENDER' },
                 { id: 'mouth_cat',     name: 'Cat Mouth',       slot: 'mouth',  strip: 'textures/face/mouth_cat.png' },
+                { id: 'mouth_blep',    name: 'Blep',            slot: 'mouth',  strip: 'textures/face/mouth_blep.png' },
+                { id: 'mouth_fangs',   name: 'Fangs',           slot: 'mouth',  strip: 'textures/face/mouth_fangs.png' },
+                { id: 'mouth_ooh',     name: 'Ooh',             slot: 'mouth',  strip: 'textures/face/mouth_ooh.png' },
+                { id: 'eyes_angry',    name: 'Angry Eyes',      slot: 'eyes',   strip: 'textures/face/eyes_angry.png' },
+                { id: 'eyes_wide',     name: 'Big Wide Eyes',   slot: 'eyes',   strip: 'textures/face/eyes_wide.png' },
+                { id: 'eyes_button',   name: 'Button Eyes',     slot: 'eyes',   strip: 'textures/face/eyes_button.png' },
+                // hair: 3D parts on the head socket; hideUnderHat = the hat covers it (pigtails poke out below a brim)
+                { id: 'hair_none',     name: 'Bald',            slot: 'hair' },
+                { id: 'hair_sprout',   name: 'Stem Sprout',     slot: 'hair',   file: 'parts/hair_sprout.glb', hideUnderHat: true },
+                { id: 'hair_mohawk',   name: 'Mohawk',          slot: 'hair',   file: 'parts/hair_mohawk.glb', hideUnderHat: true },
+                { id: 'hair_tuft',     name: 'Bedhead',         slot: 'hair',   file: 'parts/hair_tuft.glb', hideUnderHat: true },
+                { id: 'hair_pigtails', name: 'Pigtails',        slot: 'hair',   file: 'parts/hair_pigtails.glb' },
+                // facial hair + cheek features: one-frame face strips
+                { id: 'fhair_none',    name: 'Clean Shaven',    slot: 'facial_hair' },
+                { id: 'fhair_handlebar', name: 'Handlebar',     slot: 'facial_hair', strip: 'textures/face/fhair_handlebar.png' },
+                { id: 'fhair_goatee',  name: 'Goatee',          slot: 'facial_hair', strip: 'textures/face/fhair_goatee.png' },
+                { id: 'fhair_beard',   name: 'Full Beard',      slot: 'facial_hair', strip: 'textures/face/fhair_beard.png' },
+                { id: 'fhair_stubble', name: 'Stubble',         slot: 'facial_hair', strip: 'textures/face/fhair_stubble.png' },
+                { id: 'feat_none',     name: 'None',            slot: 'features' },
+                { id: 'feat_blush',    name: 'Blush',           slot: 'features', strip: 'textures/face/feat_blush.png' },
+                { id: 'feat_freckles', name: 'Freckles',        slot: 'features', strip: 'textures/face/feat_freckles.png' },
+                { id: 'feat_cheekbones', name: 'Cheekbones',    slot: 'features', strip: 'textures/face/feat_cheekbones.png' },
+                { id: 'feat_bags',     name: 'Eye Bags',        slot: 'features', strip: 'textures/face/feat_bags.png' },
             ];
-            const COSMETIC_SLOTS = ['hat', 'outfit', 'neck', 'face_acc', 'staff', 'eyes', 'brows', 'mouth'];
-            const DEFAULT_LOADOUT = { hat: 'hat_wizard', outfit: 'outfit_robe', neck: 'neck_none', face_acc: 'face_acc_none',
-                                      staff: 'staff_classic', eyes: 'eyes_classic', brows: 'brows_classic', mouth: 'mouth_smile' };
+            const COSMETIC_SLOTS = ['hat', 'hair', 'outfit', 'neck', 'face_acc', 'staff', 'eyes', 'brows', 'mouth', 'facial_hair', 'features'];
+            const DEFAULT_LOADOUT = { hat: 'hat_wizard', hair: 'hair_none', outfit: 'outfit_robe', neck: 'neck_none', face_acc: 'face_acc_none',
+                                      staff: 'staff_classic', eyes: 'eyes_classic', brows: 'brows_classic', mouth: 'mouth_smile',
+                                      facial_hair: 'fhair_none', features: 'feat_none' };
             const cosmeticById = (id) => COSMETICS.find(c => c.id === id) || null;
             // An item with `unlock: '<ACHIEVEMENT_ID>'` is owned once that achievement is unlocked; no `unlock` =
             // starter item. (None are linked yet.)
@@ -13671,6 +13695,8 @@
             // brows share the eyes' 5 states (one frame per eye state) and sit just above them
             const FACE = { W: 64, H: 64, eyes: { w: 48, h: 20, x: 8, y: 10, frames: ['open', 'blink', 'hurt', 'focus', 'happy'] },
                            brows: { w: 48, h: 9, x: 8, y: 1 },
+                           facial_hair: { w: 64, h: 32, x: 0, y: 30 },   // one frame, over the mouth
+                           features: { w: 64, h: 64, x: 0, y: 0 },       // one frame, on the skin under everything
                            mouth: { w: 32, h: 14, x: 16, y: 36, frames: ['neutral', 'open', 'grimace', 'grin'] } };
             const stripCache = {};
             const loadStrip = (src) => stripCache[src] || (stripCache[src] = new Promise((res) => {
@@ -13681,20 +13707,22 @@
                 // invertY false: glTF UVs are top-left origin (like the model's own textures), else the face lands upside down
                 const tex = new BABYLON.DynamicTexture('pickleFace', { width: FACE.W, height: FACE.H }, scene, false, BABYLON.Texture.NEAREST_SAMPLINGMODE, BABYLON.Engine.TEXTUREFORMAT_RGBA, false);
                 tex.hasAlpha = false;
-                const face = { tex, eyes: null, brows: null, mouth: null, eyeState: 'open', mouthState: 'neutral', drawn: '', blinkAt: 0, hurtUntil: 0, lastHp: null };
+                const face = { tex, eyes: null, brows: null, mouth: null, facial_hair: null, features: null, eyeState: 'open', mouthState: 'neutral', drawn: '', blinkAt: 0, hurtUntil: 0, lastHp: null };
                 face.draw = () => {
-                    const key = face.eyeState + '|' + face.mouthState + '|' + !!face.eyes + !!face.brows + !!face.mouth;
+                    const key = face.eyeState + '|' + face.mouthState + '|' + !!face.eyes + !!face.brows + !!face.mouth + !!face.facial_hair + !!face.features;
                     if (key === face.drawn) return;
                     face.drawn = key;
                     const g = tex.getContext();
                     if (!g) return;                    // disposed while a strip was still loading (fast wardrobe clicks)
                     g.imageSmoothingEnabled = false;
                     g.fillStyle = skin; g.fillRect(0, 0, FACE.W, FACE.H);
-                    const E = FACE.eyes, B = FACE.brows, M = FACE.mouth;
+                    const E = FACE.eyes, B = FACE.brows, M = FACE.mouth, FH = FACE.facial_hair, FT = FACE.features;
+                    if (face.features) g.drawImage(face.features, 0, 0, FT.w, FT.h, FT.x, FT.y, FT.w, FT.h);
                     const ei = Math.max(0, E.frames.indexOf(face.eyeState));
                     if (face.eyes) g.drawImage(face.eyes, ei * E.w, 0, E.w, E.h, E.x, E.y, E.w, E.h);
                     if (face.brows) g.drawImage(face.brows, ei * B.w, 0, B.w, B.h, B.x, B.y, B.w, B.h);
                     if (face.mouth) g.drawImage(face.mouth, Math.max(0, M.frames.indexOf(face.mouthState)) * M.w, 0, M.w, M.h, M.x, M.y, M.w, M.h);
+                    if (face.facial_hair) g.drawImage(face.facial_hair, 0, 0, FH.w, FH.h, FH.x, FH.y, FH.w, FH.h);
                     tex.update(false);   // no Y flip (glTF UV origin is top-left)
                 };
                 face.setStyle = async (lo) => {
@@ -13702,6 +13730,9 @@
                     face.eyes = e && e.strip ? await loadStrip(e.strip) : null;
                     face.brows = b && b.strip ? await loadStrip(b.strip) : null;
                     face.mouth = m && m.strip ? await loadStrip(m.strip) : null;
+                    const fh = cosmeticById(lo.facial_hair), ft = cosmeticById(lo.features);
+                    face.facial_hair = fh && fh.strip ? await loadStrip(fh.strip) : null;
+                    face.features = ft && ft.strip ? await loadStrip(ft.strip) : null;
                     face.drawn = ''; face.draw();
                 };
                 if (mat.albedoTexture !== undefined) { mat.albedoTexture = tex; mat.albedoColor = BABYLON.Color3.White(); }
@@ -13814,7 +13845,9 @@
             const buildPickle2 = async (prefix, side, loadout, bust) => {
                 const lo = sanitizeLoadout(loadout);
                 // fetch the base + this loadout's parts together (cached after the first time)
-                const partDefs = COSMETIC_SLOTS.map(slot => ({ slot, c: cosmeticById(lo[slot]) })).filter(x => x.c && x.c.file);
+                const hatOn = !!(cosmeticById(lo.hat) || {}).file;
+                const partDefs = COSMETIC_SLOTS.map(slot => ({ slot, c: cosmeticById(lo[slot]) }))
+                    .filter(x => x.c && x.c.file && !(hatOn && x.c.hideUnderHat));   // a hat covers top-of-head hair
                 const [baseC, ...partCs] = await Promise.all([loadP2('pickle_base.glb', bust),
                     ...partDefs.map(x => loadP2(x.c.file, bust).catch((e) => { console.warn('[pickle2] part "' + x.c.id + '" failed to load - slot left empty', e); return null; }))]);
                 prefetchP2();
@@ -13932,7 +13965,7 @@
                     #labPanel label{font-size:12px;opacity:.85} #labMsg{font-size:12px;color:#ff9b7a;margin-top:6px}`;
                 const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
                 const P = document.createElement('div'); P.id = 'labPanel'; document.body.appendChild(P);
-                const SLOT_NAMES = { hat: 'Hat', outfit: 'Outfit', neck: 'Neck', face_acc: 'Face accessory', staff: 'Staff', eyes: 'Eyes', brows: 'Brows', mouth: 'Mouth' };
+                const SLOT_NAMES = { hat: 'Hat', outfit: 'Outfit', neck: 'Neck', face_acc: 'Face accessory', staff: 'Staff', eyes: 'Eyes', brows: 'Brows', mouth: 'Mouth', hair: 'Hair', facial_hair: 'Facial hair', features: 'Cheeks' };
                 let html = '<div style="font-weight:700;font-size:15px">Character Lab</div><div style="opacity:.7;font-size:11px">drag to spin · wheel to zoom</div><h3>Loadout</h3>';
                 for (const s of COSMETIC_SLOTS) {
                     html += `<label>${SLOT_NAMES[s]}</label><select data-slot="${s}">` +
@@ -14020,9 +14053,9 @@
                 const W = { open: false, side: 'left', pose: 'idle', tab: 'hat', cursor: 0, preview: null, char: null,
                             building: false, pending: false, cam: null, stand: null, obs: null, prevCam: null,
                             prevVis: '', prevAnims: true, prevGui: true, parked: [] };
-                const TABS = [['hat', 'Hat'], ['outfit', 'Outfit'], ['neck', 'Neck'], ['face_acc', 'Face'], ['staff', 'Staff'],
-                              ['eyes', 'Eyes'], ['brows', 'Brows'], ['mouth', 'Mouth']];
-                const FACE_SLOTS = ['eyes', 'brows', 'mouth'];
+                const TABS = [['hat', 'Hat'], ['hair', 'Hair'], ['outfit', 'Outfit'], ['neck', 'Neck'], ['face_acc', 'Face'], ['staff', 'Staff'],
+                              ['eyes', 'Eyes'], ['brows', 'Brows'], ['mouth', 'Mouth'], ['facial_hair', 'Beard'], ['features', 'Cheeks']];
+                const FACE_SLOTS = ['eyes', 'brows', 'mouth', 'facial_hair', 'features'];
                 const TEAMS = [['left', 'Blue'], ['right', 'Red']];
                 const COLS = 4;
                 const optionsFor = (slot) => COSMETICS.filter(c => c.slot === slot);
@@ -14032,7 +14065,7 @@
                 // Face strips are drawn straight from their pixel art; 3D parts are rendered alone (body + other parts
                 // hidden) into a small square render target, auto-framed to the part's bounds, read back to a data URL ----
                 const THUMB = 128;
-                const VIEW = { hat: [-0.35, 1.2], outfit: [-0.4, 1.4], neck: [-0.3, 1.25], face_acc: [0, 1.45], staff: [0.5, 1.45] };   // alpha offset, beta
+                const VIEW = { hat: [-0.35, 1.2], hair: [-0.45, 1.1], outfit: [-0.4, 1.4], neck: [-0.3, 1.25], face_acc: [0, 1.45], staff: [0.5, 1.45] };   // alpha offset, beta
                 const thumbCache = {};
                 let thumbQueue = Promise.resolve();
                 let thumbRig = null;
@@ -14225,8 +14258,10 @@
                     const c = items()[W.cursor];
                     if (!c) return;
                     const equipped = loadLoadout()[W.tab] === c.id;
+                    const hatOn = !!(cosmeticById(loadLoadout().hat) || {}).file;
+                    const note = c.hideUnderHat && hatOn ? ' &middot; <span class="wi-prog">hidden under hats</span>' : '';
                     $('wardrobeInfo').innerHTML = `<div class="wi-name">${c.name}${equipped ? ' <span class="wi-tag">Equipped</span>' : ''}</div>` +
-                                                  `<div class="wi-unlock">${unlockHTML(c)}</div>`;
+                                                  `<div class="wi-unlock">${unlockHTML(c)}${note}</div>`;
                 };
                 const markCursor = () => {
                     $('wardrobeGrid').querySelectorAll('.wardrobe-tile').forEach(t => t.classList.toggle('is-cursor', +t.dataset.i === W.cursor));
