@@ -162,6 +162,83 @@ def wood_pixels():
     return lambda x, y: grid[y][x]
 
 
+def witch_pixels():
+    """32x32 charcoal felt: speckles + one lighter sewn-on patch with stitch dots."""
+    W = H = 32
+    base, dark, light, patch, stitch = map(hx, ('#2e2b3a', '#22202c', '#3c384b', '#4a3f5c', '#a8977a'))
+    grid = [[base] * W for _ in range(H)]
+    for y in range(H):
+        for x in range(W):
+            h = hash2(x, y, 13)
+            if h < 0.12:
+                grid[y][x] = dark
+            elif h > 0.95:
+                grid[y][x] = light
+    for y in range(9, 17):
+        for x in range(18, 26):
+            edge = y in (9, 16) or x in (18, 25)
+            grid[y][x] = stitch if edge and (x + y) % 2 == 0 else patch
+    return lambda x, y: grid[y][x]
+
+
+def gold_pixels():
+    """16x16 gold: warm base, dark vertical bands, a bright highlight row."""
+    W = H = 16
+    base, dark, light = map(hx, ('#e0a82e', '#a8741c', '#ffd86a'))
+    grid = [[base] * W for _ in range(H)]
+    for y in range(H):
+        for x in range(W):
+            if x % 4 == 0:
+                grid[y][x] = dark
+            elif y % 8 == 2 and x % 4 != 3:
+                grid[y][x] = light
+    return lambda x, y: grid[y][x]
+
+
+def cape_pixels():
+    """32x32 midnight cloth: dark fold lines (long, along v) + a few light flecks."""
+    W = H = 32
+    base, dark, light = map(hx, ('#2a3452', '#1d243b', '#3a4672'))
+    grid = [[base] * W for _ in range(H)]
+    for y in range(H):
+        for x in range(W):
+            if x % 6 == 0 or (x % 6 == 1 and hash2(x, y, 17) < 0.4):
+                grid[y][x] = dark
+            elif hash2(x, y, 19) > 0.94:
+                grid[y][x] = light
+    return lambda x, y: grid[y][x]
+
+
+def knit_pixels():
+    """16x16 cream knit: columns of little V stitches, a darker row between courses."""
+    W = H = 16
+    base, dark = map(hx, ('#e8dcc0', '#bfae88'))
+    grid = [[base] * W for _ in range(H)]
+    for y in range(H):
+        for x in range(W):
+            col, row = x % 4, y % 3
+            if (row == 0 and col in (0, 3)) or (row == 1 and col in (1, 2)):     # a V per 4x3 stitch
+                grid[y][x] = dark
+    return lambda x, y: grid[y][x]
+
+
+def bark_pixels():
+    """8x16 gnarled bark: grey-brown, deep grain lines along v, a knot."""
+    W, H = 8, 16
+    a, b, c, d = map(hx, ('#6a5440', '#53412f', '#3a2c1f', '#86704f'))
+    grid = [[a] * W for _ in range(H)]
+    for y in range(H):
+        for x in range(W):
+            if x in (1, 5) or (x == (y // 3) % W):
+                grid[y][x] = c if hash2(x, y, 23) < 0.75 else b
+            elif hash2(x, y, 29) < 0.3:
+                grid[y][x] = d
+            elif hash2(x, y, 31) < 0.35:
+                grid[y][x] = b
+    for (x, y) in ((3, 6), (4, 6), (3, 7)):
+        grid[y][x] = c
+    return lambda x, y: grid[y][x]
+
 # ------------------------------------------------------------------ materials
 def make_mat(name, color=(1, 1, 1, 1), image=None):
     m = bpy.data.materials.new(name)
@@ -192,6 +269,12 @@ def build_materials():
         'M_robe': make_mat('M_robe', lin('#4e2a8a'), pixel_image('robe_32', 32, 32, robe_pixels())),
         'M_wood': make_mat('M_wood', lin('#8a6038'), pixel_image('wood_8x16', 8, 16, wood_pixels())),
         'M_team': make_mat('M_team', (1, 1, 1, 1)),
+        'M_witch': make_mat('M_witch', lin('#2e2b3a'), pixel_image('witch_32', 32, 32, witch_pixels())),
+        'M_gold': make_mat('M_gold', lin('#e0a82e'), pixel_image('gold_16', 16, 16, gold_pixels())),
+        'M_cape': make_mat('M_cape', lin('#2a3452'), pixel_image('cape_32', 32, 32, cape_pixels())),
+        'M_knit': make_mat('M_knit', lin('#e8dcc0'), pixel_image('knit_16', 16, 16, knit_pixels())),
+        'M_bark': make_mat('M_bark', lin('#6a5440'), pixel_image('bark_8x16', 8, 16, bark_pixels())),
+        'M_frame': make_mat('M_frame', lin('#2a2230')),
     }
 
 
@@ -628,6 +711,301 @@ def build_robe(mb):
         mb.face([rings[0][k2], rings[0][k], inner_bot[k], inner_bot[k2]], 'M_team', smooth=False)     # hem underside
 
 
+# ------------------------------------------------------------------ parts, batch 2 (2026-10-01)
+def box(mb, c, half, axes, wts, mat):
+    """A flat-shaded box: centre c, half sizes (a, b, n) along the three given unit axes."""
+    c = Vector(c)
+    A, B, N = [Vector(a) for a in axes]
+    corners = {}
+    for i in (-1, 1):
+        for j in (-1, 1):
+            for k in (-1, 1):
+                corners[(i, j, k)] = mb.vert(c + A * half[0] * i + B * half[1] * j + N * half[2] * k, wts)
+    F = [((-1, -1, 1), (1, -1, 1), (1, 1, 1), (-1, 1, 1)), ((-1, 1, -1), (1, 1, -1), (1, -1, -1), (-1, -1, -1)),
+         ((-1, -1, -1), (1, -1, -1), (1, -1, 1), (-1, -1, 1)), ((1, 1, -1), (-1, 1, -1), (-1, 1, 1), (1, 1, 1)),
+         ((1, -1, -1), (1, 1, -1), (1, 1, 1), (1, -1, 1)), ((-1, 1, -1), (-1, -1, -1), (-1, -1, 1), (-1, 1, 1))]
+    for q in F:
+        mb.face([corners[x] for x in q], mat, [(0, 0), (1, 0), (1, 1), (0, 1)], smooth=False)
+
+
+def loop_sweep(mb, centres, frames, section, wfn, mat_fn, uscale=1.0):
+    """A CLOSED sweep: at each centre i (with frame (out, up)) place the 2D section points (o, u); join ring to ring
+    with wrap-around. mat_fn(i) picks the material of the band starting at ring i."""
+    n, S = len(centres), len(section)
+    rings = []
+    for i, (c, (out, up)) in enumerate(zip(centres, frames)):
+        rings.append([mb.vert(c + out * o + up * u, wfn(i, c)) for (o, u) in section])
+    for i in range(n):
+        i2 = (i + 1) % n
+        for k in range(S):
+            k2 = (k + 1) % S
+            mb.face([rings[i][k], rings[i][k2], rings[i2][k2], rings[i2][k]], mat_fn(i),
+                    [(i / n * uscale, k / S), (i / n * uscale, (k + 1) / S), ((i + 1) / n * uscale, (k + 1) / S),
+                     ((i + 1) / n * uscale, k / S)], True)
+
+
+def build_hat_witch(mb):
+    W = {'sock_hat': 1.0}
+    wf = lambda *a: W
+    tip = Matrix.Rotation(math.radians(-5), 4, 'X') @ Matrix.Rotation(math.radians(-6), 4, 'Y')
+    base = Vector((0, 0, 1.585))
+
+    def T(p):
+        return base + (tip @ (Vector(p) - base))
+
+    # tall straight cone, then a crooked bend at the top
+    spine = [(0, 0, 1.585), (0, 0, 1.80), (0, 0.01, 2.02), (0, 0.03, 2.20), (0.02, 0.12, 2.30), (0.05, 0.25, 2.30),
+             (0.08, 0.33, 2.22)]
+    rad = [0.265, 0.205, 0.145, 0.095, 0.06, 0.035, 0.008]
+    tube(mb, [T(p) for p in spine], rad, 10, wf, 'M_witch', uspan=1.0, vscale=1 / 1.3, smooth=True, cap0=False,
+         cap1=True)
+    # wide brim with a gentle wave
+    N = 14
+    rin, rout, zt, zb = 0.235, 0.60, 1.600, 1.578
+    top_in, top_out, bot_out, bot_in = [], [], [], []
+    for k in range(N):
+        a = TAU * k / N
+        c, s_ = math.cos(a), math.sin(a)
+        wave = 0.025 * math.sin(3 * a + 0.6)
+        top_in.append(mb.vert(T((rin * c, rin * s_, zt)), W))
+        top_out.append(mb.vert(T((rout * c, rout * s_, zt - 0.03 + wave)), W))
+        bot_out.append(mb.vert(T((rout * c, rout * s_, zb - 0.03 + wave)), W))
+        bot_in.append(mb.vert(T((rin * c, rin * s_, zb)), W))
+
+    def puv(p):
+        return (p.x / 0.8 + 0.5, p.y / 0.8 + 0.5)
+
+    for k in range(N):
+        k2 = (k + 1) % N
+        for quad in ([top_in[k], top_in[k2], top_out[k2], top_out[k]],
+                     [bot_in[k2], bot_in[k], bot_out[k], bot_out[k2]],
+                     [top_out[k], top_out[k2], bot_out[k2], bot_out[k]]):
+            mb.face(quad, 'M_witch', [puv(mb.v[i]) for i in quad], smooth=False)
+    # team band + a gold buckle on the front
+    M = 10
+    zb0, zb1, rb = 1.598, 1.675, 0.283
+    lo, hi = [], []
+    for k in range(M):
+        a = TAU * k / M
+        lo.append(mb.vert(T((rb * math.cos(a), rb * math.sin(a), zb0)), W))
+        hi.append(mb.vert(T((rb * 0.92 * math.cos(a), rb * 0.92 * math.sin(a), zb1)), W))
+    for k in range(M):
+        k2 = (k + 1) % M
+        mb.face([lo[k], lo[k2], hi[k2], hi[k]], 'M_team', smooth=False)
+    mb.face(list(reversed(lo)), 'M_team', smooth=False)
+    mb.face(hi, 'M_team', smooth=False)
+    bc = T((0, -rb * 0.97, (zb0 + zb1) / 2))
+    fwd = (tip.to_3x3() @ Vector((0, -1, 0))).normalized()
+    up = (tip.to_3x3() @ Vector((0, 0, 1))).normalized()
+    side = up.cross(fwd).normalized()
+    for (dx, dz, hw, hh) in ((0, 0.031, 0.05, 0.007), (0, -0.031, 0.05, 0.007), (0.045, 0, 0.007, 0.038),
+                             (-0.045, 0, 0.007, 0.038)):
+        box(mb, bc + side * dx + up * dz, (hw, hh, 0.01), (side, up, fwd), W, 'M_gold')
+
+
+def build_crown(mb):
+    W = {'sock_hat': 1.0}
+    tip = Matrix.Rotation(math.radians(9), 4, 'Y') @ Matrix.Rotation(math.radians(-4), 4, 'X')
+    base = Vector((0, 0, 1.55))
+
+    def T(p):
+        return base + (tip @ (Vector(p) - base))
+
+    N = 15
+    z0, z1, r0, r1, th = 1.535, 1.625, 0.292, 0.305, 0.022
+    ob, ot, it, ib = [], [], [], []
+    for k in range(N):
+        a = TAU * k / N - math.pi / 2              # k = 0 at the front (-Y)
+        c, s_ = math.cos(a), math.sin(a)
+        ob.append(mb.vert(T((r0 * c, r0 * s_, z0)), W))
+        ot.append(mb.vert(T((r1 * c, r1 * s_, z1)), W))
+        it.append(mb.vert(T(((r1 - th) * c, (r1 - th) * s_, z1)), W))
+        ib.append(mb.vert(T(((r0 - th) * c, (r0 - th) * s_, z0)), W))
+    for k in range(N):
+        k2 = (k + 1) % N
+        u0, u1 = k / N * 3, (k + 1) / N * 3
+        mb.face([ob[k], ob[k2], ot[k2], ot[k]], 'M_gold', [(u0, 0), (u1, 0), (u1, 0.5), (u0, 0.5)], smooth=False)
+        mb.face([it[k], it[k2], ib[k2], ib[k]], 'M_gold', [(u0, 0.5), (u1, 0.5), (u1, 1), (u0, 1)], smooth=False)
+        mb.face([ot[k], ot[k2], it[k2], it[k]], 'M_gold', [(u0, 0.9), (u1, 0.9), (u1, 1), (u0, 1)], smooth=False)
+        mb.face([ib[k], ib[k2], ob[k2], ob[k]], 'M_gold', [(u0, 0.9), (u1, 0.9), (u1, 1), (u0, 1)], smooth=False)
+    # five points, one every third band segment, each with a team gem below it on the band
+    for p in range(5):
+        k = p * 3
+        a0, a1 = TAU * (k - 1) / N - math.pi / 2, TAU * (k + 1) / N - math.pi / 2
+        am = TAU * k / N - math.pi / 2
+        o0 = mb.vert(T((r1 * math.cos(a0), r1 * math.sin(a0), z1 - 0.005)), W)
+        o1 = mb.vert(T((r1 * math.cos(a1), r1 * math.sin(a1), z1 - 0.005)), W)
+        i0 = mb.vert(T(((r1 - th) * math.cos(a0), (r1 - th) * math.sin(a0), z1 - 0.005)), W)
+        i1 = mb.vert(T(((r1 - th) * math.cos(a1), (r1 - th) * math.sin(a1), z1 - 0.005)), W)
+        pk = mb.vert(T(((r1 + 0.012) * math.cos(am), (r1 + 0.012) * math.sin(am), z1 + 0.13)), W)
+        for tri in ((o0, o1, pk), (i1, i0, pk), (i0, o0, pk), (o1, i1, pk)):
+            mb.face(list(tri), 'M_gold', [(0.1, 0.1), (0.4, 0.1), (0.25, 0.6)], smooth=False)
+        ellipsoid(mb, T(((r1 + 0.012) * math.cos(am), (r1 + 0.012) * math.sin(am), z1 + 0.14)), (0.02, 0.02, 0.02), 6,
+                  3, lambda q: W, 'M_gold', smooth=False)
+        gc = Vector(T(((r0 + 0.012) * math.cos(am), (r0 + 0.012) * math.sin(am), (z0 + z1) / 2)))
+        ellipsoid(mb, gc, (0.026, 0.026, 0.03), 4, 2, lambda q: W, 'M_team', smooth=False)
+
+
+def build_cape(mb):
+    """A short cape hanging behind the arms: outer cloth, team-coloured lining, a team collar band across the back,
+    gold clasp studs at the shoulders."""
+    fr = [0.0, 0.18, 0.38, 0.58, 0.78, 1.0]               # 0 = top, 1 = hem
+    NC = 12
+    ZT, ZH = 1.29, 0.40
+
+    def ang(c, f):                                         # +90 degrees = straight back (+Y)
+        span = 72 + 22 * f                                 # wraps a little wider at the hem
+        return math.radians(90 + span * (2 * c / NC - 1))
+
+    def pos(c, f, inset=0.0):
+        e = abs(2 * c / NC - 1)                            # 0 = centre back .. 1 = the side edges
+        zt = ZT - 0.17 * e ** 1.5                          # drapes from high on the back, lower at the shoulders
+        zh = ZH + 0.24 * e ** 1.5                          # hem longest at the centre back, curving up the sides
+        z = zt + (zh - zt) * f
+        r = body_radius(z) + 0.045 + 0.065 * f ** 1.4 - inset
+        a = ang(c, f)
+        return Vector((r * math.cos(a), r * math.sin(a), z))
+
+    outer = [[mb.vert(pos(c, f), body_w(pos(c, f).z)) for c in range(NC + 1)] for f in fr]
+    inner = [[mb.vert(pos(c, f, 0.016), body_w(pos(c, f).z)) for c in range(NC + 1)] for f in fr]
+    for j in range(len(fr) - 1):
+        for c in range(NC):
+            uv = [(c / NC * 1.5, fr[j]), ((c + 1) / NC * 1.5, fr[j]), ((c + 1) / NC * 1.5, fr[j + 1]),
+                  (c / NC * 1.5, fr[j + 1])]
+            mb.face([outer[j][c], outer[j][c + 1], outer[j + 1][c + 1], outer[j + 1][c]][::-1], 'M_cape', uv[::-1])
+            mb.face([inner[j][c], inner[j][c + 1], inner[j + 1][c + 1], inner[j + 1][c]], 'M_team', smooth=True)
+    for j in range(len(fr) - 1):                           # side edges
+        for c, flip in ((0, False), (NC, True)):
+            q = [outer[j][c], outer[j + 1][c], inner[j + 1][c], inner[j][c]]
+            mb.face(q[::-1] if flip else q, 'M_team', smooth=False)
+    last = len(fr) - 1
+    for c in range(NC):                                    # hem + top edges
+        mb.face([outer[last][c], outer[last][c + 1], inner[last][c + 1], inner[last][c]][::-1], 'M_team', smooth=False)
+        mb.face([outer[0][c], outer[0][c + 1], inner[0][c + 1], inner[0][c]], 'M_team', smooth=False)
+    # collar band along the top edge
+    cent, frames = [], []
+    for c in range(NC + 1):
+        p = pos(c, 0.0)
+        out = Vector((p.x, p.y, 0)).normalized()
+        cent.append(p + Vector((0, 0, 0.012)))
+        frames.append((out, Vector((0, 0, 1))))
+    sec = [(0.0, -0.022), (0.025, 0.0), (0.0, 0.026), (-0.012, 0.0)]
+    rings = [[mb.vert(cc + o * a + u * b, body_w(cc.z)) for (a, b) in sec] for cc, (o, u) in zip(cent, frames)]
+    for i in range(NC):
+        for k in range(4):
+            k2 = (k + 1) % 4
+            mb.face([rings[i][k], rings[i][k2], rings[i + 1][k2], rings[i + 1][k]], 'M_team', smooth=False)
+    for c in (0, NC):                                      # gold studs where it clasps at the shoulders
+        p = pos(c, 0.0) + Vector((0, 0, 0.005))
+        out = Vector((p.x, p.y, 0)).normalized()
+        ellipsoid(mb, p + out * 0.03, (0.03, 0.03, 0.03), 6, 3, lambda q, z=p.z: body_w(z), 'M_gold', smooth=False)
+
+
+def build_scarf(mb):
+    """A chunky knit scarf around the neck (front low, clear of the mouth; back a bit higher), team stripes, one
+    tail hanging down the front, a knot where it ties."""
+    NA = 24
+    sec = [(-0.030, -0.040), (0.004, -0.050), (0.034, -0.022), (0.036, 0.022), (0.004, 0.050), (-0.030, 0.040)]
+    cent, frames = [], []
+    for i in range(NA):
+        a = TAU * i / NA - math.pi / 2                    # i = 0 at the front
+        back = (1 - math.cos(a + math.pi / 2)) / 2
+        z = 0.985 + 0.06 * back
+        r = body_radius(z) + 0.042
+        cent.append(Vector((r * math.cos(a), r * math.sin(a), z)))
+        frames.append((Vector((math.cos(a), math.sin(a), 0)), Vector((0, 0, 1))))
+    loop_sweep(mb, cent, frames, sec, lambda i, c: body_w(c.z),
+               lambda i: 'M_team' if i % 6 in (2, 3) else 'M_knit', uscale=4.0)
+    # the knot + the tail, on the wearer's left-front
+    a = math.radians(-58)
+    kz = 0.975
+    kr = body_radius(kz) + 0.075
+    kc = Vector((kr * math.cos(a), kr * math.sin(a), kz))
+    wk = body_w(kz)
+    ellipsoid(mb, kc, (0.05, 0.045, 0.048), 8, 4, lambda q: wk, 'M_knit', smooth=True)
+    pts, rads = [], []
+    for t, z in enumerate((0.95, 0.86, 0.76, 0.66, 0.60)):
+        rr = body_radius(z) + 0.07 + 0.012 * t
+        aa = a + math.radians(4 * t)
+        pts.append(Vector((rr * math.cos(aa), rr * math.sin(aa), z)))
+        rads.append(0.05)
+    tube(mb, pts, rads, 4, lambda i, t, p: wk, 'M_knit', uspan=1.0, vscale=1 / 0.3, smooth=False,
+         cap0=False, cap1=True, squash=(1.0, 0.3))
+    # team fringe band near the end of the tail
+    tube(mb, [pts[-2] + (pts[-1] - pts[-2]) * 0.35, pts[-2] + (pts[-1] - pts[-2]) * 0.65], [0.054, 0.054], 4,
+         lambda i, t, p: wk, 'M_team', uspan=1.0, smooth=False, cap0=False, cap1=False, squash=(1.0, 0.33))
+
+
+def build_glasses(mb):
+    """Round specs: two rings over the painted eyes (face canvas eye centres = +/-15.5 degrees, z 1.353), a bridge,
+    temples running back along the head. Weighted exactly like the face there so they never slide."""
+    zc = 1.353
+    wts = body_w(zc)
+    wf = lambda *a: wts
+    R, rt = 0.082, 0.016
+    rb = body_radius(zc) + 0.032
+    edges = {}
+    for side, deg in (('R', -105.5), ('L', -74.5)):
+        a = math.radians(deg)
+        n = Vector((math.cos(a), math.sin(a), 0))
+        u = Vector((-math.sin(a), math.cos(a), 0))
+        v = Vector((0, 0, 1))
+        C = Vector((rb * math.cos(a), rb * math.sin(a), zc))
+        NS, NT = 14, 4
+        rings = []
+        for i in range(NS):
+            t = TAU * i / NS
+            d = u * math.cos(t) + v * math.sin(t)
+            rings.append([mb.vert(C + d * R + (d * math.cos(TAU * k / NT) + n * math.sin(TAU * k / NT)) * rt, wts)
+                          for k in range(NT)])
+        for i in range(NS):
+            i2 = (i + 1) % NS
+            for k in range(NT):
+                k2 = (k + 1) % NT
+                mb.face([rings[i][k], rings[i][k2], rings[i2][k2], rings[i2][k]], 'M_frame', smooth=False)
+        edges[side] = (C, u, n)
+    # bridge: inner edge to inner edge, arching a touch up and out over the nose
+    (CR, uR, nR), (CL, uL, nL) = edges['R'], edges['L']
+    pR, pL = CR + uR * R, CL - uL * R
+    mid = (pR + pL) / 2 + Vector((0, -0.012, 0.012))
+    tube(mb, [pR, mid, pL], [rt * 0.9] * 3, 4, wf, 'M_frame', smooth=False, cap0=False, cap1=False)
+    # temples: from each outer edge back around the head
+    for (C, u, n), s in ((edges['R'], -1), (edges['L'], 1)):
+        start = C + u * R * s
+        a0 = math.atan2(start.y, start.x)
+        pts = [start]
+        for t in (0.25, 0.55, 1.0):
+            aa = a0 + s * math.radians(55) * t
+            rr = body_radius(zc) + 0.02
+            pts.append(Vector((rr * math.cos(aa), rr * math.sin(aa), zc + 0.01 * t)))
+        tube(mb, pts, [rt * 0.85] * 4, 4, wf, 'M_frame', smooth=False, cap0=False, cap1=True)
+
+
+def build_staff_branch(mb):
+    """A crooked branch: wobbling shaft (straight at the grip), two knots, a forked top cradling a team orb."""
+    W = {'sock_staff': 1.0}
+    wf = lambda *a: W
+    hx_, hy_ = -HAND_C[0], HAND_C[1]
+    zs = [0.05, 0.22, 0.42, 0.62, 0.69, 0.78, 0.98, 1.18, 1.36, 1.46]
+    dx = [0.015, -0.018, 0.012, 0.0, 0.0, 0.0, 0.022, -0.012, 0.016, 0.0]
+    dy = [-0.01, 0.012, 0.018, 0.0, 0.0, 0.0, -0.016, 0.01, -0.008, 0.0]
+    rr = [0.028, 0.033, 0.035, 0.034, 0.034, 0.034, 0.033, 0.031, 0.030, 0.032]
+    shaft = [(hx_ + a, hy_ + b, z) for a, b, z in zip(dx, dy, zs)]
+    tube(mb, shaft, rr, 6, wf, 'M_bark', uspan=1.0, vscale=1 / 0.54, smooth=False, cap0=True, cap1=False)
+    for (z, ox, oy, s) in ((0.36, 0.03, 0.0, 0.026), (1.07, -0.028, 0.012, 0.024)):
+        ellipsoid(mb, (hx_ + ox, hy_ + oy, z), (s, s, s * 1.3), 6, 3, lambda q: W, 'M_bark', smooth=False)
+    # the fork
+    top = Vector(shaft[-1])
+    for side in (1, -1):
+        prong = [top, top + Vector((0.05 * side, 0.01, 0.10)), top + Vector((0.075 * side, 0.0, 0.20)),
+                 top + Vector((0.045 * side, -0.01, 0.30))]
+        tube(mb, prong, [0.03, 0.024, 0.018, 0.008], 5, wf, 'M_bark', uspan=1.0, vscale=1 / 0.54, smooth=False,
+             cap0=False, cap1=True)
+    ellipsoid(mb, top + Vector((0, 0, 0.17)), (0.062, 0.062, 0.066), 8, 5, lambda q: W, 'M_team', smooth=False)
+    pivot = Vector((hx_, hy_, HAND_C[2]))
+    rot = Matrix.Rotation(math.radians(-9), 3, 'Y')
+    mb.v = [pivot + rot @ (v - pivot) for v in mb.v]
+
 # ------------------------------------------------------------------ animation
 def smooth01(a, b, x):
     return sstep(a, b, x)
@@ -960,6 +1338,15 @@ def main():
     robe = to_object('outfit_robe', mr, mats, ['M_robe', 'M_team'], arm); tris['outfit_robe'] = mr.tris()
     ms = MB(); build_staff(ms)
     staff = to_object('staff_classic', ms, mats, ['M_wood', 'M_team'], arm); tris['staff_classic'] = ms.tris()
+    extra = []
+    for name, fn, matnames in (('hat_witch', build_hat_witch, ['M_witch', 'M_team', 'M_gold']),
+                               ('hat_crown', build_crown, ['M_gold', 'M_team']),
+                               ('outfit_cape', build_cape, ['M_cape', 'M_team', 'M_gold']),
+                               ('neck_scarf', build_scarf, ['M_knit', 'M_team']),
+                               ('face_glasses', build_glasses, ['M_frame']),
+                               ('staff_branch', build_staff_branch, ['M_bark', 'M_team'])):
+        m = MB(); fn(m)
+        extra.append(to_object(name, m, mats, matnames, arm)); tris[name] = m.tris()
     for k, v in tris.items():
         print(f'{k}: {v} tris', flush=True)
     assert tris['pickle_body'] < 2500
@@ -969,7 +1356,7 @@ def main():
     arm.animation_data.action = None
 
     export([arm, body], os.path.join(OUT_DIR, 'pickle_base.glb'), True)
-    for obj in (hat, robe, staff):
+    for obj in [hat, robe, staff] + extra:
         export([arm, obj], os.path.join(PARTS_DIR, obj.name + '.glb'), False)
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT_DIR, 'pickle.blend'), compress=True)
 
