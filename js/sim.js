@@ -352,7 +352,7 @@
                     if ((dxPrev * dxNow <= 0 || Math.abs(dxNow) < cd) && Math.abs(other.z - proj.z) < cd) {
                         toDestroy.push(proj);
                         toDestroy.push(other);
-                        if (!isResimulating) (D.onChillClash || D.onFrostboltCancel)((proj.x + other.x) * 0.5, (proj.z + other.z) * 0.5);
+                        if (!isResimulating) (D.onChillClash || D.onFrostboltCancel)((proj.x + other.x) * 0.5, (proj.z + other.z) * 0.5, proj, other);
                         break;
                     }
                     continue;
@@ -407,13 +407,17 @@
 
                     if (projDmg > otherDmg) {
                         toDestroy.push(other);
-                        proj.volleyCount = Math.min((proj.volleyCount || 0) + 1, 4);
+                        const vcP = proj.volleyCount || 0;
+                        proj.volleyCount = Math.min(vcP + 1, 4);
+                        if (!isResimulating && D.noteAchievement) D.noteAchievement('tier', { side: proj.owner === 'player' ? 'left' : 'right', from: vcP, to: proj.volleyCount });
                         const ownerC = proj.owner === 'player' ? combatants.left : combatants.right;
                         simAddJuice(ownerC, juiceConsts.CHARGE.minor, juiceConsts);
                         if (!isResimulating) D.onOverpower(midX, midZ, proj.velX, proj.velZ);
                     } else if (otherDmg > projDmg) {
                         toDestroy.push(proj);
-                        other.volleyCount = Math.min((other.volleyCount || 0) + 1, 4);
+                        const vcO = other.volleyCount || 0;
+                        other.volleyCount = Math.min(vcO + 1, 4);
+                        if (!isResimulating && D.noteAchievement) D.noteAchievement('tier', { side: other.owner === 'player' ? 'left' : 'right', from: vcO, to: other.volleyCount });
                         const ownerC = other.owner === 'player' ? combatants.left : combatants.right;
                         simAddJuice(ownerC, juiceConsts.CHARGE.minor, juiceConsts);
                         if (!isResimulating) D.onOverpower(midX, midZ, other.velX, other.velZ);

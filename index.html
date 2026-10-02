@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=84-wardrobe">
+    <link rel="stylesheet" href="styles.css?v=86-wardrobe-achievements">
 </head>
 <body>
 
@@ -91,6 +91,7 @@
                     <span class="menu-btn-accent" aria-hidden="true"></span>
                     <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
                     <span class="menu-btn-label">Career</span>
+                    <span class="ach-dot" id="careerMenuDot" hidden aria-label="New achievement"></span>
                 </button>
                 <button class="game-btn menu-btn" id="domBtnWardrobe">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
@@ -353,7 +354,12 @@
                 <h1 class="arcane-title" data-text="Career">Career</h1>
             </div>
             <div class="arcane-buttons settings-panel">
+                <div class="career-tabs" role="tablist">
+                    <button type="button" class="career-tab active" id="careerTabStats" role="tab" aria-selected="true">Stats</button>
+                    <button type="button" class="career-tab" id="careerTabAch" role="tab" aria-selected="false">Achievements<span class="ach-dot" id="achTabDot" hidden></span></button>
+                </div>
                 <div id="careerList" class="career-list"></div>
+                <div id="achList" class="ach-list" hidden></div>
                 <button class="game-btn menu-btn menu-btn-ghost" id="careerBack">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
                     <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
@@ -796,7 +802,7 @@
          no longer defines these functions and calls into the module via SIM_DEPS-injected ctx,
          so there is no shadowing (unlike the dead layer above). Deferred module execution runs
          before any gameplay frame, so VolleyboltSim is always defined when called. -->
-    <script type="module" src="js/sim.js?v=51-chill-clash-fx"></script>
+    <script type="module" src="js/sim.js?v=52-achievements"></script>
 
     <script>
         // Build identifier for bug reports (audit #6). Date-based: bump on every player-facing
@@ -1749,6 +1755,187 @@
         window.StatTracker = StatTracker;
 
         // ============================================================
+        // ACHIEVEMENTS (spec: docs/superpowers/specs/2026-10-01-achievements-design.md)
+        // ============================================================
+        // One rules list. Game code calls Achievements.note(event, data) on the LIVE pass only
+        // (never while resimulating) and evaluateMatchEnd(winnerSide) where a match ends; nothing
+        // here writes sim state, so determinism is untouched. "You" = the side of the combatant
+        // flagged isLocalPlayer (an online guest is Red). Spectate, the headless simulator and an
+        // online-doubles spectator earn nothing, unless dbg.achTest is on: then Blue counts, tallied
+        // into testCounts and never saved. Steam later: subscribe with onUnlock(cb).
+        const Achievements = (() => {
+            const STORAGE_KEY = 'volleybolt_achievements';
+            const FRAMES_PER_MIN = 3600;
+            const LIST = [
+                // Milestones (lifetime) read the career StatTracker
+                { id: 'FIRST_BRINE', name: 'First Brine', desc: 'Win your first match', group: 'milestones', stat: 'matches_won', target: 1 },
+                { id: 'SEASONED', name: 'Seasoned', desc: 'Win 10 matches', group: 'milestones', stat: 'matches_won', target: 10 },
+                { id: 'PICKLED', name: 'Pickled', desc: 'Win 50 matches', group: 'milestones', stat: 'matches_won', target: 50 },
+                { id: 'FERMENTED', name: 'Fermented', desc: 'Win 100 matches', group: 'milestones', stat: 'matches_won', target: 100 },
+                { id: 'WALL_OF_DILL', name: 'Wall of Dill', desc: '500 successful parries', group: 'milestones', stat: 'parries_successful', target: 500 },
+                { id: 'PYROMANCER', name: 'Pyromancer', desc: 'Cast 1,000 Fireballs', group: 'milestones', stat: 'fireball_casts', target: 1000 },
+                // Feats (one match)
+                { id: 'PICKLE_MONK', name: 'Pickle Monk', desc: 'Win without casting anything: paddle and parry only', group: 'feats', check: (m, won) => won && m.castsByMe === 0 },
+                { id: 'CLEAN_SWEEP', name: 'Clean Sweep', desc: 'Win without losing a round', group: 'feats', check: (m, won) => won && m.roundsLost === 0 },
+                { id: 'COMEBACK_KID', name: 'Comeback Kid', desc: 'Win after being pushed back to your own core', group: 'feats', check: (m, won) => won && m.wasOnOwnCore },
+                { id: 'SPEED_BRINE', name: 'Speed Brine', desc: 'Win with the match clock under 3:00', group: 'feats', check: (m, won) => won && m.clockFrames < 3 * FRAMES_PER_MIN },
+                { id: 'MARATHON', name: 'Marathon', desc: 'Win with the match clock past 10:00', group: 'feats', check: (m, won) => won && m.clockFrames > 10 * FRAMES_PER_MIN },
+                { id: 'UNTOUCHED', name: 'Untouched', desc: 'Win a round without your structure taking a hit', group: 'feats', check: (m) => m.untouchedRound },
+                // Spell mastery
+                { id: 'RETURN_TO_SENDER', name: 'Return to Sender', desc: 'Parry an enemy Chill Dill and freeze its caster with it', group: 'mastery', check: (m) => m.returnToSender },
+                { id: 'COLD_WAR', name: 'Cold War', desc: 'Cancel an enemy Chill Dill with your own', group: 'mastery', check: (m) => m.coldWar },
+                { id: 'STORM_CHASER', name: 'Storm Chaser', desc: 'Zap 3 projectiles with one Thunderstorm', group: 'mastery', check: (m) => m.stormChaser },
+                { id: 'MAX_RALLY', name: 'Max Rally', desc: 'Send a Fireball up to top tier yourself', group: 'mastery', check: (m) => m.maxRally },
+                { id: 'JUICE_CLASH_CHAMPION', name: 'Juice Clash Champion', desc: 'Win a beam clash', group: 'mastery', check: (m) => m.beamClashWon },
+                { id: 'PICKLED_IN_ICE', name: 'Pickled in Ice', desc: 'Freeze opponents 5 times in one match', group: 'mastery', check: (m) => m.freezesInflicted >= 5 },
+                // Pressure
+                { id: 'OVERTIME_HERO', name: 'Overtime Hero', desc: 'Win a round in overtime (round 10+)', group: 'pressure', check: (m) => m.overtimeRoundWon },
+                { id: 'DEMOLITION', name: 'Demolition', desc: 'Break the enemy territory, then win at their core the very next round', group: 'pressure',
+                  check: (m, won) => won && m.territoryBrokeRound > 0 && m.territoryBrokeRound === m.lastRoundNo - 1 },
+            ];
+            const byId = {};
+            for (const a of LIST) byId[a.id] = a;
+
+            const freshFlags = () => ({
+                castsByMe: 0, roundsLost: 0, wasOnOwnCore: false, roundStartHp: null, untouchedRound: false,
+                overtimeRoundWon: false, territoryBrokeRound: 0, lastRoundNo: 0, returnToSender: false,
+                coldWar: false, stormChaser: false, maxRally: false, beamClashWon: false, freezesInflicted: 0,
+                clockFrames: 0,
+            });
+            let m = freshFlags();
+            let state = { v: 1, unlocked: {}, seen: {} };
+            let last = [];
+            const testCounts = {};
+            const unlockListeners = [];
+
+            function load() {
+                state = { v: 1, unlocked: {}, seen: {} };
+                try {
+                    const raw = localStorage.getItem(STORAGE_KEY);
+                    const s = raw ? JSON.parse(raw) : null;
+                    if (s && s.v === 1 && s.unlocked && typeof s.unlocked === 'object') {
+                        state.unlocked = s.unlocked;
+                        state.seen = (s.seen && typeof s.seen === 'object') ? s.seen : {};
+                    }
+                } catch (e) { console.warn('Achievements: could not load', e); }
+            }
+            function save() {
+                try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+                catch (e) { console.warn('Achievements: could not save', e); }
+            }
+
+            const testMode = () => !!(window.dbg && window.dbg.achTest) && (spectating || !!window._simHeadless);
+            function localSide() {
+                if (spectating || window._simHeadless) return testMode() ? 'left' : null;
+                for (const c of getAllCombatants()) if (c && c.isLocalPlayer) return c.side;
+                return null;   // online-doubles spectator: no seat, nothing to earn
+            }
+            const ownerOf = (side) => side === 'left' ? 'player' : 'ai';
+            function isMe(c) { const L = localSide(); return !!(c && L && c.isLocalPlayer && c.side === L); }
+
+            function note(event, d) {
+                const L = localSide();
+                if (!L || !d) return;
+                switch (event) {
+                    case 'roundStart':
+                        if (isOwnCore(L, d.stage)) m.wasOnOwnCore = true;
+                        m.roundStartHp = d.hp[L];
+                        break;
+                    case 'roundEnd':
+                        m.lastRoundNo = d.roundNo;
+                        if (d.winnerSide === L) {
+                            if (m.roundStartHp !== null && d.hp[L] === m.roundStartHp) m.untouchedRound = true;
+                            if (d.roundNo >= SIM_RULES.overtimeStart) m.overtimeRoundWon = true;
+                            if (d.territoryFalls) m.territoryBrokeRound = d.roundNo;
+                        } else {
+                            m.roundsLost++;
+                        }
+                        break;
+                    case 'cast': if (isMe(d.c)) m.castsByMe++; break;
+                    case 'zap': if (isMe(d.c) && d.count >= 3) m.stormChaser = true; break;
+                    case 'freeze': {
+                        if (d.frozenSide === L) break;
+                        m.freezesInflicted++;
+                        const p = d.proj;
+                        if (p && p.isParried && p.parriedBy === ownerOf(L) && p.castBy === ownerOf(d.frozenSide)) m.returnToSender = true;
+                        break;
+                    }
+                    case 'chillClash': {
+                        const mine = ownerOf(L);
+                        if (d.a && d.b && ((d.a.castBy === mine) !== (d.b.castBy === mine))) m.coldWar = true;
+                        break;
+                    }
+                    case 'tier': if (d.side === L && d.from < 4 && d.to >= 4) m.maxRally = true; break;
+                    case 'beamClash': if (d.winnerSide === L) m.beamClashWon = true; break;
+                }
+            }
+
+            // Pure: which achievement ids does this match satisfy? Exported for console tests.
+            function judge(flags, won, careerGet) {
+                const ids = [];
+                for (const a of LIST) {
+                    const hit = a.stat ? careerGet(a.stat) >= a.target : !!a.check(flags, won);
+                    if (hit) ids.push(a.id);
+                }
+                return ids;
+            }
+            function unlock(ids) {
+                const fresh = ids.filter(id => byId[id] && !state.unlocked[id]);
+                if (!fresh.length) return [];
+                const at = Date.now();
+                for (const id of fresh) { state.unlocked[id] = { at }; delete state.seen[id]; }
+                save();
+                for (const id of fresh) for (const cb of unlockListeners) {
+                    try { cb(id); } catch (e) { console.error('Achievements onUnlock listener error:', e); }
+                }
+                return fresh;
+            }
+            function evaluateMatchEnd(winnerSide) {
+                last = [];
+                const L = localSide();
+                if (!L) return [];
+                m.clockFrames = window.getMatchClockFrames ? window.getMatchClockFrames() : 0;
+                const hits = judge(m, winnerSide === L, (k) => StatTracker.get(k, 'career'));
+                if (testMode()) {
+                    testCounts._matches = (testCounts._matches || 0) + 1;
+                    for (const id of hits) if (!byId[id].stat) testCounts[id] = (testCounts[id] || 0) + 1;
+                    return [];
+                }
+                last = unlock(hits);
+                return last.slice();
+            }
+            // Milestones already earned by an existing career unlock on load (unseen, so the dot shows).
+            function backfill(careerGet) {
+                return unlock(LIST.filter(a => a.stat && careerGet(a.stat) >= a.target).map(a => a.id));
+            }
+
+            load();
+            backfill((k) => StatTracker.get(k, 'career'));
+
+            return {
+                LIST, note, judge, evaluateMatchEnd, unlock, backfill, load, localSide, isMe, testCounts,
+                resetMatch() { m = freshFlags(); last = []; },
+                flags: () => ({ ...m }),
+                lastUnlocked: () => last.slice(),
+                unlockedAt: (id) => (state.unlocked[id] ? state.unlocked[id].at : null),
+                progress(id) {
+                    const a = byId[id];
+                    if (!a || !a.stat) return null;
+                    return [Math.min(StatTracker.get(a.stat, 'career'), a.target), a.target];
+                },
+                unseenIds: () => Object.keys(state.unlocked).filter(id => byId[id] && !state.seen[id]),
+                markAllSeen() {
+                    let changed = false;
+                    for (const id of Object.keys(state.unlocked)) if (!state.seen[id]) { state.seen[id] = true; changed = true; }
+                    if (changed) save();
+                },
+                onUnlock(cb) { unlockListeners.push(cb); },
+                _wipe() { try { localStorage.removeItem(STORAGE_KEY); } catch (e) {} load(); },
+            };
+        })();
+        window.Achievements = Achievements;
+
+        // ============================================================
         // SPELL REGISTRY
         // ============================================================
         // Central registry of all spells with metadata for loadout system.
@@ -2560,7 +2747,11 @@
                         // Hit-flash routes by railKey so a BACK-rail block flashes the back barrier
                         // (flashShieldOnBlock's barrierForSide handles all four keys); `|| side`
                         // keeps legacy 3-arg callers (tests/oracles) working unchanged.
-                        if (!ctx.isResimulating) { ctx.deps.playSound('block', px, 0.6); ctx.deps.onShieldBlock(railKey || side); }
+                        if (!ctx.isResimulating) {
+                            ctx.deps.playSound('block', px, 0.6); ctx.deps.onShieldBlock(railKey || side);
+                            if (window.StatTracker && window.Achievements && Achievements.localSide() === side) StatTracker.increment('projectiles_blocked');
+                            if (window.Achievements) Achievements.note('tier', { side, from: proj.volleyCount - 1, to: proj.volleyCount });
+                        }
                         return false; // bounced, not consumed
                     },
                     // + the overtime escalation (round 10 on: +1 per round; see overtimeDamageBonus)
@@ -2618,6 +2809,7 @@
                             // matching every legacy cast increment.
                             if (combatant.matchStats) combatant.matchStats.spellsCast++;
                             if (combatant.isLocalPlayer && window.StatTracker) StatTracker.increment('frostbolt_casts');
+                            if (window.Achievements) Achievements.note('cast', { c: combatant });
                         }
                         ctx.deps.spawnFrostbolt(owner, startX, combatant.paddleZ, velX, 0); // factory assigns id
                         // Juice charge on cast (matches SP castFrostbolt ~13778). Instant cast: this
@@ -2656,6 +2848,9 @@
                             // 2nd arg (the frozen combatant) lets the dep anchor "Frozen!" at a BACK
                             // wizard's paddle; front calls take the legacy front-paddle path unchanged.
                             ctx.deps.showFrozenText(!!(c && c.isLocalPlayer), c);
+                            const me = window.Achievements ? Achievements.localSide() : null;
+                            if (me && side !== me && window.StatTracker) StatTracker.increment('freeze_time_inflicted', ctx.abilities.frostbolt.freezeDuration);
+                            if (window.Achievements) Achievements.note('freeze', { frozenSide: side, proj });
                         }
                         return true; // consumed (destroy)
                     },
@@ -4912,6 +5107,9 @@
             if (leftEdge || rightEdge) {
                 if (root.id === 'howToPlayScreen' && window.htpSetPage && typeof window.htpPage === 'number') {
                     htpSetPage(window.htpPage + (rightEdge ? 1 : -1));
+                    if (window.ToneSFX) ToneSFX.uiHover();
+                } else if (root.id === 'careerScreen' && window.careerSetTab) {
+                    careerSetTab(rightEdge ? 1 : 0);
                     if (window.ToneSFX) ToneSFX.uiHover();
                 } else if (root.id === 'lobbyDoublesView') {
                     if (window.doublesLocalPick) doublesLocalPick(rightEdge ? 'red' : 'blue');
@@ -15479,6 +15677,7 @@
                                         // it slack to reliably register on the shield and freeze (was defaulting to 0.25)
                     isParried: false,
                     parriedBy: null,
+                    castBy: owner,  // who CAST it (owner flips on a parry); bookkeeping only, never hashed
                     volleyCount: 0,
                     time: 0  // For animation
                 };
@@ -16112,7 +16311,7 @@
 
                 // Track parry stats (only for local player). Career stats are not
                 // snapshot-restored either — same LIVE-pass-only gate as matchStats above.
-                if (!isResimulating && parryer === 'player') {
+                if (!isResimulating && window.Achievements && Achievements.localSide() === (parryer === 'player' ? 'left' : 'right')) {
                     StatTracker.increment('parries_successful');
                 }
 
@@ -16121,7 +16320,9 @@
                 // never climbed). Fireballs come back at the tier speed with a small parry timing-bonus on top;
                 // frostbolt (no tier) keeps the magnitude-based return.
                 if (proj.type === 'fireball') {
-                    proj.volleyCount = Math.min((proj.volleyCount || 0) + 1, 4);
+                    const vcBefore = proj.volleyCount || 0;
+                    proj.volleyCount = Math.min(vcBefore + 1, 4);
+                    if (!isResimulating && window.Achievements) Achievements.note('tier', { side: parryer === 'player' ? 'left' : 'right', from: vcBefore, to: proj.volleyCount });
                     const fb = (window.abilities && window.abilities.fireball) || { baseSpeed: 12, maxSpeed: 20 };
                     const tierSpeed = Math.min(fb.baseSpeed + proj.volleyCount * (fb.maxSpeed - fb.baseSpeed) / 4, fb.maxSpeed);
                     proj.speed = tierSpeed * 1.5;   // tier ramp + a real 1.5x parry reward (was 1.15, then diluted away by the 0.85 velX factor below — now the forward velocity uses the full speed)
@@ -22654,6 +22855,9 @@
             // Doubles teardown BEFORE resizeStageForMode() runs, so a doubles->singles
             // transition lands on exactly the state a fresh boot would have.
             exitDoublesState();
+            // A previous online match can leave Red flagged as ours (we were the guest). Single player
+            // is always Blue; career stats and achievements key on isLocalPlayer.
+            for (const c of getAllCombatants()) if (c) c.isLocalPlayer = (c === combatants.left);
             if (window.resizeStageForMode) window.resizeStageForMode();
             startGame();
         }
@@ -22740,6 +22944,9 @@
 
         function startDoublesMatch() {
             setupDoublesMatchCommon();
+            // A previous online match can leave another seat flagged as ours. Local doubles: you are
+            // the Blue front; career stats and achievements key on isLocalPlayer.
+            for (const c of getAllCombatants()) if (c) c.isLocalPlayer = (c === combatants.left);
             // Gate the actual match start (AND the name tags, which need every modelRoot to exist)
             // on the back-wizard models being ready (lazy-loaded on the first doubles match; every
             // later match re-attaches the cache — see beginBackModels).
@@ -23095,6 +23302,94 @@
             }
         }
 
+        // Achievements tab: the four groups as career-card windows. Unlocked = gold rim + date;
+        // milestones show a progress bar while locked; a red dot marks cards not yet seen.
+        const ACH_GROUPS = [
+            ['milestones', 'Milestones'], ['feats', 'Feats'], ['mastery', 'Spell Mastery'], ['pressure', 'Pressure'],
+        ];
+        function populateAchievements() {
+            const list = document.getElementById('achList');
+            if (!list || !window.Achievements) return;
+            const unseen = new Set(Achievements.unseenIds());
+            list.innerHTML = '';
+            for (const [group, title] of ACH_GROUPS) {
+                const card = document.createElement('div');
+                card.className = 'career-card ach-card';
+                const head = document.createElement('div');
+                head.className = 'career-card-title';
+                head.textContent = title;
+                card.appendChild(head);
+                for (const a of Achievements.LIST) {
+                    if (a.group !== group) continue;
+                    const at = Achievements.unlockedAt(a.id);
+                    const row = document.createElement('div');
+                    row.className = 'ach-row ' + (at ? 'is-unlocked' : 'is-locked');
+                    const top = document.createElement('div');
+                    top.className = 'ach-top';
+                    const name = document.createElement('span');
+                    name.className = 'ach-name';
+                    name.textContent = a.name;
+                    top.appendChild(name);
+                    if (at && unseen.has(a.id)) {
+                        const dot = document.createElement('span');
+                        dot.className = 'ach-dot';
+                        top.appendChild(dot);
+                    }
+                    const meta = document.createElement('span');
+                    meta.className = 'ach-meta';
+                    const prog = !at ? Achievements.progress(a.id) : null;
+                    meta.textContent = at ? new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+                        : prog ? prog[0].toLocaleString() + ' / ' + prog[1].toLocaleString() : '';
+                    top.appendChild(meta);
+                    row.appendChild(top);
+                    const desc = document.createElement('div');
+                    desc.className = 'ach-desc';
+                    desc.textContent = a.desc;
+                    row.appendChild(desc);
+                    if (prog) {
+                        const bar = document.createElement('div');
+                        bar.className = 'ach-progress';
+                        const fill = document.createElement('i');
+                        fill.style.width = Math.round(100 * prog[0] / prog[1]) + '%';
+                        bar.appendChild(fill);
+                        row.appendChild(bar);
+                    }
+                    card.appendChild(row);
+                }
+                list.appendChild(card);
+            }
+        }
+        window.populateAchievements = populateAchievements;
+
+        // Red dot on the main-menu Career button and the Achievements tab while anything is unseen.
+        function refreshAchievementDots() {
+            const on = !!(window.Achievements && Achievements.unseenIds().length);
+            for (const id of ['careerMenuDot', 'achTabDot']) {
+                const d = document.getElementById(id);
+                if (d) d.hidden = !on;
+            }
+        }
+        window.refreshAchievementDots = refreshAchievementDots;
+
+        // Career tabs: 0 = Stats, 1 = Achievements (opening it marks everything seen).
+        function careerSetTab(i) {
+            const ach = i === 1;
+            const stats = document.getElementById('careerList'), achList = document.getElementById('achList');
+            const tS = document.getElementById('careerTabStats'), tA = document.getElementById('careerTabAch');
+            if (!stats || !achList || !tS || !tA) return;
+            // Already on that tab (key autorepeat / gamepad hold-to-repeat): keep this visit's "new" dots.
+            if (achList.hidden === !ach && tA.classList.contains('active') === ach) return;
+            stats.hidden = ach; achList.hidden = !ach;
+            tS.classList.toggle('active', !ach); tA.classList.toggle('active', ach);
+            tS.setAttribute('aria-selected', String(!ach)); tA.setAttribute('aria-selected', String(ach));
+            if (ach) {
+                populateAchievements();             // draws this visit's dots first...
+                if (window.Achievements) Achievements.markAllSeen();
+                refreshAchievementDots();           // ...then clears the menu/tab dots
+            }
+        }
+        window.careerSetTab = careerSetTab;
+
         let domMenuWired = false;
         function wireDOMMenu() {
             if (domMenuWired) return;
@@ -23158,7 +23453,19 @@
             const creditsBack = document.getElementById('creditsBack');
             if (creditsBack) creditsBack.addEventListener('click', () => closeMenuScreen());
             const btnCareer = document.getElementById('domBtnCareer');
-            if (btnCareer) btnCareer.addEventListener('click', () => { populateCareer(); showMenuScreen('careerScreen', 'menu'); });
+            if (btnCareer) btnCareer.addEventListener('click', () => { populateCareer(); careerSetTab(0); refreshAchievementDots(); showMenuScreen('careerScreen', 'menu'); });
+            const tabStats = document.getElementById('careerTabStats');
+            const tabAch = document.getElementById('careerTabAch');
+            if (tabStats) tabStats.addEventListener('click', () => careerSetTab(0));
+            if (tabAch) tabAch.addEventListener('click', () => careerSetTab(1));
+            document.addEventListener('keydown', (e) => {
+                const screen = document.getElementById('careerScreen');
+                if (!screen || !screen.classList.contains('visible')) return;
+                if (e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
+                careerSetTab(e.code === 'ArrowRight' ? 1 : 0);
+                if (window.ToneSFX) ToneSFX.uiHover();
+                e.preventDefault();
+            });
             const careerBack = document.getElementById('careerBack');
             if (careerBack) careerBack.addEventListener('click', () => closeMenuScreen());
             const btnWardrobe = document.getElementById('domBtnWardrobe');
@@ -23226,6 +23533,7 @@
                 const ms = document.getElementById('domModeSelect');
                 if (ms) ms.classList.remove('visible');
                 if (window.setGamepadPrompts) setGamepadPrompts([{ action: 'navigate' }, { action: 'confirm' }]);
+                if (window.refreshAchievementDots) refreshAchievementDots();
             }
             // Keep the legacy Babylon GUI menu permanently hidden — DOM owns this view now.
             if (window.guiElements) {
@@ -23302,6 +23610,7 @@
             if (window.setGamepadPrompts) {
                 if (id === 'settingsScreen') setGamepadPrompts([{ action: 'navigate' }, { action: 'adjust' }, { action: 'confirm' }, { action: 'back' }]);
                 else if (id === 'howToPlayScreen') setGamepadPrompts([{ action: 'page' }, { action: 'back' }]);
+                else if (id === 'careerScreen') setGamepadPrompts([{ action: 'page' }, { action: 'back' }]);
                 else setGamepadPrompts([{ action: 'navigate' }, { action: 'back' }]);   // credits, career
             }
         }
@@ -25032,6 +25341,17 @@
             };
         })();
 
+        // Achievements console helpers. dbg.achTest = true makes spectate/headless matches count for
+        // Blue into Achievements.testCounts (never saved), e.g. before dbg.simBatchAsync.
+        window.dbg.achievements = {
+            list() {
+                console.table(Achievements.LIST.map(a => ({ id: a.id, group: a.group, unlocked: Achievements.unlockedAt(a.id) ? new Date(Achievements.unlockedAt(a.id)).toLocaleString() : '', seen: !Achievements.unseenIds().includes(a.id) })));
+            },
+            reset() { Achievements._wipe(); if (window.refreshAchievementDots) refreshAchievementDots(); return 'achievements wiped'; },
+            unlock(id) { const r = Achievements.unlock([id]); if (window.refreshAchievementDots) refreshAchievementDots(); return r; },
+            counts() { return { ...Achievements.testCounts }; },
+        };
+
         // ---- Headless MATCH SIMULATOR — dbg.simMatch / dbg.simBatch / dbg.simBatchAsync ----------------
         // Plays whole AI-vs-AI spectate matches with no rendering: a match is a pure function of its seed
         // (AI seed + sim RNG seed), so rule sets can be compared on the same seeds. `rules` overrides
@@ -25726,6 +26046,7 @@
                     volleyCount: p.volleyCount || 0,
                     isParried: p.isParried || false,
                     parriedBy: p.parriedBy || null,
+                    castBy: p.castBy || null,
                     bounceCount: p.bounceCount || 0,
                     isSplitProjectile: p.isSplitProjectile || false
                 })),
@@ -25942,6 +26263,7 @@
                     existing.volleyCount = sp.volleyCount;
                     existing.isParried = sp.isParried;
                     existing.parriedBy = sp.parriedBy;
+                    existing.castBy = sp.castBy;
                     existing.bounceCount = sp.bounceCount;
                     // hitboxRadius is a pure function of volleyCount, but only recomputed on a hit —
                     // re-derive it so a volley on the abandoned timeline can't leave a stale (bigger) hitbox.
@@ -25963,6 +26285,7 @@
                         newProj.volleyCount = sp.volleyCount;
                         newProj.isParried = sp.isParried;
                         newProj.parriedBy = sp.parriedBy;
+                        newProj.castBy = sp.castBy;
                         newProj.x = sp.x;
                         newProj.y = sp.y;
                         newProj.z = sp.z;
@@ -26840,7 +27163,8 @@
             // createImpactDecal accepts a plain {x, z}.
             // Chill Dill vs Chill Dill: a special ICY clash (presentation only) - a big ice burst with an after-pop,
             // a frost shockwave ring racing out over the ground, and a large lingering frost patch.
-            onChillClash: (midX, midZ) => {
+            onChillClash: (midX, midZ, a, b) => {
+                if (window.Achievements) Achievements.note('chillClash', { a, b });
                 const pos = new BABYLON.Vector3(midX, 0.6, midZ);
                 const ice = new BABYLON.Color3(0.62, 0.9, 1.0);
                 if (window.createImpactFlash) {
@@ -26870,6 +27194,8 @@
                 if (window.showCombatTextAt) showCombatTextAt(pos, 'Overpowered!', 'cancel');
                 playSound('overpowered', midX, 0.8);
             },
+            // Achievements bookkeeping from js/sim.js (called on the live pass only; writes no sim state).
+            noteAchievement: (event, data) => { if (window.Achievements) Achievements.note(event, data); },
             onProjCancel: (midX, midZ) => {
                 const pos = new BABYLON.Vector3(midX, 0.6, midZ);
                 if (window.createImpactFlash) createImpactFlash(pos, new BABYLON.Color3(1, 0.7, 0.2), 3.0);
@@ -26900,6 +27226,7 @@
             // plays 'juiceUp', starts the drone and sets the white-hot tint; onJuiceEnd fades
             // the aura, stops the drone and restores the tint.
             onJuiceActivate: (combatant) => {
+                if (window.Achievements) Achievements.note('cast', { c: combatant });
                 if (window.onJuiceStart) window.onJuiceStart(combatant);
                 if (window.logJuice) window.logJuice(combatant.side === 'left' ? 'blue' : 'red');
             },
@@ -26920,6 +27247,7 @@
             // the winner's colour races down the lane and detonates on the loser's tower (burn mark, big
             // shake, explosion + deep boom, damage number).
             onBeamClashResolve: (winner, loser, dmg) => {
+                if (window.Achievements && winner) Achievements.note('beamClash', { winnerSide: winner.side });
                 const cx = (typeof window._lastClashX === 'number') ? window._lastClashX : 0;
                 const cz = (typeof window._lastClashZ === 'number') ? window._lastClashZ : 0;
                 const hit = (p, col, size) => { if (window.createImpactFlash) try { createImpactFlash(p, col, size); } catch (e) {} };
@@ -27017,8 +27345,9 @@
                     } else {
                         const isPlayer = owner === 'player';
                         if (window.showSpellCastText) showSpellCastText(isPlayer, 'Thunderstorm x' + zapsToPerform, 'lightning', casterC);
+                        if (window.Achievements) { Achievements.note('cast', { c: casterC }); Achievements.note('zap', { c: casterC, count: zapsToPerform }); }
                         if (window.ToneSFX && window.ToneSFX.lightning) window.ToneSFX.lightning();
-                        if (window.StatTracker) {
+                        if (window.StatTracker && window.Achievements && Achievements.isMe(casterC)) {
                             StatTracker.increment('thunderstorm_casts');
                             StatTracker.increment('projectiles_zapped', zapsToPerform);
                         }
@@ -27289,6 +27618,8 @@
             // Populate the end-of-match summary from the final per-combatant stats
             // (matchStats are still intact here; resetGame() clears them on Continue).
             renderMatchSummary(ensureEndScreen(), false);
+            renderAchievementStrip(ensureEndScreen());
+            if (window.refreshAchievementDots) refreshAchievementDots();   // the menu dot is waiting on Continue
             const lbRefs = window.guiElements.victoryLeaderboardRefs;
             if (lbRefs) {
                 const blS = (window.combatants && window.combatants.left && window.combatants.left.matchStats) || { spellsCast: 0, parries: 0, damageDealt: 0 };
@@ -27635,6 +27966,47 @@
             ensureEndScreenScaleLayer().appendChild(el);
             return el;
         }
+        // "Achievement unlocked" strip under the match summary: what THIS match earned (empty = hidden).
+        // ids defaults to Achievements.lastUnlocked(); passing ids is for console tests / previews.
+        const END_ACH_MAX = 4;
+        function renderAchievementStrip(root, ids) {
+            const content = root.querySelector('.end-content');
+            const stats = root.querySelector('.ms-stats');
+            if (!content || !stats) return;
+            let strip = document.getElementById('endAchStrip');
+            if (!strip) {
+                strip = document.createElement('div');
+                strip.id = 'endAchStrip';
+                strip.className = 'end-ach';
+                content.insertBefore(strip, stats.nextSibling);
+            }
+            const list = (ids || (window.Achievements ? Achievements.lastUnlocked() : []))
+                .map(id => window.Achievements && Achievements.LIST.find(a => a.id === id)).filter(Boolean);
+            strip.innerHTML = '';
+            strip.hidden = list.length === 0;
+            for (const a of list.slice(0, END_ACH_MAX)) {
+                const chip = document.createElement('div');
+                chip.className = 'end-ach-chip';
+                const kicker = document.createElement('div');
+                kicker.className = 'end-ach-kicker';
+                kicker.textContent = 'Achievement unlocked';
+                const name = document.createElement('div');
+                name.className = 'end-ach-name';
+                name.textContent = a.name;
+                const desc = document.createElement('div');
+                desc.className = 'end-ach-desc';
+                desc.textContent = a.desc;
+                chip.append(kicker, name, desc);
+                strip.appendChild(chip);
+            }
+            if (list.length > END_ACH_MAX) {
+                const more = document.createElement('div');
+                more.className = 'end-ach-chip end-ach-more';
+                more.textContent = '+' + (list.length - END_ACH_MAX) + ' more';
+                strip.appendChild(more);
+            }
+        }
+        window.renderAchievementStrip = renderAchievementStrip;
         function ensureVictoryButtonContainer() {
             let box = document.getElementById('victoryButtons');
             if (box) return box;
@@ -27794,6 +28166,7 @@
         }
 
         function resetGame() {
+            if (window.Achievements) Achievements.resetMatch();   // quitting mid-match earns nothing; fresh flags
             roundLog = [];
             matchClockFrames = 0;
             presTimers.length = 0;              // an abandoned stage transition's frames never fire into this match
@@ -27891,6 +28264,7 @@
 
             if (combatants.left) combatants.left.towerHealth = playerGateHealth;
             if (combatants.right) combatants.right.towerHealth = aiGateHealth;
+            if (window.Achievements) Achievements.note('roundStart', { stage: currentStage, hp: { left: playerGateHealth, right: aiGateHealth } });
 
             // Reset paddle positions to center
             if (playerPaddle) playerPaddle.position.z = 0;
@@ -28603,7 +28977,8 @@
             }
 
             // Track stats (only for local player)
-            if (isPlayer || c.isLocalPlayer) {
+            if (!isResimulating && window.Achievements) { Achievements.note('cast', { c }); Achievements.note('zap', { c, count: zapsToPerform }); }
+            if (!isResimulating && window.Achievements && Achievements.isMe(c)) {
                 StatTracker.increment('thunderstorm_casts');
                 StatTracker.increment('projectiles_zapped', zapsToPerform);
             }
@@ -29188,6 +29563,7 @@
                 // (the deleted castFireball/castFrostbolt and legacy executeThunderstorm all
                 // gated on the local caster).
                 if (c.isLocalPlayer && window.StatTracker) StatTracker.increment('fireball_casts');
+                if (window.Achievements) Achievements.note('cast', { c });
                 if (window.logCombat) {
                     const blue = (c.side === 'left');
                     const label = window.doublesLogLabel ? window.doublesLogLabel(c) : null;
@@ -29839,12 +30215,13 @@
             // LEGACY - sync tower health variables
             if (isPlayerTower) {
                 playerTowerHealth = combatant ? combatant.towerHealth : Math.max(0, playerTowerHealth - damage);
-                // Player took damage
-                StatTracker.increment('damage_taken', damage);
             } else {
                 aiTowerHealth = combatant ? combatant.towerHealth : Math.max(0, aiTowerHealth - damage);
-                // Player dealt damage to enemy
-                StatTracker.increment('damage_dealt', damage);
+            }
+            // Career damage belongs to the LOCAL side, counted once (the sim calls this during rollback resim too).
+            const meSide = window.Achievements ? Achievements.localSide() : null;
+            if (!isResimulating && meSide) {
+                StatTracker.increment((isPlayerTower ? 'left' : 'right') === meSide ? 'damage_taken' : 'damage_dealt', damage);
             }
             updateHealthBars();
             showDamageNumber(damage, isPlayerTower, hitZ);
@@ -29956,7 +30333,11 @@
             const stageBeforeRound = currentStage;   // the transition slides toward whichever end we moved
             const winnerOwner = winnerSide === 'left' ? 'player' : 'ai';
             const localSide = getLocalSide();
-            const localWon = gameMode === 'pvp' ? (winnerSide === localSide) : (winnerOwner === 'player');
+            // meSide: the side of OUR combatant (isLocalPlayer) — right for every seat, incl. an online-doubles
+            // guest seated on Blue, where host-based getLocalSide() is wrong. null: spectator, nothing to count.
+            const meSide = window.Achievements ? Achievements.localSide() : null;
+            const localWon = meSide ? (winnerSide === meSide)
+                : gameMode === 'pvp' ? (winnerSide === localSide) : (winnerOwner === 'player');
             // Spectating: the viewer has no side, so every ending gets the WIN presentation (victory
             // fanfare, no defeat styling; the title names the winning team) and stage messages name who took it.
             const presWon = spectating || localWon;
@@ -29978,18 +30359,22 @@
             const playerHealth = combatants.left ? combatants.left.towerHealth : playerTowerHealth;
             const aiHealth = combatants.right ? combatants.right.towerHealth : aiTowerHealth;
 
+            // Career round stats belong to the LOCAL side (an online guest plays Red).
+            if (meSide) {
+                if (winnerSide === meSide) {
+                    StatTracker.increment('rounds_won');
+                    if ((meSide === 'left' ? playerHealth : aiHealth) === stageMaxHealth(meSide)) StatTracker.increment('perfect_rounds');
+                } else {
+                    StatTracker.increment('rounds_lost');
+                }
+            }
+            if (window.Achievements) Achievements.note('roundEnd', { winnerSide, territoryFalls, roundNo: totalRoundsPlayed, hp: { left: playerHealth, right: aiHealth } });
+
             // Tug of war: win = push forward, lose = pushed back, hopping over destroyed territories
             // (nextStageAfterPush).
 
             if (winnerOwner === 'player') {
                 playerScore++;
-
-                // Track round stats
-                StatTracker.increment('rounds_won');
-                // Check for perfect round (full health remaining)
-                if (playerHealth === stageMaxHealth('left')) {
-                    StatTracker.increment('perfect_rounds');
-                }
 
                 // Record stage result for progress bar coloring
                 stageResults[currentStage] = 'player';
@@ -30014,8 +30399,9 @@
                         _c.juiceActive = false; _c.juiceTimer = 0; _c.juice = 0; _c.juiceRamp = 0;
                     }
                     // Track match win and commit stats
-                    StatTracker.increment('matches_won');
+                    if (meSide) StatTracker.increment(winnerSide === meSide ? 'matches_won' : 'matches_lost');
                     StatTracker.commitMatch();
+                    if (window.Achievements) Achievements.evaluateMatchEnd(winnerSide);   // after commit: milestones read the new career
                     // Show victory screen instantly
                     // (No spectate camera reset here: snapping back from a zoomed/turned view read as a jolt. The
                     // cinematic snapshots whatever the camera is and returns to it; the next match's Ready/Go and
@@ -30028,9 +30414,6 @@
                 }
             } else {
                 aiScore++;
-
-                // Track round loss
-                StatTracker.increment('rounds_lost');
 
                 // Record stage result for progress bar coloring
                 stageResults[currentStage] = 'ai';
@@ -30055,8 +30438,9 @@
                         _c.juiceActive = false; _c.juiceTimer = 0; _c.juice = 0; _c.juiceRamp = 0;
                     }
                     // Track match loss and commit stats
-                    StatTracker.increment('matches_lost');
+                    if (meSide) StatTracker.increment(winnerSide === meSide ? 'matches_won' : 'matches_lost');
                     StatTracker.commitMatch();
+                    if (window.Achievements) Achievements.evaluateMatchEnd(winnerSide);   // after commit: milestones read the new career
                     // Show defeat screen instantly
                     // (No spectate camera reset here: snapping back from a zoomed/turned view read as a jolt. The
                     // cinematic snapshots whatever the camera is and returns to it; the next match's Ready/Go and
