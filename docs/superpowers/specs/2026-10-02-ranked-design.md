@@ -17,7 +17,25 @@ Owner request (2026-10-02): "a rank system: elo, MMR, bronze, silver, gold, plat
 - **Peak**: highest MMR reached after placements.
 
 ## What counts (rated)
-- **Singles vs AI**: the AI is one fixed profile (symmetry principle: no stat crutches), so it is a fixed-rating opponent, **AI = 1200** (Gold III floor). Elo self-limits: a player who beats it 90% of the time settles around 1580 (Platinum III); Diamond and Master effectively need human opponents.
+- **Singles vs AI — a matched bot** (revised 2026-10-02 with the owner): every match start (`resetGame` → `Rank.prepareMatchAI`) rates a bot at **your MMR ± up to 75** (seeded per match). Its **skill** (0..1) comes from that MMR through a **measured curve** (below), and slides every lever continuously between three anchors — Bronze (0), **Gold (0.5 = today's AI, exactly)**, Master (1):
+
+  | lever | Bronze | Gold | Master |
+  |---|---|---|---|
+  | perfect-parry share | 25% | 50% | 92% |
+  | early-whiff share (3 s lockout) | 35% | 25% | 3% |
+  | reaction delay (frames) | 12 | 6 | 2 |
+  | parry / dodge sight (frames) | 12 / 15 | 7 / 9 | 3 / 4 |
+  | positioning deadzone | 0.85 | 0.65 | 0.45 |
+  | open-lane sharpness | 0.3 | 0.7 | 1.0 |
+  | cast cadence | 6 | 5 | 3 |
+  | Chill Dill never-counter / decision time | 50% / x1.5 | 25% / x1 | 3% / x0.5 |
+  | returns sent straight back (no aim) | 50% | 0% | 0% |
+  | beam-clash mash (frames per press) | 15 | 9 | 5 |
+  | smart Overdrive / counter-clash | from skill 0.25 / 0.35 | yes | yes |
+
+  **Calibration** (`dbg.botCal`, headless bot vs the 0.5 bot, 60-120 matches per point, ~23 Elo side bias corrected): skill 0.1 → −686, 0.3 → −460, 0.5 → 0, 0.75 → +387, 1.0 → +460 Elo. Pinned at 0.5 = 1350 MMR, `RANK.SKILL_CURVE` = `[0,550] [0.1,664] [0.3,890] [0.5,1350] [0.75,1737] [1,1810]`: bots span **Bronze III → Diamond III**. **Honest cap**: a bot is never rated outside that span, so past ~1810 only real players move you (Elo self-limits against the best bot) — Diamond II+ and Master are earned against people. (The first Master anchors topped out at ~Platinum II; they were pushed harder to stretch the curve.)
+
+  Its **style** is a hidden weighted pick (Balanced 40%, Aggressive / Defensive / Control 20% each) — what it spends on, never how well: *Aggressive* casts 1.7x as often, Fireball first, stacks balls even into a block, Thunderstorm only at 3+ incoming, Overdrive on any lane; *Defensive* casts ~half as often, keeps 1 mana back, holds the centre, Overdrive only into a freeze or a clash; *Control* lines up on you while its Chill Dill is ready and punishes a freeze immediately. Measured style edges vs Balanced at equal skill: Aggressive −47, Control −47, **Defensive +143** Elo (`RANK.STYLE_EDGE`); the matchmaker plays a style at the skill of (rating − edge), so a bot's real strength matches the rank it shows. Competence only, never stats (symmetry principle). Players see the bot's **rank** (under Red's tower bar in its tier colour, and "Red · Gold II" on the end screen), never its style. Doubles, spectate, online and every oracle keep `AI_PROFILE` (= skill 0.5 Balanced).
 - **Online 1v1**: each peer sends `{ mmr, games }` with the existing match-start handshake (host: `START_MATCH.rank`; guest: its `LOADOUT.rank` reply). Each side updates its own rating locally from the result and the opponent's MMR. If the opponent's rating never arrived (older client), the match is unrated.
 - **Not rated**: doubles (local or online), spectate, the headless match simulator, the dev debug-end.
 - **Abandons**: quitting a rated match mid-way (pause → Quit/Leave), or closing the page during one, records a **loss** (a pending marker is saved at match start and settled on the next load). An online **disconnect** is not counted either way (P2P drops can't be told apart from rage-quits).

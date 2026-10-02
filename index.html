@@ -1935,7 +1935,8 @@
         // RANKED (spec: docs/superpowers/specs/2026-10-02-ranked-design.md)
         // ============================================================
         // One Elo number (MMR) -> tier + division (Bronze III .. Diamond I, then Master). Rated: singles vs the AI
-        // (a fixed-rating opponent, RANK.AI) and online 1v1 (the peer's MMR rides on the match-start handshake).
+        // (a bot matched to your MMR +- a spread: its skill 0..1 comes from its MMR, its style is a hidden seeded
+        // pick - prepareMatchAI) and online 1v1 (the peer's MMR rides on the match-start handshake).
         // Lifecycle: onRoundStart() opens a rated match (a persisted `pending` marker), onMatchEnd() settles it,
         // abandon() (resetGame mid-match) settles a loss, cancel() (disconnect / debug end) drops it; a pending
         // left by a closed page settles as a loss on the next load. Presentation only: nothing here touches the
@@ -1944,7 +1945,16 @@
             const STORAGE_KEY = 'volleybolt_rank';
             const RANK = {
                 START: 1000,              // Silver II
-                AI: 1200,                 // the AI's fixed rating (Gold III floor)
+                AI_SPREAD: 75,            // a bot is rated your MMR +- up to this (seeded per match)
+                // Bot skill <-> MMR, MEASURED (2026-10-02, dbg.botCal: 60-120 headless bot-vs-Gold matches per point,
+                // side bias ~23 Elo corrected): skill 0.5 (= AI_PROFILE, today's AI) is pinned at mid-Gold 1350 and
+                // each point's MMR = 1350 + its Elo edge over the 0.5 bot. Bots span ~Bronze III .. Diamond III;
+                // above that the honest cap leaves Diamond II+ / Master to real players. Re-run dbg.botCal after
+                // touching AI_ANCHORS and update these points.
+                SKILL_CURVE: [[0, 550], [0.1, 664], [0.3, 890], [0.5, 1350], [0.75, 1737], [1, 1810]],
+                // Style strength vs Balanced at equal skill (measured at Gold, dbg.botCal 60 each): the matchmaker plays
+                // a style at the skill of (rating - edge), so every bot's real strength matches the rank it shows.
+                STYLE_EDGE: { balanced: 0, aggressive: -47, defensive: 143, control: -47 },
                 PLACEMENTS: 5,
                 BASE: 600, DIV: 100,      // division i (0..14) starts at BASE + DIV*i; Bronze III = below 700
                 MASTER: 2100,
@@ -1971,6 +1981,14 @@
                          next: floor + RANK.DIV, index: i };
             }
             const expected = (mmr, opp) => 1 / (1 + Math.pow(10, (opp - mmr) / 400));
+            function skillForMmr(mmr) {                  // inverse of SKILL_CURVE, piecewise linear, clamped
+                const C = RANK.SKILL_CURVE;
+                if (mmr <= C[0][1]) return C[0][0];
+                for (let i = 1; i < C.length; i++) {
+                    if (mmr <= C[i][1]) return C[i - 1][0] + (C[i][0] - C[i - 1][0]) * (mmr - C[i - 1][1]) / (C[i][1] - C[i - 1][1]);
+                }
+                return C[C.length - 1][0];
+            }
             const kFor = (games) => games < RANK.PLACEMENTS ? 64 : games < 30 ? 32 : 24;
             function deltaFor(mmr, opp, won, games) {
                 let d = Math.round(kFor(games) * ((won ? 1 : 0) - expected(mmr, opp)));
@@ -1986,6 +2004,7 @@
             let active = null;          // the rated match in progress: { mode, oppMmr }
             let opponent = null;        // online peer's { mmr, games } (from the handshake)
             let last = null;            // the last settled result (end-screen card)
+            let aiOpp = null;           // this match's bot: { mmr, skill, style, label }
             function load() {
                 try {
                     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
@@ -2028,13 +2047,14 @@
                 return null;
             }
             function oppRating(mode) {
-                if (mode === 'ai') return RANK.AI;
+                if (mode === 'ai') return aiOpp ? aiOpp.mmr : null;
                 return opponent && Number.isFinite(opponent.mmr) ? opponent.mmr : null;
             }
             function onRoundStart() {
                 if (active) return;                       // only the first round opens the match
                 const mode = ratedMode();
                 if (!mode) return;
+                if (mode === 'ai' && !aiOpp) return;      // no bot was matched (shouldn't happen): unrated
                 last = null;
                 active = { mode };
                 st.pending = { mode, oppMmr: oppRating(mode) ?? RANK.START, at: Date.now() };
@@ -2060,13 +2080,44 @@
                 if (st.pending) { st.pending = null; save(); }
             }
 
+            // Matchmaking vs AI (resetGame, i.e. every match start): a singles match vs the AI gets a bot rated
+            // your MMR +- AI_SPREAD; skill from that MMR, style a weighted pick (both seeded per match, hidden
+            // style); the bot's rank is shown on Red's STATUS row and the end screen. Every other mode: no
+            // override (doubles, spectate, online and the oracles run AI_PROFILE).
+            function prepareMatchAI() {
+                const vsAI = !spectating && !window._simHeadless && teamSize === 1 && gameMode === 'single';
+                if (!vsAI || !window.makeAIProfile) {
+                    aiOpp = null;
+                    if (window.setAISlotProfile) { window.setAISlotProfile('right', null); window.setAISlotProfile('left', null); }
+                    if (window.setOpponentRankLabel) window.setOpponentRankLabel(null);
+                    return null;
+                }
+                const seed = (Date.now() ^ Math.imul((st.games + 1) | 0, 2654435761)) >>> 0;
+                const u1 = (Math.imul(seed ^ 0x27D4EB2D, 2654435761) >>> 0) / 4294967296;
+                const u2 = (Math.imul(seed ^ 0x165667B1, 2246822519) >>> 0) / 4294967296;
+                let style = 'balanced', acc = 0;
+                for (const [name, w] of window.AI_STYLE_WEIGHTS) { acc += w; if (u2 < acc) { style = name; break; } }
+                // Honest cap: a bot is never rated above (or below) what it actually plays like - its style's edge
+                // shifts that range; past the best bot only real players move you (Elo self-limits).
+                const edge = RANK.STYLE_EDGE[style] || 0;
+                const lo = RANK.SKILL_CURVE[0][1] + edge, hi = RANK.SKILL_CURVE[RANK.SKILL_CURVE.length - 1][1] + edge;
+                const mmr = Math.round(Math.max(lo, Math.min(hi, st.mmr + (u1 * 2 - 1) * RANK.AI_SPREAD)));
+                const skill = skillForMmr(mmr - edge);
+                aiOpp = { mmr, skill, style, label: rankOf(mmr, RANK.PLACEMENTS).label };
+                window.setAISlotProfile('right', window.makeAIProfile(skill, style));
+                window.setAISlotProfile('left', null);
+                if (window.setOpponentRankLabel) window.setOpponentRankLabel(rankOf(mmr, RANK.PLACEMENTS));
+                return aiOpp;
+            }
+
             load();
             if (st.pending) settle(false, st.pending.mode, st.pending.oppMmr ?? RANK.START, { abandoned: true });   // closed mid-match
             last = null;
 
             return {
-                RANK, rankOf, expected, kFor, deltaFor,
-                onRoundStart, onMatchEnd, abandon, cancel,
+                RANK, rankOf, expected, kFor, deltaFor, skillForMmr,
+                onRoundStart, onMatchEnd, abandon, cancel, prepareMatchAI,
+                aiOpponent: () => aiOpp,
                 setOpponent(r) { opponent = r && Number.isFinite(r.mmr) ? { mmr: r.mmr, games: r.games | 0 } : null; },
                 clearOpponent() { opponent = null; },
                 handshake: () => ({ mmr: st.mmr, games: st.games }),
@@ -6206,6 +6257,25 @@
             aiHealthPercent.top = "3px";
             aiHealthRow.addControl(aiHealthPercent);
             window.guiElements.aiHealthPercent = aiHealthPercent;
+            // Ranked vs AI: the matched bot's rank under Red's bar, in its tier colour (empty text = no line).
+            const aiRankLabel = new BABYLON.GUI.TextBlock('aiRankLabel');
+            aiRankLabel.text = '';
+            aiRankLabel.fontSize = 15;
+            aiRankLabel.fontFamily = "'FF9UI', sans-serif";
+            aiRankLabel.fontWeight = '400';
+            aiRankLabel.shadowColor = '#000'; aiRankLabel.shadowBlur = 0; aiRankLabel.shadowOffsetX = 2; aiRankLabel.shadowOffsetY = 2;
+            aiRankLabel.height = '22px';
+            aiRankLabel.paddingRight = '92px';      // the row under the bar holds Red's mana orbs (DOM, on top) at the right
+            aiRankLabel.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
+            aiHealthPanel.addControl(aiRankLabel);
+            aiHealthPanel.height = '84px';
+            window.guiElements.aiRankLabel = aiRankLabel;
+            const RANK_TIER_COLOR = { Unranked: '#c8cdd8', Bronze: '#e8a878', Silver: '#e4e8f0', Gold: '#ffd66b',
+                                      Platinum: '#8ff0dc', Diamond: '#8cc8ff', Master: '#d4a8ff' };
+            window.setOpponentRankLabel = (r) => {          // r = Rank.rankOf(...) or null
+                aiRankLabel.text = r ? r.label : '';
+                aiRankLabel.color = r ? (RANK_TIER_COLOR[r.tier] || '#e4e8f0') : '#e4e8f0';
+            };
 
             // AI Health bar background
             const aiHealthBg = new BABYLON.GUI.Rectangle();
@@ -17452,10 +17522,10 @@
             let simSalt = 0;
 
             // ── AI PROFILE ─────────────────────────────────────────────────────
-            // One fixed set of behavior values, shared by every AI slot (singles opponent, doubles
-            // opponents, the player's doubles partner). No difficulty rating, no adaptation. The AI
-            // runs under the player's exact limits (speed, mana, cooldowns, cast times, damage) —
-            // these values only describe how it perceives and reacts.
+            // The default set of behavior values: doubles (both teams), spectate and every oracle run this.
+            // The AI runs under the player's exact limits (speed, mana, cooldowns, cast times, damage) —
+            // these values only describe how it perceives, reacts and what it chooses to spend on.
+            // It is EXACTLY skill 0.5 'balanced' of makeAIProfile below (the Gold anchor), field for field.
             const AI_PROFILE = Object.freeze({
                 reactionFrames:   6,     // acts on the world as it was ~0.1s ago
                 trackDeadzone:    0.65,  // how close to the ball's lane counts as "there"
@@ -17463,8 +17533,73 @@
                 parrySight:       7,     // frames a threat must be seen before it can parry
                 castCadence:      5,     // offensive cast rhythm (think-cycles between casts)
                 openingSharpness: 0.7,   // how hard it jumps on an open lane (0 = ignores, 1 = instantly)
+                parryPerfect:     0.5,   // share of balls it parries on time
+                parryEarly:       0.25,  // share it flinches early on (whiff -> its own 3s parry lockout); rest: no press
+                chillNever:       0.25,  // share of enemy Chill Dills it never counter-casts (just dodges)
+                chillSpeed:       1,     // counter-cast decision time multiplier (x the 18/24/30-frame picks)
+                aimMiss:          0,     // share of returns it sends straight back instead of away
+                mashPeriod:       9,     // beam-clash mash: one press every N frames (9 = 6.7/s)
+                smartJuice:       true,  // Overdrive only on an opening / a freeze (false: whenever full + clear)
+                counterClash:     true,  // answers an enemy Overdrive with its own to force a clash
+                skill: 0.5, style: 'balanced',
+                thunderMin: 2, fireFirst: false, volley: false, manaReserve: 0,
+                holdCentre: false, seekLane: false, punishFrozen: false, juiceEager: false, juiceHold: false,
             });
             try { localStorage.removeItem('volleybolt_ai_skill'); } catch (e) {}   // retired adaptive rating
+
+            // ── AI SKILL + STYLE (2026-10-02, ranked; spec docs/superpowers/specs/2026-10-02-ranked-design.md) ──
+            // SKILL (0..1, continuous - from the bot's MMR): every lever slides between three anchors,
+            // [Bronze 0, Gold 0.5 = AI_PROFILE, Master 1]. Competence only - never stats (symmetry principle).
+            // STYLE: what it spends mana and attention on, never how well it executes. Hidden from the player.
+            const AI_ANCHORS = {
+                reactionFrames:   [12, 6, 2],
+                parrySight:       [12, 7, 3],
+                dodgeSightFrames: [15, 9, 4],
+                trackDeadzone:    [0.85, 0.65, 0.45],
+                openingSharpness: [0.3, 0.7, 1.0],
+                castCadence:      [6, 5, 3],
+                parryPerfect:     [0.25, 0.5, 0.92],
+                parryEarly:       [0.35, 0.25, 0.03],
+                chillNever:       [0.5, 0.25, 0.03],
+                chillSpeed:       [1.5, 1, 0.5],
+                aimMiss:          [0.5, 0, 0],
+                mashPeriod:       [15, 9, 5],
+            };
+            const AI_INT_LEVERS = new Set(['reactionFrames', 'parrySight', 'dodgeSightFrames', 'castCadence', 'mashPeriod']);
+            const AI_STYLE_BASE = { cadenceMul: 1, thunderMin: 2, fireFirst: false, volley: false, manaReserve: 0,
+                                    holdCentre: false, seekLane: false, punishFrozen: false, juiceEager: false, juiceHold: false };
+            const AI_STYLES = {
+                balanced:   {},
+                // more Fireballs, tries to stack balls (casts into a blocking opponent), Thunderstorm only when
+                // swamped (3+ incoming - 2 mana is offense it'd rather spend), Overdrive the moment there's a lane
+                aggressive: { cadenceMul: 0.6, thunderMin: 3, fireFirst: true, volley: true, juiceEager: true },
+                // hardly casts: keeps mana back for Thunderstorm clears / Chill counters, holds the centre, saves
+                // Overdrive for clashes and freezes
+                defensive:  { cadenceMul: 1.8, manaReserve: 1, holdCentre: true, juiceHold: true },
+                // Chill Dill first: lines up on you when idle, then punishes the freeze immediately
+                control:    { seekLane: true, punishFrozen: true },
+            };
+            const AI_STYLE_WEIGHTS = [['balanced', 0.4], ['aggressive', 0.2], ['defensive', 0.2], ['control', 0.2]];
+            function makeAIProfile(skill, style) {
+                const k = Math.max(0, Math.min(1, +skill || 0));
+                const at = ([lo, mid, hi]) => k < 0.5 ? lo + (mid - lo) * (k / 0.5) : mid + (hi - mid) * ((k - 0.5) / 0.5);
+                const name = AI_STYLES[style] ? style : 'balanced';
+                const st = { ...AI_STYLE_BASE, ...AI_STYLES[name] };
+                const p = { ...AI_PROFILE, skill: k, style: name };
+                for (const key in AI_ANCHORS) p[key] = AI_INT_LEVERS.has(key) ? Math.round(at(AI_ANCHORS[key])) : at(AI_ANCHORS[key]);
+                p.smartJuice = k >= 0.25;
+                p.counterClash = k >= 0.35;
+                for (const key in st) if (key !== 'cadenceMul') p[key] = st[key];
+                p.castCadence = Math.max(1, Math.round(p.castCadence * st.cadenceMul));
+                return Object.freeze(p);
+            }
+            // Per-slot profile overrides (null = AI_PROFILE). Set per match: the singles opponent by the ranked
+            // matchmaker (Rank.prepareMatchAI), spectate Blue/Red by the match simulator's calibration runs.
+            const AI_SLOT_PROFILE = { left: null, right: null };
+            window.makeAIProfile = makeAIProfile;
+            window.AI_STYLE_WEIGHTS = AI_STYLE_WEIGHTS;
+            window.setAISlotProfile = (slot, prof) => { AI_SLOT_PROFILE[slot] = prof || null; };
+            window.getAISlotProfile = (slot) => AI_SLOT_PROFILE[slot];
 
             // Pure AI helpers — no mesh reads, no Math.random, no wall-clock.
 
@@ -17548,6 +17683,7 @@
 
                 // One threat at a time: the biggest (most-rallied), tie-break closest.
                 const threat = _aiPrimaryThreat(view, true);   // or null
+                let aimMissed = false;                         // this return goes straight back (low skill)
 
                 // CHILL DILL COUNTER (owner 2026-10-01): an incoming enemy Chill Dill HOMES, so standing still or a
                 // single dodge gets you frozen. Once it has been seen for dodgeSightFrames (same reaction gate as
@@ -17583,8 +17719,12 @@
                         const AIM_OFFSETS = [0.3, 0.6, 0.9];
                         // Keyed on the ball AND its volley count, so every return of a long rally re-rolls.
                         const _ah = Math.imul(((threat.id * 8 + (threat.volleyCount || 0)) + 7) ^ (profile.slotSalt || 0), 2654435761) >>> 0;
-                        const aimOff = AIM_OFFSETS[Math.floor(_ah / 4294967296 * AIM_OFFSETS.length)];
+                        let aimOff = AIM_OFFSETS[Math.floor(_ah / 4294967296 * AIM_OFFSETS.length)];
                         awayZ = aimAwayZ(view, _ah);
+                        // skill: a low-skill bot sends some returns straight back (no aim) - its own per-return hash
+                        if (profile.aimMiss && (Math.imul(_ah ^ 0x5BD1E995, 2654435761) >>> 0) / 4294967296 < profile.aimMiss) {
+                            aimOff = 0; awayZ = 0; aimMissed = true;
+                        }
                         targetZ = threat.z - awayZ * aimOff;                         // ball lands on the `awayZ` half of the paddle
                         // Save-both: once already positioned on the primary, slide toward a
                         // second incoming so both get covered.
@@ -17595,8 +17735,14 @@
                         }
                     }
                 } else {
-                    // Idle: only reposition toward the open lane if meaningfully out of place.
-                    const open = _aiFindOpenTarget(view);
+                    // Idle: only reposition toward the open lane if meaningfully out of place. Style: defensive
+                    // holds the centre; control lines up on the opponent while its Chill Dill is ready. (Not while
+                    // channeling: the open lane is what aims our own beam.)
+                    let open = _aiFindOpenTarget(view);
+                    if (!s.juiceActive) {
+                        if (profile.holdCentre) open = 0;
+                        else if (profile.seekLane && (s.cooldowns.frostbolt || 0) <= 0 && s.mana >= 1) open = view.opp.paddleZ;
+                    }
                     if (Math.abs(open - s.paddleZ) > 1.5) targetZ = open;
                 }
                 // ---- BEAM BLOCK (owner design 2026-07-06): a channeling opponent outranks
@@ -17706,8 +17852,11 @@
                     // `% 4` would read only the id's low 2 bits (the multiplier is odd), i.e. a fixed,
                     // learnable P,P,E,L cycle over consecutive balls.
                     const h = Math.imul((threat.id + 1) ^ (profile.slotSalt || 0), 2654435761) >>> 0;
-                    const bucket = Math.floor(h / 4294967296 * PARRY_BUCKETS.length);
-                    const win = PARRY_BUCKETS[bucket];
+                    // skill: the PERFECT / EARLY shares slide (ranked); the default 0.5 / 0.25 is exactly the old
+                    // 4-bucket split [P, P, EARLY, LATE] (bucket = floor(u * 4)).
+                    const u = h / 4294967296;
+                    const pPerfect = profile.parryPerfect ?? 0.5, pEarly = profile.parryEarly ?? 0.25;
+                    const win = u < pPerfect ? PARRY_BUCKETS[0] : u < pPerfect + pEarly ? PARRY_BUCKETS[2] : null;
                     parryBucketOK = !!win && tti > win.lo && tti < win.hi;
                 }
                 const parry = !!(threat
@@ -17740,28 +17889,31 @@
                 let fireball = false, frostbolt = false, thunderstorm = false;
                 if (isCastFrame) {
                     const cycle = Math.floor(frame / K);
-                    const offenseOpen = (cycle % effectiveCadence) === 0;
+                    // style 'control': a frozen opponent gets punished on every cast frame, cadence or not
+                    const offenseOpen = (cycle % effectiveCadence) === 0
+                        || (profile.punishFrozen && (view.opp.freezeTime || 0) > 0.3);
                     const safe = _aiSafeToStartCast(view);
                     const cd   = s.cooldowns;
+                    const reserve = profile.manaReserve || 0;   // style 'defensive': mana kept back for defense
                     // UNIFIED casting policy (round 4, owner: no per-position behavior): every slot
                     // — front, back, singles — casts on the SAME gates (offenseOpen cadence + safe
                     // + cooldown + mana>=1). No more role-based mana-hold, counter-cast priority, or
                     // teammate fire-discipline; only the per-slot castK cadence (above) differs.
-                    const canFireball  = offenseOpen && safe && cd.fireball  <= 0 && s.mana >= 1
-                        && view.projectiles.length < 10 && !_aiIsOppBlocking(view) && !s.casting;
+                    const canFireball  = offenseOpen && safe && cd.fireball  <= 0 && s.mana >= 1 + reserve
+                        && view.projectiles.length < 10 && (profile.volley || !_aiIsOppBlocking(view)) && !s.casting;
                     // Frostbolt is a LANE shot: only worth casting when the opponent is directly
                     // in front (its payoff is freezing them). No alignment → no cast, so it stops
                     // firing frostbolt into an empty lane.
                     const FROST_ALIGN  = 1.2;
                     const oppInFront   = Math.abs(s.paddleZ - view.opp.paddleZ) < FROST_ALIGN;
-                    const canFrostbolt = offenseOpen && safe && cd.frostbolt <= 0 && s.mana >= 1
+                    const canFrostbolt = offenseOpen && safe && cd.frostbolt <= 0 && s.mana >= 1 + reserve
                         && oppInFront && view.projectiles.length < 10 && !s.casting;
                     // Thunderstorm is a DEFENSIVE panic-clear (same mana/cooldown as the player's):
                     // fired the moment two or more shots are incoming.
                     const canThunderstorm = cd.thunderstorm <= 0 && s.mana >= 2
-                        && incomingCount >= 2;
-                    frostbolt    = canFrostbolt;
-                    fireball     = canFireball && !frostbolt;
+                        && incomingCount >= (profile.thunderMin || 2);
+                    if (profile.fireFirst) { fireball = canFireball; frostbolt = canFrostbolt && !fireball; }   // style 'aggressive'
+                    else { frostbolt = canFrostbolt; fireball = canFireball && !frostbolt; }
                     thunderstorm = canThunderstorm;
                 }
                 // Chill Dill counter-casts: our own Chill Dill first, else Thunderstorm - but only after a HUMAN-LIKE
@@ -17769,8 +17921,18 @@
                 // id (+ slotSalt, rollback-safe like the parry buckets) picks ~0.3s / ~0.4s / ~0.5s of sight - or no
                 // counter at all (it just dodges). On top of the usual reaction lag. Dodging still starts at
                 // dodgeSightFrames: a player starts moving before deciding to cast.
-                const CHILL_COUNTER_SIGHT = [18, 24, 30, Infinity];
-                const counterAt = chill ? CHILL_COUNTER_SIGHT[Math.imul(((chill.id | 0) + 11) ^ (profile.slotSalt || 0), 2654435761) >>> 30] : Infinity;
+                // skill: chillNever = the never-counter share, chillSpeed scales the decision time. The default
+                // 0.25 / 1 is exactly the old [18, 24, 30, never] quarters (index = top 2 bits of the hash).
+                const CHILL_COUNTER_SIGHT = [18, 24, 30];
+                let counterAt = Infinity;
+                if (chill) {
+                    const cu = (Math.imul(((chill.id | 0) + 11) ^ (profile.slotSalt || 0), 2654435761) >>> 0) / 4294967296;
+                    const never = profile.chillNever ?? 0.25;
+                    if (cu < 1 - never) {
+                        const pick = CHILL_COUNTER_SIGHT[Math.min(2, Math.floor(cu * 3 / (1 - never)))];   // exact = old >>>30 at 0.25
+                        counterAt = (profile.chillSpeed ?? 1) === 1 ? pick : Math.round(pick * profile.chillSpeed);
+                    }
+                }
                 if (chill && !s.casting && (chill.sightFrames || 0) >= counterAt) {
                     if ((s.cooldowns.frostbolt || 0) <= 0 && s.mana >= 1) { frostbolt = true; fireball = false; }
                     else if ((s.cooldowns.thunderstorm || 0) <= 0 && s.mana >= 2) thunderstorm = true;
@@ -17795,20 +17957,25 @@
                 //    it to answer theirs. (Unless they're frozen: they can't answer, so it's a free beam.)
                 const juiceReady = s.juice >= JUICE.MAX && !s.juiceActive && !s.casting;
                 const oppBanked  = (view.opp.juice || 0) >= JUICE.MAX && !view.opp.juiceActive;
-                const counterClash = juiceReady && view.opp.juiceActive
+                const counterClash = profile.counterClash !== false && juiceReady && view.opp.juiceActive
                     && Math.abs(view.opp.paddleZ - s.paddleZ) <= ((window.OVERDRIVE && window.OVERDRIVE.BLOCK_TOL) || 0.9) * 0.8;   // the beam's lane, not the projectile BLOCK_TOL
+                // skill: a low-skill bot fires Overdrive whenever it's full and the court is clear. Style: aggressive
+                // ignores a banked opponent; defensive only fires into a freeze (or a counter-clash).
+                const juiceWhen = profile.smartJuice === false ? true
+                    : profile.juiceHold ? oppFrozen
+                    : (oppFrozen || (beamOpening && (profile.juiceEager || !oppBanked)));
                 const juice = counterClash || (juiceReady
                     && incomingCount === 0
                     && !view.opp.juiceActive
-                    && (oppFrozen || (beamOpening && !oppBanked)));
+                    && juiceWhen);
 
                 // Beam clash: mash the parry button — ~6.7 presses/s at 60 Hz, so a player mashing faster wins.
-                const clashMash = !!(s.clashing && s.juiceActive && frame % 9 === 0);
+                const clashMash = !!(s.clashing && s.juiceActive && frame % (profile.mashPeriod || 9) === 0);
                 // PARRY AIM: a parry's return angle comes from the direction HELD on the catch frame (sim:
                 // aimDir = moveDir), exactly as for the player (hold W/S while parrying). Standing still sent
                 // every AI parry straight back; while its parry is live the AI now holds the way away from
                 // the opponent. (Not while blocking a beam: that needs the paddle to hold the lane.)
-                if (threat && s.parryActive && !(view.opp && view.opp.juiceActive)) {
+                if (threat && s.parryActive && !aimMissed && !(view.opp && view.opp.juiceActive)) {
                     if (!awayZ) awayZ = aimAwayZ(view, Math.imul(((threat.id * 8 + (threat.volleyCount || 0)) + 7) ^ (profile.slotSalt || 0), 2654435761) >>> 0);
                     moveDir = awayZ;
                 }
@@ -18014,7 +18181,8 @@
                 // Every slot runs AI_PROFILE; per-slot overrides layer the castK cadence on top
                 // (timing diversity only — unified AI, round 4); the reaction ring depth is the
                 // shared lag shifted by the slot's reactionDelta (≥1).
-                const base = AI_PROFILE;
+                // spectate slots take a per-slot override (match-simulator calibration); doubles is always AI_PROFILE
+                const base = ((roleKey === 'spectate' || roleKey === 'spectateR') && AI_SLOT_PROFILE[slotKey]) || AI_PROFILE;
                 const prof = { ...base, ...DOUBLES_AI[roleKey],
                     reactionFrames: Math.max(1, base.reactionFrames + DOUBLES_AI[roleKey].reactionDelta),
                     // slotSalt de-correlates the parry timing-bucket hash per slot (see decideAI's
@@ -18137,7 +18305,7 @@
                 // slotSalt: 0 for the singles right-AI (only one slot; no de-correlation needed —
                 // see doubles' DOUBLES_AI.slotSalt for the multi-slot case). Feeds decideAI's parry
                 // timing-bucket hash; a stable 0 here reproduces the single-slot bucket assignment.
-                const aiProfile  = { ...AI_PROFILE, slotSalt: 0 ^ simSalt };
+                const aiProfile  = { ...(AI_SLOT_PROFILE.right || AI_PROFILE), slotSalt: 0 ^ simSalt };   // ranked bot / sim override
                 // Reaction delay: the AI decides on the world it saw `reactionFrames` ago.
                 aiViewHistory.push(buildAISingleView());
                 const lag = (aiProfile.reactionFrames | 0);
@@ -23561,6 +23729,7 @@
         function startSpectateMatch() {
             startSinglesMatch();
             spectating = true;
+            if (window.Rank) Rank.prepareMatchAI();   // startSinglesMatch matched a ranked bot; spectate runs AI_PROFILE
             specSpeedIdx = 1; specPaused = false;
             if (window.spectateCamReset) spectateCamReset();
             if (window.setHudHidden) setHudHidden(false);
@@ -24057,7 +24226,7 @@
             line('Matches', games ? st.wins + ' W  ' + st.losses + ' L' : '-');
             line('Win rate', games ? Math.round(100 * st.wins / games) + '%' : '-');
             line('Peak', st.peak ? Rank.rankOf(st.peak, R.PLACEMENTS).label + ' · ' + fmt(st.peak) : '-');
-            line('Rated', 'vs AI (' + fmt(R.AI) + ') · Online 1v1');
+            line('Rated', 'vs AI (matched) · Online 1v1');
             const recent = mkEl('div', 'rank-recent');
             recent.appendChild(mkEl('span', 'rank-recent-k', 'Last ' + R.HISTORY));
             const pips = mkEl('div', 'rank-pips');
@@ -26229,7 +26398,8 @@
         (function attachMatchSimulator() {
             let sfxSaved = null, sim = null;
             const begin = (seed, rules) => {
-                Object.assign(SIM_RULES, SIM_RULES_DEFAULT, rules || {});
+                const { profiles, ...simRules } = rules || {};
+                Object.assign(SIM_RULES, SIM_RULES_DEFAULT, simRules);
                 window._simHeadless = true;
                 window._simTrace = [];
                 if (!sfxSaved) {
@@ -26242,6 +26412,11 @@
                 if (SIM_RULES.liveSalts) nextProjectileId = (Math.imul(seed | 0, 2654435761) >>> 20);   // live-like: ball ids carry over between matches
                 gameState = 'menu'; startGameInProgress = false;   // back-to-back matches: no end screen / menu in between
                 window.startSpectateMatch();
+                // calibration: per-side bot profiles (after startSpectateMatch: its resetGame clears overrides)
+                for (const side of ['left', 'right']) {
+                    const pr = profiles && profiles[side];
+                    window.setAISlotProfile(side, pr ? window.makeAIProfile(pr.skill, pr.style) : null);
+                }
                 specPaused = true;                                 // the live loop must not step it between chunks
                 window._simSkipPres = window._simPresOn ? false : true;   // _simPresOn: dev switch to A/B the skip
                 sim = { seed, frames: 0 };
@@ -26256,6 +26431,7 @@
                 frozen: window._simStats ? window._simStats.frozen : 0,
             });
             const end = () => {
+                window.setAISlotProfile('left', null); window.setAISlotProfile('right', null);
                 if (sfxSaved) { Object.assign(ToneSFX, sfxSaved); sfxSaved = null; }
                 window._simHeadless = false;
                 window._simSkipPres = false;
@@ -26290,6 +26466,26 @@
                 const matches = [];
                 for (let i = 0; i < count; i++) matches.push(window.dbg.simMatch(fromSeed + i, rules));
                 return { summary: summarize(matches, rules), matches };
+            };
+            // Bot calibration (ranked): dbg.botCal([[skillBlue, skillRed], ...], n, fromSeed) plays n headless matches
+            // per pair (balanced style unless [a, b, styleA, styleB]); results -> window.__botCal { done, rows }.
+            // MessageChannel-scheduled (not timers) so a background tab isn't throttled to a crawl. Elo edge of Blue
+            // = 400 * log10(p / (1 - p)) from its win rate p; feed the result into Rank.RANK.SKILL_CURVE.
+            window.dbg.botCal = function botCal(pairs, n, fromSeed) {
+                const out = window.__botCal = { done: false, rows: pairs.map(([a, b, sa, sb]) => ({ a, b, sa: sa || 'balanced', sb: sb || 'balanced', blue: 0, n: 0 })) };
+                const jobs = [];
+                out.rows.forEach((row) => { for (let i = 0; i < n; i++) jobs.push([row, (fromSeed || 5000) + i]); });
+                const ch = new MessageChannel();
+                ch.port1.onmessage = () => {
+                    const job = jobs.shift();
+                    if (!job) { out.rows.forEach(r => { const p = r.blue / Math.max(1, r.n); r.elo = Math.round(400 * Math.log10(Math.max(1e-3, p) / Math.max(1e-3, 1 - p))); }); out.done = true; return; }
+                    const [row, seed] = job;
+                    const m = window.dbg.simMatch(seed, { profiles: { left: { skill: row.a, style: row.sa }, right: { skill: row.b, style: row.sb } } }, 60 * 60 * 20);
+                    if (m.winner) { row.n++; if (m.winner === 'left') row.blue++; }
+                    ch.port2.postMessage(0);
+                };
+                ch.port2.postMessage(0);
+                return 'started: ' + jobs.length + ' matches, read window.__botCal';
             };
             window.dbg.simBatchAsync = function simBatchAsync(fromSeed, count, rules, chunk) {
                 const out = { done: false, progress: 0, summary: null, matches: [], error: null };
@@ -28113,6 +28309,9 @@
             // shake, explosion + deep boom, damage number).
             onBeamClashResolve: (winner, loser, dmg) => {
                 if (window.Achievements && winner) Achievements.note('beamClash', { winnerSide: winner.side });
+                // Match simulator: no payoff show. Its blasts are TIMERS (~0.4s), which fire after the headless match
+                // has already ended and restored the sound - stray booms (and flashes) in the live scene.
+                if (window._simHeadless) return;
                 const cx = (typeof window._lastClashX === 'number') ? window._lastClashX : 0;
                 const cz = (typeof window._lastClashZ === 'number') ? window._lastClashZ : 0;
                 const hit = (p, col, size) => { if (window.createImpactFlash) try { createImpactFlash(p, col, size); } catch (e) {} };
@@ -28571,7 +28770,7 @@
             const isDoubles = !!(cb.leftBack || cb.rightBack);
             const rows = [
                 { cls: 'blue', name: isDoubles ? 'Blue Team' : window.getPlayerName(), s: team(cb.left, cb.leftBack) },
-                { cls: 'red',  name: isDoubles ? 'Red Team' : 'Red', s: team(cb.right, cb.rightBack) },
+                { cls: 'red',  name: isDoubles ? 'Red Team' : ((window.Rank && Rank.aiOpponent()) ? 'Red \u00b7 ' + Rank.aiOpponent().label : 'Red'), s: team(cb.right, cb.rightBack) },
             ];
             // roundLog is the source of truth for the score (fallback: the running scores).
             const wins = { left: 0, right: 0 };
@@ -28902,7 +29101,7 @@
             const a = res.after, b = res.before;
             const mk = (tag, cls, text) => { const el = document.createElement(tag); if (cls) el.className = cls; if (text != null) el.textContent = text; return el; };
             const kick = res.change === 'promoted' ? 'Promoted!' : res.change === 'demoted' ? 'Demoted' : res.change === 'placed' ? 'Rank revealed!'
-                : 'Ranked · ' + (res.mode === 'ai' ? 'vs AI' : 'Online');
+                : 'Ranked · ' + (res.mode === 'ai' ? 'vs ' + Rank.rankOf(res.oppMmr, Rank.RANK.PLACEMENTS).label + ' AI' : 'Online');
             card.className = 'end-rank' + (res.change ? ' is-' + res.change : '');
             card.appendChild(mk('div', 'end-rank-kicker', kick));
             const row = mk('div', 'end-rank-row');
@@ -29087,6 +29286,7 @@
         function resetGame() {
             if (window.Achievements) Achievements.resetMatch();   // quitting mid-match earns nothing; fresh flags
             if (window.Rank) Rank.abandon();                      // ...and quitting a rated match mid-way is a loss
+            if (window.Rank) Rank.prepareMatchAI();               // vs AI: a bot matched to your MMR (else AI_PROFILE)
             roundLog = [];
             matchClockFrames = 0;
             presTimers.length = 0;              // an abandoned stage transition's frames never fire into this match
