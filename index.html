@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=96-history-profiles">
+    <link rel="stylesheet" href="styles.css?v=98-versus">
 </head>
 <body>
 
@@ -2103,6 +2103,7 @@
             // your MMR +- AI_SPREAD; skill from that MMR, style a weighted pick (both seeded per match, hidden
             // style); the bot's rank is shown on Red's STATUS row and the end screen. Every other mode: no
             // override (doubles, spectate, online and the oracles run AI_PROFILE).
+            let nextBot = null;         // pre-rolled by the Quick Play versus screen; the next prepareMatchAI uses it
             function prepareMatchAI() {
                 const vsAI = !spectating && !window._simHeadless && teamSize === 1 && gameMode === 'single';
                 if (!vsAI || !window.makeAIProfile) {
@@ -2111,6 +2112,16 @@
                     if (window.setOpponentRankLabel) window.setOpponentRankLabel(null);
                     return null;
                 }
+                const bot = nextBot || rollBot();
+                nextBot = null;
+                aiOpp = bot;
+                window.setAISlotProfile('right', window.makeAIProfile(bot.skill, bot.style));
+                window.setAISlotProfile('left', null);
+                if (window.setOpponentRankLabel) window.setOpponentRankLabel(rankOf(bot.mmr, RANK.PLACEMENTS));
+                return aiOpp;
+            }
+            function previewMatchAI() { nextBot = rollBot(); return nextBot; }
+            function rollBot() {
                 const seed = (Date.now() ^ Math.imul((st.games + 1) | 0, 2654435761)) >>> 0;
                 const u1 = (Math.imul(seed ^ 0x27D4EB2D, 2654435761) >>> 0) / 4294967296;
                 const u2 = (Math.imul(seed ^ 0x165667B1, 2246822519) >>> 0) / 4294967296;
@@ -2122,11 +2133,7 @@
                 const lo = RANK.SKILL_CURVE[0][1] + edge, hi = RANK.SKILL_CURVE[RANK.SKILL_CURVE.length - 1][1] + edge;
                 const mmr = Math.round(Math.max(lo, Math.min(hi, st.mmr + (u1 * 2 - 1) * RANK.AI_SPREAD)));
                 const skill = skillForMmr(mmr - edge);
-                aiOpp = { mmr, skill, style, label: rankOf(mmr, RANK.PLACEMENTS).label };
-                window.setAISlotProfile('right', window.makeAIProfile(skill, style));
-                window.setAISlotProfile('left', null);
-                if (window.setOpponentRankLabel) window.setOpponentRankLabel(rankOf(mmr, RANK.PLACEMENTS));
-                return aiOpp;
+                return { mmr, skill, style, label: rankOf(mmr, RANK.PLACEMENTS).label };
             }
 
             // ---- profiles (online): what a peer shows the other in the lobby / versus screen ----
@@ -2171,7 +2178,7 @@
 
             return {
                 RANK, rankOf, expected, kFor, deltaFor, skillForMmr,
-                onRoundStart, onMatchEnd, abandon, cancel, prepareMatchAI,
+                onRoundStart, onMatchEnd, abandon, cancel, prepareMatchAI, previewMatchAI,
                 aiOpponent: () => aiOpp,
                 setOpponent(r) { opponent = r && Number.isFinite(r.mmr) ? { mmr: r.mmr, games: r.games | 0 } : null; },
                 clearOpponent() { opponent = null; oppProfile = null; },
@@ -14147,6 +14154,18 @@
                 if (ch.skeleton) ch.skeleton.dispose();
             };
             window.disposePickle2 = disposePickle2;
+            // Versus screen: fetch + parse a loadout's models / face strips into the caches (resolves when ready).
+            window.preloadPickleLoadout = (loadout) => {
+                const lo = sanitizeLoadout(loadout || {});
+                const jobs = [loadP2('pickle_base.glb').catch(() => null)];
+                for (const slot of COSMETIC_SLOTS) {
+                    const c = cosmeticById(lo[slot]);
+                    if (!c) continue;
+                    if (c.file) jobs.push(loadP2(c.file).catch(() => null));
+                    if (c.strip) jobs.push(Promise.resolve(loadStrip(c.strip)).catch(() => null));
+                }
+                return Promise.all(jobs);
+            };
 
             const buildPickle2 = async (prefix, side, loadout, bust) => {
                 const lo = sanitizeLoadout(loadout);
@@ -22887,7 +22906,7 @@
             if (btnStart) btnStart.addEventListener('click', async () => {
                 if (!localReady || !remoteReady) return;
                 await initToneJS();
-                hostStartDuel();
+                hostBeginVersus();                   // versus / loading screen on both peers, then START_MATCH
             });
 
             // --- Online doubles lobby wiring (Task 2; zone clicks + keyboard added in the
@@ -24163,7 +24182,7 @@
             // Unified Host Game: exactly 2 humans on opposite sides -> a genuine 1v1 duel on the
             // classic rollback path (START_MATCH), not a doubles match with 2 AI.
             if (isDuelLineup(netSlots, spectators, guestConns)) {
-                if (hostPromoteLobbyToDuel()) hostStartDuel();
+                if (hostPromoteLobbyToDuel()) hostBeginVersus();   // versus / loading screen, then START_MATCH
                 return;
             }
             // The host's slot is ALWAYS re-derived from the 'HOST' sentinel at the moment of
@@ -24669,7 +24688,7 @@
 
             // 1v1 Duel — the core mode.
             btnDuel.addEventListener('click', () => {
-                startSinglesMatch();
+                if (window.startQuickPlay) startQuickPlay(); else startSinglesMatch();   // versus screen, then the match
             });
             // Spectate — AI vs AI.
             const btnSpectate = document.getElementById('domBtnSpectate');
@@ -25280,6 +25299,7 @@
         function handleDisconnect(reason) {
             // A dropped peer can't be told from a rage-quit: the rated match just doesn't count.
             if (window.Rank) { Rank.cancel(); Rank.clearOpponent(); }
+            if (window.cancelVersus) window.cancelVersus();
             // Clear the "opponent stepped away" overlay if it was up — this is a real disconnect now.
             if (typeof hideOpponentAwayOverlay === 'function') hideOpponentAwayOverlay();
             // Rich context for diagnosing the mid-match "Opponent disconnected" playtest report:
@@ -25433,6 +25453,15 @@
                     refreshReadyUI();
                     break;
 
+                case 'VS_BEGIN':
+                    // the host opened the versus / loading screen: show it, preload, answer VS_READY
+                    if (!isHost && window.guestBeginVersus) window.guestBeginVersus(data);
+                    break;
+
+                case 'VS_READY':
+                    if (isHost && window.hostVersusReady) window.hostVersusReady(data);
+                    break;
+
                 case 'PROFILE':
                     // the peer's profile card (name, rank, record, recent form) - presentation only
                     if (window.Rank) Rank.setOpponentProfile(data.profile);
@@ -25489,6 +25518,7 @@
                 case 'START_MATCH':
                     // Guest receives start signal
                     if (!isHost) {
+                        if (window.Versus) Versus.hide(250);
                         // Unified Host Game: the host promoted the (doubles) lobby to a 1v1 duel.
                         // Leave doubles BEFORE starting, or runPvPGameLoop would dispatch to the
                         // doubles lockstep loop (netMode==='doubles') with no lockstep state.
@@ -29209,6 +29239,146 @@
             ensureEndScreenScaleLayer().appendChild(el);
             return el;
         }
+        // ---- VERSUS / loading screen (2026-10-02, owner: "like League, wait for everyone to load in") ----
+        // Two big cards (Blue left, Red right - no flip online), VS between them; each card shows that player's
+        // load state. Online: the host's Start opens it on both peers (VS_BEGIN), each preloads the other's
+        // cosmetics and reports VS_READY; the host fires the existing START_MATCH only once both are in (or a
+        // timeout). Quick Play: you vs the matched bot. Presentation + a pre-start gate only: nothing in the sim.
+        const Versus = (() => {
+            let el = null;
+            const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+            function ensure() {
+                if (el) return el;
+                el = mk('div');
+                el.id = 'vsScreen';
+                ensureEndScreenScaleLayer().appendChild(el);
+                return el;
+            }
+            function card(p, side) {
+                const R = Rank.RANK;
+                const r = Rank.rankOf(p.mmr, p.isBot ? R.PLACEMENTS : p.games);
+                const c = mk('div', 'vs-card vs-' + side);
+                c.appendChild(mk('div', 'vs-side', side === 'left' ? 'Blue' : 'Red'));
+                const em = mk('div', 'vs-emblem');
+                em.appendChild(window.rankEmblem(r.tierIdx, 176));
+                c.appendChild(em);
+                c.appendChild(mk('div', 'vs-name', p.name));
+                c.appendChild(mk('div', 'vs-rank tier-' + r.tier.toLowerCase(),
+                    p.isBot ? r.label + ' \u00b7 AI' : r.placed ? r.label + ' \u00b7 ' + p.mmr.toLocaleString() + ' MMR' : 'Placement ' + r.placement + '/' + R.PLACEMENTS));
+                if (!p.isBot) {
+                    const games = (p.wins || 0) + (p.losses || 0);
+                    c.appendChild(mk('div', 'vs-line', games ? p.wins + 'W ' + p.losses + 'L \u00b7 ' + Math.round(100 * p.wins / games) + '%' : 'No rated matches yet'));
+                    if (p.recent) {
+                        const pips = mk('div', 'vs-pips');
+                        for (const ch of p.recent.split('').reverse()) pips.appendChild(mk('i', ch === 'W' ? 'is-win' : 'is-loss'));
+                        c.appendChild(pips);
+                    }
+                }
+                const stt = mk('div', 'vs-status is-loading');
+                stt.append(mk('span', 'vs-spin'), mk('span', 'vs-status-t', 'Loading'));
+                c.appendChild(stt);
+                return c;
+            }
+            function show(left, right, mode) {
+                const root = ensure();
+                root.innerHTML = '';
+                root.append(mk('div', 'vs-bg'), card(left, 'left'), mk('div', 'vs-vs', 'VS'), card(right, 'right'), mk('div', 'vs-mode', mode || ''));
+                root.classList.remove('is-out');
+                root.classList.add('visible');
+                if (window.ToneSFX && ToneSFX.uiConfirm) ToneSFX.uiConfirm();
+            }
+            function setStatus(side, ready) {
+                if (!el) return;
+                const st = el.querySelector('.vs-' + side + ' .vs-status');
+                if (!st || st.classList.contains('is-ready') === !!ready) return;
+                st.classList.toggle('is-loading', !ready);
+                st.classList.toggle('is-ready', !!ready);
+                st.querySelector('.vs-status-t').textContent = ready ? 'Ready' : 'Loading';
+                if (ready && window.ToneSFX && ToneSFX.uiHover) ToneSFX.uiHover();
+            }
+            function hide(delay) {
+                if (!el || !el.classList.contains('visible')) return;
+                setTimeout(() => {
+                    if (!el) return;
+                    el.classList.add('is-out');
+                    setTimeout(() => { if (el) el.classList.remove('visible', 'is-out'); }, 450);
+                }, delay || 0);
+            }
+            const isOpen = () => !!(el && el.classList.contains('visible'));
+            return { show, setStatus, hide, isOpen };
+        })();
+        window.Versus = Versus;
+        const vsWait = (ms) => new Promise(r => setTimeout(r, ms));
+        const VS_MIN_MS = 2600;          // the screen is a moment, not a flash
+        const VS_TIMEOUT_MS = 10000;     // an older client never answers VS_BEGIN: start anyway
+        // Quick Play: you vs the matched bot (pre-rolled so the card can show its rank), then the match.
+        window.startQuickPlay = async () => {
+            if (window._vsBusy) return;
+            window._vsBusy = true;
+            try {
+                const bot = window.Rank ? Rank.previewMatchAI() : null;
+                const me = window.Rank ? Rank.profile() : { name: 'You', mmr: 1000, games: 0 };
+                Versus.show(me, { name: 'AI', mmr: bot ? bot.mmr : 1000, isBot: true }, 'Quick Play \u00b7 Ranked');
+                const t0 = performance.now();
+                await Promise.race([Promise.all([
+                    (window.preloadPickleLoadout ? window.preloadPickleLoadout(window.PickleKit ? PickleKit.loadLoadout() : null) : Promise.resolve()).then(() => Versus.setStatus('left', true)),
+                    vsWait(700 + Math.random() * 700).then(() => Versus.setStatus('right', true)),
+                ]), vsWait(VS_TIMEOUT_MS)]);
+                await vsWait(Math.max(0, VS_MIN_MS - (performance.now() - t0)));
+                startSinglesMatch();
+                Versus.hide(250);
+            } finally { window._vsBusy = false; }
+        };
+        // Online host: open the versus screen on both peers, wait for the guest's VS_READY, then START_MATCH.
+        let vsHost = null;
+        function hostBeginVersus() {
+            if (!(isHost && conn && conn.open) || vsHost) return;
+            const me = Rank.profile();
+            const opp = Rank.opponentProfile() || { name: 'Opponent', mmr: 1000, games: 0, wins: 0, losses: 0, recent: '' };
+            vsHost = { guestReady: false, selfReady: false, t0: performance.now(), started: false };
+            try { conn.send({ type: 'VS_BEGIN', profile: me, loadout: window.PickleKit ? PickleKit.loadLoadout() : null }); } catch (e) {}
+            Versus.show(me, opp, 'Ranked \u00b7 Online');
+            const pre = window.preloadPickleLoadout ? window.preloadPickleLoadout(window.PickleKit ? PickleKit.loadLoadout() : null) : Promise.resolve();
+            pre.then(() => { if (!vsHost) return; vsHost.selfReady = true; Versus.setStatus('left', true); hostVersusCheck(); });
+            setTimeout(hostVersusCheck, VS_MIN_MS + 30);
+            setTimeout(() => hostVersusCheck(true), VS_TIMEOUT_MS);
+        }
+        function hostVersusCheck(force) {
+            const v = vsHost;
+            if (!v || v.started) return;
+            if (!(conn && conn.open)) { vsHost = null; Versus.hide(); return; }
+            const long = performance.now() - v.t0 >= VS_MIN_MS;
+            if (!force && !(v.selfReady && v.guestReady && long)) return;
+            v.started = true;
+            vsHost = null;
+            hostStartDuel();
+            Versus.hide(250);
+        }
+        window.hostVersusReady = (data) => {          // host: the guest finished loading
+            if (!vsHost) return;
+            vsHost.guestReady = true;
+            Versus.setStatus('right', true);
+            const go = () => hostVersusCheck();
+            if (data && data.loadout && window.preloadPickleLoadout) window.preloadPickleLoadout(data.loadout).then(go, go); else go();
+        };
+        window.guestBeginVersus = (data) => {         // guest: the host opened the versus screen
+            if (window.Rank && data.profile) Rank.setOpponentProfile(data.profile);
+            const opp = (window.Rank && Rank.opponentProfile()) || { name: 'Host', mmr: 1000, games: 0, wins: 0, losses: 0, recent: '' };
+            const me = window.Rank ? Rank.profile() : { name: 'You', mmr: 1000, games: 0 };
+            Versus.show(opp, me, 'Ranked \u00b7 Online');
+            Versus.setStatus('left', true);           // the host started it: it's loaded
+            const mine = window.PickleKit ? PickleKit.loadLoadout() : null;
+            Promise.all([
+                window.preloadPickleLoadout ? window.preloadPickleLoadout(mine) : null,
+                data.loadout && window.preloadPickleLoadout ? window.preloadPickleLoadout(data.loadout) : null,
+            ]).catch(() => {}).then(() => {
+                Versus.setStatus('right', true);
+                try { if (conn && conn.open) conn.send({ type: 'VS_READY', loadout: mine }); } catch (e) {}
+            });
+        };
+        window.hostBeginVersus = hostBeginVersus;
+        window.cancelVersus = () => { vsHost = null; Versus.hide(); };
+
         // ---- End screen page 2: the rank reveal ----
         // Next (page 1) -> page 2: the emblem, rank and MMR of BEFORE the match, then the delta pops, the MMR counts,
         // the bar fills / drains; crossing a division fills (or drains) it, flips the emblem and flashes the kicker;
@@ -29463,7 +29633,9 @@
             resetGame();           // clears gameOver, scores, gates
             startGameInProgress = false;  // clear the double-click guard
             gameState = "menu";    // startGame() guards on gameState==='menu'; reset it here
-            startGame();
+            // Quick Play rematch: back through the versus screen vs a freshly matched bot (spectate restarts as-is)
+            if (!spectating && teamSize === 1 && window.startQuickPlay) startQuickPlay();
+            else startGame();
         }
 
         // Shared MP rematch helper — keeps PeerJS connection, returns to connected lobby.

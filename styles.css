@@ -3473,6 +3473,59 @@ body.gp-cursor-hidden * {
 .lp-pips > i.is-loss { background: #e2706a; }
 .lp-sub { font-size: 13px; color: #9aa0b3; }
 
+/* ---- Versus / loading screen (2026-10-02): Blue card | VS | Red card ---- */
+#vsScreen { position: absolute; inset: 0; display: none; pointer-events: auto; z-index: 5; font-family: 'Manrope UI', 'Manrope', sans-serif; }
+#vsScreen.visible { display: block; }
+#vsScreen .vs-bg {
+    position: absolute; inset: 0;
+    background: linear-gradient(100deg, #10204a 0%, #1a2f6a 46%, #0c0a14 49.6%, #0c0a14 50.4%, #5a1e1e 53.5%, #3a1418 100%);
+    animation: endFade 0.3s ease both;
+}
+#vsScreen .vs-card {
+    position: absolute; top: 170px; width: 560px; display: flex; flex-direction: column; align-items: center; gap: 10px;
+    animation: vsInL 0.5s cubic-bezier(.2, .9, .2, 1) both;
+}
+#vsScreen .vs-left { left: 190px; }
+#vsScreen .vs-right { right: 190px; animation-name: vsInR; }
+@keyframes vsInL { from { transform: translateX(-160px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes vsInR { from { transform: translateX(160px); opacity: 0; } to { transform: none; opacity: 1; } }
+#vsScreen .vs-side { font-weight: 800; font-size: 20px; letter-spacing: 0.3em; text-transform: uppercase; }
+#vsScreen .vs-left .vs-side { color: #6fb0ff; }
+#vsScreen .vs-right .vs-side { color: #ff8a70; }
+#vsScreen .vs-emblem {
+    width: 240px; height: 240px; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(closest-side, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 72%);
+}
+#vsScreen .vs-name { font-family: 'Ferrum', 'FF9UI', serif; font-size: 64px; line-height: 1; color: #fff4c2; text-shadow: 3px 3px 0 #000;
+    max-width: 560px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#vsScreen .vs-rank { font-weight: 800; font-size: 24px; }
+#vsScreen .vs-line { font-size: 18px; color: #e0dcea; }
+#vsScreen .vs-pips { display: flex; gap: 5px; }
+#vsScreen .vs-pips > i { width: 14px; height: 14px; border-radius: 3px; }
+#vsScreen .vs-pips > i.is-win { background: #8fd06a; }
+#vsScreen .vs-pips > i.is-loss { background: #e2706a; }
+#vsScreen .vs-status {
+    margin-top: 18px; display: flex; align-items: center; gap: 10px; padding: 8px 22px; border-radius: 999px;
+    font-weight: 800; font-size: 18px; letter-spacing: 0.14em; text-transform: uppercase;
+    background: rgba(10, 10, 20, 0.55); border: 2px solid rgba(224, 230, 240, 0.4); color: #c8c3d8;
+}
+#vsScreen .vs-status.is-ready { color: #10141e; background: #8fd06a; border-color: #c8f0a8; }
+#vsScreen .vs-spin { width: 14px; height: 14px; border-radius: 50%; border: 3px solid rgba(224, 230, 240, 0.35); border-top-color: #fff4c2;
+    animation: vsSpin 0.8s linear infinite; }
+#vsScreen .vs-status.is-ready .vs-spin { border: none; width: auto; height: auto; animation: none; }
+#vsScreen .vs-status.is-ready .vs-spin::before { content: '\2713'; font-size: 18px; }
+@keyframes vsSpin { to { transform: rotate(360deg); } }
+#vsScreen .vs-vs {
+    position: absolute; left: 50%; top: 380px; transform: translateX(-50%);
+    font-family: 'Ferrum', 'FF9UI', serif; font-size: 150px; color: #ffe39a; text-shadow: 5px 5px 0 #000;
+    animation: vsPunch 0.5s cubic-bezier(.3, 1.6, .5, 1) 0.25s both;
+}
+@keyframes vsPunch { from { transform: translateX(-50%) scale(2.2); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
+#vsScreen .vs-mode { position: absolute; left: 0; right: 0; bottom: 70px; text-align: center; font-weight: 800; font-size: 20px;
+    letter-spacing: 0.22em; text-transform: uppercase; color: #c9a8ff; }
+#vsScreen.is-out { animation: vsOut 0.45s ease both; }
+@keyframes vsOut { to { opacity: 0; } }
+
 /* ---- End screen: two pages (2026-10-02). Page 1 = result + stats + Next; page 2 = the rank reveal. ---- */
 #endScreen #victoryNextBox {
     position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%);
