@@ -1284,9 +1284,9 @@ RETARGET = {   # our bone: (source bone, mode, source child for 'dir')
     'foot_R': ('RightFoot', 'dir', 'RightToeBase'),
 }
 # name, source file, source span (fraction of the clip), seconds (None = the source's own length), loop.
-# Every v1 clip comes back (owner: the old ones had the snap); parry stays procedural (v1 had none of its own).
+# The v1 clips come back (owner: the old ones had the snap) except idle (its head roll stretched the painted face)
+# and parry (v1 had none of its own) - those stay procedural.
 RETARGET_CLIPS = [
-    ('idle', 'pickle_idle.glb', 0.0, 1.0, None, True),
     ('left', 'pickle_left.glb', 0.0, 1.0, None, True),
     ('right', 'pickle_right.glb', 0.0, 1.0, None, True),
     ('cast_loop', 'pickle_cast.glb', 0.0, 1.0, None, True),
@@ -1295,6 +1295,11 @@ RETARGET_CLIPS = [
     ('victory', 'pickle_victory.glb', 0.0, 1.0, None, False),
     ('defeat', 'pickle_defeat.glb', 0.0, 1.0, None, False),
 ]
+
+
+# The face spans body_mid -> body_hi -> head; mocap bends those against each other and shears the painted face.
+# Their LOCAL rotations (relative to the parent) are scaled down so the top of the pickle moves more as one piece.
+RETARGET_STIFF = {'body_hi': 0.55, 'head': 0.35}
 
 
 def _q(M):
@@ -1366,8 +1371,12 @@ def apply_retarget(arm_obj, d, src_hip_h, prev_q):
             rest_dir = (b.tail_local - b.head_local).normalized()
             d_inh = (Qinh @ Rb.inverted()) @ rest_dir
             Q = d_inh.rotation_difference(d['dir'][m[0]]) @ Qinh
-        posed[name] = Q
         q = Qinh.inverted() @ Q
+        k = RETARGET_STIFF.get(name)
+        if k is not None:
+            q = Quaternion().slerp(q, k)               # stiffen: keep only part of the bend vs the parent
+            Q = Qinh @ q
+        posed[name] = Q
         pq = prev_q.get(name)
         if pq is not None and q.dot(pq) < 0:
             q = -q
