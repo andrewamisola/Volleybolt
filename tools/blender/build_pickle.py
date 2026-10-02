@@ -1287,107 +1287,95 @@ def head_ray(theta_deg, phi_deg, lift=0.0):
     return HEAD_C + d * (t + lift), d
 
 
-def shag_theta_max(phi_deg):
-    """How far down the shag reaches: to the forehead at the front, to the jaw-ish line at the sides and back."""
-    front = max(0.0, -math.sin(math.radians(phi_deg)))
-    return 98.0 - 42.0 * front ** 1.4                    # owner: stays on the head (ends above the jaw)
+# Solid "Lego" shag (owner: a 3D hair piece, not paper strands): one closed shell around the head whose lower edge is
+# cut into pointed locks. Lock tips as (phi, theta) - phi around Z (-90 = the front, 0 = the wearer's left, 90 = the
+# back), theta down from straight up (bigger = lower on the head). Between tips the edge rises to a notch.
+SHAG_TIPS = [
+    # bangs: mixed lengths; the long one (-100) falls past the brow to the top of the wearer's right eye
+    (-140, 80), (-122, 76), (-100, 86), (-84, 74), (-68, 79), (-52, 72), (-36, 77),
+    # left side: short
+    (-18, 92), (2, 95), (22, 93),
+    # back: fuller, a little longer
+    (42, 104), (63, 108), (86, 110), (109, 108), (131, 104),
+    # right side: short
+    (154, 93), (174, 95), (196, 92)]
 
 
-def shag_lift(phi_deg):
-    """How far the shag stands off the head: a little extra volume at the back."""
-    return 0.045 + 0.04 * max(0.0, math.sin(math.radians(phi_deg)))
+def shag_base(phi_deg):
+    """The notch line between locks: the forehead at the front, ear level at the sides, the nape at the back."""
+    s_ = math.sin(math.radians(phi_deg))
+    front, back = max(0.0, -s_), max(0.0, s_)
+    return 86.0 - 30.0 * front ** 1.3 + 6.0 * back
 
 
-def hair_blade(mb, root, out, length, width, droop, flick, mat, W, segs=5):
-    """One flat, pointed strand (double-sided ribbon): leaves `root` along `out`, droops under gravity and flicks
-    outward at the tip; tapers from `width` to a point."""
-    out = out.normalized()
-    down = Vector((0, 0, -1))
-    side = out.cross(Vector((0, 0, 1)))
-    if side.length < 1e-3:
-        side = Vector((1, 0, 0))
-    side.normalize()
-    radial = Vector((out.x, out.y, 0))
-    radial = radial.normalized() if radial.length > 1e-3 else Vector((0, 0, 0))
-    L, R = [], []
-    for i in range(segs + 1):
-        t = i / segs
-        p = root + out * length * t + down * droop * length * t * t + radial * flick * length * t * t
-        w = width * (1 - t) ** 0.85 * 0.5
-        L.append(mb.vert(p - side * w, W)); R.append(mb.vert(p + side * w, W))
-    for i in range(segs):
-        v0, v1 = i / segs, (i + 1) / segs
-        q = [L[i], R[i], R[i + 1], L[i + 1]]
-        uv = [(0, v0), (1, v0), (1, v1), (0, v1)]
-        mb.face(q, mat, uv, smooth=False)
-        mb.face(q[::-1], mat, uv[::-1], smooth=False)          # both sides
+def shag_rim(phi_deg):
+    """Theta of the shell's lower edge at phi: piecewise-linear through tip / notch / tip ... all the way round."""
+    tips = sorted(((p % 360.0) - 180.0, t) for p, t in SHAG_TIPS)   # into [-180, 180)
+    ctrl = []
+    for i, (p0, t0) in enumerate(tips):
+        p1 = tips[(i + 1) % len(tips)][0] + (360.0 if i == len(tips) - 1 else 0.0)
+        mid = (p0 + p1) / 2
+        ctrl += [(p0, t0), (mid, shag_base(mid) - 3.0)]
+    ph = ((phi_deg + 180.0) % 360.0) - 180.0
+    pts = ctrl + [(ctrl[0][0] + 360.0, ctrl[0][1])]
+    if ph < pts[0][0]:
+        ph += 360.0
+    for (a0, t0), (a1, t1) in zip(pts, pts[1:]):
+        if a0 <= ph <= a1:
+            return t0 + (t1 - t0) * (ph - a0) / max(1e-6, a1 - a0)
+    return pts[-1][1]
 
 
-def build_hair_shag(mb, max_root_z=None):
-    """Messy Shag (owner's reference): a black dome over the top and sides of the head made of many thin flat
-    pointed strands, all hanging DOWN (owner: nothing sticking out) - longer pointed locks at the sides, a back of
-    wide layered locks that flow down and tuck in (volume, not a spike ring), a lying top layer and bangs of mixed
-    lengths (one past the brow to the eye). max_root_z = the under-a-hat cut (no dome or crown, only strands rooted below the brim)."""
+def shag_lock_bulge(phi_deg):
+    """1 along a lock's centre line, 0 in the groove between two locks (the locks read as separate chunks)."""
+    tips = sorted(p for p, _ in SHAG_TIPS)
+    best = 1e9
+    for i, p0 in enumerate(tips):
+        d = abs(((phi_deg - p0 + 180.0) % 360.0) - 180.0)
+        p1 = tips[(i + 1) % len(tips)]
+        half = abs(((p1 - p0 + 180.0) % 360.0) - 180.0) / 2 or 10.0
+        best = min(best, d / half)
+    return max(0.0, 1.0 - best * best)
+
+
+def build_hair_shag(mb, t0=0.0):
+    """Messy Shag as one solid piece: outer surface puffed off the head (more on top and at the back, thinning to a
+    chunky edge at the lock tips), an inner surface just off the head, and a wall closing the pointed rim. t0 > 0 =
+    the under-a-hat cut: only the lower band of the shell, closed along its top as well."""
     W = {'sock_hat': 1.0}
-    rng = random.Random(31)
-    if max_root_z is None:
-        # the dome: a shell just off the head, rows of theta x columns of phi, open at the bottom edge
-        NP, NT = 24, 7
-        grid = []
-        for i in range(NT + 1):
-            row = []
-            for j in range(NP):
-                phi = -90 + 360 * j / NP
-                th = shag_theta_max(phi) * i / NT
-                p, _ = head_ray(th, phi, shag_lift(phi))
-                row.append(mb.vert(p, W))
-            grid.append(row)
-        for i in range(NT):
-            for j in range(NP):
-                j2 = (j + 1) % NP
-                mb.face([grid[i][j], grid[i][j2], grid[i + 1][j2], grid[i + 1][j]][::-1], 'M_shag',
-                        [(j / NP * 3, i / NT), ((j + 1) / NP * 3, i / NT), ((j + 1) / NP * 3, (i + 1) / NT), (j / NP * 3, (i + 1) / NT)][::-1],
-                        smooth=False)
-
-    def blade_at(th, phi, length, width, droop, flick, out_bias):
-        p, d = head_ray(th, phi, shag_lift(phi) - 0.015)
-        if max_root_z is not None and p.z > max_root_z:
-            return
-        out = d + Vector((0, 0, out_bias))
-        hair_blade(mb, p, out, length, width, droop, flick, 'M_shag', W)
-
-    # SIDES: longer pointed locks hanging past the cheeks (two staggered rows, the front-most side locks longest)
-    for row, k_off in ((0, 0.0), (1, 0.5)):
-        for s_ in (1, -1):
-            for k in range(6):
-                phi = (0 if s_ > 0 else 180) + s_ * (-60 + 85 * (k + k_off) / 6) + rng.uniform(-3, 3)   # front-side -> side-back
-                th = shag_theta_max(phi) - (5 + row * 12)
-                forward = max(0.0, -math.sin(math.radians(phi)))
-                length = (0.13 + 0.08 * forward) * rng.uniform(0.85, 1.15)
-                blade_at(th, phi, length, rng.uniform(0.09, 0.12), rng.uniform(0.75, 1.0), rng.uniform(0.0, 0.1), -1.7)
-    # BACK: volume with flow - wide layered locks in three rows that sweep down and tuck their tips in (no spike ring)
-    for row, (tf, ln, wd) in enumerate(((0.45, 0.15, 0.19), (0.68, 0.15, 0.18), (0.9, 0.13, 0.17))):
-        n = 7 + row
-        for k in range(n):
-            phi = 30 + 120 * (k + (0.5 if row % 2 else 0)) / n + rng.uniform(-4, 4)
-            th = shag_theta_max(phi) * tf
-            blade_at(th, phi, ln * rng.uniform(0.9, 1.15), wd * rng.uniform(0.9, 1.1), rng.uniform(0.75, 0.95),
-                     -0.35, -0.9)                                      # flick < 0: the tip curls back in
-    # TOP: a lying layer over the crown so the dome reads as hair
-    for k in range(22):
-        phi = rng.uniform(-180, 180)
-        th = shag_theta_max(phi) * rng.uniform(0.15, 0.45)
-        blade_at(th, phi, rng.uniform(0.10, 0.15), rng.uniform(0.11, 0.14), rng.uniform(0.7, 1.0), rng.uniform(0.0, 0.08), -1.1)
-    # BANGS: different lengths, sweeping a little to the side; the long one falls past the brow to the top of the eye
-    for yaw, length, sweep in ((-42, 0.12, -0.25), (-27, 0.19, -0.15), (-12, 0.15, 0.05), (3, 0.24, 0.18),
-                               (17, 0.13, 0.12), (31, 0.18, 0.22), (44, 0.11, 0.25)):
-        p, d = head_ray(shag_theta_max(-90 + yaw) - 4, -90 + yaw, 0.03)
-        if max_root_z is None or p.z <= max_root_z:
-            hair_blade(mb, p, Vector((d.x * 0.3 + sweep, -0.42, -1.0)), length, 0.10, 0.22, 0.25, 'M_shag', W)
+    NP, NT = 120, 9
+    rows = [t0 + (1 - t0) * i / NT for i in range(NT + 1)]
+    outer, inner = [], []
+    for t in rows:
+        ro, ri = [], []
+        for j in range(NP):
+            phi = -90 + 360 * j / NP
+            th = shag_rim(phi) * t
+            back = max(0.0, math.sin(math.radians(phi)))
+            lift_o = 0.022 + (0.045 + 0.05 * back) * (1 - t ** 2.2)        # volume on top / at the back
+            lift_o += 0.022 * shag_lock_bulge(phi) * min(1.0, t * 1.6)      # each lock a raised ridge down to its tip
+            lift_i = 0.006
+            po, _ = head_ray(th, phi, lift_o)
+            pi_, _ = head_ray(th, phi, lift_i)
+            ro.append(mb.vert(po, W)); ri.append(mb.vert(pi_, W))
+        outer.append(ro); inner.append(ri)
+    for i in range(NT):
+        for j in range(NP):
+            j2 = (j + 1) % NP
+            uv = [(j / NP * 4, rows[i]), ((j + 1) / NP * 4, rows[i]), ((j + 1) / NP * 4, rows[i + 1]), (j / NP * 4, rows[i + 1])]
+            mb.face([outer[i][j], outer[i][j2], outer[i + 1][j2], outer[i + 1][j]][::-1], 'M_shag', uv[::-1], smooth=True)
+            mb.face([inner[i][j], inner[i][j2], inner[i + 1][j2], inner[i + 1][j]], 'M_shag', uv, smooth=True)
+    for j in range(NP):                                  # the wall along the pointed rim (gives the locks thickness)
+        j2 = (j + 1) % NP
+        mb.face([outer[-1][j], outer[-1][j2], inner[-1][j2], inner[-1][j]], 'M_shag',
+                [(0, 0.9), (0.1, 0.9), (0.1, 1), (0, 1)], smooth=False)
+        if t0 > 0:                                       # under-a-hat cut: close the top of the band too
+            mb.face([outer[0][j2], outer[0][j], inner[0][j], inner[0][j2]], 'M_shag',
+                    [(0, 0.9), (0.1, 0.9), (0.1, 1), (0, 1)], smooth=False)
 
 
 def build_hair_shag_hat(mb):
-    build_hair_shag(mb, max_root_z=1.58)
+    build_hair_shag(mb, t0=0.62)
 
 
 def build_hair_pigtails(mb):
