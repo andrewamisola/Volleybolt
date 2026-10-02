@@ -29,6 +29,9 @@ JOBS = {
     'dirt_road_seamless':   ((256, 256), 32, 30, 0.025, 1.03),
     'rail':                 ((128, 86), 20, 70, 0.06, 1.1),
     'wood_planks':          ((32, 32), 12, 60, 0.05, 1.08),   # generated (wood_source); shared by every structure
+    # wardrobe skybox: a painted dusk panorama (Higgsfield gpt_image_2_5, 2026-10-02), its ends cross-faded so it
+    # loops (the game repeats it 4x around); calm - no mottle, gentle sharpen, enough colours to band softly
+    'sky_dusk':             ((512, 249), 64, 25, 0.0, 1.0),
 }
 
 
@@ -100,6 +103,19 @@ def main(names):
             size, colors, sharpen, mottle, contrast = JOBS[name]
             pixel_first(wood_source(), size, colors, sharpen, mottle, contrast, seed=5).save(out)
             print('wood_planks: generated 128 -> 32')
+            continue
+        if name == 'sky_dusk':                    # loop it: cross-fade the last 12% of the painting into its start
+            size, colors, sharpen, mottle, contrast = JOBS[name]
+            src_im = Image.open(os.path.join(SRC, 'sky_dusk.png')).convert('RGB')
+            W, H = src_im.size
+            ov = int(W * 0.12)
+            body = src_im.crop((0, 0, W - ov, H))
+            ramp = Image.linear_gradient('L').rotate(-90, expand=True).resize((ov, H))   # 255 at left -> 0 at right
+            head = src_im.crop((0, 0, ov, H))
+            tail = src_im.crop((W - ov, 0, W, H))
+            body.paste(Image.composite(tail, head, ramp), (0, 0))                        # left edge = the old right end
+            pixel_first(body, size, colors, sharpen, mottle, contrast, seed=7).save(out)
+            print(f'sky_dusk: {src_im.size} looped ({body.size}) -> {size}, {colors} colours')
             continue
         src = os.path.join(SRC, name + '.png')
         if not os.path.exists(src):

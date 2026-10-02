@@ -14420,98 +14420,57 @@
                 };
 
                 // ---- the 3D side ----
-                // Dusk sky (2026-10-02, owner: the wardrobe looks up at a bare purple haze). A SMOOTH gradient dome
-                // (owner: a faceted, triangulated sky looked crazy - stylised games keep the sky soft and put the
-                // low-poly on what's in front of it): the horizon is exactly the fog colour (the arena fades into
-                // it), a peach dusk glow behind the pickle (-Z, the way the camera looks), deepening through
-                // violet to indigo overhead; soft rounded cloud puffs lit from below and faint stars. Colours are
-                // per vertex and interpolate (the PS1 dither post-process bands them a little). Unlit, fog-free,
-                // infinite distance; presentation only, shown while the wardrobe / lab is open.
+                // Dusk skybox (2026-10-02). Owner: the wardrobe looked up at a bare purple haze; a faceted procedural
+                // sky "looked crazy" - wanted a baked, super-fantasy painted sky texture instead. textures/sky_dusk.png
+                // = a painted panorama (Higgsfield), mirrored side by side to wrap 360 seamlessly and run through the
+                // pixel-first pipeline (tools/pixelate_textures.py sky_dusk). Mapped on a dome by azimuth (u) and
+                // elevation (v): the painting's bottom haze sits on the horizon, its top rows fill up to the zenith.
+                // Unlit, fog-free, infinite distance, NEAREST; presentation only, shown while the wardrobe / lab is open.
+                const SKY_TEX = 'textures/sky_dusk.png?v=2';
+                const SKY_YAW = -0.55;                                             // turns the painting around (the moon's spot)
                 const buildSkyDome = () => {
                     const R = 800, SEG = 64, rad = Math.PI / 180;
-                    const pos = [], col = [];
-                    const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
-                    const FOG = [0.27, 0.21, 0.30];
-                    const STOPS = [[0, FOG], [0.07, [0.38, 0.26, 0.37]], [0.28, [0.27, 0.19, 0.35]], [0.6, [0.17, 0.13, 0.29]], [1, [0.10, 0.08, 0.21]]];
-                    const GLOW = [0.86, 0.52, 0.46], GLOW_AZ = -Math.PI / 2 - 0.25;
-                    const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-                    const skyAt = (el, az) => {            // el radians (0 = horizon), az radians
-                        if (el <= 0) return FOG.slice();
-                        const t = Math.min(1, el / (Math.PI / 2));
-                        let c = STOPS[STOPS.length - 1][1];
-                        for (let i = 1; i < STOPS.length; i++) {
-                            if (t <= STOPS[i][0]) { c = lerp3(STOPS[i - 1][1], STOPS[i][1], (t - STOPS[i - 1][0]) / (STOPS[i][0] - STOPS[i - 1][0])); break; }
-                        }
-                        const facing = Math.max(0, Math.cos(az - GLOW_AZ)) ** 3;
-                        const low = Math.max(0, 1 - t / 0.38) ** 1.5;
-                        return lerp3(c, GLOW, 0.8 * facing * low);
-                    };
-                    const P = (el, az, r = R) => [r * Math.cos(el) * Math.cos(az), r * Math.sin(el), r * Math.cos(el) * Math.sin(az)];
-                    const tri = (a, b, c, ca, cb, cc) => {     // per-vertex colours -> smooth
-                        pos.push(...a, ...b, ...c);
-                        for (const k of [ca, cb, cc]) col.push(k[0], k[1], k[2], 1);
-                    };
-                    // the dome: a fine grid (3 deg rings, 64 around) so the gradient reads smooth
-                    const ELEV = [-15, -3];
-                    for (let e = 0; e <= 90; e += 3) ELEV.push(e);
-                    const st = 2 * Math.PI / SEG;
-                    for (let r = 0; r < ELEV.length - 1; r++) {
-                        const e0 = ELEV[r] * rad, e1 = ELEV[r + 1] * rad;
-                        for (let j = 0; j < SEG; j++) {
-                            const a0 = j * st, a1 = a0 + st;
-                            const v00 = P(e0, a0), v01 = P(e0, a1), v10 = P(e1, a0), v11 = P(e1, a1);
-                            const c00 = skyAt(e0, a0), c01 = skyAt(e0, a1), c10 = skyAt(e1, a0), c11 = skyAt(e1, a1);
-                            tri(v00, v01, v11, c00, c01, c11);
-                            tri(v00, v11, v10, c00, c11, c10);
-                        }
-                    }
-                    // clouds: soft rounded puffs (a smooth icosphere, shaded top-to-underside per vertex) in the dusk
-                    // half of the sky, their undersides warmed by the glow and blended toward the sky behind them
-                    const ico = BABYLON.MeshBuilder.CreateIcoSphere('skyIcoTmp', { radius: 1, subdivisions: 3 }, scene);
-                    const ip = ico.getVerticesData(BABYLON.VertexBuffer.PositionKind), ii = ico.getIndices();
-                    ico.dispose();
-                    const CLOUDS = [[-1.95, 9, 70], [-1.45, 14, 55], [-0.95, 8, 62], [-2.55, 16, 48], [-0.45, 18, 44], [-1.7, 24, 36], [-3.0, 7, 58]];
-                    CLOUDS.forEach(([az, elDeg, size], ci) => {
-                        const el = elDeg * rad;
-                        const ctr = P(el, az, 700);
-                        const sky = skyAt(el, az);
-                        const top = lerp3([0.60, 0.47, 0.62], sky, 0.3);
-                        const under = lerp3(lerp3([0.40, 0.28, 0.42], GLOW, 0.45 * Math.max(0, Math.cos(az - GLOW_AZ))), sky, 0.3);
-                        const puffs = 3 + (ci % 2);
-                        for (let k = 0; k < puffs; k++) {
-                            const along = (k - (puffs - 1) / 2) * size * 0.7;
-                            const mid = 1 - Math.abs(k - (puffs - 1) / 2) / puffs;         // the middle puffs sit taller
-                            const sx = size * (0.75 + 0.35 * hash(ci * 7 + k)), sy = size * (0.22 + 0.16 * mid), sz = size * 0.5;
-                            const ox = -Math.sin(az) * along, oz = Math.cos(az) * along;
-                            const V = (o) => [ctr[0] + ox + ip[o] * sx, ctr[1] + Math.max(-0.35, ip[o + 1]) * sy, ctr[2] + oz + ip[o + 2] * sz];  // flat-ish bottom
-                            const C = (o) => lerp3(under, top, Math.min(1, Math.max(0, (ip[o + 1] + 0.35) / 1.1)));
-                            for (let f = 0; f < ii.length; f += 3) {
-                                const o0 = ii[f] * 3, o1 = ii[f + 1] * 3, o2 = ii[f + 2] * 3;
-                                tri(V(o0), V(o1), V(o2), C(o0), C(o1), C(o2));
-                            }
+                    // The camera only sees the horizon up to ~30 deg, so the (looping) painting repeats 4x around - 90 deg
+                    // each, wider than the view, so one moon at a time - and, undistorted, rises ~44 deg: the whole
+                    // painting sits in view; above it the top row (deep indigo) fills to the zenith.
+                    const U_REPEAT = 4, EL_LO = -2 * rad, EL_HI = 42 * rad;
+                    const rings = [-20, -4];
+                    for (let e = 0; e <= 90; e += 3) rings.push(e);
+                    const pos = [], uvs = [], idx = [];
+                    rings.forEach((deg) => {
+                        const el = deg * rad;
+                        const v = Math.min(1, Math.max(0, (el - EL_LO) / (EL_HI - EL_LO)));
+                        for (let j = 0; j <= SEG; j++) {
+                            const az = j / SEG * 2 * Math.PI;
+                            pos.push(R * Math.cos(el) * Math.cos(az), R * Math.sin(el), R * Math.cos(el) * Math.sin(az));
+                            uvs.push((1 - j / SEG) * U_REPEAT, v);               // seen from inside: flip u so it isn't mirrored
                         }
                     });
-                    // stars: tiny pale specks high up
-                    for (let k = 0; k < 70; k++) {
-                        const el = (32 + hash(k * 3 + 1) * 55) * rad, az = hash(k * 3 + 2) * 2 * Math.PI;
-                        const sz = 0.0035 + hash(k * 3 + 3) * 0.003;
-                        const b = 0.55 + 0.4 * hash(k * 5 + 9), c = [0.85 * b, 0.82 * b, 0.95 * b];
-                        tri(P(el, az, R - 5), P(el - sz, az - sz * 0.9, R - 5), P(el - sz, az + sz * 0.9, R - 5), c, c, c);
+                    for (let r = 0; r < rings.length - 1; r++) {
+                        for (let j = 0; j < SEG; j++) {
+                            const a0 = r * (SEG + 1) + j, a1 = a0 + 1, b0 = a0 + SEG + 1, b1 = b0 + 1;
+                            idx.push(a0, b0, a1, a1, b0, b1);
+                        }
                     }
                     const mesh = new BABYLON.Mesh('wardrobeSky', scene);
                     const vd = new BABYLON.VertexData();
-                    vd.positions = pos;
-                    vd.colors = col;
-                    vd.indices = Array.from({ length: pos.length / 3 }, (_, i) => i);
+                    vd.positions = pos; vd.uvs = uvs; vd.indices = idx;
                     vd.applyToMesh(mesh);
+                    const tex = new BABYLON.Texture(SKY_TEX, scene, true, true, BABYLON.Texture.NEAREST_SAMPLINGMODE);
+                    tex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+                    tex.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;
                     const mat = new BABYLON.StandardMaterial('wardrobeSkyMat', scene);
                     mat.disableLighting = true;
-                    mat.diffuseColor = new BABYLON.Color3(0, 0, 0);      // unlit: emissive white x the vertex colour
-                    mat.emissiveColor = new BABYLON.Color3(1, 1, 1);
+                    mat.diffuseColor = new BABYLON.Color3(0, 0, 0);
+                    mat.emissiveTexture = tex;                                   // unlit: the painting as-is
+                    mat.emissiveColor = new BABYLON.Color3(0, 0, 0);             // (emissive texture ADDS to this)
                     mat.specularColor = new BABYLON.Color3(0, 0, 0);
                     mat.backFaceCulling = false;
                     mat.fogEnabled = false;
+                    mat.imageProcessingConfiguration = new BABYLON.ImageProcessingConfiguration();
+                    mat.imageProcessingConfiguration.isEnabled = false;          // the painting as painted (no scene exposure/contrast)
                     mesh.material = mat;
+                    mesh.rotation.y = SKY_YAW;
                     mesh.infiniteDistance = true;
                     mesh.applyFog = false;
                     mesh.isPickable = false;
@@ -14542,7 +14501,7 @@
                         // in front of the pickle (it faces +Z); the screen offset puts it left of the panel
                         W.cam = new BABYLON.ArcRotateCamera('wardrobeCam', Math.PI / 2 - 0.35, 1.36, 4.4, new BABYLON.Vector3(0, 1.0, 0), scene);
                         W.cam.lowerRadiusLimit = 2.6; W.cam.upperRadiusLimit = 6.5;
-                        W.cam.lowerBetaLimit = 0.95; W.cam.upperBetaLimit = 1.72;   // drag up to look at the sky
+                        W.cam.lowerBetaLimit = 0.95; W.cam.upperBetaLimit = 1.78;   // drag up to look at the sky
                         W.cam.wheelPrecision = 45; W.cam.panningSensibility = 0; W.cam.minZ = 0.05;
                         W.cam.targetScreenOffset = new BABYLON.Vector2(-1.3, 0);
                     }
