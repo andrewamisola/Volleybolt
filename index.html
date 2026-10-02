@@ -13344,7 +13344,7 @@
             const CHARACTER_VERSION = 2;
             window.CHARACTER_VERSION = CHARACTER_VERSION;
             const PICKLE2_DIR = 'models/pickle2/';
-            const PICKLE2_V = '?v=2';
+            const PICKLE2_V = '?v=3';
             // The catalogue: every cosmetic. id = stable (unlocks / a future Steam inventory key off it).
             const COSMETICS = [
                 { id: 'hat_none',      name: 'No Hat',          slot: 'hat' },
@@ -13358,11 +13358,15 @@
                 { id: 'eyes_beady',    name: 'Beady Eyes',      slot: 'eyes',   strip: 'textures/face/eyes_beady.png' },
                 { id: 'eyes_sleepy',   name: 'Sleepy Eyes',     slot: 'eyes',   strip: 'textures/face/eyes_sleepy.png' },
                 { id: 'eyes_shiny',    name: 'Shiny Eyes',      slot: 'eyes',   strip: 'textures/face/eyes_shiny.png' },
+                { id: 'brows_none',    name: 'None',            slot: 'brows' },
+                { id: 'brows_classic', name: 'Classic Brows',   slot: 'brows',  strip: 'textures/face/brows_classic.png' },
+                { id: 'brows_bushy',   name: 'Bushy Brows',     slot: 'brows',  strip: 'textures/face/brows_bushy.png' },
+                { id: 'brows_unibrow', name: 'Unibrow',         slot: 'brows',  strip: 'textures/face/brows_unibrow.png' },
                 { id: 'mouth_smile',   name: 'Smile',           slot: 'mouth',  strip: 'textures/face/mouth_smile.png' },
             ];
-            const COSMETIC_SLOTS = ['hat', 'outfit', 'neck', 'face_acc', 'staff', 'eyes', 'mouth'];
+            const COSMETIC_SLOTS = ['hat', 'outfit', 'neck', 'face_acc', 'staff', 'eyes', 'brows', 'mouth'];
             const DEFAULT_LOADOUT = { hat: 'hat_wizard', outfit: 'outfit_robe', neck: 'neck_none', face_acc: 'face_acc_none',
-                                      staff: 'staff_classic', eyes: 'eyes_classic', mouth: 'mouth_smile' };
+                                      staff: 'staff_classic', eyes: 'eyes_classic', brows: 'brows_classic', mouth: 'mouth_smile' };
             const cosmeticById = (id) => COSMETICS.find(c => c.id === id) || null;
             // a loadout with every slot valid (unknown / wrong-slot ids fall back to the default)
             const sanitizeLoadout = (lo) => {
@@ -13387,7 +13391,9 @@
             };
 
             // ---- face strips (cached images) ----
+            // brows share the eyes' 5 states (one frame per eye state) and sit just above them
             const FACE = { W: 64, H: 64, eyes: { w: 48, h: 20, x: 8, y: 10, frames: ['open', 'blink', 'hurt', 'focus', 'happy'] },
+                           brows: { w: 48, h: 9, x: 8, y: 1 },
                            mouth: { w: 32, h: 14, x: 16, y: 36, frames: ['neutral', 'open', 'grimace', 'grin'] } };
             const stripCache = {};
             const loadStrip = (src) => stripCache[src] || (stripCache[src] = new Promise((res) => {
@@ -13398,22 +13404,25 @@
                 // invertY false: glTF UVs are top-left origin (like the model's own textures), else the face lands upside down
                 const tex = new BABYLON.DynamicTexture('pickleFace', { width: FACE.W, height: FACE.H }, scene, false, BABYLON.Texture.NEAREST_SAMPLINGMODE, BABYLON.Engine.TEXTUREFORMAT_RGBA, false);
                 tex.hasAlpha = false;
-                const face = { tex, eyes: null, mouth: null, eyeState: 'open', mouthState: 'neutral', drawn: '', blinkAt: 0, hurtUntil: 0, lastHp: null };
+                const face = { tex, eyes: null, brows: null, mouth: null, eyeState: 'open', mouthState: 'neutral', drawn: '', blinkAt: 0, hurtUntil: 0, lastHp: null };
                 face.draw = () => {
-                    const key = face.eyeState + '|' + face.mouthState + '|' + !!face.eyes + !!face.mouth;
+                    const key = face.eyeState + '|' + face.mouthState + '|' + !!face.eyes + !!face.brows + !!face.mouth;
                     if (key === face.drawn) return;
                     face.drawn = key;
                     const g = tex.getContext();
                     g.imageSmoothingEnabled = false;
                     g.fillStyle = skin; g.fillRect(0, 0, FACE.W, FACE.H);
-                    const E = FACE.eyes, M = FACE.mouth;
-                    if (face.eyes) g.drawImage(face.eyes, Math.max(0, E.frames.indexOf(face.eyeState)) * E.w, 0, E.w, E.h, E.x, E.y, E.w, E.h);
+                    const E = FACE.eyes, B = FACE.brows, M = FACE.mouth;
+                    const ei = Math.max(0, E.frames.indexOf(face.eyeState));
+                    if (face.eyes) g.drawImage(face.eyes, ei * E.w, 0, E.w, E.h, E.x, E.y, E.w, E.h);
+                    if (face.brows) g.drawImage(face.brows, ei * B.w, 0, B.w, B.h, B.x, B.y, B.w, B.h);
                     if (face.mouth) g.drawImage(face.mouth, Math.max(0, M.frames.indexOf(face.mouthState)) * M.w, 0, M.w, M.h, M.x, M.y, M.w, M.h);
                     tex.update(false);   // no Y flip (glTF UV origin is top-left)
                 };
                 face.setStyle = async (lo) => {
-                    const e = cosmeticById(lo.eyes), m = cosmeticById(lo.mouth);
+                    const e = cosmeticById(lo.eyes), b = cosmeticById(lo.brows), m = cosmeticById(lo.mouth);
                     face.eyes = e && e.strip ? await loadStrip(e.strip) : null;
+                    face.brows = b && b.strip ? await loadStrip(b.strip) : null;
                     face.mouth = m && m.strip ? await loadStrip(m.strip) : null;
                     face.drawn = ''; face.draw();
                 };
@@ -13584,7 +13593,7 @@
                     #labPanel label{font-size:12px;opacity:.85} #labMsg{font-size:12px;color:#ff9b7a;margin-top:6px}`;
                 const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
                 const P = document.createElement('div'); P.id = 'labPanel'; document.body.appendChild(P);
-                const SLOT_NAMES = { hat: 'Hat', outfit: 'Outfit', neck: 'Neck', face_acc: 'Face accessory', staff: 'Staff', eyes: 'Eyes', mouth: 'Mouth' };
+                const SLOT_NAMES = { hat: 'Hat', outfit: 'Outfit', neck: 'Neck', face_acc: 'Face accessory', staff: 'Staff', eyes: 'Eyes', brows: 'Brows', mouth: 'Mouth' };
                 let html = '<div style="font-weight:700;font-size:15px">Character Lab</div><div style="opacity:.7;font-size:11px">drag to spin · wheel to zoom</div><h3>Loadout</h3>';
                 for (const s of COSMETIC_SLOTS) {
                     html += `<label>${SLOT_NAMES[s]}</label><select data-slot="${s}">` +

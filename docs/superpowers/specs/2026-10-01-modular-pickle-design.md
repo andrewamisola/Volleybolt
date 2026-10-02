@@ -36,6 +36,7 @@ cloak, team trim), `staff_classic` (wood + team gem).
 
 Strips in `textures/face/`, pixel-first, frames side by side:
 - `eyes_<id>.png` — 5 frames of 48×20: open, blink, hurt, focus, happy.
+- `brows_<id>.png` — 5 frames of 48×9, one per eye state (drawn at (8,1), above the eyes). Added 2026-10-01 as its own `brows` slot; brows carry the expression (worried / frown / raised), so eye strips no longer bake brows in.
 - `mouth_<id>.png` — 4 frames of 32×14: neutral, open, grimace, grin.
 
 Per wizard a 64×64 canvas = skin colour fill + eye frame at (8, 10) + mouth frame at (16, 36), applied to `M_face`
