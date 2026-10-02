@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=87-wardrobe-inventory">
+    <link rel="stylesheet" href="styles.css?v=88-wardrobe-icons">
 </head>
 <body>
 
@@ -14033,13 +14033,11 @@
                 const optionsFor = (slot) => COSMETICS.filter(c => c.slot === slot);
                 const isNone = (c) => !c.file && !c.strip;
 
-                // ---- thumbnails: the pickle wearing ONE item (bare otherwise), framed per slot, rendered into a
-                // small render target on its own (explicit render list) and read back to a data URL ----
+                // ---- tile icons: the ITEM on its own, PEAK-style (the big pickle beside the grid shows it worn).
+                // Face strips are drawn straight from their pixel art; 3D parts are rendered alone (body + other parts
+                // hidden) into a small square render target, auto-framed to the part's bounds, read back to a data URL ----
                 const THUMB = 128;
-                const FRAME = {   // alpha offset from straight-on, beta, radius, target height
-                    hat: [-0.22, 1.36, 1.85, 1.74], face_acc: [0, 1.52, 1.0, 1.36], eyes: [0, 1.52, 0.95, 1.38],
-                    brows: [0, 1.52, 0.95, 1.40], mouth: [0, 1.52, 0.95, 1.22], neck: [-0.3, 1.45, 1.45, 1.05],
-                    outfit: [-0.35, 1.42, 2.25, 0.8], staff: [0.55, 1.42, 2.4, 0.9] };   // staff is in the right hand (-X): look from that side
+                const VIEW = { hat: [-0.35, 1.2], outfit: [-0.4, 1.4], neck: [-0.3, 1.25], face_acc: [0, 1.45], staff: [0.5, 1.45] };   // alpha offset, beta
                 const thumbCache = {};
                 let thumbQueue = Promise.resolve();
                 let thumbRig = null;
@@ -14063,25 +14061,60 @@
                     return thumbRig;
                 };
                 const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
+                // eyes / brows / mouth: the strip's resting frame, pixel-doubled and centred
+                const stripThumb = async (item) => {
+                    const img = await loadStrip(item.strip);
+                    if (!img) return null;
+                    const { cv, g } = getThumbRig();
+                    const f = FACE[item.slot] || FACE.eyes;
+                    // crop the resting frame to its drawn pixels, then scale it up (whole pixels) to fill the card
+                    g.clearRect(0, 0, THUMB, THUMB);
+                    g.drawImage(img, 0, 0, f.w, f.h, 0, 0, f.w, f.h);
+                    const a = g.getImageData(0, 0, f.w, f.h).data;
+                    let x0 = f.w, y0 = f.h, x1 = -1, y1 = -1;
+                    for (let y = 0; y < f.h; y++) for (let x = 0; x < f.w; x++) {
+                        if (a[(y * f.w + x) * 4 + 3] > 0) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+                    }
+                    if (x1 < 0) return null;
+                    const cw = x1 - x0 + 1, chh = y1 - y0 + 1;
+                    const k = Math.max(1, Math.floor(Math.min(100 / cw, 72 / chh)));
+                    g.clearRect(0, 0, THUMB, THUMB);
+                    g.imageSmoothingEnabled = false;
+                    g.drawImage(img, x0, y0, cw, chh, Math.round((THUMB - cw * k) / 2), Math.round((THUMB - chh * k) / 2), cw * k, chh * k);
+                    return cv.toDataURL('image/png');
+                };
                 const renderThumb = async (item) => {
+                    if (item.strip) return stripThumb(item);
                     const lo = { ...DEFAULT_LOADOUT, hat: 'hat_none', outfit: 'outfit_none', neck: 'neck_none', face_acc: 'face_acc_none' };
                     lo[item.slot] = item.id;
                     const ch = await buildPickle2('thumb', 'left', lo);
                     try {
+                        const own = [];
                         ch.modelRoot.getChildMeshes().forEach(m => {
                             m.layerMask = 0x20000000;          // never drawn by the main camera
-                            if (m._pickleSlot === 'staff' && item.slot !== 'staff') m.setEnabled(false);   // keep portraits clean
+                            if (m._pickleSlot === item.slot) own.push(m);   // the item alone: only its meshes go in the render list
+                            // (don't disable the rest - the parts hang under the body's glTF node and would vanish with it)
                         });
+                        if (!own.length) return null;
                         const idle = ch.animations.idle;
                         if (idle) { idle.play(false); idle.goToFrame(idle.from); idle.pause(); }
-                        if (ch.face) await ch.face.setStyle(lo);
                         await nextFrame();                     // world matrices settle
-                        await Promise.all(ch.meshes.map(m => (m.material && m.material.forceCompilationAsync) ? m.material.forceCompilationAsync(m).catch(() => {}) : null));
+                        await Promise.all(own.map(m => (m.material && m.material.forceCompilationAsync) ? m.material.forceCompilationAsync(m).catch(() => {}) : null));
                         if (ch.skeleton) ch.skeleton.prepare(true);
+                        // frame the part's own (posed) bounds
+                        let mn = new BABYLON.Vector3(Infinity, Infinity, Infinity), mx = mn.scale(-1);
+                        own.forEach(m => {
+                            m.refreshBoundingInfo({ applySkeleton: true });
+                            const bb = m.getBoundingInfo().boundingBox;
+                            mn = BABYLON.Vector3.Minimize(mn, bb.minimumWorld); mx = BABYLON.Vector3.Maximize(mx, bb.maximumWorld);
+                        });
                         const { cam, rtt, cv, g } = getThumbRig();
-                        const [da, beta, radius, ty] = FRAME[item.slot] || FRAME.outfit;
-                        cam.alpha = Math.PI / 2 + da; cam.beta = beta; cam.radius = radius; cam.target.set(0, ty, 0);
-                        rtt.renderList = ch.meshes.filter(m => m.isEnabled());
+                        const [da, beta] = VIEW[item.slot] || [0, 1.4];
+                        const half = mx.subtract(mn).length() / 2;
+                        cam.alpha = Math.PI / 2 + da; cam.beta = beta;
+                        cam.radius = (half / Math.tan(cam.fov / 2)) * 0.88;   // the box's sphere is loose; pull in a bit
+                        cam.target.copyFrom(mn.add(mx).scale(0.5));
+                        rtt.renderList = own;
                         rtt.render(true);
                         const px = await rtt.readPixels();
                         const id = g.createImageData(THUMB, THUMB);
@@ -14174,9 +14207,9 @@
                         if (i === W.cursor) cls.push('is-cursor');
                         if (!isOwned(c)) cls.push('is-locked');
                         if (isNone(c)) cls.push('is-none');
-                        return `<button class="${cls.join(' ')}" data-i="${i}" tabindex="-1" aria-label="${c.name}">` +
+                        return `<div class="wardrobe-cell"><button class="${cls.join(' ')}" data-i="${i}" tabindex="-1" aria-label="${c.name}">` +
                                (isNone(c) ? '<span class="wt-slash"></span>' : '<img class="wt-img" alt="">') +
-                               (isOwned(c) ? '' : '<span class="wt-lock">&#128274;</span>') + '</button>';
+                               (isOwned(c) ? '' : '<span class="wt-lock">&#128274;</span>') + `</button><div class="wt-name">${c.name}</div></div>`;
                     }).join('');
                     $('wardrobeGrid').querySelectorAll('.wardrobe-tile').forEach(t => {
                         const i = +t.dataset.i;
@@ -14279,7 +14312,7 @@
                         `<button class="fps-arrow" data-dir="-1" aria-label="Previous ${label}">&#9664;</button>` +
                         `<span class="fps-val"></span>` +
                         `<button class="fps-arrow" data-dir="1" aria-label="Next ${label}">&#9654;</button></div></div>`;
-                    $('wardrobePreviewRows').innerHTML = cyc('team', 'Team') + cyc('pose', 'Pose');
+                    $('wardrobePreviewRows').innerHTML = cyc('team', 'Team');
                     document.querySelectorAll('#wardrobePreviewRows .wardrobe-cycler').forEach(el => {
                         el.querySelectorAll('.fps-arrow').forEach(b => b.addEventListener('click', () => stepCycler(el.dataset.key, +b.dataset.dir)));
                         el.addEventListener('keydown', (e) => {
