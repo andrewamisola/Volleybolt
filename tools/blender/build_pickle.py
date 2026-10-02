@@ -253,35 +253,6 @@ def hair_pixels():
     return lambda x, y: grid[y][x]
 
 
-def curl_pixels():
-    """16x16 near-black curly hair: dark base, little brown ring highlights."""
-    W = H = 16
-    base, dark, light = map(hx, ('#2b1d16', '#1a110c', '#5a3c28'))
-    grid = [[base] * W for _ in range(H)]
-    for y in range(H):
-        for x in range(W):
-            r = math.hypot((x % 8) - 3.5, (y % 8) - 3.5)
-            if 2.2 < r < 3.2:
-                grid[y][x] = light if hash2(x, y, 47) < 0.6 else base
-            elif hash2(x, y, 49) < 0.25:
-                grid[y][x] = dark
-    return lambda x, y: grid[y][x]
-
-
-def shag_pixels():
-    """16x16 near-black hair with thin lighter strand lines (an anime sheen) running along v."""
-    W = H = 16
-    base, dark, light = map(hx, ('#18161c', '#0e0d11', '#34323c'))
-    grid = [[base] * W for _ in range(H)]
-    for y in range(H):
-        for x in range(W):
-            if x % 4 == 1 and hash2(x, y // 3, 51) < 0.7:
-                grid[y][x] = light
-            elif x % 4 == 3:
-                grid[y][x] = dark
-    return lambda x, y: grid[y][x]
-
-
 def leaf_pixels():
     """16x16 leaf green with a darker vein."""
     W = H = 16
@@ -334,8 +305,6 @@ def build_materials():
         'M_frame': make_mat('M_frame', lin('#2a2230')),
         'M_hair': make_mat('M_hair', lin('#4a3020'), pixel_image('hair_16', 16, 16, hair_pixels())),
         'M_leaf': make_mat('M_leaf', lin('#6fae3c'), pixel_image('leaf_16', 16, 16, leaf_pixels())),
-        'M_curl': make_mat('M_curl', lin('#2b1d16'), pixel_image('curl_16', 16, 16, curl_pixels())),
-        'M_shag': make_mat('M_shag', lin('#18161c'), pixel_image('shag_16', 16, 16, shag_pixels())),
     }
 
 
@@ -1224,160 +1193,6 @@ def build_hair_tuft(mb):
         tube(mb, [c, tip], [0.03, 0.004], 4, lambda *a: W, 'M_hair', smooth=False, cap0=True, cap1=False)
 
 
-def _spike(mb, base, direction, length, radius, bend, W, mat):
-    """One anime lock: a tapered, slightly curved, faceted spike from `base` along `direction`, bending by `bend`."""
-    d = direction.normalized()
-    pts = [base, base + d * length * 0.35 + bend * 0.15, base + d * length * 0.7 + bend * 0.55, base + d * length + bend]
-    tube(mb, pts, [radius, radius * 0.78, radius * 0.42, 0.004], 5, lambda *a: W, mat, uspan=0.6, smooth=False,
-         cap0=True, cap1=False)
-
-
-def build_hair_anime(mb, max_base_z=None):
-    """Anime Spikes: a dark cap of hair with big pointed locks - crown spikes sweeping up and back, back spikes
-    fanning down, long side locks past the cheeks and pointy bangs that stop above the eyes. max_base_z = only the
-    locks rooted under a hat brim (the 'under a hat' cut)."""
-    W = {'sock_hat': 1.0}
-    if max_base_z is None:
-        ellipsoid(mb, (0, 0.04, 1.54), (0.30, 0.30, 0.22), 10, 6, lambda q: W, 'M_curl', uspan=0.8, smooth=False)
-    locks = []
-    # crown: up and back
-    for k, (pitch, yaw, ln) in enumerate(((5, -40, 0.30), (12, 0, 0.38), (5, 40, 0.30), (35, -22, 0.34), (35, 22, 0.34),
-                                          (60, 0, 0.36), (60, -45, 0.30), (60, 45, 0.30))):
-        locks.append((pitch, yaw, ln, 0.10, Vector((0, 0.10, 0.04)), 'crown'))
-    # back: fanning down
-    for pitch, yaw in ((95, -35), (100, 0), (95, 35), (125, -20), (125, 20)):
-        locks.append((pitch, yaw, 0.30, 0.09, Vector((0, 0.04, -0.12)), 'back'))
-    # sides: long locks hanging past the cheeks
-    for s_ in (1, -1):
-        for pitch, yaw, ln in ((-5, 78, 0.36), (15, 92, 0.34), (40, 100, 0.30)):
-            locks.append((pitch, s_ * yaw, ln, 0.085, Vector((s_ * 0.05, 0.0, -0.04)), 'side'))
-    # bangs: pointy, hanging over the forehead (they stop above the eyes)
-    for yaw in (-38, -14, 10, 32):
-        locks.append((-34, yaw, 0.20, 0.07, Vector((yaw * 0.0008, -0.04, -0.02)), 'bang'))
-    for pitch, yaw, ln, r, bend, kind in locks:
-        base, d = head_point(pitch, yaw, -0.02)
-        if max_base_z is not None and base.z > max_base_z:
-            continue
-        if kind == 'crown':
-            direction = d + Vector((0, 0, 0.35))                       # up and back
-        elif kind == 'back':
-            direction = d + Vector((0, 0, -0.2))                       # fanning down the back
-        elif kind == 'side':
-            direction = Vector((d.x * 0.35, d.y * 0.2, -1.0))          # hanging down past the cheeks
-        else:
-            direction = Vector((d.x * 0.15, -0.30, -1.0))              # bangs falling over the forehead
-        _spike(mb, base, direction, ln, r, bend, W, 'M_curl')
-
-
-def head_ray(theta_deg, phi_deg, lift=0.0):
-    """Where a ray from HEAD_C leaves the pickle (+ lift). theta from straight up, phi around Z (0 = +X / the wearer's
-    left, -90 = the front / -Y). Returns (point, ray direction)."""
-    th, ph = math.radians(theta_deg), math.radians(phi_deg)
-    d = Vector((math.sin(th) * math.cos(ph), math.sin(th) * math.sin(ph), math.cos(th)))
-    t = 0.0
-    while t < 0.7:
-        q = HEAD_C + d * t
-        if q.z >= APEX_Z or math.hypot(q.x, q.y) >= body_radius(q.z):
-            break
-        t += 0.004
-    return HEAD_C + d * (t + lift), d
-
-
-# Solid "Lego" shag (owner: a 3D hair piece, not paper strands): one closed shell around the head whose lower edge is
-# cut into pointed locks. Lock tips as (phi, theta) - phi around Z (-90 = the front, 0 = the wearer's left, 90 = the
-# back), theta down from straight up (bigger = lower on the head). Between tips the edge rises to a notch.
-SHAG_TIPS = [
-    # bangs: mixed lengths; the long one (-100) falls past the brow to the top of the wearer's right eye
-    (-140, 71), (-122, 67), (-100, 77), (-84, 65), (-68, 70), (-52, 64), (-36, 68),
-    # left side: short
-    (-18, 92), (2, 95), (22, 93),
-    # back: the mullet - longer, more locks, swooping out at the ends
-    (38, 108), (55, 118), (72, 124), (90, 127), (108, 124), (125, 118), (142, 108),
-    # right side: short
-    (154, 93), (174, 95), (196, 92)]
-
-
-def shag_base(phi_deg):
-    """The notch line between locks: the forehead at the front, ear level at the sides, the nape at the back."""
-    s_ = math.sin(math.radians(phi_deg))
-    front, back = max(0.0, -s_), max(0.0, s_)
-    return 86.0 - 30.0 * front ** 1.3 + 6.0 * back
-
-
-def shag_rim(phi_deg):
-    """Theta of the shell's lower edge at phi: piecewise-linear through tip / notch / tip ... all the way round."""
-    tips = sorted(((p % 360.0) - 180.0, t) for p, t in SHAG_TIPS)   # into [-180, 180)
-    ctrl = []
-    for i, (p0, t0) in enumerate(tips):
-        p1 = tips[(i + 1) % len(tips)][0] + (360.0 if i == len(tips) - 1 else 0.0)
-        mid = (p0 + p1) / 2
-        ctrl += [(p0, t0), (mid, shag_base(mid) - 3.0)]
-    ph = ((phi_deg + 180.0) % 360.0) - 180.0
-    pts = ctrl + [(ctrl[0][0] + 360.0, ctrl[0][1])]
-    if ph < pts[0][0]:
-        ph += 360.0
-    for (a0, t0), (a1, t1) in zip(pts, pts[1:]):
-        if a0 <= ph <= a1:
-            return t0 + (t1 - t0) * (ph - a0) / max(1e-6, a1 - a0)
-    return pts[-1][1]
-
-
-def shag_lock_bulge(phi_deg):
-    """1 along a lock's centre line, 0 in the groove between two locks (the locks read as separate chunks)."""
-    tips = sorted(p for p, _ in SHAG_TIPS)
-    best = 1e9
-    for i, p0 in enumerate(tips):
-        d = abs(((phi_deg - p0 + 180.0) % 360.0) - 180.0)
-        p1 = tips[(i + 1) % len(tips)]
-        half = abs(((p1 - p0 + 180.0) % 360.0) - 180.0) / 2 or 10.0
-        best = min(best, d / half)
-    return max(0.0, 1.0 - best * best)
-
-
-SHAG_VOL = (0.03, 1.0)     # (base thickness off the scalp, puff multiplier) - tuned with the owner
-
-
-def build_hair_shag(mb, t0=0.0):
-    """Messy Shag as one solid piece: outer surface puffed off the head (more on top and at the back, thinning to a
-    chunky edge at the lock tips), an inner surface just off the head, and a wall closing the pointed rim. t0 > 0 =
-    the under-a-hat cut: only the lower band of the shell, closed along its top as well."""
-    W = {'sock_hat': 1.0}
-    NP, NT = 120, 9
-    rows = [t0 + (1 - t0) * i / NT for i in range(NT + 1)]
-    outer, inner = [], []
-    for t in rows:
-        ro, ri = [], []
-        for j in range(NP):
-            phi0 = -90 + 360 * j / NP
-            th = shag_rim(phi0) * t
-            back = max(0.0, math.sin(math.radians(phi0)))
-            phi = phi0 + 7.0 * math.sin(t * math.pi * 2.2 + 0.4) * t      # waviness: the locks drift side to side
-            flare = 0.075 * back ** 1.5 * max(0.0, t - 0.55) ** 2 / 0.2   # the mullet swoops out at the nape
-            lift_o = SHAG_VOL[0] + SHAG_VOL[1] * (0.065 + 0.07 * back) * (1 - t ** 2.2)   # volume on top, more at the back
-            lift_o += 0.022 * shag_lock_bulge(phi0) * min(1.0, t * 1.6)     # each lock a raised ridge down to its tip
-            lift_o += 0.009 * math.sin(t * math.pi * 3.0) + flare          # a gentle ripple + the swoop
-            lift_i = 0.006 + flare
-            front = max(0.0, -math.sin(math.radians(phi0)))
-            lift_o = lift_i + (lift_o - lift_i) * (1 - 0.8 * front ** 1.2 * t ** 1.5)   # thin over the face (eyes stay clear)
-            po, _ = head_ray(th, phi, lift_o)
-            pi_, _ = head_ray(th, phi, lift_i)
-            ro.append(mb.vert(po, W)); ri.append(mb.vert(pi_, W))
-        outer.append(ro); inner.append(ri)
-    for i in range(NT):
-        for j in range(NP):
-            j2 = (j + 1) % NP
-            uv = [(j / NP * 4, rows[i]), ((j + 1) / NP * 4, rows[i]), ((j + 1) / NP * 4, rows[i + 1]), (j / NP * 4, rows[i + 1])]
-            mb.face([outer[i][j], outer[i][j2], outer[i + 1][j2], outer[i + 1][j]][::-1], 'M_shag', uv[::-1], smooth=True)
-            mb.face([inner[i][j], inner[i][j2], inner[i + 1][j2], inner[i + 1][j]], 'M_shag', uv, smooth=True)
-    for j in range(NP):                                  # the wall along the pointed rim (gives the locks thickness)
-        j2 = (j + 1) % NP
-        mb.face([outer[-1][j], outer[-1][j2], inner[-1][j2], inner[-1][j]], 'M_shag',
-                [(0, 0.9), (0.1, 0.9), (0.1, 1), (0, 1)], smooth=False)
-        if t0 > 0:                                       # under-a-hat cut: close the top of the band too
-            mb.face([outer[0][j2], outer[0][j], inner[0][j], inner[0][j2]], 'M_shag',
-                    [(0, 0.9), (0.1, 0.9), (0.1, 1), (0, 1)], smooth=False)
-
-
 def build_hair_pigtails(mb):
     """Two bunches off the sides of the head, tied with team-coloured bands (they show under hats too)."""
     W = {'sock_hat': 1.0}
@@ -1927,8 +1742,6 @@ def main():
                                ('hair_sprout', build_hair_sprout, ['M_skin', 'M_leaf']),
                                ('hair_mohawk', build_hair_mohawk, ['M_team']),
                                ('hair_tuft', build_hair_tuft, ['M_hair']),
-                               ('hair_anime', build_hair_anime, ['M_curl']),
-                               ('hair_shag', build_hair_shag, ['M_shag']),
                                ('face_glasses_rect', build_glasses_rect, ['M_frame']),
                                ('neck_chain', build_gold_chain, ['M_gold']),
                                ('hair_pigtails', build_hair_pigtails, ['M_hair', 'M_team'])):
