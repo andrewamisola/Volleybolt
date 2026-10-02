@@ -43,14 +43,25 @@ def eyes_classic():
             elif f == 2:    # hurt: > <
                 s = 1 if i == 0 else -1
                 d.line((x - 6 * s, y - 5, x + 5 * s, y, x - 6 * s, y + 5), fill=INK, width=2)
-            elif f == 3:    # focus: half-lidded, angry brow
-                d.ellipse((x - 8, y - 4, x + 8, y + 8), fill=INK)
-                d.ellipse((x - 7, y - 3, x + 7, y + 7), fill=WHITE)
-                px = x + (2 if i == 0 else -2)
-                d.ellipse((px - 3, y - 1, px + 3, y + 5), fill=INK)
-                d.rectangle((x - 8, y - 6, x + 8, y), fill=(0, 0, 0, 0))
-                if i == 0: d.line((x - 8, y - 4, x + 7, y), fill=INK, width=2)
-                else:      d.line((x - 7, y, x + 8, y - 4), fill=INK, width=2)
+            elif f == 3:    # focus: a squint - the lid slants down toward the nose, cut INSIDE the eye
+                d.ellipse((x - 8, y - 6, x + 8, y + 8), fill=INK)
+                d.ellipse((x - 7, y - 5, x + 7, y + 7), fill=WHITE)
+                s = 1 if i == 0 else -1          # +x is toward the nose for the left eye
+                px = x + 2 * s
+                d.ellipse((px - 3, y + 1, px + 2, y + 6), fill=INK)
+                d.point((px - 1, y + 2), fill=SHINE)
+                lid = {xx: y - 3 + round(1.5 * s * (xx - x) / 8) for xx in range(x - 8, x + 9)}
+                for xx, ly in lid.items():
+                    for yy in range(y - 7, ly):
+                        im.putpixel((xx, yy), (0, 0, 0, 0))
+                    # the 2px lid line only where the eye continues below it (no nubs at the corners)
+                    if sum(1 for yy in range(ly, ly + 5) if im.getpixel((xx, yy))[3]) >= 5:
+                        for yy in (ly, ly + 1):
+                            im.putpixel((xx, yy), INK)
+                    else:                       # corner columns: clear down to the lid, keep the outline below
+                        for yy in (ly, ly + 1):
+                            if im.getpixel((xx, yy))[:3] == WHITE[:3]:
+                                im.putpixel((xx, yy), INK)
             elif f == 4:    # happy: ^ ^
                 d.line((x - 7, y + 3, x, y - 4, x + 7, y + 3), fill=INK, width=2)
     return im
