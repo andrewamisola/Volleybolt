@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=88-wardrobe-icons">
+    <link rel="stylesheet" href="styles.css?v=89-wardrobe-ff9">
 </head>
 <body>
 
@@ -221,36 +221,27 @@
         </div>
     </div>
 
-    <!-- Wardrobe - an inventory: live 3D pickle on the left (arena shows through), tabs + item grid + info on the right.
-         Tiles are built from COSMETICS (window.openWardrobe). -->
+    <!-- Wardrobe - FF9 equip screen in the HUD's window language (steel window, rim, hanging title tab, FF9UI rows,
+         gold values, hand cursor). Live 3D pickle on the left; WARDROBE (slots + actions) and the item grid on the
+         right, the item's info underneath. Rows/tiles are built from COSMETICS (window.openWardrobe). -->
     <div id="wardrobeScreen" class="arcane-overlay crt-screen in-match">
-        <div class="arcane-content">
-            <div class="arcane-title-wrap">
-                <h1 class="arcane-title" data-text="Wardrobe">Wardrobe</h1>
-            </div>
-            <div class="arcane-buttons settings-panel" id="wardrobePanel">
-                <div id="wardrobeTabs" role="tablist"></div>
-                <div id="wardrobeGrid"></div>
-                <div id="wardrobeInfo"></div>
-                <div id="wardrobePreviewRows"></div>
-                <div class="wardrobe-actions">
-                    <button class="game-btn menu-btn" id="wardrobeRandom">
-                        <span class="menu-btn-accent" aria-hidden="true"></span>
-                        <span class="menu-btn-glyph" aria-hidden="true">&#9860;</span>
-                        <span class="menu-btn-label">Randomize</span>
-                    </button>
-                    <button class="game-btn menu-btn" id="wardrobeReset">
-                        <span class="menu-btn-accent" aria-hidden="true"></span>
-                        <span class="menu-btn-glyph" aria-hidden="true">&#8634;</span>
-                        <span class="menu-btn-label">Default</span>
-                    </button>
+        <div class="arcane-content wd-layout">
+            <div class="wd-top">
+                <div class="wd-win wd-equip">
+                    <div class="wd-tab">WARDROBE</div>
+                    <div id="wardrobeSlots"></div>
+                    <div class="wd-sep"></div>
+                    <button class="wd-row" id="wardrobeTeam"><span class="wd-label">Team</span><span class="wd-val" id="wardrobeTeamVal">Blue</span><span class="wd-key">T</span></button>
+                    <button class="wd-row" id="wardrobeRandom"><span class="wd-label">Randomize</span><span class="wd-key">R</span></button>
+                    <button class="wd-row" id="wardrobeReset"><span class="wd-label">Default</span></button>
+                    <button class="wd-row" id="wardrobeBack"><span class="wd-label">Back</span><span class="wd-key wd-key-wide">Esc</span></button>
                 </div>
-                <button class="game-btn menu-btn menu-btn-ghost" id="wardrobeBack">
-                    <span class="menu-btn-accent" aria-hidden="true"></span>
-                    <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
-                    <span class="menu-btn-label">Back</span>
-                </button>
+                <div class="wd-win wd-items">
+                    <div class="wd-tab" id="wardrobeItemsTab">HAT</div>
+                    <div id="wardrobeGrid"></div>
+                </div>
             </div>
+            <div class="wd-win wd-info"><div class="wd-tab wd-tab-sm">ITEM</div><div id="wardrobeInfo"></div></div>
         </div>
     </div>
 
@@ -14027,7 +14018,6 @@
                 const TABS = [['hat', 'Hat'], ['outfit', 'Outfit'], ['neck', 'Neck'], ['face_acc', 'Face'], ['staff', 'Staff'],
                               ['eyes', 'Eyes'], ['brows', 'Brows'], ['mouth', 'Mouth']];
                 const FACE_SLOTS = ['eyes', 'brows', 'mouth'];
-                const POSES = [['idle', 'Idle'], ['cast_loop', 'Casting'], ['victory', 'Victory']];
                 const TEAMS = [['left', 'Blue'], ['right', 'Red']];
                 const COLS = 4;
                 const optionsFor = (slot) => COSMETICS.filter(c => c.slot === slot);
@@ -14193,10 +14183,17 @@
                 // ---- the panel ----
                 const $ = (id) => document.getElementById(id);
                 const items = () => optionsFor(W.tab);
+                // the WARDROBE window: one row per slot, its equipped item in gold, the hand on the open slot
                 const renderTabs = () => {
-                    $('wardrobeTabs').innerHTML = TABS.map(([k, label]) =>
-                        `<button class="wardrobe-tab${k === W.tab ? ' is-active' : ''}" data-tab="${k}" tabindex="-1">${label}</button>`).join('');
-                    $('wardrobeTabs').querySelectorAll('.wardrobe-tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+                    const lo = loadLoadout();
+                    $('wardrobeSlots').innerHTML = TABS.map(([k, label]) => {
+                        const c = cosmeticById(lo[k]);
+                        return `<button class="wd-row wd-slot${k === W.tab ? ' is-active' : ''}" data-tab="${k}" tabindex="-1">` +
+                               `<span class="wd-label">${label}</span><span class="wd-val">${c && !isNone(c) ? c.name : '&mdash;'}</span></button>`;
+                    }).join('');
+                    $('wardrobeSlots').querySelectorAll('.wd-slot').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+                    const t = TABS.find(x => x[0] === W.tab);
+                    $('wardrobeItemsTab').textContent = (t ? t[1] : '').toUpperCase();
                 };
                 const renderGrid = () => {
                     const lo = loadLoadout();
@@ -14273,27 +14270,19 @@
                     lo[W.tab] = c.id;
                     saveLoadout(lo);
                     W.preview = null;
-                    renderGrid(); renderInfo();
+                    renderTabs(); renderGrid(); renderInfo();
                     showLoadout(lo).then(cheer);
                     if (window.ToneSFX && ToneSFX.uiConfirm) ToneSFX.uiConfirm();
                 };
                 const revertPreview = () => { W.preview = null; showLoadout(loadLoadout()); };
 
-                // Team / Pose rows (preview only, not saved)
-                const cyclerText = (key) => key === 'team' ? TEAMS.find(t => t[0] === W.side)[1] : POSES.find(p => p[0] === W.pose)[1];
-                const refreshCyclers = () => document.querySelectorAll('#wardrobePreviewRows .wardrobe-cycler').forEach(el => {
-                    el.querySelector('.fps-val').textContent = cyclerText(el.dataset.key);
-                });
-                const stepCycler = (key, dir) => {
-                    if (key === 'team') {
-                        const i = TEAMS.findIndex(t => t[0] === W.side);
-                        W.side = TEAMS[(i + dir + TEAMS.length) % TEAMS.length][0];
-                        refreshCyclers(); rebuild();
-                    } else {
-                        const i = POSES.findIndex(p => p[0] === W.pose);
-                        W.pose = POSES[(i + dir + POSES.length) % POSES.length][0];
-                        refreshCyclers(); playPose();
-                    }
+                // Team (preview only, not saved)
+                const refreshCyclers = () => { $('wardrobeTeamVal').textContent = TEAMS.find(t => t[0] === W.side)[1]; };
+                const stepTeam = () => {
+                    const i = TEAMS.findIndex(t => t[0] === W.side);
+                    W.side = TEAMS[(i + 1) % TEAMS.length][0];
+                    refreshCyclers(); rebuild();
+                    if (window.ToneSFX) ToneSFX.uiHover();
                 };
                 const randomize = () => {
                     const lo = {};
@@ -14306,21 +14295,7 @@
                 const wirePanel = () => {
                     if (wired) return;
                     wired = true;
-                    const cyc = (key, label) =>
-                        `<div class="settings-row"><span>${label}</span>` +
-                        `<div class="fps-cycler wardrobe-cycler" tabindex="0" data-key="${key}">` +
-                        `<button class="fps-arrow" data-dir="-1" aria-label="Previous ${label}">&#9664;</button>` +
-                        `<span class="fps-val"></span>` +
-                        `<button class="fps-arrow" data-dir="1" aria-label="Next ${label}">&#9654;</button></div></div>`;
-                    $('wardrobePreviewRows').innerHTML = cyc('team', 'Team');
-                    document.querySelectorAll('#wardrobePreviewRows .wardrobe-cycler').forEach(el => {
-                        el.querySelectorAll('.fps-arrow').forEach(b => b.addEventListener('click', () => stepCycler(el.dataset.key, +b.dataset.dir)));
-                        el.addEventListener('keydown', (e) => {
-                            if (e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
-                            stepCycler(el.dataset.key, e.code === 'ArrowRight' ? 1 : -1);
-                            e.preventDefault(); e.stopPropagation();
-                        });
-                    });
+                    $('wardrobeTeam').addEventListener('click', stepTeam);
                     $('wardrobeGrid').addEventListener('mouseleave', () => {
                         // back to what's equipped (the cursor parks on it)
                         W.cursor = Math.max(0, items().findIndex(c => c.id === loadLoadout()[W.tab]));
@@ -14332,7 +14307,7 @@
                     // keyboard: arrows browse, Q/E switch category, Enter/Space equip (Esc = Back, handled globally)
                     document.addEventListener('keydown', (e) => {
                         if (!W.open || e.defaultPrevented) return;
-                        if (e.target && e.target.closest && e.target.closest('.wardrobe-cycler, input')) return;
+                        if (e.target && e.target.closest && e.target.closest('input')) return;
                         const k = e.code;
                         if (k === 'ArrowLeft') moveCursor(-1, 0);
                         else if (k === 'ArrowRight') moveCursor(1, 0);
@@ -14340,7 +14315,9 @@
                         else if (k === 'ArrowDown') moveCursor(0, 1);
                         else if (k === 'KeyQ') stepTab(-1);
                         else if (k === 'KeyE') stepTab(1);
-                        else if (k === 'Enter' || k === 'Space') { if (e.target && e.target.closest && e.target.closest('button.menu-btn')) return; equip(); }
+                        else if (k === 'KeyT') stepTeam();
+                        else if (k === 'KeyR') randomize();
+                        else if (k === 'Enter' || k === 'Space') { if (e.target && e.target.closest && e.target.closest('.wd-row')) return; equip(); }
                         else return;
                         e.preventDefault();
                     });
@@ -14356,7 +14333,7 @@
                     else if (act === 'rb') stepTab(1);
                     else if (act === 'confirm') equip();
                     else if (act === 'x') randomize();
-                    else if (act === 'y') stepCycler('team', 1);
+                    else if (act === 'y') stepTeam();
                 };
 
                 // ---- the 3D side ----
