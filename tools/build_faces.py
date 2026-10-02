@@ -274,6 +274,96 @@ def mouth_smile():
     return im
 
 
+def _poly(d, pts, thick=2):
+    """A polyline drawn column by column (thick px tall): clean joints, no horn ticks. Slopes <= 1."""
+    pts = [(pts[k], pts[k + 1]) for k in range(0, len(pts), 2)]
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        for x in range(min(x0, x1), max(x0, x1) + 1):
+            y = round(y0 + (y1 - y0) * (x - x0) / (x1 - x0)) if x1 != x0 else y0
+            d.line((x, y, x, y + thick - 1), fill=INK)
+
+
+def _teeth_box(d, x0, y0, x1, y1, gaps):
+    """An ink-outlined box of teeth with ink gaps at the given x columns."""
+    d.rectangle((x0, y0, x1, y1), fill=INK)
+    d.rectangle((x0 + 1, y0 + 1, x1 - 1, y1 - 1), fill=TEETH)
+    for gx in gaps:
+        d.line((gx, y0 + 1, gx, y1 - 1), fill=INK)
+
+
+def mouth_buck():
+    """Goofy smile with two big front teeth hanging over the lip."""
+    im = Image.new('RGBA', (MW * 4, MH), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    for f in range(4):
+        cx, cy = f * MW + 16, 5
+        if f == 0:          # neutral: smile + the two teeth
+            _poly(d, (cx - 7, cy - 1, cx - 4, cy + 2, cx + 4, cy + 2, cx + 7, cy - 1))
+            _teeth_box(d, cx - 4, cy + 2, cx + 4, cy + 7, [cx])
+        elif f == 1:        # open: an O with the teeth at the top
+            d.ellipse((cx - 6, cy - 3, cx + 6, cy + 8), fill=INK)
+            d.ellipse((cx - 4, cy - 1, cx + 4, cy + 6), fill=MOUTH)
+            d.rectangle((cx - 2, cy + 4, cx + 2, cy + 6), fill=TONGUE)
+            _teeth_box(d, cx - 4, cy - 2, cx + 4, cy + 3, [cx])
+        elif f == 2:        # grimace: a nervous frown, the teeth biting the bottom lip
+            _poly(d, (cx - 8, cy + 4, cx - 4, cy + 1, cx + 4, cy + 1, cx + 8, cy + 4))
+            _teeth_box(d, cx - 4, cy + 1, cx + 4, cy + 6, [cx])
+        elif f == 3:        # grin: wide D, the teeth front and centre
+            d.chord((cx - 10, cy - 7, cx + 10, cy + 9), 0, 180, fill=INK)
+            d.chord((cx - 8, cy - 5, cx + 8, cy + 7), 0, 180, fill=MOUTH)
+            d.ellipse((cx - 3, cy + 4, cx + 4, cy + 8), fill=TONGUE)
+            _teeth_box(d, cx - 4, cy, cx + 4, cy + 5, [cx])
+    return im
+
+
+def mouth_smirk():
+    """Lopsided: one corner hooked up. Cocky."""
+    im = Image.new('RGBA', (MW * 4, MH), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    for f in range(4):
+        cx, cy = f * MW + 16, 6
+        if f == 0:          # neutral: flat, hooking up on the right, a dimple dot
+            _poly(d, (cx - 6, cy + 1, cx + 2, cy + 1, cx + 5, cy - 2))
+            d.point((cx + 8, cy - 3), fill=INK)
+        elif f == 1:        # open: a small off-centre O
+            d.line((cx - 6, cy + 1, cx - 2, cy + 1), fill=INK, width=2)
+            d.ellipse((cx - 2, cy - 3, cx + 6, cy + 5), fill=INK)
+            d.ellipse((cx, cy - 1, cx + 4, cy + 3), fill=MOUTH)
+        elif f == 2:        # grimace: teeth bared on one side only
+            _poly(d, (cx - 7, cy + 1, cx - 3, cy + 1))
+            _teeth_box(d, cx - 3, cy - 3, cx + 8, cy + 3, [cx + 1, cx + 5])
+            d.line((cx - 2, cy, cx + 7, cy), fill=INK)
+        elif f == 3:        # grin: a lopsided D
+            d.chord((cx - 5, cy - 6, cx + 11, cy + 8), 0, 180, fill=INK)
+            d.chord((cx - 3, cy - 4, cx + 9, cy + 6), 0, 180, fill=MOUTH)
+            d.rectangle((cx - 2, cy + 1, cx + 8, cy + 2), fill=TEETH)
+    return im
+
+
+def mouth_cat():
+    """The :3 / w mouth. Smug-cute."""
+    W_PTS = lambda cx, cy: (cx - 6, cy - 1, cx - 4, cy + 1, cx - 2, cy + 1, cx, cy - 1, cx + 2, cy + 1, cx + 4, cy + 1, cx + 6, cy - 1)   # two round-bottomed U's
+    im = Image.new('RGBA', (MW * 4, MH), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    for f in range(4):
+        cx, cy = f * MW + 16, 4
+        if f == 0:          # neutral: w
+            _poly(d, W_PTS(cx, cy))
+        elif f == 1:        # open: the w opens into a little mouth below
+            d.ellipse((cx - 4, cy, cx + 4, cy + 8), fill=INK)
+            d.ellipse((cx - 2, cy + 2, cx + 2, cy + 6), fill=MOUTH)
+            d.point((cx, cy + 5), fill=TONGUE); d.point((cx + 1, cy + 5), fill=TONGUE)
+            _poly(d, W_PTS(cx, cy))
+        elif f == 2:        # grimace: a wobbly zigzag
+            _poly(d, (cx - 8, cy + 3, cx - 5, cy + 1, cx - 2, cy + 3, cx + 1, cy + 1, cx + 4, cy + 3, cx + 7, cy + 1))
+        elif f == 3:        # grin: a big open mouth hanging off the w
+            d.chord((cx - 8, cy - 5, cx + 8, cy + 10), 0, 180, fill=INK)
+            d.chord((cx - 6, cy - 3, cx + 6, cy + 8), 0, 180, fill=MOUTH)
+            d.ellipse((cx - 3, cy + 4, cx + 3, cy + 8), fill=TONGUE)
+            _poly(d, W_PTS(cx, cy + 1))
+    return im
+
+
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
     eyes_classic().save(os.path.join(OUT, 'eyes_classic.png'))
@@ -284,4 +374,7 @@ if __name__ == '__main__':
     brows_bushy().save(os.path.join(OUT, 'brows_bushy.png'))
     brows_unibrow().save(os.path.join(OUT, 'brows_unibrow.png'))
     mouth_smile().save(os.path.join(OUT, 'mouth_smile.png'))
+    mouth_buck().save(os.path.join(OUT, 'mouth_buck.png'))
+    mouth_smirk().save(os.path.join(OUT, 'mouth_smirk.png'))
+    mouth_cat().save(os.path.join(OUT, 'mouth_cat.png'))
     print('faces written to', OUT)
