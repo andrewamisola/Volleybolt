@@ -1444,6 +1444,37 @@ def p_idle(t, T=2.0):
     return P
 
 
+def p_ready(t, T=0.8):
+    """Combat-ready stance (in a match, standing still; owner: idle looked nonchalant in battle). Knees bent
+    and wide, leaning in a touch, staff up in front and the free fist up, bouncing on the nubs at the strafe's
+    tempo (T = p_walk's) with a side-to-side weight shift - stopping between strafes keeps the energy. The
+    head counter-rotates so the painted face stays level and unstretched."""
+    p = TAU * t / T
+    P = Pose()
+    b = (1 - cos(2 * p)) / 2            # 0..1: a bounce twice a cycle (once per weight shift)
+    sh = sin(p)                         # -1..1: weight over one nub, then the other
+    P.loc('hips', x=0.012 * sh, z=-0.045 + 0.022 * b)
+    P.rot('hips', y=2.0 * sh)
+    for side, sg in (('L', -1), ('R', 1)):
+        load = max(0.0, sg * -sh)        # the leg taking the weight bends a little more
+        P.rot(f'leg_{side}_up', y=sg * 11, x=-6 * load)
+        P.rot(f'leg_{side}_lo', x=8 * load)
+        P.scale(f'leg_{side}_up', 1, 1, 0.84 + 0.08 * b)
+    P.rot('body_lo', x=-5, y=3.5 * sh)
+    P.rot('body_mid', x=-3, y=1.5 * sh)
+    P.rot('body_hi', x=-1, y=-1.0 * sh)
+    P.rot('head', x=3, y=-2.5 * sh)
+    P.scale('body_lo', 1 + 0.03 * (1 - b), 1, 1 - 0.045 * (1 - b))
+    # staff arm (R): raised in front, staff held up and a little forward
+    P.rot('arm_R_up', x=-30 - 4 * b, y=22)
+    P.rot('arm_R_lo', x=-42)
+    P.rot('hand_R', x=30, y=-28)
+    # free arm (L): bent, fist up and out - ready to cast
+    P.rot('arm_L_up', x=-22 - 4 * b, y=-16)
+    P.rot('arm_L_lo', x=-40 + 4 * b)
+    return P
+
+
 def p_walk(t, s, T=0.8):
     """s = +1 -> toward the character's LEFT (+X), -1 -> right."""
     p = TAU * t / T
@@ -1599,6 +1630,7 @@ def p_defeat(t, T=1.5):
 
 CLIPS = [  # name, frames (inclusive end), pose fn(t_seconds), loop
     ('idle', 60, lambda t: p_idle(t), True),
+    ('ready', 24, lambda t: p_ready(t), True),
     ('left', 24, lambda t: p_walk(t, +1), True),
     ('right', 24, lambda t: p_walk(t, -1), True),
     ('cast_loop', 30, lambda t: p_cast(t), True),

@@ -12723,8 +12723,9 @@
                     return;
                 }
 
-                // 5. Default: idle
-                playAnim(combatant, 'idle');
+                // 5. Default: the combat-ready stance (bouncing, staff up) where the model has it; the calm
+                //    idle stays for menus / the wardrobe
+                playAnim(combatant, combatant.animations['ready'] ? 'ready' : 'idle');
             }
             window.updateCombatantAnimation = updateCombatantAnimation;
 
@@ -13626,7 +13627,7 @@
             const CHARACTER_VERSION = 2;
             window.CHARACTER_VERSION = CHARACTER_VERSION;
             const PICKLE2_DIR = 'models/pickle2/';
-            const PICKLE2_V = '?v=25';
+            const PICKLE2_V = '?v=26';
             // The catalogue: every cosmetic. id = stable (unlocks / a future Steam inventory key off it).
             const COSMETICS = [
                 { id: 'hat_none',      name: 'Bald',            slot: 'hat' },
@@ -14017,7 +14018,7 @@
                 P.querySelectorAll('[data-team]').forEach(b => b.onclick = () => { LAB.side = b.dataset.team; markTeam(); rebuild(false); });
                 markTeam();
 
-                const clipKeys = ['idle', 'left', 'right', 'cast_loop', 'cast_release', 'parry', 'parry_release', 'victory', 'defeat', 'defeat_fall'];
+                const clipKeys = ['idle', 'ready', 'left', 'right', 'cast_loop', 'cast_release', 'parry', 'parry_release', 'victory', 'defeat', 'defeat_fall'];
                 const playClip = (k) => {
                     const ch = LAB.char; if (!ch) return;
                     LAB.clip = k;
@@ -14792,7 +14793,7 @@
                     if (isPlayer) { playerModelRoot = pk.modelRoot; playerFlashMeshes = target.flashMeshes; }
                     else { aiModelRoot = pk.modelRoot; aiFlashMeshes = target.flashMeshes; }
                     const a = pk.animations[cur] || pk.animations.idle;
-                    if (a) a.play(cur === 'idle' || cur === 'left' || cur === 'right' || cur === 'cast_loop');
+                    if (a) a.play(cur === 'idle' || cur === 'ready' || cur === 'left' || cur === 'right' || cur === 'cast_loop');
                     disposePickle2({ modelRoot: old.root, meshes: old.meshes, animations: old.anims, skeleton: old.skel, face: old.face });
                 };
                 // Load sequentially (player, then AI) so each cleanly collects its own
