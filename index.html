@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=95-end-pages">
+    <link rel="stylesheet" href="styles.css?v=96-history-profiles">
 </head>
 <body>
 
@@ -359,10 +359,12 @@
                 <div class="career-tabs" role="tablist">
                     <button type="button" class="career-tab active" id="careerTabStats" role="tab" aria-selected="true">Stats</button>
                     <button type="button" class="career-tab" id="careerTabRank" role="tab" aria-selected="false">Ranked</button>
+                    <button type="button" class="career-tab" id="careerTabHistory" role="tab" aria-selected="false">History</button>
                     <button type="button" class="career-tab" id="careerTabAch" role="tab" aria-selected="false">Achievements<span class="ach-dot" id="achTabDot" hidden></span></button>
                 </div>
                 <div id="careerList" class="career-list"></div>
                 <div id="rankPanel" class="rank-panel" hidden></div>
+                <div id="historyPanel" class="history-panel" hidden></div>
                 <div id="achList" class="ach-list" hidden></div>
                 <button class="game-btn menu-btn menu-btn-ghost" id="careerBack">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
@@ -445,6 +447,7 @@
                 <!-- Connected / ready view -->
                 <div class="lobby-view" id="lobbyConnectedView" style="display:none">
                     <p class="lobby-connected-msg">Connected!</p>
+                    <div class="lobby-profiles" id="lobbyProfiles"></div>
                     <p class="lobby-status" id="connectedPing">Ping: --ms</p>
                     <!-- Shown only when software rendering was detected (window._softwareRenderer):
                          the once-ever perf notice may be long dismissed, but an MP opponent will
@@ -2013,6 +2016,7 @@
             let opponent = null;        // online peer's { mmr, games } (from the handshake)
             let last = null;            // the last settled result (end-screen card)
             let aiOpp = null;           // this match's bot: { mmr, skill, style, label }
+            let oppProfile = null;      // online peer's sanitized profile (PROFILE / START_MATCH / LOADOUT)
             function load() {
                 try {
                     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
@@ -2075,7 +2079,14 @@
                 const L = mySide();
                 const opp = oppRating(mode);
                 if (!L || opp == null) { st.pending = null; save(); return null; }   // online peer never sent a rating: unrated
-                return settle(winnerSide === L, mode, opp);
+                // match-history detail: who, at what rank, the final score
+                let mine = 0, theirs = 0;
+                for (const w of (typeof roundLog !== 'undefined' ? roundLog : [])) { if (w === L) mine++; else theirs++; }
+                const oppGames = mode === 'ai' ? RANK.PLACEMENTS : (opponent ? opponent.games : RANK.PLACEMENTS);
+                return settle(winnerSide === L, mode, opp, {
+                    oppName: mode === 'ai' ? 'AI' : ((oppProfile && oppProfile.name) || 'Opponent'),
+                    oppLabel: rankOf(opp, oppGames).label, score: mine + '-' + theirs,
+                });
             }
             function abandon() {
                 if (!active) return null;
@@ -2118,6 +2129,42 @@
                 return aiOpp;
             }
 
+            // ---- profiles (online): what a peer shows the other in the lobby / versus screen ----
+            const FAV = [['fireball_casts', 'Fireball'], ['frostbolt_casts', 'Chill Dill'], ['thunderstorm_casts', 'Thunderstorm']];
+            function myProfile() {
+                const cg = (k) => { try { return StatTracker.get(k, 'career') || 0; } catch (e) { return 0; } };
+                let fav = null, best = 0;
+                for (const [k, nm] of FAV) { const v = cg(k); if (v > best) { best = v; fav = nm; } }
+                return {
+                    v: 1, name: (window.getPlayerName ? window.getPlayerName() : 'Player'),
+                    mmr: Math.round(st.mmr), games: st.games, wins: st.wins, losses: st.losses, peak: st.peak,
+                    recent: st.history.map(h => h.won ? 'W' : 'L').join(''),          // newest first
+                    career: { matches: cg('matches_won') + cg('matches_lost'), won: cg('matches_won'),
+                              parries: cg('parries_successful'), fav },
+                };
+            }
+            // A peer's profile is UNTRUSTED input: clamp every field (rendered via textContent only).
+            const num = (v, lo, hi) => { v = Math.round(+v); return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : 0; };
+            function sanitizeProfile(p) {
+                if (!p || typeof p !== 'object') return null;
+                const c = (p.career && typeof p.career === 'object') ? p.career : {};
+                const favOk = FAV.some(([, nm]) => nm === c.fav);
+                return {
+                    name: String(p.name || 'Opponent').replace(/[\u0000-\u001f]/g, '').slice(0, 16) || 'Opponent',
+                    mmr: num(p.mmr, 0, 5000), games: num(p.games, 0, 1e6), wins: num(p.wins, 0, 1e6), losses: num(p.losses, 0, 1e6),
+                    peak: p.peak == null ? null : num(p.peak, 0, 5000),
+                    recent: String(p.recent || '').replace(/[^WL]/g, '').slice(0, RANK.HISTORY),
+                    career: { matches: num(c.matches, 0, 1e7), won: num(c.won, 0, 1e7), parries: num(c.parries, 0, 1e8), fav: favOk ? c.fav : null },
+                };
+            }
+            function setOpponentProfile(p) {
+                const sp = sanitizeProfile(p);
+                if (!sp) return null;
+                oppProfile = sp;
+                opponent = { mmr: sp.mmr, games: sp.games };
+                return sp;
+            }
+
             load();
             if (st.pending) settle(false, st.pending.mode, st.pending.oppMmr ?? RANK.START, { abandoned: true });   // closed mid-match
             last = null;
@@ -2127,7 +2174,8 @@
                 onRoundStart, onMatchEnd, abandon, cancel, prepareMatchAI,
                 aiOpponent: () => aiOpp,
                 setOpponent(r) { opponent = r && Number.isFinite(r.mmr) ? { mmr: r.mmr, games: r.games | 0 } : null; },
-                clearOpponent() { opponent = null; },
+                clearOpponent() { opponent = null; oppProfile = null; },
+                profile: myProfile, setOpponentProfile, opponentProfile: () => oppProfile,
                 handshake: () => ({ mmr: st.mmr, games: st.games }),
                 current: () => rankOf(st.mmr, st.games),
                 state: () => JSON.parse(JSON.stringify(st)),
@@ -24088,7 +24136,8 @@
             const startHash = (typeof hashStartState === 'function') ? hashStartState() : 0;
             conn.send({ type: 'START_MATCH', seed: sharedSeed, upgrade: upgradeToShare, hash: startHash,
                         loadout: window.PickleKit ? PickleKit.loadLoadout() : null,
-                        rank: window.Rank ? Rank.handshake() : null });              // presentation only (ranked)
+                        rank: window.Rank ? Rank.handshake() : null,                 // presentation only (ranked)
+                        profile: window.Rank ? Rank.profile() : null });
             applyMatchLoadouts(null);
         }
 
@@ -24260,6 +24309,79 @@
             panel.append(main, rec, lad);
         }
         window.populateRanked = populateRanked;
+        // Career > History: the last 10 rated matches (newest first).
+        const ago = (t) => {
+            const m = Math.max(0, Math.round((Date.now() - t) / 60000));
+            return m < 1 ? 'just now' : m < 60 ? m + 'm ago' : m < 1440 ? Math.round(m / 60) + 'h ago' : Math.round(m / 1440) + 'd ago';
+        };
+        function populateHistory() {
+            const panel = document.getElementById('historyPanel');
+            if (!panel || !window.Rank) return;
+            const R = Rank.RANK, st = Rank.state();
+            panel.innerHTML = '';
+            const card = mkEl('div', 'career-card history-card');
+            card.appendChild(mkEl('div', 'career-card-title', 'Match History'));
+            if (!st.history.length) card.appendChild(mkEl('div', 'rank-none', 'No rated matches yet. Quick Play or an online match starts your history.'));
+            for (const h of st.history) {
+                const row = mkEl('div', 'hist-row ' + (h.won ? 'is-win' : 'is-loss'));
+                row.appendChild(mkEl('span', 'hist-res', h.won ? 'W' : 'L'));
+                const opp = mkEl('span', 'hist-opp');
+                const oppRank = Rank.rankOf(h.oppMmr, R.PLACEMENTS);
+                const oppLabel = h.oppLabel || oppRank.label;
+                const ti = Rank.RANK.TIERS.indexOf(oppLabel.split(' ')[0]);
+                opp.appendChild(rankEmblem(ti >= 0 ? ti : oppRank.tierIdx, 28));
+                const who = mkEl('span', 'hist-who');
+                who.append(mkEl('span', 'hist-name', h.oppName || (h.mode === 'ai' ? 'AI' : 'Opponent')), mkEl('span', 'hist-label', oppLabel));
+                opp.appendChild(who);
+                row.appendChild(opp);
+                row.appendChild(mkEl('span', 'hist-score', h.score || ''));
+                row.appendChild(mkEl('span', 'hist-mode', h.mode === 'ai' ? 'Quick Play' : 'Online'));
+                row.appendChild(mkEl('span', 'hist-delta ' + (h.delta >= 0 ? 'is-up' : 'is-down'), (h.delta >= 0 ? '+' : '\u2212') + Math.abs(h.delta)));
+                row.appendChild(mkEl('span', 'hist-when', h.abandoned ? 'left early' : ago(h.at)));
+                card.appendChild(row);
+            }
+            panel.appendChild(card);
+        }
+        window.populateHistory = populateHistory;
+        // Online lobby: You vs Opponent profile cards (the opponent's arrives as a PROFILE message).
+        function profileCard(p, title, isYou) {
+            const R = Rank.RANK;
+            const r = Rank.rankOf(p.mmr, p.games);
+            const card = mkEl('div', 'lobby-pcard' + (isYou ? ' is-you' : ''));
+            card.appendChild(mkEl('div', 'lp-kicker', title));
+            const top = mkEl('div', 'lp-top');
+            top.appendChild(rankEmblem(r.tierIdx, 56));
+            const info = mkEl('div', 'lp-info');
+            info.append(mkEl('div', 'lp-name', p.name), mkEl('div', 'lp-rank tier-' + r.tier.toLowerCase(),
+                r.placed ? r.label + ' \u00b7 ' + p.mmr.toLocaleString() + ' MMR' : 'Placement ' + r.placement + '/' + R.PLACEMENTS));
+            top.appendChild(info);
+            card.appendChild(top);
+            const games = p.wins + p.losses;
+            card.appendChild(mkEl('div', 'lp-line', games ? p.wins + 'W ' + p.losses + 'L \u00b7 ' + Math.round(100 * p.wins / games) + '% win rate' : 'No rated matches yet'));
+            const pips = mkEl('div', 'lp-pips');
+            for (const ch of p.recent.split('').reverse()) pips.appendChild(mkEl('i', ch === 'W' ? 'is-win' : 'is-loss'));
+            if (p.recent) card.appendChild(pips);
+            const c = p.career || {};
+            const bits = [];
+            if (p.peak) bits.push('Peak ' + Rank.rankOf(p.peak, R.PLACEMENTS).label);
+            if (c.fav) bits.push('Favours ' + c.fav);
+            if (c.parries) bits.push(c.parries.toLocaleString() + ' parries');
+            if (bits.length) card.appendChild(mkEl('div', 'lp-sub', bits.join(' \u00b7 ')));
+            return card;
+        }
+        window.profileCard = profileCard;
+        window.renderLobbyProfiles = () => {
+            const box = document.getElementById('lobbyProfiles');
+            if (!box || !window.Rank) return;
+            box.innerHTML = '';
+            const mine = Rank.profile();
+            mine.career = mine.career || {};
+            box.appendChild(profileCard({ ...mine, recent: mine.recent || '' }, 'You', true));
+            const opp = Rank.opponentProfile();
+            if (opp) box.appendChild(profileCard(opp, 'Opponent', false));
+            else box.appendChild(mkEl('div', 'lobby-pcard is-empty', 'Waiting for their profile...'));
+        };
+
         // Quick Play button chip: your emblem + rank (placements: "Placement n/5").
         window.refreshQuickPlayRank = () => {
             const el = document.getElementById('quickPlayRank');
@@ -24342,7 +24464,7 @@
         // Arrow keys / d-pad on the Achievements tab move over the board; Left off column 0 = back to Stats.
         window.achNav = (d) => {
             const { r, c } = achView;
-            if (d === 'left' && c === 0) careerSetTab(1);   // off the board's left edge: back to Ranked
+            if (d === 'left' && c === 0) careerSetTab(2);   // off the board's left edge: back to History
             else if (d === 'left') achSelect(r, c - 1);
             else if (d === 'right') achSelect(r, c + 1);
             else if (d === 'up') achSelect(r - 1, c);
@@ -24417,7 +24539,7 @@
 
         // Career tabs: 0 = Stats, 1 = Achievements (opening it marks everything seen).
         // Career tabs: 0 = Stats, 1 = Ranked, 2 = Achievements (opening it marks everything seen).
-        const CAREER_TABS = [['careerTabStats', 'careerList'], ['careerTabRank', 'rankPanel'], ['careerTabAch', 'achList']];
+        const CAREER_TABS = [['careerTabStats', 'careerList'], ['careerTabRank', 'rankPanel'], ['careerTabHistory', 'historyPanel'], ['careerTabAch', 'achList']];
         let careerTab = 0;
         function careerSetTab(i) {
             i = Math.max(0, Math.min(CAREER_TABS.length - 1, i));
@@ -24432,7 +24554,8 @@
                 t.setAttribute('aria-selected', String(k === i));
             });
             if (i === 1) populateRanked();
-            if (i === 2) {
+            if (i === 2) populateHistory();
+            if (i === 3) {
                 populateAchievements();             // draws this visit's dots first...
                 if (window.Achievements) Achievements.markAllSeen();
                 refreshAchievementDots();           // ...then clears the menu/tab dots
@@ -24509,7 +24632,9 @@
             const tabStats = document.getElementById('careerTabStats');
             const tabAch = document.getElementById('careerTabAch');
             if (tabStats) tabStats.addEventListener('click', () => careerSetTab(0));
-            if (tabAch) tabAch.addEventListener('click', () => careerSetTab(2));
+            if (tabAch) tabAch.addEventListener('click', () => careerSetTab(3));
+            const tabHist = document.getElementById('careerTabHistory');
+            if (tabHist) tabHist.addEventListener('click', () => careerSetTab(2));
             const tabRank = document.getElementById('careerTabRank');
             if (tabRank) tabRank.addEventListener('click', () => careerSetTab(1));
             document.addEventListener('keydown', (e) => {
@@ -24938,6 +25063,9 @@
                 if (window.clearJoinAttemptTimer) window.clearJoinAttemptTimer();
                 console.log('Connection established');
                 showLobbyView('lobbyConnectedView');
+                // Profiles (presentation only): each side shows the other's card in the lobby.
+                if (window.Rank) { try { conn.send({ type: 'PROFILE', profile: Rank.profile() }); } catch (e) {} }
+                if (window.renderLobbyProfiles) renderLobbyProfiles();
 
                 // Software-rendering reminder at the moment it matters for an opponent (the
                 // once-ever startup notice may be long dismissed). Detection ran at engine init.
@@ -25305,9 +25433,18 @@
                     refreshReadyUI();
                     break;
 
+                case 'PROFILE':
+                    // the peer's profile card (name, rank, record, recent form) - presentation only
+                    if (window.Rank) Rank.setOpponentProfile(data.profile);
+                    if (window.renderLobbyProfiles) renderLobbyProfiles();
+                    break;
+
                 case 'LOADOUT':
                     // the peer's cosmetic loadout (visual only) + its rating (ranked; host side)
-                    if (window.Rank && isHost) Rank.setOpponent(data.rank || null);
+                    if (window.Rank && isHost) {
+                        Rank.setOpponent(data.rank || null);
+                        if (data.profile) Rank.setOpponentProfile(data.profile);
+                    }
                     if (window.restylePickle && typeof getLocalSide === 'function') {
                         restylePickle(getLocalSide() === 'left' ? 'right' : 'left', data.loadout || null);
                     }
@@ -25359,8 +25496,10 @@
                         startMultiplayerMatch(data.seed, data.upgrade || 'default');
                         applyMatchLoadouts(data.loadout || null);
                         if (window.Rank) Rank.setOpponent(data.rank || null);   // no rating from the host = unrated
+                        if (window.Rank && data.profile) Rank.setOpponentProfile(data.profile);
                         try { conn.send({ type: 'LOADOUT', loadout: window.PickleKit ? PickleKit.loadLoadout() : null,
-                                          rank: window.Rank ? Rank.handshake() : null }); } catch (e) {}
+                                          rank: window.Rank ? Rank.handshake() : null,
+                                          profile: window.Rank ? Rank.profile() : null }); } catch (e) {}
                         // Validate state hash to detect early divergence
                         if (typeof hashStartState === 'function' && typeof data.hash === 'number') {
                             const localHash = hashStartState();
@@ -28799,6 +28938,13 @@
                 { cls: 'blue', name: isDoubles ? 'Blue Team' : window.getPlayerName(), s: team(cb.left, cb.leftBack) },
                 { cls: 'red',  name: isDoubles ? 'Red Team' : 'Red', s: team(cb.right, cb.rightBack) },
             ];
+            // Online 1v1: real names on both sides (the guest plays Red; no camera flip)
+            const _op = (!isDoubles && gameMode === 'pvp' && window.Rank) ? Rank.opponentProfile() : null;
+            if (_op) {
+                const me = window.getPlayerName(), them = _op.name;
+                rows[0].name = isHost ? me : them;
+                rows[1].name = isHost ? them : me;
+            }
             // roundLog is the source of truth for the score (fallback: the running scores).
             const wins = { left: 0, right: 0 };
             for (const w of roundLog) wins[w]++;
@@ -29337,6 +29483,8 @@
             if (lobby) lobby.classList.add('visible');
             showLobbyView('lobbyConnectedView');
             resetReadyState();  // both start un-ready; existing Ready/Start flow takes over
+            if (window.Rank && conn && conn.open) { try { conn.send({ type: 'PROFILE', profile: Rank.profile() }); } catch (e) {} }
+            if (window.renderLobbyProfiles) renderLobbyProfiles();
         }
 
         function hideVictoryScreen() {
