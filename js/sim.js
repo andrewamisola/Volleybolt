@@ -985,8 +985,13 @@
         // already no-ops on a null carrier or one that is juiceActive (no charging mid-Overdrive).
         const juiceConsts = consts.juice;
         if (juiceConsts.TRICKLE_PER_SEC) {
-            simAddJuice(combatants.left,  juiceConsts.TRICKLE_PER_SEC * dt, juiceConsts);
-            simAddJuice(combatants.right, juiceConsts.TRICKLE_PER_SEC * dt, juiceConsts);
+            // rule engagedTrickle (the triangle: waiting costs): only a side with one of its own attacks in flight
+            // (heading at the opponent) or a cast in progress trickles. Pure function of hashed state.
+            const rules = consts.rules;
+            const engaged = (side, owner, dirX) => !(rules && rules.engagedTrickle) || !!(combatants[side] && combatants[side].casting)
+                || (ctx.projectiles || []).some(p => p.owner === owner && p.velX * dirX > 0);
+            if (engaged('left', 'player', 1)) simAddJuice(combatants.left,  juiceConsts.TRICKLE_PER_SEC * dt, juiceConsts);
+            if (engaged('right', 'ai', -1)) simAddJuice(combatants.right, juiceConsts.TRICKLE_PER_SEC * dt, juiceConsts);
         }
 
         // Process casting

@@ -41,6 +41,14 @@ Owner request (2026-10-02): "a rank system: elo, MMR, bronze, silver, gold, plat
 - **Not rated**: doubles (local or online), spectate, the headless match simulator, the dev debug-end.
 - **Abandons**: quitting a rated match mid-way (pause → Quit/Leave), or closing the page during one, records a **loss** (a pending marker is saved at match start and settled on the next load). An online **disconnect** is not counted either way (P2P drops can't be told apart from rage-quits).
 
+## The offense/defense triangle (rules, live 2026-10-02)
+Owner: aggression had no payoff (every attack is a ball that can come back bigger; defensive tools are pure value; waiting was free), so styles were really "how passive". Three rule switches in `SIM_RULES` (set false/0 to restore the old rule):
+- `engagedTrickle` — the passive Juice trickle only runs while you have an attack in flight or a cast in progress (waiting no longer charges your ultimate).
+- `pressureJuice: 12` — the attacker earns Juice when the opponent has to block its ball (forcing a defense is progress).
+- `blockNoTier` — a plain block no longer raises a ball's tier; only a parry (the skilled defense) escalates it (softer backfire).
+
+AI styles are now about **risk tolerance**, not cast frequency: Aggressive commits to casts (`castBail -0.4`), sharp far-side returns, Overdrive with a ball still incoming; Defensive bails early (`castBail 0.6`), safe returns, counter-punches only into openings. Measured at skill 1, all pairings, both sides (16 per pairing): per-style win rate 38–60% → **45–60%** with the rules (Aggressive 38→46%), a real cycle (Defensive > Aggressive > Control > Balanced > Defensive), no stalls, match length unchanged (3.6 min). The skill curve moved too (skill gaps compound under pressure): re-measured as a chain of 0.1 steps, `SKILL_CURVE` = 0→40, 0.1→484, 0.2→664, 0.3→944, 0.4→1170, 0.5→1350, 0.6→1576, 0.75→1924, 1→2341 — bots now span Bronze III → **Master**, so the honest cap no longer reserves Diamond II+/Master for people. Style edges for ranked (vs Balanced, Elo, at skill 0.5 / 1): Aggressive −176 / −44, Defensive +241 / −255, Control +120 / +70 — strongly skill-dependent, so `RANK.STYLE_EDGE` is interpolated by the bot's skill. Determinism pins moved with the rules: `d12345 7131e022`, `d99999 34056572` (AI-only fold `ac10e83e` unchanged).
+
 ## Storage
 `localStorage.volleybolt_rank = { v:1, mmr, games, wins, losses, peak, history:[…last 10], pending }` — local for now, the future account system replaces it (same as name + loadout). Nothing touches the sim, the state hash or rollback; rank fields ride on presentation messages only.
 
