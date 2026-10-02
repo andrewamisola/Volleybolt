@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=94-ranked">
+    <link rel="stylesheet" href="styles.css?v=95-end-pages">
 </head>
 <body>
 
@@ -141,10 +141,18 @@
                 <div class="arcane-tagline">Choose Your Battle</div>
             </div>
             <div class="arcane-buttons">
+                <!-- Quick Play (2026-10-02): a ranked 1v1 vs a bot matched to your rank; your rank rides on the button -->
                 <button class="game-btn menu-btn is-primary" id="domBtnDuel">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
                     <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
-                    <span class="menu-btn-label">1v1 Duel</span>
+                    <span class="menu-btn-label">Quick Play</span>
+                    <span class="menu-btn-rank" id="quickPlayRank" aria-hidden="true"></span>
+                </button>
+                <button class="game-btn menu-btn is-locked" id="domBtnCampaign" disabled aria-disabled="true" title="Coming soon">
+                    <span class="menu-btn-accent" aria-hidden="true"></span>
+                    <span class="menu-btn-glyph" aria-hidden="true">&#9873;</span>
+                    <span class="menu-btn-label">Campaign</span>
+                    <span class="menu-btn-lock" aria-hidden="true">&#128274;</span>
                 </button>
                 <button class="game-btn menu-btn" id="domBtnSpectate">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
@@ -24252,6 +24260,15 @@
             panel.append(main, rec, lad);
         }
         window.populateRanked = populateRanked;
+        // Quick Play button chip: your emblem + rank (placements: "Placement n/5").
+        window.refreshQuickPlayRank = () => {
+            const el = document.getElementById('quickPlayRank');
+            if (!el || !window.Rank) return;
+            const r = Rank.current();
+            el.innerHTML = '';
+            el.appendChild(rankEmblem(r.tierIdx, 30));
+            el.appendChild(mkEl('span', 'tier-' + r.tier.toLowerCase(), r.placed ? r.label : 'Placement ' + r.placement + '/' + Rank.RANK.PLACEMENTS));
+        };
 
         // Achievements tab (2026-10-01): no scrolling. A badge board (one row of 16px pixel icons per
         // group, tools/build_ach_icons.py) + a detail window for the hovered/selected badge.
@@ -24433,6 +24450,7 @@
             domMenuWired = true;
 
             btnStart.addEventListener('click', () => {
+                if (window.refreshQuickPlayRank) refreshQuickPlayRank();
                 setDOMMenuVisible(false);
                 setDOMModeSelectVisible(true);
             });
@@ -28685,8 +28703,16 @@
             // Populate the end-of-match summary from the final per-combatant stats
             // (matchStats are still intact here; resetGame() clears them on Continue).
             renderMatchSummary(ensureEndScreen(), false);
-            renderAchievementStrip(ensureEndScreen());
-            renderRankCard(ensureEndScreen());
+            // Two pages (owner 2026-10-02: one busy page of pop-ups wasn't elegant). Page 1 = the result + stats with
+            // a lone Next; page 2 = the rank reveal (+ one achievements line), then Play Again / Main Menu.
+            // No rated result and nothing unlocked (spectate, an unrated match) = page 1 with the buttons directly.
+            const _rankRes = (!spectating && window.Rank) ? Rank.lastResult() : null;
+            const _achIds = (!spectating && window.Achievements) ? Achievements.lastUnlocked() : [];
+            const _hasNext = !!_rankRes || _achIds.length > 0;
+            window._endPage2 = _hasNext ? { res: _rankRes, ach: _achIds } : null;
+            endScreen.classList.remove('page-2');
+            endScreen.classList.toggle('has-next', _hasNext);
+            if (_hasNext) ensureVictoryNextBtn().disabled = true;
             if (window.refreshAchievementDots) refreshAchievementDots();   // the menu dot is waiting on Continue
             const lbRefs = window.guiElements.victoryLeaderboardRefs;
             if (lbRefs) {
@@ -28727,6 +28753,7 @@
             setTimeout(() => {
                 const c = document.getElementById('victoryContinueBtn');   if (c) c.disabled = false;
                 const p = document.getElementById('victoryPlayAgainBtn');  if (p) p.disabled = false;
+                const n = document.getElementById('victoryNextBtn');       if (n) n.disabled = false;
             }, VICTORY_CONTINUE_GRACE_MS);
         }
 
@@ -28770,7 +28797,7 @@
             const isDoubles = !!(cb.leftBack || cb.rightBack);
             const rows = [
                 { cls: 'blue', name: isDoubles ? 'Blue Team' : window.getPlayerName(), s: team(cb.left, cb.leftBack) },
-                { cls: 'red',  name: isDoubles ? 'Red Team' : ((window.Rank && Rank.aiOpponent()) ? 'Red \u00b7 ' + Rank.aiOpponent().label : 'Red'), s: team(cb.right, cb.rightBack) },
+                { cls: 'red',  name: isDoubles ? 'Red Team' : 'Red', s: team(cb.right, cb.rightBack) },
             ];
             // roundLog is the source of truth for the score (fallback: the running scores).
             const wins = { left: 0, right: 0 };
@@ -28788,7 +28815,9 @@
                 : wins.left === wins.right ? 'Tied ' + lead : W.name + ' leads ' + lead;
             root.querySelector('.ms-banner').className = 'ms-banner ' + (leftWon ? 'blue' : 'red');
             root.querySelector('.ms-name.ms-left').textContent = L.name;
-            root.querySelector('.ms-name.ms-right').textContent = R.name;
+            // corner name carries the ranked bot's rank (the scoreboard row keeps the short name)
+            const _bot = (!spectating && window.Rank) ? Rank.aiOpponent() : null;   // null in doubles (no matched bot)
+            root.querySelector('.ms-name.ms-right').textContent = R.name + (_bot ? ' \u00b7 ' + _bot.label : '');
 
             // Scoreboard (tennis-style): a box per round, filled in the winner's colour with that team's
             // running score, then the totals. Long matches show the last BOARD_MAX rounds.
@@ -29034,98 +29063,159 @@
             ensureEndScreenScaleLayer().appendChild(el);
             return el;
         }
-        // "Achievement unlocked" strip under the match summary: what THIS match earned (empty = hidden).
-        // ids defaults to Achievements.lastUnlocked(); passing ids is for console tests / previews.
-        const END_ACH_MAX = 4;
-        function renderAchievementStrip(root, ids) {
-            const content = root.querySelector('.end-content');
-            const stats = root.querySelector('.ms-stats');
-            if (!content || !stats) return;
-            let strip = document.getElementById('endAchStrip');
-            if (!strip) {
-                strip = document.createElement('div');
-                strip.id = 'endAchStrip';
-                strip.className = 'end-ach';
-                content.insertBefore(strip, stats.nextSibling);
-            }
-            const list = (ids || (window.Achievements ? Achievements.lastUnlocked() : []))
-                .map(id => window.Achievements && Achievements.LIST.find(a => a.id === id)).filter(Boolean);
-            strip.innerHTML = '';
-            strip.hidden = list.length === 0;
-            for (const a of list.slice(0, END_ACH_MAX)) {
-                const chip = document.createElement('div');
-                chip.className = 'end-ach-chip';
-                const kicker = document.createElement('div');
-                kicker.className = 'end-ach-kicker';
-                kicker.textContent = 'Achievement unlocked';
-                const name = document.createElement('div');
-                name.className = 'end-ach-name';
-                name.textContent = a.name;
-                const desc = document.createElement('div');
-                desc.className = 'end-ach-desc';
-                desc.textContent = a.desc;
-                chip.append(kicker, name, desc);
-                const rewards = window.PickleKit ? PickleKit.rewardsFor(a.id) : [];
-                if (rewards.length) {
-                    const rw = document.createElement('div');
-                    rw.className = 'end-ach-reward';
-                    rw.textContent = 'New in the Wardrobe: ' + rewards.join(', ');
-                    chip.appendChild(rw);
-                }
-                strip.appendChild(chip);
-            }
-            if (list.length > END_ACH_MAX) {
-                const more = document.createElement('div');
-                more.className = 'end-ach-chip end-ach-more';
-                more.textContent = '+' + (list.length - END_ACH_MAX) + ' more';
-                strip.appendChild(more);
-            }
+        // ---- End screen page 2: the rank reveal ----
+        // Next (page 1) -> page 2: the emblem, rank and MMR of BEFORE the match, then the delta pops, the MMR counts,
+        // the bar fills / drains; crossing a division fills (or drains) it, flips the emblem and flashes the kicker;
+        // placements fill a pip, the 5th reveals the tier. One quiet achievements line under it.
+        function ensureVictoryNextBtn() {
+            let btn = document.getElementById('victoryNextBtn');
+            if (btn) return btn;
+            const box = document.createElement('div');
+            box.id = 'victoryNextBox';
+            box.className = 'arcane-buttons';
+            btn = document.createElement('button');
+            btn.id = 'victoryNextBtn';
+            btn.className = 'game-btn menu-btn is-primary';
+            btn.innerHTML = '<span class="menu-btn-label">Next</span><span class="menu-btn-glyph-r" aria-hidden="true">&#8250;</span>';
+            btn.style.pointerEvents = 'auto';
+            box.appendChild(btn);
+            ensureEndScreen().querySelector('.end-content').appendChild(box);
+            btn.addEventListener('click', () => {
+                if (Date.now() < victoryContinueAt || btn.disabled) return;
+                showEndPage2();
+            });
+            return btn;
         }
-        window.renderAchievementStrip = renderAchievementStrip;
-        // Rated-match result card (left band): emblem + rank, the MMR change, the bar moving, and a kicker when the
-        // rank changed. res defaults to Rank.lastResult() (null = unrated match: hidden).
-        function renderRankCard(root, res) {
-            const content = root.querySelector('.end-content');
-            if (!content) return;
-            let card = document.getElementById('endRankCard');
-            if (!card) {
-                card = document.createElement('div');
-                card.id = 'endRankCard';
-                card.className = 'end-rank';
-                content.appendChild(card);
-            }
-            res = res || (window.Rank ? Rank.lastResult() : null);
-            card.innerHTML = '';
-            card.hidden = !res;
-            if (!res) return;
-            const a = res.after, b = res.before;
+        function showEndPage2() {
+            const root = ensureEndScreen();
+            if (!window._endPage2 || root.classList.contains('page-2')) return;
+            root.classList.add('page-2');
+            victoryContinueAt = Date.now() + 500;     // a held Enter / A mustn't fall straight through to Play Again
+            if (window.ToneSFX && ToneSFX.uiConfirm) ToneSFX.uiConfirm();
+            playRankStage(window._endPage2);
+            const pa = document.getElementById('victoryPlayAgainBtn');
+            if (pa && pa.style.display !== 'none' && !pa.disabled) { try { pa.focus({ preventScroll: true }); } catch (e) {} }
+        }
+        window.showEndPage2 = showEndPage2;
+        function ensureEndRankStage() {
+            let st = document.getElementById('endRankStage');
+            if (st) return st;
+            st = document.createElement('div');
+            st.id = 'endRankStage';
+            st.className = 'end-stage';
+            const content = ensureEndScreen().querySelector('.end-content');
+            const title = content.querySelector('.arcane-title');
+            content.insertBefore(st, title ? title.nextSibling : content.firstChild);
+            return st;
+        }
+        async function playRankStage(data, speed) {
+            const st = ensureEndRankStage();
+            const token = (window._rankStageToken = (window._rankStageToken || 0) + 1);
+            const k = speed || 1;
+            const wait = (ms) => new Promise(r => setTimeout(r, ms * k));
+            const alive = () => window._rankStageToken === token && st.isConnected;
             const mk = (tag, cls, text) => { const el = document.createElement(tag); if (cls) el.className = cls; if (text != null) el.textContent = text; return el; };
-            const kick = res.change === 'promoted' ? 'Promoted!' : res.change === 'demoted' ? 'Demoted' : res.change === 'placed' ? 'Rank revealed!'
-                : 'Ranked · ' + (res.mode === 'ai' ? 'vs ' + Rank.rankOf(res.oppMmr, Rank.RANK.PLACEMENTS).label + ' AI' : 'Online');
-            card.className = 'end-rank' + (res.change ? ' is-' + res.change : '');
-            card.appendChild(mk('div', 'end-rank-kicker', kick));
-            const row = mk('div', 'end-rank-row');
-            row.appendChild(window.rankEmblem(a.tierIdx, 72));
-            const info = mk('div', 'end-rank-info');
-            info.appendChild(mk('div', 'end-rank-name tier-' + a.tier.toLowerCase(), a.label));
-            const d = mk('div', 'end-rank-delta ' + (res.delta >= 0 ? 'is-up' : 'is-down'),
-                (res.delta >= 0 ? '+' : '\u2212') + Math.abs(res.delta) + ' MMR');
-            info.appendChild(d);
-            info.appendChild(mk('div', 'end-rank-sub', a.placed ? Math.round(res.mmr).toLocaleString() + ' MMR'
-                : 'Placement ' + a.placement + ' / ' + Rank.RANK.PLACEMENTS));
-            row.appendChild(info);
-            card.appendChild(row);
-            const bar = mk('div', 'rank-bar');
-            const fill = mk('i');
-            // the bar starts where it was (same division) or at the edge it crossed, then eases to the new spot
-            const from = !a.placed || !b.placed ? (b.progress || 0) : res.change === 'promoted' ? 0 : res.change === 'demoted' ? 1 : b.progress;
-            fill.style.width = Math.round(100 * from) + '%';
-            bar.appendChild(fill);
-            card.appendChild(bar);
-            requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = Math.round(100 * a.progress) + '%'; }));
+            const R = window.Rank ? Rank.RANK : null;
+            const res = data && data.res;
+            st.innerHTML = '';
+            if (res && R) {
+                const a = res.after, b = res.before;
+                const kicker = mk('div', 'es-kicker', 'Ranked \u00b7 ' + (res.mode === 'ai' ? 'vs ' + Rank.rankOf(res.oppMmr, R.PLACEMENTS).label + ' AI' : 'Online'));
+                const emWrap = mk('div', 'es-emblem');
+                const setEmblem = (tierIdx) => { emWrap.innerHTML = ''; emWrap.appendChild(window.rankEmblem(tierIdx, 168)); };
+                setEmblem(b.tierIdx);
+                const label = mk('div', 'es-label tier-' + b.tier.toLowerCase(), b.label);
+                const mmrRow = mk('div', 'es-mmr');
+                const num = mk('span', 'es-mmr-num', Math.round(res.mmrBefore).toLocaleString());
+                const delta = mk('span', 'es-delta ' + (res.delta >= 0 ? 'is-up' : 'is-down'), (res.delta >= 0 ? '+' : '\u2212') + Math.abs(res.delta));
+                mmrRow.append(num, mk('span', 'es-mmr-unit', ' MMR'), delta);
+                const bar = mk('div', 'rank-bar es-bar');
+                const fill = mk('i');
+                fill.style.transition = 'none';
+                bar.appendChild(fill);
+                const pips = mk('div', 'es-pips');
+                for (let i = 0; i < R.PLACEMENTS; i++) pips.appendChild(mk('i', i < (b.placement | 0) ? 'is-on' : ''));
+                const sub = mk('div', 'es-sub');
+                const subFor = (r, mmr) => !r.placed ? 'Placement ' + r.placement + ' / ' + R.PLACEMENTS
+                    : r.next == null ? 'The top of the ladder' : Math.max(0, r.next - mmr).toLocaleString() + ' MMR to ' + Rank.rankOf(r.next, R.PLACEMENTS).label;
+                sub.textContent = subFor(b, res.mmrBefore);
+                st.append(kicker, emWrap, label, mmrRow, bar, pips, sub);
+                st.classList.toggle('is-placing', !b.placed);
+                fill.style.width = Math.round(100 * (b.placed ? b.progress : 0)) + '%';
+                const setBar = (to, ms) => { fill.style.transition = 'width ' + (ms * k) + 'ms cubic-bezier(.3,.7,.2,1)'; fill.style.width = Math.round(100 * to) + '%'; };
+                const countTo = (from, to, ms) => new Promise((resolve) => {
+                    const t0 = performance.now(), dur = ms * k;
+                    const step = () => {
+                        if (!alive()) return resolve();
+                        const u = Math.min(1, (performance.now() - t0) / dur), e = 1 - Math.pow(1 - u, 3);
+                        num.textContent = Math.round(from + (to - from) * e).toLocaleString();
+                        if (u < 1) requestAnimationFrame(step); else resolve();
+                    };
+                    requestAnimationFrame(step);
+                });
+                const flip = (r, text, cls) => {
+                    emWrap.classList.remove('is-flip'); void emWrap.offsetWidth; emWrap.classList.add('is-flip');
+                    setTimeout(() => setEmblem(r.tierIdx), 160 * k);
+                    label.className = 'es-label tier-' + r.tier.toLowerCase();
+                    label.textContent = r.label;
+                    kicker.textContent = text;
+                    st.classList.add(cls);
+                    if (window.ToneSFX && ToneSFX.uiConfirm) ToneSFX.uiConfirm();
+                };
+                await wait(450); if (!alive()) return;
+                if (b.placed) {
+                    mmrRow.classList.add('is-show');
+                    await wait(250); if (!alive()) return;
+                    delta.classList.add('is-show');
+                    await wait(350); if (!alive()) return;
+                    if (res.change === 'promoted' || res.change === 'demoted') {
+                        const up = res.change === 'promoted';
+                        setBar(up ? 1 : 0, 650);
+                        await countTo(res.mmrBefore, up ? a.floor : a.next, 650); if (!alive()) return;
+                        flip(a, up ? 'Promoted!' : 'Demoted', up ? 'is-promoted' : 'is-demoted');
+                        fill.style.transition = 'none'; fill.style.width = (up ? 0 : 100) + '%'; void fill.offsetWidth;
+                        await wait(350); if (!alive()) return;
+                        setBar(a.progress, 650);
+                        await countTo(up ? a.floor : a.next, res.mmr, 650);
+                    } else {
+                        setBar(a.progress, 900);
+                        await countTo(res.mmrBefore, res.mmr, 900);
+                    }
+                    sub.textContent = subFor(a, res.mmr);
+                } else {
+                    // placements: fill the next pip; the last one reveals the rank
+                    const pip = pips.children[Math.min(R.PLACEMENTS - 1, (b.placement | 0))];
+                    if (pip) pip.classList.add('is-on', 'is-pop');
+                    if (window.ToneSFX && ToneSFX.uiHover) ToneSFX.uiHover();
+                    await wait(500); if (!alive()) return;
+                    if (a.placed) {
+                        await wait(300); if (!alive()) return;
+                        st.classList.remove('is-placing');
+                        flip(a, 'Rank revealed!', 'is-placed');
+                        num.textContent = Math.round(res.mmr).toLocaleString();
+                        delta.classList.add('is-hide');
+                        mmrRow.classList.add('is-show');
+                        fill.style.width = '0%'; void fill.offsetWidth;
+                        setBar(a.progress, 700);
+                    }
+                    sub.textContent = subFor(a, res.mmr);
+                }
+            }
+            // one quiet achievements line
+            const ach = (data && data.ach || []).map(id => window.Achievements && Achievements.LIST.find(x => x.id === id)).filter(Boolean);
+            if (ach.length) {
+                const line = mk('div', 'es-ach');
+                const names = ach.slice(0, 3).map(x => x.name).join(', ') + (ach.length > 3 ? ' +' + (ach.length - 3) : '');
+                line.append(mk('span', 'es-ach-k', '\u2605 ' + ach.length + (ach.length === 1 ? ' achievement' : ' achievements') + ' unlocked'), mk('span', 'es-ach-v', names));
+                const rewards = window.PickleKit ? [].concat(...ach.map(x => PickleKit.rewardsFor(x.id))) : [];
+                if (rewards.length) line.appendChild(mk('span', 'es-ach-r', 'New in the Wardrobe: ' + rewards.join(', ')));
+                if (res) await wait(250);
+                if (!alive()) return;
+                st.appendChild(line);
+            }
         }
-        window.renderRankCard = renderRankCard;
-        function ensureVictoryButtonContainer() {
+        window.playRankStage = playRankStage;
+        function ensureVictoryButtonContainer() {   // page 2 (or page 1 when there's no page 2): Play Again / Main Menu
             let box = document.getElementById('victoryButtons');
             if (box) return box;
             box = document.createElement('div');

@@ -3427,27 +3427,74 @@ body.gp-cursor-hidden * {
 .rank-step-name { font-size: 15px; font-weight: 800; color: #e0dcea; }
 .rank-step-mmr { font-size: 13px; color: #9aa0b3; }
 
-#endScreen .end-rank {
-    position: absolute; left: 40px; top: 236px; width: 340px; box-sizing: border-box;
-    display: flex; flex-direction: column; gap: 6px; padding: 10px 18px 14px;
-    background: linear-gradient(180deg, rgba(52, 62, 84, 0.9) 0%, rgba(22, 27, 40, 0.92) 100%);
-    border: 2px solid rgba(224, 230, 240, 0.85); border-radius: 10px;
-    box-shadow: inset 0 0 0 1px rgba(16, 24, 40, 0.7), 5px 5px 0 rgba(0, 0, 0, 0.45);
-    font-family: 'Manrope UI', 'Manrope', sans-serif;
-    animation: menuRise 0.5s ease 0.4s both;
+/* ---- End screen: two pages (2026-10-02). Page 1 = result + stats + Next; page 2 = the rank reveal. ---- */
+#endScreen #victoryNextBox {
+    position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%);
+    flex-direction: row; margin-left: 0;
 }
-#endScreen .end-rank[hidden] { display: none; }
-#endScreen .end-rank.is-promoted, #endScreen .end-rank.is-placed { border-color: #f0c050; }
-#endScreen .end-rank-kicker { font-weight: 800; font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase; color: #c9a8ff; }
-#endScreen .end-rank.is-promoted .end-rank-kicker, #endScreen .end-rank.is-placed .end-rank-kicker { color: #f0c050; }
-#endScreen .end-rank.is-demoted .end-rank-kicker { color: #e2706a; }
-#endScreen .end-rank-row { display: flex; align-items: center; gap: 14px; }
-#endScreen .end-rank-info { display: flex; flex-direction: column; gap: 1px; }
-#endScreen .end-rank-name { font-weight: 800; font-size: 26px; line-height: 1.1; }
-#endScreen .end-rank-delta { font-weight: 800; font-size: 20px; }
-#endScreen .end-rank-delta.is-up { color: #8fd06a; }
-#endScreen .end-rank-delta.is-down { color: #e2706a; }
-#endScreen .end-rank-sub { font-size: 14px; color: #c8c3d8; }
+#endScreen #victoryNextBox { opacity: 1; }   /* .arcane-buttons starts at 0 (menu rise-in) */
+#endScreen:not(.has-next) #victoryNextBox, #endScreen.page-2 #victoryNextBox { display: none; }
+#endScreen.has-next:not(.page-2) #victoryButtons { display: none; }
+#endScreen .menu-btn-glyph-r { margin-left: 0.4em; font-size: 1.1em; }
+#endScreen .end-stage { display: none; }
+#endScreen.page-2 .ms-banner, #endScreen.page-2 .ms-board, #endScreen.page-2 .ms-stats,
+#endScreen.page-2 .ms-name { display: none; }
+#endScreen.page-2 .end-stage {
+    display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 18px;
+    font-family: 'Manrope UI', 'Manrope', sans-serif;
+    animation: menuRise 0.45s ease both;
+}
+#endScreen.page-2 #victoryButtons { animation: menuRise 0.45s ease 0.3s both; }
+.end-stage .es-kicker {
+    font-weight: 800; font-size: 18px; letter-spacing: 0.18em; text-transform: uppercase; color: #c9a8ff;
+    transition: color 0.3s ease, transform 0.3s ease;
+}
+.end-stage.is-promoted .es-kicker, .end-stage.is-placed .es-kicker { color: #f0c050; transform: scale(1.18); }
+.end-stage.is-demoted .es-kicker { color: #e2706a; }
+.end-stage .es-emblem {
+    width: 200px; height: 200px; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(closest-side, rgba(201, 168, 255, 0.22), rgba(201, 168, 255, 0) 70%);
+}
+.end-stage.is-promoted .es-emblem, .end-stage.is-placed .es-emblem {
+    background: radial-gradient(closest-side, rgba(255, 214, 107, 0.45), rgba(255, 214, 107, 0) 72%);
+}
+.end-stage .es-emblem.is-flip { animation: esFlip 0.34s ease-in-out; }
+@keyframes esFlip { 0% { transform: scaleX(1); } 47% { transform: scaleX(0.05); } 53% { transform: scaleX(0.05); } 100% { transform: scaleX(1); } }
+.end-stage .es-label { font-family: 'FF9UI', sans-serif; font-size: 56px; line-height: 1; text-shadow: var(--ff9-shadow); }
+.end-stage .es-mmr { display: flex; align-items: baseline; gap: 6px; font-weight: 800; font-size: 26px; color: #ffe39a;
+    opacity: 0; transition: opacity 0.3s ease; }
+.end-stage .es-mmr.is-show { opacity: 1; }
+.end-stage .es-mmr-unit { font-size: 18px; color: #c8c3d8; }
+.end-stage .es-delta { margin-left: 10px; font-size: 26px; opacity: 0; transform: translateY(6px) scale(0.8);
+    transition: opacity 0.25s ease, transform 0.25s cubic-bezier(.3, 1.6, .5, 1); }
+.end-stage .es-delta.is-show { opacity: 1; transform: none; }
+.end-stage .es-delta.is-hide { display: none; }
+.end-stage .es-delta.is-up { color: #8fd06a; }
+.end-stage .es-delta.is-down { color: #e2706a; }
+.end-stage .es-bar { width: 460px; height: 12px; border-radius: 6px; margin-top: 4px; }
+.end-stage .es-bar > i { background: linear-gradient(90deg, #a98cff, #c9a8ff); }
+.end-stage.is-placing .es-bar { display: none; }
+.end-stage .es-pips { display: none; gap: 12px; margin-top: 6px; }
+.end-stage.is-placing .es-pips { display: flex; }
+.end-stage .es-pips > i {
+    width: 22px; height: 22px; transform: rotate(45deg); border: 2px solid rgba(224, 230, 240, 0.7);
+    background: rgba(22, 27, 40, 0.8);
+}
+.end-stage .es-pips > i.is-on { background: #c9a8ff; border-color: #ecd8ff; }
+.end-stage .es-pips > i.is-pop { animation: esPip 0.4s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes esPip { 0% { transform: rotate(45deg) scale(0.3); } 100% { transform: rotate(45deg) scale(1); } }
+.end-stage .es-sub { font-size: 18px; color: #c8c3d8; }
+.end-stage .es-ach {
+    display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 14px;
+    animation: menuRise 0.4s ease both;
+}
+.end-stage .es-ach-k { font-weight: 800; font-size: 16px; letter-spacing: 0.08em; color: #f0c050; }
+.end-stage .es-ach-v { font-size: 16px; color: #e0dcea; }
+.end-stage .es-ach-r { font-weight: 800; font-size: 14px; color: #ffe39a; }
+
+/* Quick Play: your rank chip on the button */
+.menu-btn .menu-btn-rank { display: inline-flex; align-items: center; gap: 8px; margin-left: 0.8em; font-size: 0.62em; letter-spacing: 0.04em; vertical-align: middle; }
+.menu-btn .menu-btn-rank:empty { display: none; }
 
 /* ---- Multiplayer (1v1 views): left-aligned like every other screen ---- */
 #multiplayerLobby .arcane-buttons > .lobby-view { align-items: flex-start !important; }   /* 1v1 views only; the doubles split stays centred */
@@ -4043,34 +4090,6 @@ body.gp-cursor-hidden * {
     position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%);
     flex-direction: row; gap: 40px; margin-left: 0;
 }
-/* "Achievement unlocked" column in the free band right of the centred stat bars (below the banner,
-   above the corner team name); under the stats it collided with Play Again / Main Menu. */
-#endScreen .end-ach {
-    position: absolute; right: 40px; top: 236px; width: 340px;
-    display: flex; flex-direction: column; gap: 12px;
-}
-#endScreen .end-ach[hidden] { display: none; }
-#endScreen .end-ach-chip {
-    padding: 8px 18px 10px;
-    background: linear-gradient(180deg, rgba(52, 62, 84, 0.9) 0%, rgba(22, 27, 40, 0.92) 100%);
-    border: 2px solid #f0c050; border-radius: 10px;
-    box-shadow: inset 0 0 0 1px rgba(16, 24, 40, 0.7), 5px 5px 0 rgba(0, 0, 0, 0.45);
-    animation: menuRise 0.5s ease 0.5s both;
-}
-#endScreen .end-ach-kicker {
-    font-family: 'Manrope UI', 'Manrope', sans-serif; font-weight: 800; font-size: 13px;
-    letter-spacing: 0.16em; text-transform: uppercase; color: #f0c050;
-}
-#endScreen .end-ach-name {
-    font-family: 'Manrope UI', 'Manrope', sans-serif; font-weight: 800; font-size: 24px; color: #ffe39a;
-}
-#endScreen .end-ach-desc { font-family: 'Manrope', sans-serif; font-size: 15px; color: #c8c3d8; }
-#endScreen .end-ach-reward { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 14px; color: #f0c050; margin-top: 4px; }
-#endScreen .end-ach-more {
-    display: flex; align-items: center;
-    font-family: 'Manrope UI', 'Manrope', sans-serif; font-weight: 800; font-size: 20px; color: #ffe39a;
-}
-
 #endScreen .end-wait {
     font-family: 'Manrope', sans-serif;
     font-weight: 800;
