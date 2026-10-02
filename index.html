@@ -12573,6 +12573,7 @@
             let lastPlayedAnim = {};
             function playAnim(combatant, animName, loop = true) {
                 if (!combatant || !combatant.animations) return;
+                if (combatant._ragdoll) return;                  // blown away by the jar (victory cinematic ragdoll)
 
                 const name = animName.toLowerCase();
                 const anim = combatant.animations[name];
@@ -15420,7 +15421,110 @@
                     return ps;
                 };
 
+                // RAGDOLL GAG (owner): when the jar detonates, the losing wizard goes limp and gets blown clear across
+                // the court - a ballistic tumble away from the blast, a few bounces and a skid into a heap, every limb
+                // on its own loose spring so it flails. Faked in presentation (no physics world, never touches the
+                // sim); the wizard is restored by cleanup (rematch / lobby / menu all run it).
+                const RAG_LIMB = {   // bone: swing limit (rad) - arms and legs flop the most, the chest the least
+                    arm_L_up: 1.5, arm_L_lo: 1.2, hand_L: 0.8, arm_R_up: 1.5, arm_R_lo: 1.2, hand_R: 0.8,
+                    leg_L_up: 1.0, leg_L_lo: 0.9, foot_L: 0.6, leg_R_up: 1.0, leg_R_lo: 0.9, foot_R: 0.6,
+                    head: 0.6, body_hi: 0.35 };
+                const RAG_G = 15, RAG_K = 10, RAG_C = 1.8, RAG_COUPLE = 0.9, RAG_LIE = 0.33;
+                let ragdolls = [];
+                const startRagdoll = (c, blastPos) => {
+                    if (!c || !c.modelRoot || c._ragdoll) return;
+                    c._ragdoll = true;                                // playAnim leaves it alone from here
+                    Object.values(c.animations || {}).forEach(a => { try { a.stop(); } catch (e) {} });
+                    const root = c.modelRoot;
+                    const saved = { parent: root.parent, pos: root.position.clone(), rot: root.rotation.clone(),
+                                    rq: root.rotationQuaternion ? root.rotationQuaternion.clone() : null };
+                    root.computeWorldMatrix(true);
+                    root.setParent(null);                             // fly free of the paddle, same world pose
+                    if (!root.rotationQuaternion) root.rotationQuaternion = BABYLON.Quaternion.FromEulerVector(root.rotation);
+                    const away = root.position.subtract(blastPos); away.y = 0;
+                    if (away.lengthSquared() < 1e-4) away.set(-Math.sign(blastPos.x) || 1, 0, 0);
+                    away.normalize();
+                    const rnd = (s) => (Math.random() - 0.5) * s;
+                    const v = away.scale(6.5 + Math.random() * 2).add(new BABYLON.Vector3(rnd(1.2), 10.5 + Math.random() * 1.5, rnd(2)));   // ~1.4 s of air
+                    const w = new BABYLON.Vector3(rnd(16), rnd(10), rnd(16));          // tumble, rad/s
+                    const bones = [];
+                    for (const b of (c.skeleton ? c.skeleton.bones : [])) {
+                        const lim = RAG_LIMB[b.name];
+                        if (!lim) continue;
+                        const node = (b.getTransformNode && b.getTransformNode()) || b;   // glTF bones follow their nodes
+                        if (!node.rotationQuaternion) node.rotationQuaternion = BABYLON.Quaternion.FromEulerVector(node.rotation);
+                        bones.push({ node, base: node.rotationQuaternion.clone(), lim, a: [0, 0], w: [rnd(18), rnd(18)] });
+                    }
+                    if (c.face) c.face.override = { eye: 'hurt', mouth: 'grimace', until: Infinity };
+                    ragdolls.push({ c, root, saved, v, w, bones, sliding: false, rest: false });
+                };
+                const kickLimbs = (rd, s) => rd.bones.forEach(b => { b.w[0] += (Math.random() - 0.5) * s; b.w[1] += (Math.random() - 0.5) * s; });
+                const stepRagdoll = (rd, dt) => {
+                    const { root, v, w } = rd;
+                    if (!rd.rest) {
+                        if (!rd.sliding) v.y -= RAG_G * dt;
+                        root.position.addInPlace(v.scale(dt));
+                        const ang = w.length() * dt;
+                        if (ang > 1e-5) root.rotationQuaternion = BABYLON.Quaternion.RotationAxis(w.normalizeToNew(), ang).multiply(root.rotationQuaternion);
+                        // how far over it's tipped decides how high its origin rides (feet down = 0, on its side = radius)
+                        const up = BABYLON.Vector3.TransformNormal(BABYLON.Axis.Y, root.computeWorldMatrix(true));
+                        const ground = RAG_LIE * (1 - Math.abs(up.y));
+                        if (!rd.sliding && root.position.y < ground && v.y < 0) {   // bounce
+                            root.position.y = ground;
+                            v.y = -v.y * 0.38; v.x *= 0.55; v.z *= 0.55; w.scaleInPlace(0.6);
+                            kickLimbs(rd, 14);
+                            if (window.screenShake && !window._reduceMotion) window.screenShake(0.12, 0.1);
+                            if (window.playSound) playSound('gateDamage', root.position.x, 0.35);
+                            if (v.y < 1.6) {                                         // done bouncing: skid and flop over
+                                v.y = 0; rd.sliding = true;
+                                const side = new BABYLON.Vector3(up.x, 0, up.z);
+                                if (side.lengthSquared() < 1e-3) side.set(v.x || 1, 0, v.z);
+                                side.normalize();
+                                const tip = BABYLON.Quaternion.FromUnitVectorsToRef(up.normalizeToNew(), side, new BABYLON.Quaternion());
+                                rd.lie = tip.multiply(root.rotationQuaternion);
+                            }
+                        }
+                        if (rd.sliding) {
+                            const f = Math.max(0, 1 - 4 * dt);
+                            v.x *= f; v.z *= f; w.scaleInPlace(Math.max(0, 1 - 6 * dt));
+                            root.rotationQuaternion = BABYLON.Quaternion.Slerp(root.rotationQuaternion, rd.lie, Math.min(1, 6 * dt));
+                            root.position.y += (RAG_LIE - root.position.y) * Math.min(1, 8 * dt);
+                            if (v.length() < 0.15 && w.length() < 0.2) rd.rest = true;
+                        }
+                    }
+                    for (const b of rd.bones) {                      // loose springs, shaken by the tumble
+                        for (let i = 0; i < 2; i++) {
+                            const acc = -RAG_K * b.a[i] - RAG_C * b.w[i] + (i ? w.z : w.x) * RAG_COUPLE;
+                            b.w[i] += acc * dt;
+                            b.a[i] += b.w[i] * dt;
+                            if (Math.abs(b.a[i]) > b.lim) { b.a[i] = Math.sign(b.a[i]) * b.lim; b.w[i] *= -0.4; }
+                        }
+                        b.node.rotationQuaternion = b.base.multiply(BABYLON.Quaternion.RotationYawPitchRoll(0, b.a[0], b.a[1]));
+                    }
+                };
+                scene.onBeforeRenderObservable.add(() => {
+                    if (!ragdolls.length) return;
+                    const dt = Math.min(0.033, scene.getEngine().getDeltaTime() / 1000);
+                    for (const rd of ragdolls) stepRagdoll(rd, dt);
+                });
+                const endRagdolls = () => {
+                    for (const rd of ragdolls) {
+                        const { c, root, saved } = rd;
+                        root.parent = saved.parent;
+                        root.position.copyFrom(saved.pos);
+                        root.rotationQuaternion = saved.rq;
+                        root.rotation.copyFrom(saved.rot);
+                        rd.bones.forEach(b => { b.node.rotationQuaternion = b.base.clone(); });
+                        if (c.face) c.face.override = null;
+                        c._ragdoll = false;
+                        if (window.playAnim) { c.currentAnim = null; window.playAnim(c, 'idle', true); }
+                    }
+                    ragdolls = [];
+                };
+                window.startRagdoll = startRagdoll;   // dbg: startRagdoll(combatants.right, new BABYLON.Vector3(14, 0, 0))
+
                 const cleanup = () => {
+                    endRagdolls();
                     tweens.clear();
                     leftovers.forEach(o => { try { o.stop && o.stop(); o.dispose(); } catch (e) {} });
                     leftovers = [];
@@ -15588,11 +15692,14 @@
                         }
                     }
                     ring(new BABYLON.Vector3(rise.x, 0.4, rise.z), new BABYLON.Color3(1, 1, 0.85), 0.3, 11, rm ? 350 : 600);   // shockwave
+                    // ...and it blows the loser (and a doubles partner) clean off their feet
+                    startRagdoll(combatants[loserSide], jarPos);
+                    startRagdoll(combatants[loserSide + 'Back'], jarPos);
                     burst(rise, green4, rm ? 150 : 520, 14, 14, 1.8);                          // pickle chunks
                     burst(rise, new BABYLON.Color4(1, 0.95, 0.7, 1), rm ? 60 : 220, 20, 4, 0.9); // white-hot sparks
                     if (window.glowLayer) tween(1200, (k) => { window.glowLayer.intensity = 0.65 + 2.2 * (1 - k); }, (t) => t);
                     window._pickleShine = 0;
-                    await wait(650);
+                    await wait(1250);                                    // long enough to watch the loser fly and land
                     if (skipped) return;
 
                     // 5. TITLE: slams in over the smoking wreck while the winner celebrates in place.
