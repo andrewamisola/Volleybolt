@@ -3377,6 +3377,78 @@ body.gp-cursor-hidden * {
 .ach-d-reward-k { font-size: 13px; font-weight: 800; color: #c9a8ff; }
 .ach-d-reward-v { font-size: 17px; font-weight: 800; color: #f0c050; }
 
+/* ---- Ranked (spec 2026-10-02-ranked-design): Career tab + end-screen card ---- */
+.rank-emblem {
+    display: block; flex: none;
+    background-image: url('textures/rank/emblems.png'); background-repeat: no-repeat;
+    image-rendering: pixelated;
+}
+.tier-unranked { color: #c8cdd8; }
+.tier-bronze   { color: #e8a878; }
+.tier-silver   { color: #e4e8f0; }
+.tier-gold     { color: #ffd66b; }
+.tier-platinum { color: #8ff0dc; }
+.tier-diamond  { color: #8cc8ff; }
+.tier-master   { color: #d4a8ff; }
+.career-list[hidden], .rank-panel[hidden] { display: none; }
+.rank-panel {
+    display: grid; grid-template-columns: 440px 440px; gap: 16px 18px; align-items: stretch;
+}
+.rank-main, .rank-record { gap: 8px; }
+.rank-main-row { display: flex; align-items: center; gap: 18px; }
+.rank-badge {
+    flex: none; width: 136px; height: 136px; box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(180deg, rgba(30, 36, 52, 0.95), rgba(14, 18, 28, 0.95));
+    border: 2px solid rgba(154, 160, 179, 0.45); border-radius: 12px;
+}
+.rank-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rank-label { font-family: 'FF9UI', sans-serif; font-size: 36px; line-height: 1.05; text-shadow: var(--ff9-shadow); }
+.rank-sub { font-size: 20px; color: #ffe39a; }
+.rank-note { font-size: 15px; color: #9aa0b3; line-height: 1.3; }
+.rank-bar { height: 8px; background: rgba(224, 230, 240, 0.15); border-radius: 4px; overflow: hidden; margin-top: 6px; }
+.rank-bar > i { display: block; height: 100%; background: #c9a8ff; transition: width 1.1s cubic-bezier(.2, .8, .2, 1) 0.6s; }
+.rank-line { display: flex; justify-content: space-between; gap: 12px; font-size: 18px; }
+.rank-recent { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.rank-recent-k { font-size: 15px; font-weight: 800; color: #c9a8ff; white-space: nowrap; }
+.rank-pips { display: flex; gap: 5px; flex-wrap: wrap; }
+.rank-pip {
+    width: 24px; height: 24px; border-radius: 5px; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 800; color: #10141e;
+}
+.rank-pip.is-win { background: #8fd06a; }
+.rank-pip.is-loss { background: #e2706a; }
+.rank-none { font-size: 15px; color: #9aa0b3; }
+.rank-ladder {
+    grid-column: 1 / -1; flex-direction: row !important; justify-content: space-between; padding: 12px 26px 12px;
+}
+.rank-step { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 10px; border-radius: 8px; opacity: 0.6; }
+.rank-step.is-here { opacity: 1; background: rgba(240, 192, 80, 0.12); outline: 2px solid #f0c050; }
+.rank-step-name { font-size: 15px; font-weight: 800; color: #e0dcea; }
+.rank-step-mmr { font-size: 13px; color: #9aa0b3; }
+
+#endScreen .end-rank {
+    position: absolute; left: 40px; top: 236px; width: 340px; box-sizing: border-box;
+    display: flex; flex-direction: column; gap: 6px; padding: 10px 18px 14px;
+    background: linear-gradient(180deg, rgba(52, 62, 84, 0.9) 0%, rgba(22, 27, 40, 0.92) 100%);
+    border: 2px solid rgba(224, 230, 240, 0.85); border-radius: 10px;
+    box-shadow: inset 0 0 0 1px rgba(16, 24, 40, 0.7), 5px 5px 0 rgba(0, 0, 0, 0.45);
+    font-family: 'Manrope UI', 'Manrope', sans-serif;
+    animation: menuRise 0.5s ease 0.4s both;
+}
+#endScreen .end-rank[hidden] { display: none; }
+#endScreen .end-rank.is-promoted, #endScreen .end-rank.is-placed { border-color: #f0c050; }
+#endScreen .end-rank-kicker { font-weight: 800; font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase; color: #c9a8ff; }
+#endScreen .end-rank.is-promoted .end-rank-kicker, #endScreen .end-rank.is-placed .end-rank-kicker { color: #f0c050; }
+#endScreen .end-rank.is-demoted .end-rank-kicker { color: #e2706a; }
+#endScreen .end-rank-row { display: flex; align-items: center; gap: 14px; }
+#endScreen .end-rank-info { display: flex; flex-direction: column; gap: 1px; }
+#endScreen .end-rank-name { font-weight: 800; font-size: 26px; line-height: 1.1; }
+#endScreen .end-rank-delta { font-weight: 800; font-size: 20px; }
+#endScreen .end-rank-delta.is-up { color: #8fd06a; }
+#endScreen .end-rank-delta.is-down { color: #e2706a; }
+#endScreen .end-rank-sub { font-size: 14px; color: #c8c3d8; }
+
 /* ---- Multiplayer (1v1 views): left-aligned like every other screen ---- */
 #multiplayerLobby .arcane-buttons > .lobby-view { align-items: flex-start !important; }   /* 1v1 views only; the doubles split stays centred */
 .lobby-code { border-color: rgba(224, 230, 240, 0.85); border-radius: 8px; color: #ffe39a; }

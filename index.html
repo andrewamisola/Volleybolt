@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=93-ach-board">
+    <link rel="stylesheet" href="styles.css?v=94-ranked">
 </head>
 <body>
 
@@ -350,9 +350,11 @@
             <div class="arcane-buttons settings-panel">
                 <div class="career-tabs" role="tablist">
                     <button type="button" class="career-tab active" id="careerTabStats" role="tab" aria-selected="true">Stats</button>
+                    <button type="button" class="career-tab" id="careerTabRank" role="tab" aria-selected="false">Ranked</button>
                     <button type="button" class="career-tab" id="careerTabAch" role="tab" aria-selected="false">Achievements<span class="ach-dot" id="achTabDot" hidden></span></button>
                 </div>
                 <div id="careerList" class="career-list"></div>
+                <div id="rankPanel" class="rank-panel" hidden></div>
                 <div id="achList" class="ach-list" hidden></div>
                 <button class="game-btn menu-btn menu-btn-ghost" id="careerBack">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
@@ -1928,6 +1930,156 @@
             };
         })();
         window.Achievements = Achievements;
+
+        // ============================================================
+        // RANKED (spec: docs/superpowers/specs/2026-10-02-ranked-design.md)
+        // ============================================================
+        // One Elo number (MMR) -> tier + division (Bronze III .. Diamond I, then Master). Rated: singles vs the AI
+        // (a fixed-rating opponent, RANK.AI) and online 1v1 (the peer's MMR rides on the match-start handshake).
+        // Lifecycle: onRoundStart() opens a rated match (a persisted `pending` marker), onMatchEnd() settles it,
+        // abandon() (resetGame mid-match) settles a loss, cancel() (disconnect / debug end) drops it; a pending
+        // left by a closed page settles as a loss on the next load. Presentation only: nothing here touches the
+        // sim, the state hash or rollback. Local storage for now; the account system replaces it later.
+        const Rank = (() => {
+            const STORAGE_KEY = 'volleybolt_rank';
+            const RANK = {
+                START: 1000,              // Silver II
+                AI: 1200,                 // the AI's fixed rating (Gold III floor)
+                PLACEMENTS: 5,
+                BASE: 600, DIV: 100,      // division i (0..14) starts at BASE + DIV*i; Bronze III = below 700
+                MASTER: 2100,
+                TIERS: ['Unranked', 'Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond', 'Master'],   // = emblem strip order
+                NUMERALS: ['III', 'II', 'I'],
+                HISTORY: 10,
+            };
+            // ---- pure ----
+            function rankOf(mmr, games) {
+                if ((games | 0) < RANK.PLACEMENTS) {
+                    return { tier: 'Unranked', tierIdx: 0, div: null, label: 'Unranked', placed: false,
+                             placement: games | 0, progress: (games | 0) / RANK.PLACEMENTS, floor: null, next: null };
+                }
+                if (mmr >= RANK.MASTER) {
+                    return { tier: 'Master', tierIdx: 6, div: null, label: 'Master', placed: true,
+                             progress: 1, floor: RANK.MASTER, next: null };
+                }
+                const i = Math.max(0, Math.min(14, Math.floor((mmr - RANK.BASE) / RANK.DIV)));
+                const tierIdx = 1 + Math.floor(i / 3);
+                const div = RANK.NUMERALS[i % 3];
+                const floor = RANK.BASE + RANK.DIV * i;
+                return { tier: RANK.TIERS[tierIdx], tierIdx, div, label: RANK.TIERS[tierIdx] + ' ' + div, placed: true,
+                         progress: Math.max(0, Math.min(1, (mmr - floor) / RANK.DIV)), floor: i === 0 ? null : floor,
+                         next: floor + RANK.DIV, index: i };
+            }
+            const expected = (mmr, opp) => 1 / (1 + Math.pow(10, (opp - mmr) / 400));
+            const kFor = (games) => games < RANK.PLACEMENTS ? 64 : games < 30 ? 32 : 24;
+            function deltaFor(mmr, opp, won, games) {
+                let d = Math.round(kFor(games) * ((won ? 1 : 0) - expected(mmr, opp)));
+                if (won && d < 1) d = 1;
+                if (!won && d > -1) d = -1;
+                return d;
+            }
+            // a rank's order for promoted/demoted comparisons (placements = -1, Master above Diamond I)
+            const order = (r) => !r.placed ? -1 : r.tier === 'Master' ? 15 : r.index;
+
+            // ---- state ----
+            let st = { v: 1, mmr: RANK.START, games: 0, wins: 0, losses: 0, peak: null, history: [], pending: null };
+            let active = null;          // the rated match in progress: { mode, oppMmr }
+            let opponent = null;        // online peer's { mmr, games } (from the handshake)
+            let last = null;            // the last settled result (end-screen card)
+            function load() {
+                try {
+                    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+                    if (raw && typeof raw === 'object' && raw.v === 1 && Number.isFinite(raw.mmr)) st = { ...st, ...raw };
+                    if (!Array.isArray(st.history)) st.history = [];
+                } catch (e) { console.warn('Rank: could not load', e); }
+            }
+            function save() {
+                try { localStorage.setItem(STORAGE_KEY, JSON.stringify(st)); } catch (e) { console.warn('Rank: could not save', e); }
+            }
+            function settle(won, mode, oppMmr, extra) {
+                const before = rankOf(st.mmr, st.games);
+                const mmrBefore = st.mmr;
+                const delta = deltaFor(st.mmr, oppMmr, won, st.games);
+                st.mmr = Math.max(0, st.mmr + delta);
+                st.games++;
+                if (won) st.wins++; else st.losses++;
+                const after = rankOf(st.mmr, st.games);
+                if (after.placed) st.peak = Math.max(st.peak || 0, st.mmr);
+                const change = !before.placed && after.placed ? 'placed'
+                    : order(after) > order(before) ? 'promoted' : order(after) < order(before) ? 'demoted' : null;
+                const entry = { at: Date.now(), won, mode, oppMmr: Math.round(oppMmr), delta, mmr: st.mmr, ...(extra || {}) };
+                st.history.unshift(entry);
+                st.history.length = Math.min(st.history.length, RANK.HISTORY);
+                st.pending = null;
+                save();
+                last = { ...entry, mmrBefore, before, after, change };
+                return last;
+            }
+
+            // ---- lifecycle ----
+            const mySide = () => {
+                for (const c of getAllCombatants()) if (c && c.isLocalPlayer) return c.side;
+                return null;
+            };
+            function ratedMode() {
+                if (spectating || window._simHeadless || teamSize !== 1 || !mySide()) return null;
+                if (gameMode === 'single') return 'ai';
+                if (gameMode === 'pvp' && netMode !== 'doubles') return 'online';
+                return null;
+            }
+            function oppRating(mode) {
+                if (mode === 'ai') return RANK.AI;
+                return opponent && Number.isFinite(opponent.mmr) ? opponent.mmr : null;
+            }
+            function onRoundStart() {
+                if (active) return;                       // only the first round opens the match
+                const mode = ratedMode();
+                if (!mode) return;
+                last = null;
+                active = { mode };
+                st.pending = { mode, oppMmr: oppRating(mode) ?? RANK.START, at: Date.now() };
+                save();
+            }
+            function onMatchEnd(winnerSide) {
+                if (!active) return null;
+                const mode = active.mode;
+                active = null;
+                const L = mySide();
+                const opp = oppRating(mode);
+                if (!L || opp == null) { st.pending = null; save(); return null; }   // online peer never sent a rating: unrated
+                return settle(winnerSide === L, mode, opp);
+            }
+            function abandon() {
+                if (!active) return null;
+                const mode = active.mode;
+                active = null;
+                return settle(false, mode, oppRating(mode) ?? (st.pending && st.pending.oppMmr) ?? RANK.START, { abandoned: true });
+            }
+            function cancel() {
+                active = null;
+                if (st.pending) { st.pending = null; save(); }
+            }
+
+            load();
+            if (st.pending) settle(false, st.pending.mode, st.pending.oppMmr ?? RANK.START, { abandoned: true });   // closed mid-match
+            last = null;
+
+            return {
+                RANK, rankOf, expected, kFor, deltaFor,
+                onRoundStart, onMatchEnd, abandon, cancel,
+                setOpponent(r) { opponent = r && Number.isFinite(r.mmr) ? { mmr: r.mmr, games: r.games | 0 } : null; },
+                clearOpponent() { opponent = null; },
+                handshake: () => ({ mmr: st.mmr, games: st.games }),
+                current: () => rankOf(st.mmr, st.games),
+                state: () => JSON.parse(JSON.stringify(st)),
+                lastResult: () => last,
+                isActive: () => !!active,
+                // console / tests: dbg.rank.sim(true, 1200) settles a fake result; reset() wipes the save
+                _settle: settle,
+                _reset() { st = { v: 1, mmr: RANK.START, games: 0, wins: 0, losses: 0, peak: null, history: [], pending: null }; active = null; last = null; save(); },
+            };
+        })();
+        window.Rank = Rank;
 
         // ============================================================
         // SPELL REGISTRY
@@ -5149,7 +5301,7 @@
                     htpSetPage(window.htpPage + (rightEdge ? 1 : -1));
                     if (window.ToneSFX) ToneSFX.uiHover();
                 } else if (root.id === 'careerScreen' && window.careerSetTab) {
-                    careerSetTab(rightEdge ? 1 : 0);
+                    careerStepTab(rightEdge ? 1 : -1);
                     if (window.ToneSFX) ToneSFX.uiHover();
                 } else if (root.id === 'lobbyDoublesView') {
                     if (window.doublesLocalPick) doublesLocalPick(rightEdge ? 'red' : 'blue');
@@ -21889,6 +22041,7 @@
         // Apply a forced match end for a given winning side, on THIS peer. Shared by the debug
         // button and the incoming DEBUG_END message so both sides resolve their own Victory/Defeat.
         function _applyDebugEnd(winnerSide) {
+            if (window.Rank) Rank.cancel();       // a debug-forced end is never rated
             gameOver = true;
             paused = false;
             if (combatants.left)  combatants.left.roundResult  = (winnerSide === 'left')  ? 'victory' : 'defeat';
@@ -23757,7 +23910,8 @@
             startMultiplayerMatch(sharedSeed, upgradeToShare);
             const startHash = (typeof hashStartState === 'function') ? hashStartState() : 0;
             conn.send({ type: 'START_MATCH', seed: sharedSeed, upgrade: upgradeToShare, hash: startHash,
-                        loadout: window.PickleKit ? PickleKit.loadLoadout() : null });
+                        loadout: window.PickleKit ? PickleKit.loadLoadout() : null,
+                        rank: window.Rank ? Rank.handshake() : null });              // presentation only (ranked)
             applyMatchLoadouts(null);
         }
 
@@ -23844,6 +23998,92 @@
             }
         }
 
+        // Rank emblem: one 16px pixel emblem (tools/build_rank_icons.py) from the strip, at any size.
+        const rankEmblem = (tierIdx, px) => {
+            const el = document.createElement('i');
+            el.className = 'rank-emblem';
+            const n = Rank.RANK.TIERS.length;
+            el.style.width = el.style.height = px + 'px';
+            el.style.backgroundSize = (n * px) + 'px ' + px + 'px';
+            el.style.backgroundPosition = (-tierIdx * px) + 'px 0';
+            return el;
+        };
+        window.rankEmblem = rankEmblem;
+        const mkEl = (tag, cls, text) => {
+            const el = document.createElement(tag);
+            if (cls) el.className = cls;
+            if (text != null) el.textContent = text;
+            return el;
+        };
+        const fmt = (n) => Math.round(n).toLocaleString();
+        // Career > Ranked: the rank card (emblem, rank, MMR, bar), the ranked record, and the tier ladder.
+        function populateRanked() {
+            const panel = document.getElementById('rankPanel');
+            if (!panel || !window.Rank) return;
+            const st = Rank.state(), r = Rank.current(), R = Rank.RANK;
+            panel.innerHTML = '';
+            // main card
+            const main = mkEl('div', 'career-card rank-main');
+            main.appendChild(mkEl('div', 'career-card-title', 'Rank'));
+            const row = mkEl('div', 'rank-main-row');
+            const badge = mkEl('div', 'rank-badge tier-' + r.tier.toLowerCase());
+            badge.appendChild(rankEmblem(r.tierIdx, 112));
+            const info = mkEl('div', 'rank-info');
+            info.appendChild(mkEl('div', 'rank-label tier-' + r.tier.toLowerCase(), r.label));
+            if (!r.placed) {
+                info.appendChild(mkEl('div', 'rank-sub', 'Placement ' + r.placement + ' / ' + R.PLACEMENTS));
+                info.appendChild(mkEl('div', 'rank-note', 'Win or lose, your rank shows after ' + (R.PLACEMENTS - r.placement) + ' more rated ' + (R.PLACEMENTS - r.placement === 1 ? 'match' : 'matches') + '.'));
+            } else {
+                info.appendChild(mkEl('div', 'rank-sub', fmt(st.mmr) + ' MMR'));
+                if (r.next != null) {
+                    const nextR = Rank.rankOf(r.next, st.games);
+                    info.appendChild(mkEl('div', 'rank-note', fmt(Math.max(0, r.next - st.mmr)) + ' MMR to ' + nextR.label));
+                } else {
+                    info.appendChild(mkEl('div', 'rank-note', 'The top of the ladder.'));
+                }
+            }
+            row.append(badge, info);
+            main.appendChild(row);
+            const bar = mkEl('div', 'rank-bar');
+            const fill = mkEl('i');
+            fill.style.width = Math.round(100 * r.progress) + '%';
+            bar.appendChild(fill);
+            main.appendChild(bar);
+            // record card
+            const rec = mkEl('div', 'career-card rank-record');
+            rec.appendChild(mkEl('div', 'career-card-title', 'Ranked Record'));
+            const line = (k, v) => { const d = mkEl('div', 'career-row rank-line'); d.append(mkEl('span', '', k), mkEl('span', 'career-val', v)); rec.appendChild(d); };
+            const games = st.wins + st.losses;
+            line('Matches', games ? st.wins + ' W  ' + st.losses + ' L' : '-');
+            line('Win rate', games ? Math.round(100 * st.wins / games) + '%' : '-');
+            line('Peak', st.peak ? Rank.rankOf(st.peak, R.PLACEMENTS).label + ' · ' + fmt(st.peak) : '-');
+            line('Rated', 'vs AI (' + fmt(R.AI) + ') · Online 1v1');
+            const recent = mkEl('div', 'rank-recent');
+            recent.appendChild(mkEl('span', 'rank-recent-k', 'Last ' + R.HISTORY));
+            const pips = mkEl('div', 'rank-pips');
+            if (!st.history.length) pips.appendChild(mkEl('span', 'rank-none', 'No rated matches yet'));
+            for (const h of st.history.slice().reverse()) {
+                const pip = mkEl('span', 'rank-pip ' + (h.won ? 'is-win' : 'is-loss'), h.won ? 'W' : 'L');
+                pip.title = (h.won ? 'Win' : h.abandoned ? 'Left early' : 'Loss') + ' vs ' + (h.mode === 'ai' ? 'AI' : 'online') + ' (' + fmt(h.oppMmr) + ') · '
+                    + (h.delta > 0 ? '+' : '') + h.delta + ' MMR';
+                pips.appendChild(pip);
+            }
+            recent.appendChild(pips);
+            rec.appendChild(recent);
+            // ladder
+            const lad = mkEl('div', 'career-card rank-ladder');
+            const tiers = [[1, 0], [2, R.BASE + R.DIV * 3], [3, R.BASE + R.DIV * 6], [4, R.BASE + R.DIV * 9], [5, R.BASE + R.DIV * 12], [6, R.MASTER]];
+            for (const [ti, floor] of tiers) {
+                const step = mkEl('div', 'rank-step' + (r.placed && r.tierIdx === ti ? ' is-here' : ''));
+                step.appendChild(rankEmblem(ti, 48));
+                step.appendChild(mkEl('div', 'rank-step-name', R.TIERS[ti]));
+                step.appendChild(mkEl('div', 'rank-step-mmr', ti === 1 ? 'start' : fmt(floor) + '+'));
+                lad.appendChild(step);
+            }
+            panel.append(main, rec, lad);
+        }
+        window.populateRanked = populateRanked;
+
         // Achievements tab (2026-10-01): no scrolling. A badge board (one row of 16px pixel icons per
         // group, tools/build_ach_icons.py) + a detail window for the hovered/selected badge.
         // Unlocked = gold rim + full colour; locked = dimmed icon + a progress sliver; red dot = new.
@@ -23916,7 +24156,7 @@
         // Arrow keys / d-pad on the Achievements tab move over the board; Left off column 0 = back to Stats.
         window.achNav = (d) => {
             const { r, c } = achView;
-            if (d === 'left' && c === 0) careerSetTab(0);
+            if (d === 'left' && c === 0) careerSetTab(1);   // off the board's left edge: back to Ranked
             else if (d === 'left') achSelect(r, c - 1);
             else if (d === 'right') achSelect(r, c + 1);
             else if (d === 'up') achSelect(r - 1, c);
@@ -23990,23 +24230,30 @@
         window.refreshAchievementDots = refreshAchievementDots;
 
         // Career tabs: 0 = Stats, 1 = Achievements (opening it marks everything seen).
+        // Career tabs: 0 = Stats, 1 = Ranked, 2 = Achievements (opening it marks everything seen).
+        const CAREER_TABS = [['careerTabStats', 'careerList'], ['careerTabRank', 'rankPanel'], ['careerTabAch', 'achList']];
+        let careerTab = 0;
         function careerSetTab(i) {
-            const ach = i === 1;
-            const stats = document.getElementById('careerList'), achList = document.getElementById('achList');
-            const tS = document.getElementById('careerTabStats'), tA = document.getElementById('careerTabAch');
-            if (!stats || !achList || !tS || !tA) return;
+            i = Math.max(0, Math.min(CAREER_TABS.length - 1, i));
+            const els = CAREER_TABS.map(([t, pnl]) => [document.getElementById(t), document.getElementById(pnl)]);
+            if (els.some(([t, pnl]) => !t || !pnl)) return;
             // Already on that tab (key autorepeat / gamepad hold-to-repeat): keep this visit's "new" dots.
-            if (achList.hidden === !ach && tA.classList.contains('active') === ach) return;
-            stats.hidden = ach; achList.hidden = !ach;
-            tS.classList.toggle('active', !ach); tA.classList.toggle('active', ach);
-            tS.setAttribute('aria-selected', String(!ach)); tA.setAttribute('aria-selected', String(ach));
-            if (ach) {
+            if (careerTab === i && !els[i][1].hidden) return;
+            careerTab = i;
+            els.forEach(([t, pnl], k) => {
+                pnl.hidden = k !== i;
+                t.classList.toggle('active', k === i);
+                t.setAttribute('aria-selected', String(k === i));
+            });
+            if (i === 1) populateRanked();
+            if (i === 2) {
                 populateAchievements();             // draws this visit's dots first...
                 if (window.Achievements) Achievements.markAllSeen();
                 refreshAchievementDots();           // ...then clears the menu/tab dots
             }
         }
         window.careerSetTab = careerSetTab;
+        window.careerStepTab = (dir) => careerSetTab(careerTab + dir);
 
         let domMenuWired = false;
         function wireDOMMenu() {
@@ -24075,7 +24322,9 @@
             const tabStats = document.getElementById('careerTabStats');
             const tabAch = document.getElementById('careerTabAch');
             if (tabStats) tabStats.addEventListener('click', () => careerSetTab(0));
-            if (tabAch) tabAch.addEventListener('click', () => careerSetTab(1));
+            if (tabAch) tabAch.addEventListener('click', () => careerSetTab(2));
+            const tabRank = document.getElementById('careerTabRank');
+            if (tabRank) tabRank.addEventListener('click', () => careerSetTab(1));
             document.addEventListener('keydown', (e) => {
                 const screen = document.getElementById('careerScreen');
                 if (!screen || !screen.classList.contains('visible')) return;
@@ -24084,7 +24333,7 @@
                 const achOpen = !document.getElementById('achList').hidden;
                 if (achOpen) achNav(dir);
                 else if (dir === 'left' || dir === 'right') {
-                    careerSetTab(dir === 'right' ? 1 : 0);
+                    careerStepTab(dir === 'right' ? 1 : -1);
                     if (window.ToneSFX) ToneSFX.uiHover();
                 } else return;
                 e.preventDefault();
@@ -24714,6 +24963,8 @@
         }
 
         function handleDisconnect(reason) {
+            // A dropped peer can't be told from a rage-quit: the rated match just doesn't count.
+            if (window.Rank) { Rank.cancel(); Rank.clearOpponent(); }
             // Clear the "opponent stepped away" overlay if it was up — this is a real disconnect now.
             if (typeof hideOpponentAwayOverlay === 'function') hideOpponentAwayOverlay();
             // Rich context for diagnosing the mid-match "Opponent disconnected" playtest report:
@@ -24868,7 +25119,8 @@
                     break;
 
                 case 'LOADOUT':
-                    // the peer's cosmetic loadout (visual only)
+                    // the peer's cosmetic loadout (visual only) + its rating (ranked; host side)
+                    if (window.Rank && isHost) Rank.setOpponent(data.rank || null);
                     if (window.restylePickle && typeof getLocalSide === 'function') {
                         restylePickle(getLocalSide() === 'left' ? 'right' : 'left', data.loadout || null);
                     }
@@ -24919,7 +25171,9 @@
                         if (netMode === 'doubles') guestPromoteLobbyToDuel();
                         startMultiplayerMatch(data.seed, data.upgrade || 'default');
                         applyMatchLoadouts(data.loadout || null);
-                        try { conn.send({ type: 'LOADOUT', loadout: window.PickleKit ? PickleKit.loadLoadout() : null }); } catch (e) {}
+                        if (window.Rank) Rank.setOpponent(data.rank || null);   // no rating from the host = unrated
+                        try { conn.send({ type: 'LOADOUT', loadout: window.PickleKit ? PickleKit.loadLoadout() : null,
+                                          rank: window.Rank ? Rank.handshake() : null }); } catch (e) {}
                         // Validate state hash to detect early divergence
                         if (typeof hashStartState === 'function' && typeof data.hash === 'number') {
                             const localHash = hashStartState();
@@ -27999,6 +28253,9 @@
             roundActive = true;
             roundTransitioning = false;
             hideMessage();
+            // Ranked: the first round going LIVE opens a rated match (not resetRound - resetGame calls that on
+            // the way back to the menu too; quitting during the intro, before Go, is unrated).
+            if (window.Rank) Rank.onRoundStart();
 
             // W3: no rollback may cross a round boundary (resetRound is wall-clock, not replayable).
             // Everyone is pinned at the same stop frame (the !roundActive pin) and round ends are
@@ -28230,6 +28487,7 @@
             // (matchStats are still intact here; resetGame() clears them on Continue).
             renderMatchSummary(ensureEndScreen(), false);
             renderAchievementStrip(ensureEndScreen());
+            renderRankCard(ensureEndScreen());
             if (window.refreshAchievementDots) refreshAchievementDots();   // the menu dot is waiting on Continue
             const lbRefs = window.guiElements.victoryLeaderboardRefs;
             if (lbRefs) {
@@ -28625,6 +28883,49 @@
             }
         }
         window.renderAchievementStrip = renderAchievementStrip;
+        // Rated-match result card (left band): emblem + rank, the MMR change, the bar moving, and a kicker when the
+        // rank changed. res defaults to Rank.lastResult() (null = unrated match: hidden).
+        function renderRankCard(root, res) {
+            const content = root.querySelector('.end-content');
+            if (!content) return;
+            let card = document.getElementById('endRankCard');
+            if (!card) {
+                card = document.createElement('div');
+                card.id = 'endRankCard';
+                card.className = 'end-rank';
+                content.appendChild(card);
+            }
+            res = res || (window.Rank ? Rank.lastResult() : null);
+            card.innerHTML = '';
+            card.hidden = !res;
+            if (!res) return;
+            const a = res.after, b = res.before;
+            const mk = (tag, cls, text) => { const el = document.createElement(tag); if (cls) el.className = cls; if (text != null) el.textContent = text; return el; };
+            const kick = res.change === 'promoted' ? 'Promoted!' : res.change === 'demoted' ? 'Demoted' : res.change === 'placed' ? 'Rank revealed!'
+                : 'Ranked · ' + (res.mode === 'ai' ? 'vs AI' : 'Online');
+            card.className = 'end-rank' + (res.change ? ' is-' + res.change : '');
+            card.appendChild(mk('div', 'end-rank-kicker', kick));
+            const row = mk('div', 'end-rank-row');
+            row.appendChild(window.rankEmblem(a.tierIdx, 72));
+            const info = mk('div', 'end-rank-info');
+            info.appendChild(mk('div', 'end-rank-name tier-' + a.tier.toLowerCase(), a.label));
+            const d = mk('div', 'end-rank-delta ' + (res.delta >= 0 ? 'is-up' : 'is-down'),
+                (res.delta >= 0 ? '+' : '\u2212') + Math.abs(res.delta) + ' MMR');
+            info.appendChild(d);
+            info.appendChild(mk('div', 'end-rank-sub', a.placed ? Math.round(res.mmr).toLocaleString() + ' MMR'
+                : 'Placement ' + a.placement + ' / ' + Rank.RANK.PLACEMENTS));
+            row.appendChild(info);
+            card.appendChild(row);
+            const bar = mk('div', 'rank-bar');
+            const fill = mk('i');
+            // the bar starts where it was (same division) or at the edge it crossed, then eases to the new spot
+            const from = !a.placed || !b.placed ? (b.progress || 0) : res.change === 'promoted' ? 0 : res.change === 'demoted' ? 1 : b.progress;
+            fill.style.width = Math.round(100 * from) + '%';
+            bar.appendChild(fill);
+            card.appendChild(bar);
+            requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = Math.round(100 * a.progress) + '%'; }));
+        }
+        window.renderRankCard = renderRankCard;
         function ensureVictoryButtonContainer() {
             let box = document.getElementById('victoryButtons');
             if (box) return box;
@@ -28785,6 +29086,7 @@
 
         function resetGame() {
             if (window.Achievements) Achievements.resetMatch();   // quitting mid-match earns nothing; fresh flags
+            if (window.Rank) Rank.abandon();                      // ...and quitting a rated match mid-way is a loss
             roundLog = [];
             matchClockFrames = 0;
             presTimers.length = 0;              // an abandoned stage transition's frames never fire into this match
@@ -31020,6 +31322,7 @@
                     if (meSide) StatTracker.increment(winnerSide === meSide ? 'matches_won' : 'matches_lost');
                     StatTracker.commitMatch();
                     if (window.Achievements) Achievements.evaluateMatchEnd(winnerSide);   // after commit: milestones read the new career
+                    if (window.Rank) Rank.onMatchEnd(winnerSide);                          // settle MMR (rated matches only)
                     // Show victory screen instantly
                     // (No spectate camera reset here: snapping back from a zoomed/turned view read as a jolt. The
                     // cinematic snapshots whatever the camera is and returns to it; the next match's Ready/Go and
@@ -31059,6 +31362,7 @@
                     if (meSide) StatTracker.increment(winnerSide === meSide ? 'matches_won' : 'matches_lost');
                     StatTracker.commitMatch();
                     if (window.Achievements) Achievements.evaluateMatchEnd(winnerSide);   // after commit: milestones read the new career
+                    if (window.Rank) Rank.onMatchEnd(winnerSide);                          // settle MMR (rated matches only)
                     // Show defeat screen instantly
                     // (No spectate camera reset here: snapping back from a zoomed/turned view read as a jolt. The
                     // cinematic snapshots whatever the camera is and returns to it; the next match's Ready/Go and
