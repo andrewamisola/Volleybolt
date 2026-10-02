@@ -14420,15 +14420,15 @@
                 };
 
                 // ---- the 3D side ----
-                // Low-poly dusk sky (2026-10-02, owner: the wardrobe looks up at a bare purple haze). One faceted
-                // dome mesh: the horizon is exactly the fog colour (the arena fades into it), a peach dusk glow
-                // sits behind the pickle (-Z, the way the camera looks), deepening through violet to indigo
-                // overhead, plus a few flat-shaded clouds and faint stars. Per-facet colour jitter keeps the
-                // low-poly read. Unlit, fog-free, infinite distance; presentation only, shown while the
-                // wardrobe / lab is open.
+                // Dusk sky (2026-10-02, owner: the wardrobe looks up at a bare purple haze). A SMOOTH gradient dome
+                // (owner: a faceted, triangulated sky looked crazy - stylised games keep the sky soft and put the
+                // low-poly on what's in front of it): the horizon is exactly the fog colour (the arena fades into
+                // it), a peach dusk glow behind the pickle (-Z, the way the camera looks), deepening through
+                // violet to indigo overhead; soft rounded cloud puffs lit from below and faint stars. Colours are
+                // per vertex and interpolate (the PS1 dither post-process bands them a little). Unlit, fog-free,
+                // infinite distance; presentation only, shown while the wardrobe / lab is open.
                 const buildSkyDome = () => {
-                    const R = 800, SEG = 18;
-                    const ELEV = [-15, 0, 6, 14, 25, 40, 58, 90];          // ring boundaries, degrees
+                    const R = 800, SEG = 64, rad = Math.PI / 180;
                     const pos = [], col = [];
                     const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
                     const FOG = [0.27, 0.21, 0.30];
@@ -14447,54 +14447,56 @@
                         return lerp3(c, GLOW, 0.8 * facing * low);
                     };
                     const P = (el, az, r = R) => [r * Math.cos(el) * Math.cos(az), r * Math.sin(el), r * Math.cos(el) * Math.sin(az)];
-                    let n = 0;
-                    const tri = (a, b, c, rgb, jit = 0.07) => {
-                        const k = 1 + (hash(++n) - 0.5) * jit;
+                    const tri = (a, b, c, ca, cb, cc) => {     // per-vertex colours -> smooth
                         pos.push(...a, ...b, ...c);
-                        for (let i = 0; i < 3; i++) col.push(rgb[0] * k, rgb[1] * k, rgb[2] * k, 1);
+                        for (const k of [ca, cb, cc]) col.push(k[0], k[1], k[2], 1);
                     };
-                    const rad = Math.PI / 180;
+                    // the dome: a fine grid (3 deg rings, 64 around) so the gradient reads smooth
+                    const ELEV = [-15, -3];
+                    for (let e = 0; e <= 90; e += 3) ELEV.push(e);
+                    const st = 2 * Math.PI / SEG;
                     for (let r = 0; r < ELEV.length - 1; r++) {
-                        const e0 = ELEV[r] * rad, e1 = ELEV[r + 1] * rad, top = r === ELEV.length - 2;
-                        const st = 2 * Math.PI / SEG, off = (r % 2) * 0.5 * st;   // staggered rings = triangles, not a grid
+                        const e0 = ELEV[r] * rad, e1 = ELEV[r + 1] * rad;
                         for (let j = 0; j < SEG; j++) {
-                            const a0 = j * st + off, a1 = a0 + st, um = a0 + st / 2;  // um: the upper vertex between a0 and a1
-                            if (top) { tri(P(e0, a0), P(e0, a1), P(e1, 0), skyAt((e0 + e1) / 2, um)); continue; }
-                            tri(P(e0, a0), P(e0, a1), P(e1, um), skyAt(e0 + (e1 - e0) / 3, um));
-                            tri(P(e1, um), P(e0, a1), P(e1, um + st), skyAt(e0 + (e1 - e0) * 2 / 3, a1));
+                            const a0 = j * st, a1 = a0 + st;
+                            const v00 = P(e0, a0), v01 = P(e0, a1), v10 = P(e1, a0), v11 = P(e1, a1);
+                            const c00 = skyAt(e0, a0), c01 = skyAt(e0, a1), c10 = skyAt(e1, a0), c11 = skyAt(e1, a1);
+                            tri(v00, v01, v11, c00, c01, c11);
+                            tri(v00, v11, v10, c00, c11, c10);
                         }
                     }
-                    // clouds: flattened low-poly blobs in the dusk half of the sky, lit from below by the glow
-                    const ico = BABYLON.MeshBuilder.CreateIcoSphere('skyIcoTmp', { radius: 1, subdivisions: 1, flat: true }, scene);
+                    // clouds: soft rounded puffs (a smooth icosphere, shaded top-to-underside per vertex) in the dusk
+                    // half of the sky, their undersides warmed by the glow and blended toward the sky behind them
+                    const ico = BABYLON.MeshBuilder.CreateIcoSphere('skyIcoTmp', { radius: 1, subdivisions: 3 }, scene);
                     const ip = ico.getVerticesData(BABYLON.VertexBuffer.PositionKind), ii = ico.getIndices();
                     ico.dispose();
                     const CLOUDS = [[-1.95, 9, 70], [-1.45, 14, 55], [-0.95, 8, 62], [-2.55, 16, 48], [-0.45, 18, 44], [-1.7, 24, 36], [-3.0, 7, 58]];
                     CLOUDS.forEach(([az, elDeg, size], ci) => {
                         const el = elDeg * rad;
                         const ctr = P(el, az, 700);
+                        const sky = skyAt(el, az);
+                        const top = lerp3([0.60, 0.47, 0.62], sky, 0.3);
+                        const under = lerp3(lerp3([0.40, 0.28, 0.42], GLOW, 0.45 * Math.max(0, Math.cos(az - GLOW_AZ))), sky, 0.3);
                         const puffs = 3 + (ci % 2);
                         for (let k = 0; k < puffs; k++) {
-                            const along = (k - (puffs - 1) / 2) * size * 0.75;
-                            const sx = size * (0.8 + 0.4 * hash(ci * 7 + k)), sy = size * 0.32, sz = size * 0.55;
-                            const ox = -Math.sin(az) * along, oz = Math.cos(az) * along, oy = (k % 2) * size * 0.12;
+                            const along = (k - (puffs - 1) / 2) * size * 0.7;
+                            const mid = 1 - Math.abs(k - (puffs - 1) / 2) / puffs;         // the middle puffs sit taller
+                            const sx = size * (0.75 + 0.35 * hash(ci * 7 + k)), sy = size * (0.22 + 0.16 * mid), sz = size * 0.5;
+                            const ox = -Math.sin(az) * along, oz = Math.cos(az) * along;
+                            const V = (o) => [ctr[0] + ox + ip[o] * sx, ctr[1] + Math.max(-0.35, ip[o + 1]) * sy, ctr[2] + oz + ip[o + 2] * sz];  // flat-ish bottom
+                            const C = (o) => lerp3(under, top, Math.min(1, Math.max(0, (ip[o + 1] + 0.35) / 1.1)));
                             for (let f = 0; f < ii.length; f += 3) {
-                                const v = [0, 1, 2].map(q => {
-                                    const o = ii[f + q] * 3;
-                                    return [ctr[0] + ox + ip[o] * sx, ctr[1] + oy + ip[o + 1] * sy, ctr[2] + oz + ip[o + 2] * sz];
-                                });
-                                const cy = (ip[ii[f] * 3 + 1] + ip[ii[f + 1] * 3 + 1] + ip[ii[f + 2] * 3 + 1]) / 3;   // -1 underside .. 1 top
-                                const sky = skyAt(el, az);
-                                const top = [0.62, 0.48, 0.64], under = lerp3([0.40, 0.28, 0.42], GLOW, 0.45 * Math.max(0, Math.cos(az - GLOW_AZ)));
-                                tri(v[0], v[1], v[2], lerp3(lerp3(under, top, (cy + 1) / 2), sky, 0.25), 0.1);
+                                const o0 = ii[f] * 3, o1 = ii[f + 1] * 3, o2 = ii[f + 2] * 3;
+                                tri(V(o0), V(o1), V(o2), C(o0), C(o1), C(o2));
                             }
                         }
                     });
-                    // stars: tiny pale triangles high up, fading toward the glow
+                    // stars: tiny pale specks high up
                     for (let k = 0; k < 70; k++) {
                         const el = (32 + hash(k * 3 + 1) * 55) * rad, az = hash(k * 3 + 2) * 2 * Math.PI;
                         const sz = 0.0035 + hash(k * 3 + 3) * 0.003;
-                        const b = 0.55 + 0.4 * hash(k * 5 + 9);
-                        tri(P(el, az, R - 5), P(el - sz, az - sz * 0.9, R - 5), P(el - sz, az + sz * 0.9, R - 5), [0.85 * b, 0.82 * b, 0.95 * b], 0);
+                        const b = 0.55 + 0.4 * hash(k * 5 + 9), c = [0.85 * b, 0.82 * b, 0.95 * b];
+                        tri(P(el, az, R - 5), P(el - sz, az - sz * 0.9, R - 5), P(el - sz, az + sz * 0.9, R - 5), c, c, c);
                     }
                     const mesh = new BABYLON.Mesh('wardrobeSky', scene);
                     const vd = new BABYLON.VertexData();
