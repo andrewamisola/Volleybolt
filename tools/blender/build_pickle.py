@@ -1259,6 +1259,154 @@ def key_all(arm_obj, frame):
         pb.keyframe_insert('scale', frame=frame, group=name)
 
 
+# ------------------------------------------------------------------ retargeted mocap (the old v1 pickle's Meshy clips)
+# The owner missed the old clips' snap (big, fast mocap poses that read through the 25 fps animation stepping).
+# These sample a Meshy clip and map it onto PickleRig: body/head copy the source bone's WORLD rotation change
+# from its rest pose; limbs match the DIRECTION the source bone points (the rigs' rest poses differ: A-pose arms
+# vs our hanging arms, so a raw delta would aim the arms wrong); hips follow the source hip translation scaled
+# to our height. Both rigs face -Y with the character's left at +X, so no mirroring.
+OLD_PICKLE_DIR = os.path.join(ROOT, 'models', 'pickle')
+RETARGET = {   # our bone: (source bone, mode, source child for 'dir')
+    'hips': ('Hips', 'delta', None),
+    'body_lo': ('Spine02', 'delta', None),
+    'body_mid': ('Spine01', 'delta', None),
+    'body_hi': ('Spine', 'delta', None),
+    'head': ('Head', 'delta', None),
+    'arm_L_up': ('LeftArm', 'dir', 'LeftForeArm'),
+    'arm_L_lo': ('LeftForeArm', 'dir', 'LeftHand'),
+    'arm_R_up': ('RightArm', 'dir', 'RightForeArm'),
+    'arm_R_lo': ('RightForeArm', 'dir', 'RightHand'),
+    'leg_L_up': ('LeftUpLeg', 'dir', 'LeftLeg'),
+    'leg_L_lo': ('LeftLeg', 'dir', 'LeftFoot'),
+    'foot_L': ('LeftFoot', 'dir', 'LeftToeBase'),
+    'leg_R_up': ('RightUpLeg', 'dir', 'RightLeg'),
+    'leg_R_lo': ('RightLeg', 'dir', 'RightFoot'),
+    'foot_R': ('RightFoot', 'dir', 'RightToeBase'),
+}
+# name, source file, source span (fraction of the clip), seconds (None = the source's own length), loop.
+# Every v1 clip comes back (owner: the old ones had the snap); parry stays procedural (v1 had none of its own).
+RETARGET_CLIPS = [
+    ('idle', 'pickle_idle.glb', 0.0, 1.0, None, True),
+    ('left', 'pickle_left.glb', 0.0, 1.0, None, True),
+    ('right', 'pickle_right.glb', 0.0, 1.0, None, True),
+    ('cast_loop', 'pickle_cast.glb', 0.0, 1.0, None, True),
+    # v1: skip the wind-up "catch" (first 22 %), play at 2.2x -> the forward push-off / spell release
+    ('cast_release', 'pickle_cast_release.glb', 0.22, 1.0, 3.367 * 0.78 / 2.2, False),
+    ('victory', 'pickle_victory.glb', 0.0, 1.0, None, False),
+    ('defeat', 'pickle_defeat.glb', 0.0, 1.0, None, False),
+]
+
+
+def _q(M):
+    return M.to_3x3().normalized().to_quaternion()
+
+
+def sample_old_clip(fname, u0, u1, secs, loop):
+    """Import an old Meshy clip and sample [u0, u1] of it at 30 fps over `secs` seconds (None = the clip's own
+    length). Returns (frames, source hip height); each frame is {'delta': {src: world rot change},
+    'dir': {src: posed world direction}, 'hips': world hip offset}. A loop's last frame repeats its first."""
+    before = set(bpy.data.objects)
+    before_data = {k: set(getattr(bpy.data, k)) for k in ('meshes', 'materials', 'images', 'actions', 'armatures')}
+    bpy.ops.import_scene.gltf(filepath=os.path.join(OLD_PICKLE_DIR, fname))
+    new_objs = [o for o in bpy.data.objects if o not in before]
+    src = next(o for o in new_objs if o.type == 'ARMATURE')
+    act = src.animation_data.action if src.animation_data else None
+    if act is None and bpy.data.actions:
+        act = next(a for a in bpy.data.actions if a not in before_data['actions'])
+        src.animation_data_create().action = act
+    f0, f1 = act.frame_range
+    if secs is None:
+        secs = (f1 - f0) * (u1 - u0) / bpy.context.scene.render.fps
+    nframes = max(2, round(secs * FPS))
+    Wm = src.matrix_world
+    rest = {b.name: (_q(Wm @ b.matrix_local), (Wm @ b.matrix_local).translation.copy()) for b in src.data.bones}
+    scene = bpy.context.scene
+    frames = []
+    for i in range(nframes + (0 if loop else 1)):
+        sf = f0 + (f1 - f0) * (u0 + (u1 - u0) * i / nframes)
+        scene.frame_set(int(sf), subframe=sf - int(sf))
+        pose = {pb.name: Wm @ pb.matrix for pb in src.pose.bones}
+        d = {'delta': {}, 'dir': {}, 'hips': None}
+        for ours, (sb, mode, child) in RETARGET.items():
+            if mode == 'delta':
+                d['delta'][sb] = _q(pose[sb]) @ rest[sb][0].inverted()
+            else:
+                d['dir'][sb] = (pose[child].translation - pose[sb].translation).normalized()
+        d['hips'] = pose['Hips'].translation - rest['Hips'][1]
+        frames.append(d)
+    if loop:
+        frames.append(frames[0])                       # exact loop closure
+    src_hip_h = rest['Hips'][1].z
+    for o in new_objs:
+        bpy.data.objects.remove(o, do_unlink=True)
+    for k, s in before_data.items():
+        for blk in list(getattr(bpy.data, k)):
+            if blk not in s:
+                getattr(bpy.data, k).remove(blk)
+    return frames, src_hip_h
+
+
+def apply_retarget(arm_obj, d, src_hip_h, prev_q):
+    bones = arm_obj.data.bones
+    posed = {}
+    for name in DEFORM:                                   # parents first (BONES order)
+        b = bones[name]
+        Rb = b.matrix_local.to_quaternion()
+        if b.parent:
+            Rp = b.parent.matrix_local.to_quaternion()
+            Qinh = posed[b.parent.name] @ Rp.inverted() @ Rb
+        else:
+            Qinh = Rb
+        m = RETARGET.get(name)
+        if not m:
+            Q = Qinh
+        elif m[1] == 'delta':
+            Q = d['delta'][m[0]] @ Rb
+        else:
+            rest_dir = (b.tail_local - b.head_local).normalized()
+            d_inh = (Qinh @ Rb.inverted()) @ rest_dir
+            Q = d_inh.rotation_difference(d['dir'][m[0]]) @ Qinh
+        posed[name] = Q
+        q = Qinh.inverted() @ Q
+        pq = prev_q.get(name)
+        if pq is not None and q.dot(pq) < 0:
+            q = -q
+        prev_q[name] = q.copy()
+        pb = arm_obj.pose.bones[name]
+        pb.rotation_mode = 'QUATERNION'
+        pb.rotation_quaternion = q
+        pb.location = (0, 0, 0)
+        pb.scale = (1, 1, 1)
+    # hips translation, scaled to our hip height and kept roughly in place
+    k = bones['hips'].head_local.z / max(1e-6, src_hip_h)
+    off = d['hips'] * k
+    off.x = max(-0.12, min(0.12, off.x)); off.y = max(-0.18, min(0.18, off.y))
+    arm_obj.pose.bones['hips'].location = bones['hips'].matrix_local.to_3x3().inverted() @ off
+
+
+def bake_retargets(arm_obj):
+    """Bake RETARGET_CLIPS as actions (replacing any procedural clip of the same name). Returns them."""
+    ad = arm_obj.animation_data_create()
+    out = []
+    for name, fname, u0, u1, secs, loop in RETARGET_CLIPS:
+        frames, hip_h = sample_old_clip(fname, u0, u1, secs, loop)
+        nframes = len(frames) - 1
+        old = bpy.data.actions.get(name)
+        if old:
+            bpy.data.actions.remove(old)
+        act = bpy.data.actions.new(name)
+        act.use_fake_user = True
+        ad.action = act
+        prev = {}
+        for f, d in enumerate(frames):
+            apply_retarget(arm_obj, d, hip_h, prev)
+            key_all(arm_obj, f)
+        print(f'retargeted {name} from {fname}: {nframes + 1} frames', flush=True)
+        out.append(act)
+    ad.action = None
+    return out
+
+
 def bake_clips(arm_obj):
     scene = bpy.context.scene
     scene.render.fps = FPS
@@ -1266,7 +1414,10 @@ def bake_clips(arm_obj):
     ad = arm_obj.animation_data_create()
     rests = rest_rotations(arm_obj)
     actions = []
+    retargeted = {r[0] for r in RETARGET_CLIPS}
     for name, nframes, fn, loop in CLIPS:
+        if name in retargeted:
+            continue                                   # baked from the old mocap instead (bake_retargets)
         act = bpy.data.actions.new(name)
         act.use_fake_user = True
         ad.action = act
@@ -1278,6 +1429,7 @@ def bake_clips(arm_obj):
             apply_pose(arm_obj, fn(t), rests, prev)
             key_all(arm_obj, f)
         actions.append(act)
+    actions += bake_retargets(arm_obj)
     ad.action = None
     for act in actions:
         tr = ad.nla_tracks.new()

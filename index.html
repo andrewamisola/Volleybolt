@@ -13604,7 +13604,7 @@
             const CHARACTER_VERSION = 2;
             window.CHARACTER_VERSION = CHARACTER_VERSION;
             const PICKLE2_DIR = 'models/pickle2/';
-            const PICKLE2_V = '?v=6';
+            const PICKLE2_V = '?v=8';
             // The catalogue: every cosmetic. id = stable (unlocks / a future Steam inventory key off it).
             const COSMETICS = [
                 { id: 'hat_none',      name: 'No Hat',          slot: 'hat' },
@@ -13884,7 +13884,9 @@
                 const fpsOf = (g) => { const ta = g.targetedAnimations[0]; return (ta && ta.animation && ta.animation.framePerSecond) || 60; };
                 if (animations.parry) animations.parry.speedRatio = ((animations.parry.to - animations.parry.from) / fpsOf(animations.parry)) / (PARRY_ACTIVE_FRAMES / 60);
                 if (animations.cast_release) {
-                    try { const pr = animations.cast_release.clone(prefix + '_parry_release'); pr.speedRatio = 2.0; animations.parry_release = pr; } catch (e) {}
+                    // cast_release is the old v1 mocap release retargeted (already cut + sped 2.2x in the bake); the parry
+                    // catch plays it at v1's 3.0x of the raw clip = 3.0 / 2.2 of ours
+                    try { const pr = animations.cast_release.clone(prefix + '_parry_release'); pr.speedRatio = 3.0 / 2.2; animations.parry_release = pr; } catch (e) {}
                 }
                 if (animations.defeat) {
                     try { const df = animations.defeat.clone(prefix + '_defeat_fall'); df.speedRatio = Math.max(1, ((df.to - df.from) / fpsOf(df)) / 2.2); animations.defeat_fall = df; } catch (e) {}
