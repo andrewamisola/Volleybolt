@@ -1290,7 +1290,12 @@ def head_ray(theta_deg, phi_deg, lift=0.0):
 def shag_theta_max(phi_deg):
     """How far down the shag reaches: to the forehead at the front, to the jaw-ish line at the sides and back."""
     front = max(0.0, -math.sin(math.radians(phi_deg)))
-    return 108.0 - 52.0 * front ** 1.4
+    return 98.0 - 42.0 * front ** 1.4                    # owner: stays on the head (ends above the jaw)
+
+
+def shag_lift(phi_deg):
+    """How far the shag stands off the head: a little extra volume at the back."""
+    return 0.045 + 0.04 * max(0.0, math.sin(math.radians(phi_deg)))
 
 
 def hair_blade(mb, root, out, length, width, droop, flick, mat, W, segs=5):
@@ -1333,7 +1338,7 @@ def build_hair_shag(mb, max_root_z=None):
             for j in range(NP):
                 phi = -90 + 360 * j / NP
                 th = shag_theta_max(phi) * i / NT
-                p, _ = head_ray(th, phi, 0.045)
+                p, _ = head_ray(th, phi, shag_lift(phi))
                 row.append(mb.vert(p, W))
             grid.append(row)
         for i in range(NT):
@@ -1344,7 +1349,7 @@ def build_hair_shag(mb, max_root_z=None):
                         smooth=False)
 
     def blade_at(th, phi, length, width, droop, flick, out_bias):
-        p, d = head_ray(th, phi, 0.03)
+        p, d = head_ray(th, phi, shag_lift(phi) - 0.015)
         if max_root_z is not None and p.z > max_root_z:
             return
         out = d + Vector((0, 0, out_bias))
@@ -1357,13 +1362,13 @@ def build_hair_shag(mb, max_root_z=None):
             phi = -90 + 360 * (k + k_off) / n + rng.uniform(-4, 4)
             front = max(0.0, -math.sin(math.radians(phi)))
             th = shag_theta_max(phi) - (6 + row * 10)
-            length = (0.12 + 0.10 * (1 - front)) * rng.uniform(0.8, 1.2)
+            length = (0.07 + 0.05 * (1 - front)) * rng.uniform(0.85, 1.15)
             blade_at(th, phi, length, rng.uniform(0.10, 0.14), rng.uniform(0.7, 1.0), rng.uniform(0.0, 0.12), -1.6)
     # mid layer: splayed outward over the dome
     for k in range(44):
         phi = rng.uniform(-180, 180)
         th = shag_theta_max(phi) * rng.uniform(0.25, 0.75)
-        blade_at(th, phi, rng.uniform(0.13, 0.2), rng.uniform(0.10, 0.13), rng.uniform(0.7, 1.0), rng.uniform(0.0, 0.1), -1.2)
+        blade_at(th, phi, rng.uniform(0.09, 0.14), rng.uniform(0.10, 0.13), rng.uniform(0.7, 1.0), rng.uniform(0.0, 0.1), -1.2)
     # bangs: hanging over the forehead, a little apart
     for yaw in (-40, -24, -8, 8, 24, 40):
         p, d = head_ray(shag_theta_max(-90 + yaw) - 4, -90 + yaw, 0.03)
