@@ -14186,10 +14186,6 @@
                     if (a) a.play(true);
                     if (window._labChar) window._labChar.currentAnim = W.pose;
                 };
-                const cheer = () => {
-                    const f = W.char && W.char.face;
-                    if (f) f.override = { eye: 'happy', mouth: 'grin', until: performance.now() + 650 };
-                };
                 const rebuild = async () => {
                     if (W.building) { W.pending = true; return; }
                     W.building = true;
@@ -14311,7 +14307,7 @@
                     saveLoadout(lo);
                     W.preview = null;
                     renderTabs(); renderGrid(); renderInfo();
-                    showLoadout(lo).then(cheer);
+                    showLoadout(lo);   // no reaction face: you're looking at exactly the thing you picked
                     if (window.ToneSFX && ToneSFX.uiConfirm) ToneSFX.uiConfirm();
                 };
                 const revertPreview = () => { W.preview = null; showLoadout(loadLoadout()); };
@@ -14328,7 +14324,7 @@
                     const lo = {};
                     for (const s of COSMETIC_SLOTS) { const o = optionsFor(s).filter(isOwned); lo[s] = o[Math.floor(Math.random() * o.length)].id; }
                     saveLoadout(lo); W.preview = null;
-                    setTab(W.tab); showLoadout(loadLoadout()).then(cheer);
+                    setTab(W.tab); showLoadout(loadLoadout());
                 };
 
                 let wired = false;
