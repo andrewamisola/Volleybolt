@@ -2116,8 +2116,11 @@
                         for (const [name, w] of window.AI_STYLE_WEIGHTS) { acc += w; if (u < acc) return name; }
                         return 'balanced';
                     };
-                    window.setAISlotProfile('left', window.makeAIProfile(1, pick()));
-                    window.setAISlotProfile('right', window.makeAIProfile(1, pick()));
+                    const sl = pick();
+                    let sr = pick();
+                    while (sl === 'defensive' && sr === 'defensive') sr = pick();   // two counter-punchers wait each other out
+                    window.setAISlotProfile('left', window.makeAIProfile(1, sl));
+                    window.setAISlotProfile('right', window.makeAIProfile(1, sr));
                     return null;
                 }
                 const vsAI = !spectating && !window._simHeadless && teamSize === 1 && gameMode === 'single';
@@ -17634,7 +17637,7 @@
                 skill: 0.5, style: 'balanced',
                 thunderMin: 2, fireFirst: false, volley: false, manaReserve: 0,
                 holdCentre: false, seekLane: false, punishFrozen: false, juiceEager: false, juiceHold: false,
-                safeTti: 0, frostAlign: 1.2, frostOnly: false,
+                safeTti: 0, frostAlign: 1.2, frostOnly: false, counterOnly: false,
             });
             try { localStorage.removeItem('volleybolt_ai_skill'); } catch (e) {}   // retired adaptive rating
 
@@ -17659,7 +17662,7 @@
             const AI_INT_LEVERS = new Set(['reactionFrames', 'parrySight', 'dodgeSightFrames', 'castCadence', 'mashPeriod']);
             const AI_STYLE_BASE = { cadenceMul: 1, thunderMin: 2, fireFirst: false, volley: false, manaReserve: 0,
                                     holdCentre: false, seekLane: false, punishFrozen: false, juiceEager: false, juiceHold: false,
-                                    safeTti: 0, frostAlign: 1.2, frostOnly: false };
+                                    safeTti: 0, frostAlign: 1.2, frostOnly: false, counterOnly: false };
             const AI_STYLES = {
                 balanced:   {},
                 // (owner 2026-10-02: "their randomized playstyles should make a difference" - pushed further apart)
@@ -17667,9 +17670,11 @@
                 // Fireball first, stacks balls even into a block, Thunderstorm only when swamped (3+ incoming),
                 // Overdrive the moment there's a lane
                 aggressive: { cadenceMul: 0.45, thunderMin: 3, fireFirst: true, volley: true, juiceEager: true, safeTti: 0.9 },
-                // turtle: hardly attacks (keeps 2 mana back), zaps even a single incoming ball with Thunderstorm
-                // (mana from zaps), holds the centre, Overdrive only into a freeze or a clash
-                defensive:  { cadenceMul: 2.6, manaReserve: 2, thunderMin: 1, holdCentre: true, juiceHold: true },
+                // counter-puncher (owner: two turtles "kinda don't do much", then stood still for 3 minutes): holds the
+                // centre while recharging, blocks/parries first, attacks only into an OPENING (opponent out of position
+                // or frozen), an empty court, or with mana full; Overdrive only into a freeze or a clash. Sim-tuned at
+                // skill 1 vs Balanced: a 1-mana reserve won 85-94% (always had a Chill counter), none = ~45%.
+                defensive:  { cadenceMul: 1.6, manaReserve: 0, holdCentre: true, juiceHold: true, counterOnly: true },
                 // Chill Dill specialist: lines up on you, casts Chill Dill from wide angles (it homes), Fireball only
                 // to punish a freeze or while its Chill Dill recharges
                 control:    { seekLane: true, punishFrozen: true, frostAlign: 2.4, frostOnly: true },
@@ -17835,7 +17840,9 @@
                     // channeling: the open lane is what aims our own beam.)
                     let open = _aiFindOpenTarget(view);
                     if (!s.juiceActive) {
-                        if (profile.holdCentre) open = 0;
+                        // defensive holds the centre only while recharging - once it can attack it takes the open lane
+                        // like everyone else (two centred bots 'block' each other and the match stalls)
+                        if (profile.holdCentre && s.mana < 1 + (profile.manaReserve || 0)) open = 0;
                         else if (profile.seekLane && (s.cooldowns.frostbolt || 0) <= 0 && s.mana >= 1) open = view.opp.paddleZ;
                     }
                     if (Math.abs(open - s.paddleZ) > 1.5) targetZ = open;
@@ -17992,11 +17999,15 @@
                         || (profile.safeTti > 0 && incoming.every(p => p.velX > 0 && (s.paddleX - p.x) / p.velX > profile.safeTti));
                     const cd   = s.cooldowns;
                     const reserve = profile.manaReserve || 0;   // style 'defensive': mana kept back for defense
+                    // style 'defensive' (counter-puncher): offense only into an opening, a freeze, with mana full, or
+                    // when the court is EMPTY (nothing to defend - two waiting bots must never stall a match)
+                    const counterOK = !profile.counterOnly || openingFrac > 0.25 || view.projectiles.length === 0
+                        || (view.opp.freezeTime || 0) > 0.3 || s.mana >= 3;
                     // UNIFIED casting policy (round 4, owner: no per-position behavior): every slot
                     // — front, back, singles — casts on the SAME gates (offenseOpen cadence + safe
                     // + cooldown + mana>=1). No more role-based mana-hold, counter-cast priority, or
                     // teammate fire-discipline; only the per-slot castK cadence (above) differs.
-                    const canFireball  = offenseOpen && safe && cd.fireball  <= 0 && s.mana >= 1 + reserve
+                    const canFireball  = offenseOpen && safe && counterOK && cd.fireball  <= 0 && s.mana >= 1 + reserve
                         && view.projectiles.length < 10 && (profile.volley || !_aiIsOppBlocking(view)) && !s.casting
                         // style 'control': Fireball only into a freeze or while its Chill Dill recharges
                         && (!profile.frostOnly || (view.opp.freezeTime || 0) > 0.3 || (cd.frostbolt || 0) > 0.5);
@@ -18005,7 +18016,7 @@
                     // firing frostbolt into an empty lane.
                     const FROST_ALIGN  = profile.frostAlign || 1.2;   // style 'control' takes wider angles
                     const oppInFront   = Math.abs(s.paddleZ - view.opp.paddleZ) < FROST_ALIGN;
-                    const canFrostbolt = offenseOpen && safe && cd.frostbolt <= 0 && s.mana >= 1 + reserve
+                    const canFrostbolt = offenseOpen && safe && counterOK && cd.frostbolt <= 0 && s.mana >= 1 + reserve
                         && oppInFront && view.projectiles.length < 10 && !s.casting;
                     // Thunderstorm is a DEFENSIVE panic-clear (same mana/cooldown as the player's):
                     // fired the moment two or more shots are incoming.
