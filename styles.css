@@ -4155,3 +4155,18 @@ body.gp-cursor-hidden * {
 }
 #spectateTVHint b { color: #f0c050; font-weight: normal; }
 #spectateTVHint.visible { display: flex; }
+
+/* ---- Wardrobe: the live 3D pickle on the left (arena shows through), the panel on the right ---- */
+#wardrobeScreen { pointer-events: none; }                    /* drags on the empty side reach the 3D canvas */
+#wardrobeScreen.visible { align-items: flex-end; padding-right: 6%; box-sizing: border-box; }
+#wardrobeScreen.in-match {
+    background: linear-gradient(90deg, rgba(8, 6, 16, 0) 0%, rgba(8, 6, 16, 0.1) 45%, rgba(8, 6, 16, 0.6) 100%);
+}
+#wardrobeScreen .arcane-content { pointer-events: auto; gap: 18px; align-items: stretch; }
+#wardrobeScreen .arcane-title-wrap { align-items: center; }
+#wardrobeScreen .arcane-title { font-size: 76px; }
+#wardrobeScreen .settings-panel { min-width: 470px; }
+#wardrobeScreen .settings-section-label:first-child { margin-top: 0; }
+#wardrobeScreen .fps-val { min-width: 200px; }
+#wardrobeScreen .wardrobe-actions { display: flex; justify-content: center; gap: 4px; margin-top: 10px; }
+#wardrobeScreen .wardrobe-actions .menu-btn .menu-btn-label { font-size: 26px; }

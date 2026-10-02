@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=83-spectate-summary">
+    <link rel="stylesheet" href="styles.css?v=84-wardrobe">
 </head>
 <body>
 
@@ -91,6 +91,11 @@
                     <span class="menu-btn-accent" aria-hidden="true"></span>
                     <span class="menu-btn-glyph" aria-hidden="true">&#9876;</span>
                     <span class="menu-btn-label">Career</span>
+                </button>
+                <button class="game-btn menu-btn" id="domBtnWardrobe">
+                    <span class="menu-btn-accent" aria-hidden="true"></span>
+                    <span class="menu-btn-glyph" aria-hidden="true">&#127913;</span>
+                    <span class="menu-btn-label">Wardrobe</span>
                 </button>
                 <button class="game-btn menu-btn" id="domBtnSettings">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
@@ -207,6 +212,36 @@
                 <label class="settings-row"><span>Colorblind (blue vs orange)</span>
                     <input type="checkbox" class="settings-toggle" id="setColorblind"></label>
                 <button class="game-btn menu-btn menu-btn-ghost" id="settingsBack">
+                    <span class="menu-btn-accent" aria-hidden="true"></span>
+                    <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
+                    <span class="menu-btn-label">Back</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Wardrobe - dress your pickle. Live 3D preview over the arena (left), panel on the right; the rows are
+         built from COSMETICS (window.openWardrobe). -->
+    <div id="wardrobeScreen" class="arcane-overlay crt-screen in-match">
+        <div class="arcane-content">
+            <div class="arcane-title-wrap">
+                <h1 class="arcane-title" data-text="Wardrobe">Wardrobe</h1>
+            </div>
+            <div class="arcane-buttons settings-panel" id="wardrobePanel">
+                <div id="wardrobeRows"></div>
+                <div class="wardrobe-actions">
+                    <button class="game-btn menu-btn" id="wardrobeRandom">
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#9860;</span>
+                        <span class="menu-btn-label">Randomize</span>
+                    </button>
+                    <button class="game-btn menu-btn" id="wardrobeReset">
+                        <span class="menu-btn-accent" aria-hidden="true"></span>
+                        <span class="menu-btn-glyph" aria-hidden="true">&#8634;</span>
+                        <span class="menu-btn-label">Default</span>
+                    </button>
+                </div>
+                <button class="game-btn menu-btn menu-btn-ghost" id="wardrobeBack">
                     <span class="menu-btn-accent" aria-hidden="true"></span>
                     <span class="menu-btn-glyph" aria-hidden="true">&#8249;</span>
                     <span class="menu-btn-label">Back</span>
@@ -4768,6 +4803,7 @@
             howToPlayScreen: 'howToBack',
             creditsScreen: 'creditsBack',
             careerScreen: 'careerBack',
+            wardrobeScreen: 'wardrobeBack',
             lobbyModeView: 'btnBackMenu',
             lobbyHostView: 'btnCancelHost',
             lobbyJoinView: 'btnCancelJoin',
@@ -4888,7 +4924,8 @@
                         el.dispatchEvent(new Event('change', { bubbles: true }));
                         if (window.ToneSFX) ToneSFX.uiHover();
                     } else if (el && el.classList.contains('fps-cycler')) {
-                        const btn = document.getElementById(rightEdge ? 'setFpsCapNext' : 'setFpsCapPrev');
+                        const arrows = el.querySelectorAll('.fps-arrow');
+                        const btn = arrows[rightEdge ? arrows.length - 1 : 0];
                         if (btn) btn.click();
                     }
                 }
@@ -13686,6 +13723,194 @@
             };
             if (new URLSearchParams(location.search).has('lab')) setTimeout(() => window.openCharacterLab(), 0);
 
+            // ============================================================
+            // WARDROBE (main menu -> Wardrobe): dress your pickle. The live 3D pickle stands mid-court in the
+            // real arena (same renderer the match uses) with a turntable camera; the DOM panel is built from
+            // COSMETICS, so new items appear here automatically. Choices save to the loadout the local player
+            // wears in every match (and sends to an online opponent). Presentation only - never read by the sim.
+            // ============================================================
+            (() => {
+                const W = { open: false, side: 'left', pose: 'idle', char: null, building: false, pending: false,
+                            cam: null, stand: null, obs: null, prevCam: null, prevVis: '', prevAnims: true,
+                            prevGui: true, parked: [] };
+                const SLOT_LABEL = { hat: 'Hat', outfit: 'Outfit', neck: 'Neck', face_acc: 'Face', staff: 'Staff',
+                                     eyes: 'Eyes', brows: 'Brows', mouth: 'Mouth' };
+                const SECTIONS = [['Outfit', ['hat', 'outfit', 'neck', 'face_acc', 'staff']], ['Face', ['eyes', 'brows', 'mouth']]];
+                const FACE_SLOTS = ['eyes', 'brows', 'mouth'];
+                const POSES = [['idle', 'Idle'], ['cast_loop', 'Casting'], ['victory', 'Victory']];
+                const TEAMS = [['left', 'Blue'], ['right', 'Red']];
+                const optionsFor = (slot) => COSMETICS.filter(c => c.slot === slot);
+
+                const disposeChar = (ch) => {
+                    if (!ch) return;
+                    Object.values(ch.animations).forEach(a => { try { a.stop(); a.dispose(); } catch (e) {} });
+                    ch.meshes.forEach(m => m.dispose(false, true));
+                    if (ch.skeleton) ch.skeleton.dispose();
+                    if (ch.face && ch.face.tex) ch.face.tex.dispose();
+                    ch.modelRoot.dispose(false, true);
+                };
+                const playPose = () => {
+                    const ch = W.char; if (!ch) return;
+                    Object.values(ch.animations).forEach(a => a && a.stop && a.stop());
+                    const a = ch.animations[W.pose] || ch.animations.idle;
+                    if (a) a.play(true);
+                    if (window._labChar) window._labChar.currentAnim = W.pose;
+                };
+                // A little "ooh" when something changes: happy eyes + grin for a beat.
+                const cheer = () => {
+                    const f = W.char && W.char.face;
+                    if (f) f.override = { eye: 'happy', mouth: 'grin', until: performance.now() + 650 };
+                };
+                // Rebuild the preview pickle; changes made while one is loading coalesce into one more build.
+                const rebuild = async () => {
+                    if (W.building) { W.pending = true; return; }
+                    W.building = true;
+                    try {
+                        do {
+                            W.pending = false;
+                            const ch = await buildPickle2('wardrobe', W.side, loadLoadout());
+                            if (!W.open) { disposeChar(ch); break; }
+                            disposeChar(W.char);
+                            W.char = ch;
+                            ch.modelRoot.parent = W.stand;
+                            window._labChar = { face: ch.face, currentAnim: W.pose, animations: ch.animations };
+                            playPose();
+                        } while (W.pending && W.open);
+                    } catch (e) { console.warn('[wardrobe] preview build failed', e); }
+                    W.building = false;
+                };
+
+                // ---- the panel ----
+                const cycler = (key, label) =>
+                    `<div class="settings-row"><span>${label}</span>` +
+                    `<div class="fps-cycler wardrobe-cycler" tabindex="0" data-key="${key}">` +
+                    `<button class="fps-arrow" data-dir="-1" aria-label="Previous ${label}">&#9664;</button>` +
+                    `<span class="fps-val"></span>` +
+                    `<button class="fps-arrow" data-dir="1" aria-label="Next ${label}">&#9654;</button></div></div>`;
+                const valueText = (key) => {
+                    if (key === 'team') return TEAMS.find(t => t[0] === W.side)[1];
+                    if (key === 'pose') return POSES.find(p => p[0] === W.pose)[1];
+                    const c = cosmeticById(loadLoadout()[key]);
+                    return c ? c.name : '-';
+                };
+                const refreshValues = () => {
+                    document.querySelectorAll('#wardrobeRows .wardrobe-cycler').forEach(el => {
+                        el.querySelector('.fps-val').textContent = valueText(el.dataset.key);
+                    });
+                };
+                const step = (key, dir) => {
+                    if (key === 'team') {
+                        const i = TEAMS.findIndex(t => t[0] === W.side);
+                        W.side = TEAMS[(i + dir + TEAMS.length) % TEAMS.length][0];
+                        refreshValues(); rebuild(); return;
+                    }
+                    if (key === 'pose') {
+                        const i = POSES.findIndex(p => p[0] === W.pose);
+                        W.pose = POSES[(i + dir + POSES.length) % POSES.length][0];
+                        refreshValues(); playPose(); return;
+                    }
+                    const lo = loadLoadout();
+                    const opts = optionsFor(key);
+                    const i = Math.max(0, opts.findIndex(c => c.id === lo[key]));
+                    lo[key] = opts[(i + dir + opts.length) % opts.length].id;
+                    saveLoadout(lo);
+                    refreshValues();
+                    if (FACE_SLOTS.includes(key) && W.char && W.char.face) { W.char.face.setStyle(lo).then(cheer); }
+                    else { rebuild().then(cheer); }
+                };
+                let wired = false;
+                const wirePanel = () => {
+                    if (wired) return;
+                    wired = true;
+                    let html = '';
+                    for (const [title, slots] of SECTIONS) {
+                        html += `<div class="settings-section-label">${title}</div>`;
+                        for (const s of slots) html += cycler(s, SLOT_LABEL[s]);
+                    }
+                    html += '<div class="settings-section-label">Preview</div>' + cycler('team', 'Team') + cycler('pose', 'Pose');
+                    document.getElementById('wardrobeRows').innerHTML = html;
+                    document.querySelectorAll('#wardrobeRows .wardrobe-cycler').forEach(el => {
+                        el.querySelectorAll('.fps-arrow').forEach(b => b.addEventListener('click', () => step(el.dataset.key, +b.dataset.dir)));
+                        // keyboard: left/right on a focused row
+                        el.addEventListener('keydown', (e) => {
+                            if (e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
+                            step(el.dataset.key, e.code === 'ArrowRight' ? 1 : -1);
+                            if (window.ToneSFX) ToneSFX.uiHover();
+                            e.preventDefault();
+                        });
+                    });
+                    document.getElementById('wardrobeRandom').addEventListener('click', () => {
+                        const lo = {};
+                        for (const s of COSMETIC_SLOTS) { const o = optionsFor(s); lo[s] = o[Math.floor(Math.random() * o.length)].id; }
+                        saveLoadout(lo); refreshValues(); rebuild().then(cheer);
+                    });
+                    document.getElementById('wardrobeReset').addEventListener('click', () => {
+                        saveLoadout({ ...DEFAULT_LOADOUT }); refreshValues(); rebuild();
+                    });
+                    document.getElementById('wardrobeBack').addEventListener('click', () => closeMenuScreen());
+                };
+
+                // ---- the 3D side ----
+                const enter3D = () => {
+                    const cvs = engine.getRenderingCanvas();
+                    W.prevVis = cvs.style.visibility;
+                    cvs.style.visibility = 'visible';
+                    W.prevAnims = scene.animationsEnabled;
+                    W.prevGui = !(window.guiTexture && !window.guiTexture.rootContainer.isVisible);
+                    if (window.guiTexture) window.guiTexture.rootContainer.isVisible = false;
+                    W.parked = [];
+                    for (const k of ['left', 'right', 'leftBack', 'rightBack']) {
+                        const c = combatants[k];
+                        if (c && c.modelRoot && c.modelRoot.isEnabled()) { c.modelRoot.setEnabled(false); W.parked.push(c.modelRoot); }
+                    }
+                    if (!W.stand) W.stand = new BABYLON.TransformNode('wardrobeStand', scene);
+                    if (!W.cam) {
+                        // in front of the pickle (it faces +Z); the screen offset puts it left of the panel
+                        W.cam = new BABYLON.ArcRotateCamera('wardrobeCam', Math.PI / 2 - 0.35, 1.36, 4.4, new BABYLON.Vector3(0, 1.0, 0), scene);
+                        W.cam.lowerRadiusLimit = 2.6; W.cam.upperRadiusLimit = 6.5;
+                        W.cam.lowerBetaLimit = 0.95; W.cam.upperBetaLimit = 1.58;
+                        W.cam.wheelPrecision = 45; W.cam.panningSensibility = 0; W.cam.minZ = 0.05;
+                        W.cam.targetScreenOffset = new BABYLON.Vector2(-1.3, 0);
+                    }
+                    W.cam.alpha = Math.PI / 2 - 0.35; W.cam.beta = 1.36; W.cam.radius = 4.4;
+                    W.cam.attachControl(cvs, true);
+                    W.prevCam = scene.activeCamera;
+                    scene.activeCamera = W.cam;
+                    W.obs = scene.onBeforeRenderObservable.add(() => { if (W.open && scene.activeCamera !== W.cam) scene.activeCamera = W.cam; });
+                    window._wardrobeOpen = true;
+                    rebuild();
+                };
+                const exit3D = () => {
+                    if (!W.open) return;
+                    W.open = false;
+                    window._wardrobeOpen = false;
+                    const cvs = engine.getRenderingCanvas();
+                    if (W.cam) W.cam.detachControl();
+                    if (W.obs) { scene.onBeforeRenderObservable.remove(W.obs); W.obs = null; }
+                    if (W.prevCam) scene.activeCamera = W.prevCam;
+                    disposeChar(W.char); W.char = null;
+                    window._labChar = null;
+                    W.parked.forEach(n => n.setEnabled(true)); W.parked = [];
+                    cvs.style.visibility = W.prevVis;
+                    scene.animationsEnabled = W.prevAnims;
+                    if (window.guiTexture && W.prevGui) window.guiTexture.rootContainer.isVisible = true;
+                    // the match wizard wears the new loadout from the next match on
+                    if (window.restylePickle) restylePickle('left', loadLoadout());
+                };
+                window.exitWardrobe3D = exit3D;
+                window.openWardrobe = () => {
+                    if (W.open || window._labOpen) return;
+                    wirePanel();
+                    W.open = true;
+                    W.side = 'left'; W.pose = 'idle';
+                    refreshValues();
+                    showMenuScreen('wardrobeScreen', 'menu');
+                    document.getElementById('wardrobeScreen').classList.add('in-match');   // dark variant: the arena shows through
+                    if (window.setGamepadPrompts) setGamepadPrompts([{ action: 'navigate' }, { action: 'adjust' }, { action: 'back' }]);
+                    enter3D();
+                };
+            })();
+
             const loadPickleWizard = () => {
                 // side is a SLOT key: 'left'/'right' (front, unchanged) or 'leftBack'/'rightBack'
                 // (Task 6 doubles backs). isPlayer = team (left side); isBack = back-row slot.
@@ -20401,8 +20626,8 @@
                 // surfaced until a real controller was tested against the actual game loop.
                 if (window.pollGamepadMenuNav) window.pollGamepadMenuNav();
 
-                // Character Lab (?lab): just draw the scene - no sim, no menus
-                if (window._labOpen) { scene.animationsEnabled = true; scene.render(); return; }
+                // Character Lab (?lab) / Wardrobe: just draw the scene - no sim
+                if (window._labOpen || window._wardrobeOpen) { scene.animationsEnabled = true; scene.render(); return; }
 
                 // 2D menu/lobby/boot: the DOM owns the screen — skip 3D rendering entirely
                 // (this is what keeps any menu camera from ever showing).
@@ -22931,6 +23156,8 @@
             if (btnCareer) btnCareer.addEventListener('click', () => { populateCareer(); showMenuScreen('careerScreen', 'menu'); });
             const careerBack = document.getElementById('careerBack');
             if (careerBack) careerBack.addEventListener('click', () => closeMenuScreen());
+            const btnWardrobe = document.getElementById('domBtnWardrobe');
+            if (btnWardrobe) btnWardrobe.addEventListener('click', () => { if (window.openWardrobe) openWardrobe(); });
         }
         window.wireDOMMenu = wireDOMMenu;
 
@@ -23005,7 +23232,7 @@
         window.setDOMMenuVisible = setDOMMenuVisible;
 
         // ---- Shared menu-screen nav: show ONE arcane screen at a time (no bleed-through). ----
-        const MENU_SCREENS = ['settingsScreen', 'howToPlayScreen', 'careerScreen', 'creditsScreen'];
+        const MENU_SCREENS = ['settingsScreen', 'howToPlayScreen', 'careerScreen', 'creditsScreen', 'wardrobeScreen'];
         let _menuScreenReturn = 'menu';   // where Back goes: 'menu' or 'pause'
         // Returns the root element of whichever menu/overlay is currently the "active" screen for
         // gamepad navigation purposes (Tasks 4+), or null if none is open. Checked in priority
@@ -23074,6 +23301,7 @@
             }
         }
         function closeMenuScreen() {
+            if (window._wardrobeOpen && window.exitWardrobe3D) window.exitWardrobe3D();   // hand the canvas back first
             hideAllMenuScreens();
             if (_menuScreenReturn === 'pause') {
                 const ov = document.getElementById('pauseOverlay'); if (ov) ov.style.display = 'flex';
