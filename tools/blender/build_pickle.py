@@ -1325,8 +1325,9 @@ def hair_blade(mb, root, out, length, width, droop, flick, mat, W, segs=5):
 
 def build_hair_shag(mb, max_root_z=None):
     """Messy Shag (owner's reference): a black dome over the top and sides of the head made of many thin flat
-    pointed strands, all hanging DOWN (owner: nothing sticking out) - a rim fringe all round, a mid layer lying over
-    the dome and bangs over the forehead. max_root_z = the under-a-hat cut (no dome or crown, only strands rooted below the brim)."""
+    pointed strands, all hanging DOWN (owner: nothing sticking out) - longer pointed locks at the sides, a back of
+    wide layered locks that flow down and tuck in (volume, not a spike ring), a lying top layer and bangs of mixed
+    lengths (one past the brow to the eye). max_root_z = the under-a-hat cut (no dome or crown, only strands rooted below the brim)."""
     W = {'sock_hat': 1.0}
     rng = random.Random(31)
     if max_root_z is None:
@@ -1355,25 +1356,34 @@ def build_hair_shag(mb, max_root_z=None):
         out = d + Vector((0, 0, out_bias))
         hair_blade(mb, p, out, length, width, droop, flick, 'M_shag', W)
 
-    # rim fringe all round (two staggered rows), longest at the back, short over the forehead
+    # SIDES: longer pointed locks hanging past the cheeks (two staggered rows, the front-most side locks longest)
     for row, k_off in ((0, 0.0), (1, 0.5)):
-        n = 30
+        for s_ in (1, -1):
+            for k in range(6):
+                phi = (0 if s_ > 0 else 180) + s_ * (-60 + 85 * (k + k_off) / 6) + rng.uniform(-3, 3)   # front-side -> side-back
+                th = shag_theta_max(phi) - (5 + row * 12)
+                forward = max(0.0, -math.sin(math.radians(phi)))
+                length = (0.13 + 0.08 * forward) * rng.uniform(0.85, 1.15)
+                blade_at(th, phi, length, rng.uniform(0.09, 0.12), rng.uniform(0.75, 1.0), rng.uniform(0.0, 0.1), -1.7)
+    # BACK: volume with flow - wide layered locks in three rows that sweep down and tuck their tips in (no spike ring)
+    for row, (tf, ln, wd) in enumerate(((0.45, 0.15, 0.19), (0.68, 0.15, 0.18), (0.9, 0.13, 0.17))):
+        n = 7 + row
         for k in range(n):
-            phi = -90 + 360 * (k + k_off) / n + rng.uniform(-4, 4)
-            front = max(0.0, -math.sin(math.radians(phi)))
-            th = shag_theta_max(phi) - (6 + row * 10)
-            length = (0.07 + 0.05 * (1 - front)) * rng.uniform(0.85, 1.15)
-            blade_at(th, phi, length, rng.uniform(0.10, 0.14), rng.uniform(0.7, 1.0), rng.uniform(0.0, 0.12), -1.6)
-    # mid layer: splayed outward over the dome
-    for k in range(44):
+            phi = 30 + 120 * (k + (0.5 if row % 2 else 0)) / n + rng.uniform(-4, 4)
+            th = shag_theta_max(phi) * tf
+            blade_at(th, phi, ln * rng.uniform(0.9, 1.15), wd * rng.uniform(0.9, 1.1), rng.uniform(0.75, 0.95),
+                     -0.35, -0.9)                                      # flick < 0: the tip curls back in
+    # TOP: a lying layer over the crown so the dome reads as hair
+    for k in range(22):
         phi = rng.uniform(-180, 180)
-        th = shag_theta_max(phi) * rng.uniform(0.25, 0.75)
-        blade_at(th, phi, rng.uniform(0.09, 0.14), rng.uniform(0.10, 0.13), rng.uniform(0.7, 1.0), rng.uniform(0.0, 0.1), -1.2)
-    # bangs: hanging over the forehead, a little apart
-    for yaw in (-40, -24, -8, 8, 24, 40):
+        th = shag_theta_max(phi) * rng.uniform(0.15, 0.45)
+        blade_at(th, phi, rng.uniform(0.10, 0.15), rng.uniform(0.11, 0.14), rng.uniform(0.7, 1.0), rng.uniform(0.0, 0.08), -1.1)
+    # BANGS: different lengths, sweeping a little to the side; the long one falls past the brow to the top of the eye
+    for yaw, length, sweep in ((-42, 0.12, -0.25), (-27, 0.19, -0.15), (-12, 0.15, 0.05), (3, 0.24, 0.18),
+                               (17, 0.13, 0.12), (31, 0.18, 0.22), (44, 0.11, 0.25)):
         p, d = head_ray(shag_theta_max(-90 + yaw) - 4, -90 + yaw, 0.03)
         if max_root_z is None or p.z <= max_root_z:
-            hair_blade(mb, p, Vector((d.x * 0.3, -0.45, -1.0)), rng.uniform(0.09, 0.13), 0.095, 0.25, 0.3, 'M_shag', W)
+            hair_blade(mb, p, Vector((d.x * 0.3 + sweep, -0.42, -1.0)), length, 0.10, 0.22, 0.25, 'M_shag', W)
 
 
 def build_hair_shag_hat(mb):
