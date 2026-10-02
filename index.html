@@ -13654,6 +13654,7 @@
                     if (key === face.drawn) return;
                     face.drawn = key;
                     const g = tex.getContext();
+                    if (!g) return;                    // disposed while a strip was still loading (fast wardrobe clicks)
                     g.imageSmoothingEnabled = false;
                     g.fillStyle = skin; g.fillRect(0, 0, FACE.W, FACE.H);
                     const E = FACE.eyes, B = FACE.brows, M = FACE.mouth;
@@ -13721,16 +13722,76 @@
 
             // Build one modular pickle into `target` (combatant or a lab bag): base + parts + face + team colour.
             // Resolves with { modelRoot, skeleton, meshes, animations } or rejects (caller falls back to v1).
+            // Each model file is fetched + parsed ONCE into an AssetContainer; every wizard / wardrobe preview stamps a
+            // copy out of it (instantiateModelsToScene: own nodes, skeleton and clips, shared geometry + textures).
+            // Before this every build re-imported the base and each part in turn - the wardrobe showed the old outfit
+            // for a beat after every click and every preview popped in slowly.
+            const p2Containers = {};
+            const loadP2 = (file, bust) => {
+                if (bust || !p2Containers[file]) {
+                    p2Containers[file] = BABYLON.SceneLoader.LoadAssetContainerAsync(PICKLE2_DIR, file + (bust ? '?v=' + Date.now() : PICKLE2_V), scene)
+                        .catch((e) => { delete p2Containers[file]; throw e; });
+                }
+                return p2Containers[file];
+            };
+            const stampP2 = (container) => {
+                const inst = container.instantiateModelsToScene((n) => n, false, { doNotInstantiate: true });
+                const nodes = [];
+                inst.rootNodes.forEach(r => { nodes.push(r); r.getDescendants(false).forEach(n => nodes.push(n)); });
+                return {
+                    root: inst.rootNodes[0],
+                    meshes: nodes.filter(n => n instanceof BABYLON.AbstractMesh),
+                    transformNodes: nodes.filter(n => !(n instanceof BABYLON.AbstractMesh)),
+                    skeletons: inst.skeletons,
+                    animationGroups: inst.animationGroups,
+                };
+            };
+            // Warm every cosmetic (models + face strips) in the background once the first pickle is up, so the
+            // wardrobe and restyles never wait on a download.
+            let p2Prefetched = false;
+            const prefetchP2 = () => {
+                if (p2Prefetched) return;
+                p2Prefetched = true;
+                setTimeout(() => {
+                    COSMETICS.forEach(c => {
+                        if (c.file) loadP2(c.file).catch(() => {});
+                        if (c.strip) loadStrip(c.strip);
+                    });
+                }, 1500);
+            };
+            // Dispose a built pickle WITHOUT the textures (they belong to the cached containers); its own cloned
+            // materials, face canvas, skeleton and clips go.
+            const disposePickle2 = (ch) => {
+                if (!ch) return;
+                Object.values(ch.animations || {}).forEach(a => { try { a.stop(); a.dispose(); } catch (e) {} });
+                const mats = new Set();
+                (ch.meshes || []).forEach(m => {
+                    if (!m.material) return;
+                    mats.add(m.material);
+                    (m.material.subMaterials || []).forEach(x => { if (x) mats.add(x); });
+                });
+                if (ch.face && ch.face.tex) ch.face.tex.dispose();
+                (ch.meshes || []).forEach(m => { if (!m.isDisposed()) m.dispose(false, false); });
+                if (ch.modelRoot && !ch.modelRoot.isDisposed()) ch.modelRoot.dispose(false, false);
+                mats.forEach(mt => { try { mt.dispose(false, false); } catch (e) {} });
+                if (ch.skeleton) ch.skeleton.dispose();
+            };
+            window.disposePickle2 = disposePickle2;
+
             const buildPickle2 = async (prefix, side, loadout, bust) => {
-                const v = bust ? '?v=' + Date.now() : PICKLE2_V;
-                const base = await BABYLON.SceneLoader.ImportMeshAsync('', PICKLE2_DIR, 'pickle_base.glb' + v, scene);
+                const lo = sanitizeLoadout(loadout);
+                // fetch the base + this loadout's parts together (cached after the first time)
+                const partDefs = COSMETIC_SLOTS.map(slot => ({ slot, c: cosmeticById(lo[slot]) })).filter(x => x.c && x.c.file);
+                const [baseC, ...partCs] = await Promise.all([loadP2('pickle_base.glb', bust),
+                    ...partDefs.map(x => loadP2(x.c.file, bust).catch((e) => { console.warn('[pickle2] part "' + x.c.id + '" failed to load - slot left empty', e); return null; }))]);
+                prefetchP2();
+                const base = stampP2(baseC);
                 const modelRoot = new BABYLON.TransformNode(prefix + 'Pickle2Root', scene);
-                const glRoot = base.meshes[0];                 // glTF __root__ (handedness)
+                const glRoot = base.root;                      // glTF __root__ (handedness)
                 glRoot.parent = modelRoot;
                 const skeleton = base.skeletons[0] || null;
                 const meshes = base.meshes.filter(m => m.getTotalVertices && m.getTotalVertices() > 0);
                 const team = teamColorFor(side);
-                const lo = sanitizeLoadout(loadout);
                 let face = null;
                 for (const m of meshes) {
                     if (!m.material) continue;
@@ -13750,16 +13811,14 @@
                 }
                 // parts: skinned to this wizard's skeleton, parented like the base mesh
                 const meshParent = meshes[0] ? meshes[0].parent : glRoot;
-                for (const slot of COSMETIC_SLOTS) {
-                    const c = cosmeticById(lo[slot]);
-                    if (!c || !c.file) continue;
+                for (let i = 0; i < partDefs.length; i++) {
+                    const { slot, c } = partDefs[i];
+                    if (!partCs[i]) continue;
                     try {
-                        const part = await BABYLON.SceneLoader.ImportMeshAsync('', PICKLE2_DIR, c.file + v, scene);
+                        const part = stampP2(partCs[i]);
                         const pm = part.meshes.filter(m => m.getTotalVertices && m.getTotalVertices() > 0);
                         for (const m of pm) {
-                            const local = m.parent ? m.parent : null;
-                            m.parent = meshParent;
-                            if (local && local !== part.meshes[0]) m.parent = meshParent;   // flatten to the base's frame
+                            m.parent = meshParent;                     // flatten to the base's frame
                             if (skeleton && m.skeleton) m.skeleton = skeleton;
                             if (m.material) {
                                 m.material = m.material.clone(m.material.name + '_' + prefix, true);
@@ -13777,9 +13836,9 @@
                         }
                         part.skeletons.forEach(s => { if (s !== skeleton) s.dispose(); });
                         part.animationGroups.forEach(g => g.dispose());
-                        part.transformNodes.forEach(n => n.dispose());
-                        part.meshes[0].dispose(true, false);          // the part's own __root__ (children moved)
-                    } catch (e) { console.warn('[pickle2] part "' + c.id + '" failed to load - slot left empty', e); }
+                        part.transformNodes.forEach(n => n.dispose(true));
+                        part.root.dispose(true, false);               // the part's own __root__ (children moved)
+                    } catch (e) { console.warn('[pickle2] part "' + c.id + '" failed to build - slot left empty', e); }
                 }
                 for (const m of meshes) { m.renderingGroupId = 1; m.isPickable = false; }
                 // clips: name the base's animation groups by the contract names
@@ -13891,14 +13950,7 @@
                 P.querySelector('#labReload').onclick = () => rebuild(true);
                 P.querySelector('#labExit').onclick = () => { location.href = location.pathname; };
 
-                const dispose = (ch) => {
-                    if (!ch) return;
-                    Object.values(ch.animations).forEach(a => a && a.dispose && a.dispose());
-                    ch.meshes.forEach(m => m.dispose(false, true));
-                    if (ch.skeleton) ch.skeleton.dispose();
-                    ch.modelRoot.dispose(false, true);
-                    if (ch.face && ch.face.tex) ch.face.tex.dispose();
-                };
+                const dispose = disposePickle2;
                 const rebuild = async (bust) => {
                     if (LAB.building) return;
                     LAB.building = true; msg('loading...');
@@ -13940,14 +13992,7 @@
                 const TEAMS = [['left', 'Blue'], ['right', 'Red']];
                 const optionsFor = (slot) => COSMETICS.filter(c => c.slot === slot);
 
-                const disposeChar = (ch) => {
-                    if (!ch) return;
-                    Object.values(ch.animations).forEach(a => { try { a.stop(); a.dispose(); } catch (e) {} });
-                    ch.meshes.forEach(m => m.dispose(false, true));
-                    if (ch.skeleton) ch.skeleton.dispose();
-                    if (ch.face && ch.face.tex) ch.face.tex.dispose();
-                    ch.modelRoot.dispose(false, true);
-                };
+                const disposeChar = disposePickle2;
                 const playPose = () => {
                     const ch = W.char; if (!ch) return;
                     Object.values(ch.animations).forEach(a => a && a.stop && a.stop());
@@ -14417,11 +14462,7 @@
                     else { aiModelRoot = pk.modelRoot; aiFlashMeshes = target.flashMeshes; }
                     const a = pk.animations[cur] || pk.animations.idle;
                     if (a) a.play(cur === 'idle' || cur === 'left' || cur === 'right' || cur === 'cast_loop');
-                    Object.values(old.anims || {}).forEach(g => { try { g.stop(); g.dispose(); } catch (e) {} });
-                    (old.meshes || []).forEach(m => m.dispose(false, true));
-                    if (old.skel) old.skel.dispose();
-                    if (old.face && old.face.tex) old.face.tex.dispose();
-                    old.root.dispose(false, true);
+                    disposePickle2({ modelRoot: old.root, meshes: old.meshes, animations: old.anims, skeleton: old.skel, face: old.face });
                 };
                 // Load sequentially (player, then AI) so each cleanly collects its own
                 // imported clips — concurrent imports race on scene.animationGroups indexing.
