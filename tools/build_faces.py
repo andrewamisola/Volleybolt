@@ -547,11 +547,21 @@ def fh_handlebar():
 
 
 def fh_goatee():
+    """The owner's combo: a long thin mustache right across the lip (as wide as the full beard's) and a small,
+    sparse chin patch under the lip - not a solid beard."""
     im = Image.new('RGBA', (FHW, FHH), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
-    _blob(d, [(26, 19), (38, 19), (37, 25), (34, 31), (30, 31), (27, 25)])
-    d.line((30, 22, 30, 28), fill=HAIR_HI)
-    _blob(d, [(27, 6), (37, 6), (36, 8), (28, 8)])     # a thin mustache to match
+    # mustache: thin, wide, drooping a touch at the ends
+    d.polygon([(19, 8), (24, 5), (32, 6), (40, 5), (45, 8), (44, 9), (40, 8), (32, 8), (24, 8), (20, 9)], fill=HAIR)
+    d.line((20, 9, 24, 7, 31, 7), fill=INK)
+    d.line((33, 7, 40, 7, 44, 9), fill=INK)
+    # chin patch: a soft little triangle of hair dots under the lip, denser in the middle
+    rng = random.Random(8)
+    for _ in range(260):
+        x, y = rng.randrange(25, 40), rng.randrange(17, 31)
+        w = 1 - abs(x - 32) / 8.5 - (y - 17) / 20
+        if w > rng.random() * 0.55:
+            im.putpixel((x, y), HAIR if rng.random() < 0.7 else INK)
     return im
 
 

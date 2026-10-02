@@ -13605,7 +13605,7 @@
             const CHARACTER_VERSION = 2;
             window.CHARACTER_VERSION = CHARACTER_VERSION;
             const PICKLE2_DIR = 'models/pickle2/';
-            const PICKLE2_V = '?v=11';
+            const PICKLE2_V = '?v=14';
             // The catalogue: every cosmetic. id = stable (unlocks / a future Steam inventory key off it).
             const COSMETICS = [
                 { id: 'hat_none',      name: 'No Hat',          slot: 'hat' },
@@ -13616,8 +13616,10 @@
                 { id: 'outfit_robe',   name: 'Wizard Robe',     slot: 'outfit', file: 'parts/outfit_robe.glb' },
                 { id: 'outfit_cape',   name: 'Short Cape',      slot: 'outfit', file: 'parts/outfit_cape.glb', unlock: 'SEASONED' },
                 { id: 'neck_none',     name: 'None',            slot: 'neck' },
+                { id: 'neck_chain',    name: 'Gold Chain',      slot: 'neck',   file: 'parts/neck_chain.glb' },
                 { id: 'neck_scarf',    name: 'Knit Scarf',      slot: 'neck',   file: 'parts/neck_scarf.glb', unlock: 'PICKLED_IN_ICE' },
                 { id: 'face_acc_none', name: 'None',            slot: 'face_acc' },
+                { id: 'face_glasses_rect', name: 'Square Specs', slot: 'face_acc', file: 'parts/face_glasses_rect.glb' },
                 { id: 'face_glasses',  name: 'Round Glasses',   slot: 'face_acc', file: 'parts/face_glasses.glb', unlock: 'PICKLE_MONK' },
                 { id: 'staff_classic', name: 'Classic Staff',   slot: 'staff',  file: 'parts/staff_classic.glb' },
                 { id: 'staff_branch',  name: 'Gnarled Branch',  slot: 'staff',  file: 'parts/staff_branch.glb', unlock: 'STORM_CHASER' },
@@ -13645,6 +13647,8 @@
                 { id: 'hair_mohawk',   name: 'Mohawk',          slot: 'hair',   file: 'parts/hair_mohawk.glb', hideUnderHat: true },
                 { id: 'hair_tuft',     name: 'Bedhead',         slot: 'hair',   file: 'parts/hair_tuft.glb', hideUnderHat: true },
                 { id: 'hair_pigtails', name: 'Pigtails',        slot: 'hair',   file: 'parts/hair_pigtails.glb' },
+                // fileHat: swapped in under a hat (only the locks rooted below the brim)
+                { id: 'hair_anime',    name: 'Anime Spikes',    slot: 'hair',   file: 'parts/hair_anime.glb', fileHat: 'parts/hair_anime_hat.glb' },
                 // facial hair + cheek features: one-frame face strips
                 { id: 'fhair_none',    name: 'Clean Shaven',    slot: 'facial_hair' },
                 { id: 'fhair_handlebar', name: 'Handlebar',     slot: 'facial_hair', strip: 'textures/face/fhair_handlebar.png' },
@@ -13819,6 +13823,7 @@
                 setTimeout(() => {
                     COSMETICS.forEach(c => {
                         if (c.file) loadP2(c.file).catch(() => {});
+                        if (c.fileHat) loadP2(c.fileHat).catch(() => {});
                         if (c.strip) loadStrip(c.strip);
                     });
                 }, 1500);
@@ -13847,9 +13852,10 @@
                 // fetch the base + this loadout's parts together (cached after the first time)
                 const hatOn = !!(cosmeticById(lo.hat) || {}).file;
                 const partDefs = COSMETIC_SLOTS.map(slot => ({ slot, c: cosmeticById(lo[slot]) }))
-                    .filter(x => x.c && x.c.file && !(hatOn && x.c.hideUnderHat));   // a hat covers top-of-head hair
+                    .filter(x => x.c && x.c.file && !(hatOn && x.c.hideUnderHat))   // a hat covers top-of-head hair
+                    .map(x => ({ ...x, file: (hatOn && x.c.fileHat) || x.c.file }));  // ...or swaps in its under-a-hat cut
                 const [baseC, ...partCs] = await Promise.all([loadP2('pickle_base.glb', bust),
-                    ...partDefs.map(x => loadP2(x.c.file, bust).catch((e) => { console.warn('[pickle2] part "' + x.c.id + '" failed to load - slot left empty', e); return null; }))]);
+                    ...partDefs.map(x => loadP2(x.file, bust).catch((e) => { console.warn('[pickle2] part "' + x.c.id + '" failed to load - slot left empty', e); return null; }))]);
                 prefetchP2();
                 const base = stampP2(baseC);
                 const modelRoot = new BABYLON.TransformNode(prefix + 'Pickle2Root', scene);

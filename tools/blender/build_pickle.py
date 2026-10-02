@@ -253,6 +253,21 @@ def hair_pixels():
     return lambda x, y: grid[y][x]
 
 
+def curl_pixels():
+    """16x16 near-black curly hair: dark base, little brown ring highlights."""
+    W = H = 16
+    base, dark, light = map(hx, ('#2b1d16', '#1a110c', '#5a3c28'))
+    grid = [[base] * W for _ in range(H)]
+    for y in range(H):
+        for x in range(W):
+            r = math.hypot((x % 8) - 3.5, (y % 8) - 3.5)
+            if 2.2 < r < 3.2:
+                grid[y][x] = light if hash2(x, y, 47) < 0.6 else base
+            elif hash2(x, y, 49) < 0.25:
+                grid[y][x] = dark
+    return lambda x, y: grid[y][x]
+
+
 def leaf_pixels():
     """16x16 leaf green with a darker vein."""
     W = H = 16
@@ -305,6 +320,7 @@ def build_materials():
         'M_frame': make_mat('M_frame', lin('#2a2230')),
         'M_hair': make_mat('M_hair', lin('#4a3020'), pixel_image('hair_16', 16, 16, hair_pixels())),
         'M_leaf': make_mat('M_leaf', lin('#6fae3c'), pixel_image('leaf_16', 16, 16, leaf_pixels())),
+        'M_curl': make_mat('M_curl', lin('#2b1d16'), pixel_image('curl_16', 16, 16, curl_pixels())),
     }
 
 
@@ -315,10 +331,10 @@ def mirror(v, s):
 
 
 ARM_S = (0.30, -0.02, 1.05)       # shoulder
-ARM_E = (0.46, -0.06, 0.90)       # elbow   (out past the pot belly, 2026-10-01)
-ARM_W = (0.52, -0.10, 0.79)       # wrist
-HAND_C = (0.53, -0.11, 0.73)      # mitten centre
-HAND_T = (0.53, -0.115, 0.66)     # hand bone tail
+ARM_E = (0.42, -0.06, 0.89)       # elbow   (a little out, clear of the tummy)
+ARM_W = (0.46, -0.10, 0.77)       # wrist
+HAND_C = (0.47, -0.11, 0.71)      # mitten centre
+HAND_T = (0.47, -0.115, 0.64)     # hand bone tail
 LEG_X = 0.15
 
 BONES = [
@@ -518,23 +534,33 @@ def ellipsoid(mb, c, radii, lon, lat, wfn, mat, uspan=0.3, smooth=True, flat_bot
 
 # ------------------------------------------------------------------ the body (head + body = one cucumber)
 NSEG = 20
-BODY_RINGS = [  # z, radius - a round pot belly low down (owner: the original model's big belly was funny)
-    (0.20, 0.18), (0.27, 0.30), (0.38, 0.385), (0.52, 0.425), (0.66, 0.43), (0.80, 0.41), (0.90, 0.38),
+BODY_RINGS = [  # z, radius - slim, slightly round bottom; the tummy is added at the front by belly()
+    (0.20, 0.17), (0.27, 0.28), (0.38, 0.33), (0.47, 0.342), (0.56, 0.348), (0.65, 0.35), (0.75, 0.35), (0.86, 0.35),
     (0.975, 0.35), (1.10, 0.352), (1.25, 0.347), (1.40, 0.33), (1.525, 0.295), (1.61, 0.235), (1.65, 0.17),
     (1.68, 0.095)]
+BELLY = 0.11      # how far the tummy sticks out at the very front (owner: just the tummy, not the whole bottom)
+
+
+def belly(z, a):
+    """Extra radius of the tummy at height z and ring angle a (radians; -90 deg = the front, -Y)."""
+    front = max(0.0, -math.sin(a))
+    gz = math.exp(-((z - 0.60) / 0.19) ** 2) * (1.0 - sstep(0.86, 0.95, z))
+    return BELLY * gz * front ** 1.6
 BOTTOM_Z, APEX_Z = 0.18, 1.70
 PATCH_K0, PATCH_K1 = 7, 12                 # patch vertex columns (5 segments = 90 degrees, centred on the front)
 PATCH_Z0, PATCH_Z1 = 0.975, 1.525          # 0.55 tall
 
 
-def body_radius(z):
-    """Piecewise-linear base radius profile (no bumps) -- shared with the robe so it can sit just outside."""
+def body_radius(z, a=None):
+    """Piecewise-linear base radius profile (no bumps) -- shared with the robe so it can sit just outside.
+    Pass the ring angle a to include the tummy."""
+    extra = belly(z, a) if a is not None else 0.0
     if z <= BODY_RINGS[0][0]:
-        return BODY_RINGS[0][1]
+        return BODY_RINGS[0][1] + extra
     for (z0, r0), (z1, r1) in zip(BODY_RINGS, BODY_RINGS[1:]):
         if z0 <= z <= z1:
-            return r0 + (r1 - r0) * (z - z0) / (z1 - z0)
-    return BODY_RINGS[-1][1]
+            return r0 + (r1 - r0) * (z - z0) / (z1 - z0) + extra
+    return BODY_RINGS[-1][1] + extra
 
 
 def ring_angle(k):
@@ -550,7 +576,7 @@ def build_body(mb):
             in_patch = PATCH_K0 <= k <= PATCH_K1 and PATCH_Z0 - 1e-6 <= z <= PATCH_Z1 + 1e-6
             lump = 0.0 if in_patch or j == 0 else (rng.random() - 0.5) * 0.020
             a = ring_angle(k)
-            rr = r + lump
+            rr = r + lump + belly(z, ring_angle(k))
             ring.append(mb.vert((rr * math.cos(a), rr * math.sin(a), z), body_w(z)))
         rings.append(ring)
     bot = mb.vert((0, 0, BOTTOM_Z), body_w(BOTTOM_Z))
@@ -712,8 +738,8 @@ def build_robe(mb):
         for k in range(NR):
             tz = top_z(k)
             z = HEM + (tz - HEM) * f
-            r = body_radius(z) + off(z)
             a = ring_angle(k)
+            r = body_radius(z, a) + off(z)
             x, y = r * math.cos(a), r * math.sin(a)
             ring.append(mb.vert((x, y, z), wts(z, x)))
         rings.append(ring)
@@ -721,10 +747,10 @@ def build_robe(mb):
     for k in range(NR):
         a = ring_angle(k)
         zt = mb.v[rings[-1][k]].z
-        r = body_radius(zt) + 0.008
+        r = body_radius(zt, a) + 0.008
         inner_top.append(mb.vert((r * math.cos(a), r * math.sin(a), zt), wts(zt, r * math.cos(a))))
         zh = HEM
-        r = body_radius(zh) + 0.008
+        r = body_radius(zh, a) + 0.008
         inner_bot.append(mb.vert((r * math.cos(a), r * math.sin(a), zh), wts(zh, r * math.cos(a))))
     for j in range(len(fr) - 1):
         team = j == 0 or j == len(fr) - 2
@@ -894,8 +920,8 @@ def build_cape(mb):
         zt = ZT - 0.17 * e ** 1.5                          # drapes from high on the back, lower at the shoulders
         zh = ZH + 0.24 * e ** 1.5                          # hem longest at the centre back, curving up the sides
         z = zt + (zh - zt) * f
-        r = body_radius(z) + 0.045 + 0.065 * f ** 1.4 - inset
         a = ang(c, f)
+        r = body_radius(z, a) + 0.045 + 0.065 * f ** 1.4 - inset
         return Vector((r * math.cos(a), r * math.sin(a), z))
 
     outer = [[mb.vert(pos(c, f), body_w(pos(c, f).z)) for c in range(NC + 1)] for f in fr]
@@ -1013,6 +1039,71 @@ def build_glasses(mb):
         tube(mb, pts, [rt * 0.85] * 4, 4, wf, 'M_frame', smooth=False, cap0=False, cap1=True)
 
 
+def build_glasses_rect(mb):
+    """Square specs: thick black rectangular frames over the painted eyes, a bridge, temples back along the head."""
+    zc = 1.353
+    wts = body_w(zc)
+    wf = lambda *a: wts
+    HX, HY, CR, rt = 0.084, 0.066, 0.024, 0.019
+    rb = body_radius(zc) + 0.033
+    edges = {}
+    for side, deg in (('R', -105.5), ('L', -74.5)):
+        a = math.radians(deg)
+        n = Vector((math.cos(a), math.sin(a), 0))
+        u = Vector((-math.sin(a), math.cos(a), 0))
+        v = Vector((0, 0, 1))
+        C = Vector((rb * math.cos(a), rb * math.sin(a), zc))
+        path = []                                        # rounded rectangle, counter-clockwise in (u, v)
+        for (cx, cy, a0) in ((HX - CR, HY - CR, 0), (-(HX - CR), HY - CR, 90), (-(HX - CR), -(HY - CR), 180),
+                             (HX - CR, -(HY - CR), 270)):
+            for k in range(4):
+                t = math.radians(a0 + 90 * k / 3)
+                path.append((cx + CR * math.cos(t), cy + CR * math.sin(t), math.cos(t), math.sin(t)))
+        centres = [C + u * px + v * py for px, py, _, _ in path]
+        frames = [((u * ox + v * oy).normalized(), n) for _, _, ox, oy in path]
+        sec = [(rt * math.cos(TAU * k / 4), rt * math.sin(TAU * k / 4)) for k in range(4)]
+        loop_sweep(mb, centres, frames, sec, lambda i, c: wts, lambda i: 'M_frame', uscale=1.0)
+        edges[side] = (C, u, n)
+    (CR_, uR, _), (CL_, uL, _) = edges['R'], edges['L']
+    pR, pL = CR_ + uR * HX, CL_ - uL * HX
+    tube(mb, [pR, (pR + pL) / 2 + Vector((0, -0.01, 0.01)), pL], [rt * 0.9] * 3, 4, wf, 'M_frame', smooth=False,
+         cap0=False, cap1=False)
+    for (C, u, n), s in ((edges['R'], -1), (edges['L'], 1)):
+        start = C + u * HX * s + Vector((0, 0, HY * 0.5))
+        a0 = math.atan2(start.y, start.x)
+        pts = [start]
+        for t in (0.25, 0.55, 1.0):
+            aa = a0 + s * math.radians(55) * t
+            rr = body_radius(zc) + 0.02
+            pts.append(Vector((rr * math.cos(aa), rr * math.sin(aa), zc + HY * 0.5 + 0.005 * t)))
+        tube(mb, pts, [rt * 0.85] * 4, 4, wf, 'M_frame', smooth=False, cap0=False, cap1=True)
+
+
+def build_gold_chain(mb):
+    """A gold chain round the neck (higher at the back, dipping at the front) with an Italian horn pendant."""
+    NA = 28
+    cent, frames = [], []
+    for i in range(NA):
+        a = TAU * i / NA - math.pi / 2                    # i = 0 at the front
+        back = (1 - math.cos(a + math.pi / 2)) / 2
+        z = 0.935 + 0.09 * back
+        r = body_radius(z, a) + 0.012
+        cent.append(Vector((r * math.cos(a), r * math.sin(a), z)))
+        frames.append((Vector((math.cos(a), math.sin(a), 0)), Vector((0, 0, 1))))
+    sec = [(0.011 * math.cos(TAU * k / 4), 0.011 * math.sin(TAU * k / 4)) for k in range(4)]
+    loop_sweep(mb, cent, frames, sec, lambda i, c: body_w(c.z), lambda i: 'M_gold', uscale=6.0)
+    # the cornicello: a little gold horn hanging off a bail, curling out over the tummy
+    a = -math.pi / 2
+    wp = body_w(0.88)
+    def front(z, out):
+        r = body_radius(z, a) + out
+        return Vector((0, -r, z))
+    ellipsoid(mb, front(0.925, 0.03), (0.016, 0.012, 0.016), 6, 3, lambda q: wp, 'M_gold', smooth=False)
+    horn = [front(0.912, 0.04), front(0.875, 0.05) + Vector((0.008, 0, 0)), front(0.84, 0.06) + Vector((0.02, 0, 0)),
+            front(0.815, 0.07) + Vector((0.035, 0, 0.005)), front(0.81, 0.08) + Vector((0.045, 0, 0.02))]
+    tube(mb, horn, [0.02, 0.024, 0.018, 0.01, 0.003], 6, lambda *a_: wp, 'M_gold', smooth=False, cap0=True, cap1=False)
+
+
 def build_staff_branch(mb):
     """A crooked branch: wobbling shaft (straight at the grip), two knots, a forked top cradling a team orb."""
     W = {'sock_staff': 1.0}
@@ -1086,18 +1177,85 @@ def build_hair_mohawk(mb):
         tube(mb, [p0, tip], [0.06, 0.004], 5, wf, 'M_team', uspan=1.0, smooth=False, cap0=True, cap1=False)
 
 
-def build_hair_tuft(mb):
-    """Bedhead: a messy cluster of brown curls on top."""
+def curl_mop(mb, mat, seed, n, pitch_rng, yaw_rng, size, max_z=None, min_z=1.0, face_open=True):
+    """Pack curls (small faceted blobs) over the head: n tries spread on a golden spiral inside the pitch/yaw
+    window, each set on the real head surface (head_point) and pushed half out. Skips the face window, anything
+    lower than min_z and (for the under-a-hat variant) anything above max_z."""
     W = {'sock_hat': 1.0}
-    rng = random.Random(7)
-    for pitch, yaw, r in ((0, 0, 0.075), (-28, 18, 0.062), (-22, -24, 0.06), (24, 14, 0.065), (20, -20, 0.058),
-                          (-45, 0, 0.05), (45, 4, 0.052)):
-        c, d = head_point(pitch, yaw, 0.01)
-        ellipsoid(mb, c + d * 0.02, (r, r, r * 0.8), 7, 4, lambda q: W, 'M_hair', uspan=0.6, smooth=False)
-    for k in range(4):                                   # a few stray curl spikes
-        c, d = head_point(rng.uniform(-35, 35), rng.uniform(-35, 35), 0.04)
-        tube(mb, [c, c + (d + Vector((rng.uniform(-.5, .5), rng.uniform(-.5, .5), 0.3))).normalized() * 0.11],
-             [0.025, 0.004], 4, lambda *a: W, 'M_hair', smooth=False, cap0=True, cap1=False)
+    rng = random.Random(seed)
+    golden = math.pi * (3 - math.sqrt(5))
+    for i in range(n):
+        u = (i + 0.5) / n
+        pitch = pitch_rng[0] + (pitch_rng[1] - pitch_rng[0]) * u
+        yaw = yaw_rng[0] + (yaw_rng[1] - yaw_rng[0]) * ((i * golden / (2 * math.pi)) % 1.0)
+        pitch += rng.uniform(-6, 6); yaw += rng.uniform(-8, 8)
+        p, d = head_point(pitch, yaw, 0.0)
+        if p.z < min_z or (max_z is not None and p.z > max_z):
+            continue
+        if face_open and p.y < 0 and p.z < 1.53 and abs(math.degrees(math.atan2(p.x, -p.y))) < 62:
+            continue                                     # keep the face (eyes + brows) clear
+        r = rng.uniform(*size)
+        ellipsoid(mb, p + d * (r * 0.45), (r, r, r * 0.85), 6, 3, lambda q: W, mat, uspan=0.6, smooth=False)
+
+
+def build_hair_tuft(mb):
+    """Bedhead: a full, messy brown mop on top with a few stray spikes."""
+    W = {'sock_hat': 1.0}
+    curl_mop(mb, 'M_hair', 11, 46, (-40, 75), (-95, 95), (0.055, 0.08), min_z=1.42)
+    rng = random.Random(5)
+    for k in range(7):                                   # stray spikes sticking up
+        c, d = head_point(rng.uniform(-30, 45), rng.uniform(-60, 60), 0.05)
+        tip = c + (d + Vector((rng.uniform(-.6, .6), rng.uniform(-.6, .6), 0.5))).normalized() * rng.uniform(0.1, 0.16)
+        tube(mb, [c, tip], [0.03, 0.004], 4, lambda *a: W, 'M_hair', smooth=False, cap0=True, cap1=False)
+
+
+def _spike(mb, base, direction, length, radius, bend, W, mat):
+    """One anime lock: a tapered, slightly curved, faceted spike from `base` along `direction`, bending by `bend`."""
+    d = direction.normalized()
+    pts = [base, base + d * length * 0.35 + bend * 0.15, base + d * length * 0.7 + bend * 0.55, base + d * length + bend]
+    tube(mb, pts, [radius, radius * 0.78, radius * 0.42, 0.004], 5, lambda *a: W, mat, uspan=0.6, smooth=False,
+         cap0=True, cap1=False)
+
+
+def build_hair_anime(mb, max_base_z=None):
+    """Anime Spikes: a dark cap of hair with big pointed locks - crown spikes sweeping up and back, back spikes
+    fanning down, long side locks past the cheeks and pointy bangs that stop above the eyes. max_base_z = only the
+    locks rooted under a hat brim (the 'under a hat' cut)."""
+    W = {'sock_hat': 1.0}
+    if max_base_z is None:
+        ellipsoid(mb, (0, 0.04, 1.54), (0.30, 0.30, 0.22), 10, 6, lambda q: W, 'M_curl', uspan=0.8, smooth=False)
+    locks = []
+    # crown: up and back
+    for k, (pitch, yaw, ln) in enumerate(((5, -40, 0.30), (12, 0, 0.38), (5, 40, 0.30), (35, -22, 0.34), (35, 22, 0.34),
+                                          (60, 0, 0.36), (60, -45, 0.30), (60, 45, 0.30))):
+        locks.append((pitch, yaw, ln, 0.10, Vector((0, 0.10, 0.04)), 'crown'))
+    # back: fanning down
+    for pitch, yaw in ((95, -35), (100, 0), (95, 35), (125, -20), (125, 20)):
+        locks.append((pitch, yaw, 0.30, 0.09, Vector((0, 0.04, -0.12)), 'back'))
+    # sides: long locks hanging past the cheeks
+    for s_ in (1, -1):
+        for pitch, yaw, ln in ((-5, 78, 0.36), (15, 92, 0.34), (40, 100, 0.30)):
+            locks.append((pitch, s_ * yaw, ln, 0.085, Vector((s_ * 0.05, 0.0, -0.04)), 'side'))
+    # bangs: pointy, hanging over the forehead (they stop above the eyes)
+    for yaw in (-38, -14, 10, 32):
+        locks.append((-34, yaw, 0.20, 0.07, Vector((yaw * 0.0008, -0.04, -0.02)), 'bang'))
+    for pitch, yaw, ln, r, bend, kind in locks:
+        base, d = head_point(pitch, yaw, -0.02)
+        if max_base_z is not None and base.z > max_base_z:
+            continue
+        if kind == 'crown':
+            direction = d + Vector((0, 0, 0.35))                       # up and back
+        elif kind == 'back':
+            direction = d + Vector((0, 0, -0.2))                       # fanning down the back
+        elif kind == 'side':
+            direction = Vector((d.x * 0.35, d.y * 0.2, -1.0))          # hanging down past the cheeks
+        else:
+            direction = Vector((d.x * 0.15, -0.30, -1.0))              # bangs falling over the forehead
+        _spike(mb, base, direction, ln, r, bend, W, 'M_curl')
+
+
+def build_hair_anime_hat(mb):
+    build_hair_anime(mb, max_base_z=1.6)
 
 
 def build_hair_pigtails(mb):
@@ -1617,6 +1775,10 @@ def main():
                                ('hair_sprout', build_hair_sprout, ['M_skin', 'M_leaf']),
                                ('hair_mohawk', build_hair_mohawk, ['M_team']),
                                ('hair_tuft', build_hair_tuft, ['M_hair']),
+                               ('hair_anime', build_hair_anime, ['M_curl']),
+                               ('hair_anime_hat', build_hair_anime_hat, ['M_curl']),
+                               ('face_glasses_rect', build_glasses_rect, ['M_frame']),
+                               ('neck_chain', build_gold_chain, ['M_gold']),
                                ('hair_pigtails', build_hair_pigtails, ['M_hair', 'M_team'])):
         m = MB(); fn(m)
         extra.append(to_object(name, m, mats, matnames, arm)); tris[name] = m.tris()
