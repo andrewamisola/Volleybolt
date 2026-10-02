@@ -13569,7 +13569,8 @@
                                     if (!mat) continue;
                                     stylePickleMat(mat);
                                     if (/^M_team/.test(mat.name)) {
-                                        if (mat.albedoColor) mat.albedoColor = team.clone(); else mat.diffuseColor = team.clone();
+                                        // teamColorFor is a display (sRGB) colour; PBR albedo is LINEAR - unconverted it washed out to pastel
+                                        if (mat.albedoColor) mat.albedoColor = team.toLinearSpace(); else mat.diffuseColor = team.clone();
                                     }
                                 }
                             }
