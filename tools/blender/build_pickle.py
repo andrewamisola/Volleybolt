@@ -1292,11 +1292,11 @@ def head_ray(theta_deg, phi_deg, lift=0.0):
 # back), theta down from straight up (bigger = lower on the head). Between tips the edge rises to a notch.
 SHAG_TIPS = [
     # bangs: mixed lengths; the long one (-100) falls past the brow to the top of the wearer's right eye
-    (-140, 80), (-122, 76), (-100, 86), (-84, 74), (-68, 79), (-52, 72), (-36, 77),
+    (-140, 71), (-122, 67), (-100, 77), (-84, 65), (-68, 70), (-52, 64), (-36, 68),
     # left side: short
     (-18, 92), (2, 95), (22, 93),
-    # back: fuller, a little longer
-    (42, 104), (63, 108), (86, 110), (109, 108), (131, 104),
+    # back: the mullet - longer, more locks, swooping out at the ends
+    (38, 108), (55, 118), (72, 124), (90, 127), (108, 124), (125, 118), (142, 108),
     # right side: short
     (154, 93), (174, 95), (196, 92)]
 
@@ -1349,12 +1349,17 @@ def build_hair_shag(mb, t0=0.0):
     for t in rows:
         ro, ri = [], []
         for j in range(NP):
-            phi = -90 + 360 * j / NP
-            th = shag_rim(phi) * t
-            back = max(0.0, math.sin(math.radians(phi)))
-            lift_o = 0.022 + (0.045 + 0.05 * back) * (1 - t ** 2.2)        # volume on top / at the back
-            lift_o += 0.022 * shag_lock_bulge(phi) * min(1.0, t * 1.6)      # each lock a raised ridge down to its tip
-            lift_i = 0.006
+            phi0 = -90 + 360 * j / NP
+            th = shag_rim(phi0) * t
+            back = max(0.0, math.sin(math.radians(phi0)))
+            phi = phi0 + 7.0 * math.sin(t * math.pi * 2.2 + 0.4) * t      # waviness: the locks drift side to side
+            flare = 0.075 * back ** 1.5 * max(0.0, t - 0.55) ** 2 / 0.2   # the mullet swoops out at the nape
+            lift_o = 0.03 + (0.065 + 0.07 * back) * (1 - t ** 2.2)        # volume on top, more at the back
+            lift_o += 0.022 * shag_lock_bulge(phi0) * min(1.0, t * 1.6)     # each lock a raised ridge down to its tip
+            lift_o += 0.009 * math.sin(t * math.pi * 3.0) + flare          # a gentle ripple + the swoop
+            lift_i = 0.006 + flare
+            front = max(0.0, -math.sin(math.radians(phi0)))
+            lift_o = lift_i + (lift_o - lift_i) * (1 - 0.8 * front ** 1.2 * t ** 1.5)   # thin over the face (eyes stay clear)
             po, _ = head_ray(th, phi, lift_o)
             pi_, _ = head_ray(th, phi, lift_i)
             ro.append(mb.vert(po, W)); ri.append(mb.vert(pi_, W))
