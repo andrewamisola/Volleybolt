@@ -268,6 +268,20 @@ def curl_pixels():
     return lambda x, y: grid[y][x]
 
 
+def shag_pixels():
+    """16x16 near-black hair with thin lighter strand lines (an anime sheen) running along v."""
+    W = H = 16
+    base, dark, light = map(hx, ('#18161c', '#0e0d11', '#34323c'))
+    grid = [[base] * W for _ in range(H)]
+    for y in range(H):
+        for x in range(W):
+            if x % 4 == 1 and hash2(x, y // 3, 51) < 0.7:
+                grid[y][x] = light
+            elif x % 4 == 3:
+                grid[y][x] = dark
+    return lambda x, y: grid[y][x]
+
+
 def leaf_pixels():
     """16x16 leaf green with a darker vein."""
     W = H = 16
@@ -321,6 +335,7 @@ def build_materials():
         'M_hair': make_mat('M_hair', lin('#4a3020'), pixel_image('hair_16', 16, 16, hair_pixels())),
         'M_leaf': make_mat('M_leaf', lin('#6fae3c'), pixel_image('leaf_16', 16, 16, leaf_pixels())),
         'M_curl': make_mat('M_curl', lin('#2b1d16'), pixel_image('curl_16', 16, 16, curl_pixels())),
+        'M_shag': make_mat('M_shag', lin('#18161c'), pixel_image('shag_16', 16, 16, shag_pixels())),
     }
 
 
@@ -1258,6 +1273,114 @@ def build_hair_anime_hat(mb):
     build_hair_anime(mb, max_base_z=1.6)
 
 
+def head_ray(theta_deg, phi_deg, lift=0.0):
+    """Where a ray from HEAD_C leaves the pickle (+ lift). theta from straight up, phi around Z (0 = +X / the wearer's
+    left, -90 = the front / -Y). Returns (point, ray direction)."""
+    th, ph = math.radians(theta_deg), math.radians(phi_deg)
+    d = Vector((math.sin(th) * math.cos(ph), math.sin(th) * math.sin(ph), math.cos(th)))
+    t = 0.0
+    while t < 0.7:
+        q = HEAD_C + d * t
+        if q.z >= APEX_Z or math.hypot(q.x, q.y) >= body_radius(q.z):
+            break
+        t += 0.004
+    return HEAD_C + d * (t + lift), d
+
+
+def shag_theta_max(phi_deg):
+    """How far down the shag reaches: to the forehead at the front, to the jaw-ish line at the sides and back."""
+    front = max(0.0, -math.sin(math.radians(phi_deg)))
+    return 108.0 - 52.0 * front ** 1.4
+
+
+def hair_blade(mb, root, out, length, width, droop, flick, mat, W, segs=5):
+    """One flat, pointed strand (double-sided ribbon): leaves `root` along `out`, droops under gravity and flicks
+    outward at the tip; tapers from `width` to a point."""
+    out = out.normalized()
+    down = Vector((0, 0, -1))
+    side = out.cross(Vector((0, 0, 1)))
+    if side.length < 1e-3:
+        side = Vector((1, 0, 0))
+    side.normalize()
+    radial = Vector((out.x, out.y, 0))
+    radial = radial.normalized() if radial.length > 1e-3 else Vector((0, 0, 0))
+    L, R = [], []
+    for i in range(segs + 1):
+        t = i / segs
+        p = root + out * length * t + down * droop * length * t * t + radial * flick * length * t * t
+        w = width * (1 - t) ** 0.85 * 0.5
+        L.append(mb.vert(p - side * w, W)); R.append(mb.vert(p + side * w, W))
+    for i in range(segs):
+        v0, v1 = i / segs, (i + 1) / segs
+        q = [L[i], R[i], R[i + 1], L[i + 1]]
+        uv = [(0, v0), (1, v0), (1, v1), (0, v1)]
+        mb.face(q, mat, uv, smooth=False)
+        mb.face(q[::-1], mat, uv[::-1], smooth=False)          # both sides
+
+
+def build_hair_shag(mb, max_root_z=None):
+    """Messy Shag (owner's reference): a black dome over the top and sides of the head made of many thin flat
+    pointed strands - a rim fringe all round, a splayed mid layer, bangs over the forehead and long wisps arching
+    off the crown. max_root_z = the under-a-hat cut (no dome or crown, only strands rooted below the brim)."""
+    W = {'sock_hat': 1.0}
+    rng = random.Random(31)
+    if max_root_z is None:
+        # the dome: a shell just off the head, rows of theta x columns of phi, open at the bottom edge
+        NP, NT = 24, 7
+        grid = []
+        for i in range(NT + 1):
+            row = []
+            for j in range(NP):
+                phi = -90 + 360 * j / NP
+                th = shag_theta_max(phi) * i / NT
+                p, _ = head_ray(th, phi, 0.045)
+                row.append(mb.vert(p, W))
+            grid.append(row)
+        for i in range(NT):
+            for j in range(NP):
+                j2 = (j + 1) % NP
+                mb.face([grid[i][j], grid[i][j2], grid[i + 1][j2], grid[i + 1][j]][::-1], 'M_shag',
+                        [(j / NP * 3, i / NT), ((j + 1) / NP * 3, i / NT), ((j + 1) / NP * 3, (i + 1) / NT), (j / NP * 3, (i + 1) / NT)][::-1],
+                        smooth=False)
+
+    def blade_at(th, phi, length, width, droop, flick, out_bias):
+        p, d = head_ray(th, phi, 0.03)
+        if max_root_z is not None and p.z > max_root_z:
+            return
+        out = d + Vector((0, 0, out_bias))
+        hair_blade(mb, p, out, length, width, droop, flick, 'M_shag', W)
+
+    # rim fringe all round (two staggered rows), longest at the back, short over the forehead
+    for row, k_off in ((0, 0.0), (1, 0.5)):
+        n = 30
+        for k in range(n):
+            phi = -90 + 360 * (k + k_off) / n + rng.uniform(-4, 4)
+            front = max(0.0, -math.sin(math.radians(phi)))
+            th = shag_theta_max(phi) - (6 + row * 10)
+            length = (0.12 + 0.10 * (1 - front)) * rng.uniform(0.8, 1.2)
+            blade_at(th, phi, length, rng.uniform(0.10, 0.14), rng.uniform(0.35, 0.65), rng.uniform(0.6, 1.0), -0.15)
+    # mid layer: splayed outward over the dome
+    for k in range(44):
+        phi = rng.uniform(-180, 180)
+        th = shag_theta_max(phi) * rng.uniform(0.25, 0.75)
+        blade_at(th, phi, rng.uniform(0.13, 0.2), rng.uniform(0.10, 0.13), rng.uniform(0.35, 0.6), rng.uniform(0.5, 0.9), 0.35)
+    # bangs: hanging over the forehead, a little apart
+    for yaw in (-40, -24, -8, 8, 24, 40):
+        p, d = head_ray(shag_theta_max(-90 + yaw) - 4, -90 + yaw, 0.03)
+        if max_root_z is None or p.z <= max_root_z:
+            hair_blade(mb, p, Vector((d.x * 0.3, -0.45, -1.0)), rng.uniform(0.09, 0.13), 0.095, 0.25, 0.3, 'M_shag', W)
+    if max_root_z is None:
+        # crown wisps: long strands arching up off the top and down over the sides
+        for k in range(5):
+            phi = -90 + 360 * k / 5 + rng.uniform(-20, 20)
+            p, d = head_ray(rng.uniform(5, 22), phi, 0.045)
+            hair_blade(mb, p, d + Vector((0, 0, 1.0)), rng.uniform(0.18, 0.24), 0.07, 1.3, 0.8, 'M_shag', W, segs=6)
+
+
+def build_hair_shag_hat(mb):
+    build_hair_shag(mb, max_root_z=1.58)
+
+
 def build_hair_pigtails(mb):
     """Two bunches off the sides of the head, tied with team-coloured bands (they show under hats too)."""
     W = {'sock_hat': 1.0}
@@ -1776,6 +1899,8 @@ def main():
                                ('hair_mohawk', build_hair_mohawk, ['M_team']),
                                ('hair_tuft', build_hair_tuft, ['M_hair']),
                                ('hair_anime', build_hair_anime, ['M_curl']),
+                               ('hair_shag', build_hair_shag, ['M_shag']),
+                               ('hair_shag_hat', build_hair_shag_hat, ['M_shag']),
                                ('hair_anime_hat', build_hair_anime_hat, ['M_curl']),
                                ('face_glasses_rect', build_glasses_rect, ['M_frame']),
                                ('neck_chain', build_gold_chain, ['M_gold']),
