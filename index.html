@@ -13521,6 +13521,43 @@
                 if (tex && tex.updateSamplingMode) tex.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST_MIPNEAREST);
             };
 
+            // Team outline for the modular pickle: an INVERTED HULL per part (a copy pushed out along its normals that
+            // draws only back faces, flat team colour). The real meshes cover it everywhere except a rim around the
+            // silhouette. Babylon's per-mesh renderOutline (fine on the old one-piece pickle) painted each part's
+            // outline over the other parts - a team-coloured smear across the robe/scarf/body.
+            class OutlineHullPlugin extends BABYLON.MaterialPluginBase {
+                constructor(mat) { super(mat, 'OutlineHull', 300, { OUTLINEHULL: false }); this.width = 0.045; this._enable(true); }
+                prepareDefines(defines) { defines.OUTLINEHULL = true; }
+                getUniforms() { return { ubo: [{ name: 'hullW', size: 1, type: 'float' }], vertex: 'uniform float hullW;' }; }
+                bindForSubMesh(ubo) { ubo.updateFloat('hullW', this.width); }
+                getClassName() { return 'OutlineHullPlugin'; }
+                getCustomCode(type) {
+                    return type === 'vertex' ? { CUSTOM_VERTEX_UPDATE_POSITION: '#ifdef NORMAL\n positionUpdated += normalUpdated * hullW;\n#endif' } : null;
+                }
+            }
+            const buildOutlineHulls = (prefix, meshes) => {
+                const mat = new BABYLON.StandardMaterial(prefix + '_outlineHull', scene);
+                // lit-but-black (diffuse/specular/ambient 0) so it renders as pure emissive: disableLighting would
+                // drop the NORMAL define and with it the hull push (no inflation -> z-fighting team colour on thin parts)
+                mat.diffuseColor = BABYLON.Color3.Black(); mat.specularColor = BABYLON.Color3.Black();
+                mat.ambientColor = BABYLON.Color3.Black();
+                mat.emissiveColor = new BABYLON.Color3(1, 1, 1);
+                mat.backFaceCulling = true; mat.cullBackFaces = false;      // cull FRONT faces: only the far side shows
+                mat.fogEnabled = false;
+                if (mat.ps1Snap) mat.ps1Snap.isEnabled = false;            // must match the (unsnapped) character
+                mat.outlineHull = new OutlineHullPlugin(mat);
+                return meshes.filter(m => m.getTotalVertices && m.getTotalVertices() > 0).map(m => {
+                    const h = m.clone(m.name + '_hull', m.parent, true);
+                    h.material = mat;
+                    h.skeleton = m.skeleton;
+                    h.renderingGroupId = m.renderingGroupId;
+                    h.isPickable = false;
+                    h._outlineHull = true;
+                    h.setEnabled(false);                                   // matches turn it on (applyTeamOutline)
+                    return h;
+                });
+            };
+
             // Build one modular pickle into `target` (combatant or a lab bag): base + parts + face + team colour.
             // Resolves with { modelRoot, skeleton, meshes, animations } or rejects (caller falls back to v1).
             const buildPickle2 = async (prefix, side, loadout, bust) => {
@@ -13584,6 +13621,7 @@
                     } catch (e) { console.warn('[pickle2] part "' + c.id + '" failed to load - slot left empty', e); }
                 }
                 for (const m of meshes) { m.renderingGroupId = 1; m.isPickable = false; }
+                const outlineHulls = buildOutlineHulls(prefix, meshes);
                 // clips: name the base's animation groups by the contract names
                 const animations = {};
                 for (const g of base.animationGroups) {
@@ -13602,7 +13640,7 @@
                 if (animations.defeat) {
                     try { const df = animations.defeat.clone(prefix + '_defeat_fall'); df.speedRatio = Math.max(1, ((df.to - df.from) / fpsOf(df)) / 2.2); animations.defeat_fall = df; } catch (e) {}
                 }
-                return { modelRoot, skeleton, meshes, animations, face, loadout: lo };
+                return { modelRoot, skeleton, meshes, animations, face, loadout: lo, outlineHulls };
             };
             window.buildPickle2 = buildPickle2;
 
@@ -14176,6 +14214,7 @@
                         target.modelRoot = pk.modelRoot;
                         target.skeleton = pk.skeleton;
                         target.flashMeshes = pk.meshes.filter(m => m.material);
+                        target.outlineHulls = pk.outlineHulls;
                         target.face = pk.face;
                         target.loadout = pk.loadout;
                         target.animations = target.animations || {};
@@ -14211,6 +14250,7 @@
                     const cur = target.currentAnim || 'idle';
                     target.modelRoot = pk.modelRoot; target.skeleton = pk.skeleton; target.face = pk.face; target.loadout = pk.loadout;
                     target.flashMeshes = pk.meshes.filter(m => m.material);
+                    target.outlineHulls = pk.outlineHulls;
                     target.animations = pk.animations;
                     const store = isPlayer ? playerAnimations : aiAnimations;
                     for (const k in pk.animations) store[k] = pk.animations[k];
@@ -19935,6 +19975,14 @@
                 const col = (c.side === 'right')
                     ? (TR ? new BABYLON.Color3(TR.r, TR.g, TR.b) : JUICE_OUTLINE_RED)
                     : JUICE_OUTLINE_BLUE;
+                if (c.outlineHulls && c.outlineHulls.length) {
+                    c.outlineHulls.forEach((h) => {
+                        if (!h.isEnabled()) h.setEnabled(true);
+                        // the ult's white-hot tint (setJuiceModelTint) owns the colour while it's on
+                        if (h.material && !h.material._juiceTintSaved) h.material.emissiveColor.copyFrom(col);
+                    });
+                    return;
+                }
                 root.getChildMeshes().forEach((mesh) => {
                     mesh.renderOutline = true;
                     mesh.outlineColor = col;
@@ -22431,6 +22479,7 @@
             c.flashMeshes = artifacts.flashMeshes;
             c.animations  = artifacts.animations;
             c.face        = artifacts.face || null;      // modular pickle's painted face (expressions)
+            c.outlineHulls = artifacts.outlineHulls || null;
             c.modelLoaded = true;
             const idle = artifacts.animations && artifacts.animations['idle'];
             if (idle) {
