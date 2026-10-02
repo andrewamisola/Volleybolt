@@ -1269,10 +1269,6 @@ def build_hair_anime(mb, max_base_z=None):
         _spike(mb, base, direction, ln, r, bend, W, 'M_curl')
 
 
-def build_hair_anime_hat(mb):
-    build_hair_anime(mb, max_base_z=1.6)
-
-
 def head_ray(theta_deg, phi_deg, lift=0.0):
     """Where a ray from HEAD_C leaves the pickle (+ lift). theta from straight up, phi around Z (0 = +X / the wearer's
     left, -90 = the front / -Y). Returns (point, ray direction)."""
@@ -1338,6 +1334,9 @@ def shag_lock_bulge(phi_deg):
     return max(0.0, 1.0 - best * best)
 
 
+SHAG_VOL = (0.03, 1.0)     # (base thickness off the scalp, puff multiplier) - tuned with the owner
+
+
 def build_hair_shag(mb, t0=0.0):
     """Messy Shag as one solid piece: outer surface puffed off the head (more on top and at the back, thinning to a
     chunky edge at the lock tips), an inner surface just off the head, and a wall closing the pointed rim. t0 > 0 =
@@ -1354,7 +1353,7 @@ def build_hair_shag(mb, t0=0.0):
             back = max(0.0, math.sin(math.radians(phi0)))
             phi = phi0 + 7.0 * math.sin(t * math.pi * 2.2 + 0.4) * t      # waviness: the locks drift side to side
             flare = 0.075 * back ** 1.5 * max(0.0, t - 0.55) ** 2 / 0.2   # the mullet swoops out at the nape
-            lift_o = 0.03 + (0.065 + 0.07 * back) * (1 - t ** 2.2)        # volume on top, more at the back
+            lift_o = SHAG_VOL[0] + SHAG_VOL[1] * (0.065 + 0.07 * back) * (1 - t ** 2.2)   # volume on top, more at the back
             lift_o += 0.022 * shag_lock_bulge(phi0) * min(1.0, t * 1.6)     # each lock a raised ridge down to its tip
             lift_o += 0.009 * math.sin(t * math.pi * 3.0) + flare          # a gentle ripple + the swoop
             lift_i = 0.006 + flare
@@ -1377,10 +1376,6 @@ def build_hair_shag(mb, t0=0.0):
         if t0 > 0:                                       # under-a-hat cut: close the top of the band too
             mb.face([outer[0][j2], outer[0][j], inner[0][j], inner[0][j2]], 'M_shag',
                     [(0, 0.9), (0.1, 0.9), (0.1, 1), (0, 1)], smooth=False)
-
-
-def build_hair_shag_hat(mb):
-    build_hair_shag(mb, t0=0.62)
 
 
 def build_hair_pigtails(mb):
@@ -1902,8 +1897,6 @@ def main():
                                ('hair_tuft', build_hair_tuft, ['M_hair']),
                                ('hair_anime', build_hair_anime, ['M_curl']),
                                ('hair_shag', build_hair_shag, ['M_shag']),
-                               ('hair_shag_hat', build_hair_shag_hat, ['M_shag']),
-                               ('hair_anime_hat', build_hair_anime_hat, ['M_curl']),
                                ('face_glasses_rect', build_glasses_rect, ['M_frame']),
                                ('neck_chain', build_gold_chain, ['M_gold']),
                                ('hair_pigtails', build_hair_pigtails, ['M_hair', 'M_team'])):

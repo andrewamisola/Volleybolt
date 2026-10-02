@@ -13605,10 +13605,10 @@
             const CHARACTER_VERSION = 2;
             window.CHARACTER_VERSION = CHARACTER_VERSION;
             const PICKLE2_DIR = 'models/pickle2/';
-            const PICKLE2_V = '?v=24';
+            const PICKLE2_V = '?v=25';
             // The catalogue: every cosmetic. id = stable (unlocks / a future Steam inventory key off it).
             const COSMETICS = [
-                { id: 'hat_none',      name: 'No Hat',          slot: 'hat' },
+                { id: 'hat_none',      name: 'Bald',            slot: 'hat' },
                 { id: 'hat_wizard',    name: 'Wizard Hat',      slot: 'hat',    file: 'parts/hat_wizard.glb' },
                 { id: 'hat_witch',     name: 'Witch Hat',       slot: 'hat',    file: 'parts/hat_witch.glb' },
                 { id: 'hat_crown',     name: 'Crown',           slot: 'hat',    file: 'parts/hat_crown.glb', unlock: 'CLEAN_SWEEP' },
@@ -13641,15 +13641,13 @@
                 { id: 'eyes_angry',    name: 'Angry Eyes',      slot: 'eyes',   strip: 'textures/face/eyes_angry.png' },
                 { id: 'eyes_wide',     name: 'Big Wide Eyes',   slot: 'eyes',   strip: 'textures/face/eyes_wide.png' },
                 { id: 'eyes_button',   name: 'Button Eyes',     slot: 'eyes',   strip: 'textures/face/eyes_button.png' },
-                // hair: 3D parts on the head socket; hideUnderHat = the hat covers it (pigtails poke out below a brim)
-                { id: 'hair_none',     name: 'Bald',            slot: 'hair' },
-                { id: 'hair_sprout',   name: 'Stem Sprout',     slot: 'hair',   file: 'parts/hair_sprout.glb', hideUnderHat: true },
-                { id: 'hair_mohawk',   name: 'Mohawk',          slot: 'hair',   file: 'parts/hair_mohawk.glb', hideUnderHat: true },
-                { id: 'hair_tuft',     name: 'Bedhead',         slot: 'hair',   file: 'parts/hair_tuft.glb', hideUnderHat: true },
-                { id: 'hair_pigtails', name: 'Pigtails',        slot: 'hair',   file: 'parts/hair_pigtails.glb' },
-                // fileHat: swapped in under a hat (only the locks rooted below the brim)
-                { id: 'hair_shag',     name: 'Messy Shag',      slot: 'hair',   file: 'parts/hair_shag.glb', fileHat: 'parts/hair_shag_hat.glb' },
-                { id: 'hair_anime',    name: 'Anime Spikes',    slot: 'hair',   file: 'parts/hair_anime.glb', fileHat: 'parts/hair_anime_hat.glb' },
+                // hairstyles share the hat slot (owner: one 'Hat / Hair' slot - a hat or a hairdo, never both)
+                { id: 'hair_sprout',   name: 'Stem Sprout',     slot: 'hat',    file: 'parts/hair_sprout.glb' },
+                { id: 'hair_mohawk',   name: 'Mohawk',          slot: 'hat',    file: 'parts/hair_mohawk.glb' },
+                { id: 'hair_tuft',     name: 'Bedhead',         slot: 'hat',    file: 'parts/hair_tuft.glb' },
+                { id: 'hair_pigtails', name: 'Pigtails',        slot: 'hat',    file: 'parts/hair_pigtails.glb' },
+                { id: 'hair_shag',     name: 'Messy Shag',      slot: 'hat',    file: 'parts/hair_shag.glb' },
+                { id: 'hair_anime',    name: 'Anime Spikes',    slot: 'hat',    file: 'parts/hair_anime.glb' },
                 // facial hair + cheek features: one-frame face strips
                 { id: 'fhair_none',    name: 'Clean Shaven',    slot: 'facial_hair' },
                 { id: 'fhair_handlebar', name: 'Handlebar',     slot: 'facial_hair', strip: 'textures/face/fhair_handlebar.png' },
@@ -13662,8 +13660,8 @@
                 { id: 'feat_cheekbones', name: 'Cheekbones',    slot: 'features', strip: 'textures/face/feat_cheekbones.png' },
                 { id: 'feat_bags',     name: 'Eye Bags',        slot: 'features', strip: 'textures/face/feat_bags.png' },
             ];
-            const COSMETIC_SLOTS = ['hat', 'hair', 'outfit', 'neck', 'face_acc', 'staff', 'eyes', 'brows', 'mouth', 'facial_hair', 'features'];
-            const DEFAULT_LOADOUT = { hat: 'hat_wizard', hair: 'hair_none', outfit: 'outfit_robe', neck: 'neck_none', face_acc: 'face_acc_none',
+            const COSMETIC_SLOTS = ['hat', 'outfit', 'neck', 'face_acc', 'staff', 'eyes', 'brows', 'mouth', 'facial_hair', 'features'];
+            const DEFAULT_LOADOUT = { hat: 'hat_wizard', outfit: 'outfit_robe', neck: 'neck_none', face_acc: 'face_acc_none',
                                       staff: 'staff_classic', eyes: 'eyes_classic', brows: 'brows_classic', mouth: 'mouth_smile',
                                       facial_hair: 'fhair_none', features: 'feat_none' };
             const cosmeticById = (id) => COSMETICS.find(c => c.id === id) || null;
@@ -13684,7 +13682,12 @@
             const LOADOUT_KEY = 'volleybolt_loadout';
             // the LOCAL player's loadout: anything not (or no longer) owned falls back to the default for that slot
             const ownedOnly = (lo) => { for (const s of COSMETIC_SLOTS) if (!cosmeticUnlocked(cosmeticById(lo[s]))) lo[s] = DEFAULT_LOADOUT[s]; return lo; };
-            const loadLoadout = () => { try { return ownedOnly(sanitizeLoadout(JSON.parse(localStorage.getItem(LOADOUT_KEY) || 'null'))); } catch (e) { return { ...DEFAULT_LOADOUT }; } };
+            // (saves from when hair had its own slot: a hairdo worn with no hat moves into the combined slot)
+            const migrateLoadout = (raw) => {
+                if (raw && raw.hair && raw.hair !== 'hair_none' && (!raw.hat || raw.hat === 'hat_none')) raw.hat = raw.hair;
+                return raw;
+            };
+            const loadLoadout = () => { try { return ownedOnly(sanitizeLoadout(migrateLoadout(JSON.parse(localStorage.getItem(LOADOUT_KEY) || 'null')))); } catch (e) { return { ...DEFAULT_LOADOUT }; } };
             const saveLoadout = (lo) => { try { localStorage.setItem(LOADOUT_KEY, JSON.stringify(sanitizeLoadout(lo))); } catch (e) {} };
             window.PickleKit = { COSMETICS, COSMETIC_SLOTS, DEFAULT_LOADOUT, sanitizeLoadout, loadLoadout, saveLoadout, cosmeticUnlocked, rewardsFor };
 
@@ -13824,7 +13827,6 @@
                 setTimeout(() => {
                     COSMETICS.forEach(c => {
                         if (c.file) loadP2(c.file).catch(() => {});
-                        if (c.fileHat) loadP2(c.fileHat).catch(() => {});
                         if (c.strip) loadStrip(c.strip);
                     });
                 }, 1500);
@@ -13851,10 +13853,9 @@
             const buildPickle2 = async (prefix, side, loadout, bust) => {
                 const lo = sanitizeLoadout(loadout);
                 // fetch the base + this loadout's parts together (cached after the first time)
-                const hatOn = !!(cosmeticById(lo.hat) || {}).file;
                 const partDefs = COSMETIC_SLOTS.map(slot => ({ slot, c: cosmeticById(lo[slot]) }))
-                    .filter(x => x.c && x.c.file && !(hatOn && x.c.hideUnderHat))   // a hat covers top-of-head hair
-                    .map(x => ({ ...x, file: (hatOn && x.c.fileHat) || x.c.file }));  // ...or swaps in its under-a-hat cut
+                    .filter(x => x.c && x.c.file)
+                    .map(x => ({ ...x, file: x.c.file }));
                 const [baseC, ...partCs] = await Promise.all([loadP2('pickle_base.glb', bust),
                     ...partDefs.map(x => loadP2(x.file, bust).catch((e) => { console.warn('[pickle2] part "' + x.c.id + '" failed to load - slot left empty', e); return null; }))]);
                 prefetchP2();
@@ -13972,7 +13973,7 @@
                     #labPanel label{font-size:12px;opacity:.85} #labMsg{font-size:12px;color:#ff9b7a;margin-top:6px}`;
                 const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
                 const P = document.createElement('div'); P.id = 'labPanel'; document.body.appendChild(P);
-                const SLOT_NAMES = { hat: 'Hat', outfit: 'Outfit', neck: 'Neck', face_acc: 'Face accessory', staff: 'Staff', eyes: 'Eyes', brows: 'Brows', mouth: 'Mouth', hair: 'Hair', facial_hair: 'Facial hair', features: 'Cheeks' };
+                const SLOT_NAMES = { hat: 'Hat / Hair', outfit: 'Outfit', neck: 'Neck', face_acc: 'Face accessory', staff: 'Staff', eyes: 'Eyes', brows: 'Brows', mouth: 'Mouth', facial_hair: 'Facial hair', features: 'Cheeks' };
                 let html = '<div style="font-weight:700;font-size:15px">Character Lab</div><div style="opacity:.7;font-size:11px">drag to spin · wheel to zoom</div><h3>Loadout</h3>';
                 for (const s of COSMETIC_SLOTS) {
                     html += `<label>${SLOT_NAMES[s]}</label><select data-slot="${s}">` +
@@ -14060,7 +14061,7 @@
                 const W = { open: false, side: 'left', pose: 'idle', tab: 'hat', cursor: 0, preview: null, char: null,
                             building: false, pending: false, cam: null, stand: null, obs: null, prevCam: null,
                             prevVis: '', prevAnims: true, prevGui: true, parked: [] };
-                const TABS = [['hat', 'Hat'], ['hair', 'Hair'], ['outfit', 'Outfit'], ['neck', 'Neck'], ['face_acc', 'Face'], ['staff', 'Staff'],
+                const TABS = [['hat', 'Hat / Hair'], ['outfit', 'Outfit'], ['neck', 'Neck'], ['face_acc', 'Face'], ['staff', 'Staff'],
                               ['eyes', 'Eyes'], ['brows', 'Brows'], ['mouth', 'Mouth'], ['facial_hair', 'Beard'], ['features', 'Cheeks']];
                 const FACE_SLOTS = ['eyes', 'brows', 'mouth', 'facial_hair', 'features'];
                 const TEAMS = [['left', 'Blue'], ['right', 'Red']];
@@ -14261,10 +14262,8 @@
                     const c = items()[W.cursor];
                     if (!c) return;
                     const equipped = loadLoadout()[W.tab] === c.id;
-                    const hatOn = !!(cosmeticById(loadLoadout().hat) || {}).file;
-                    const note = c.hideUnderHat && hatOn ? ' &middot; <span class="wi-prog">hidden under hats</span>' : '';
                     $('wardrobeInfo').innerHTML = `<div class="wi-name">${c.name}${equipped ? ' <span class="wi-tag">Equipped</span>' : ''}</div>` +
-                                                  `<div class="wi-unlock">${unlockHTML(c)}${note}</div>`;
+                                                  `<div class="wi-unlock">${unlockHTML(c)}</div>`;
                 };
                 const markCursor = () => {
                     $('wardrobeGrid').querySelectorAll('.wardrobe-tile').forEach(t => t.classList.toggle('is-cursor', +t.dataset.i === W.cursor));
