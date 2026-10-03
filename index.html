@@ -19,7 +19,7 @@
          edit, in the same commit. A returning player's browser serves the cached stylesheet for
          the old query forever — shipping new DOM against a stale cached CSS renders it unstyled
          (live-verified failure mode, 2026-07-14 lobby redesign). Number-then-slug, like sim.js. -->
-    <link rel="stylesheet" href="styles.css?v=98-versus">
+    <link rel="stylesheet" href="styles.css?v=99-versus2">
 </head>
 <body>
 
@@ -2178,6 +2178,7 @@
                     recent: st.history.map(h => h.won ? 'W' : 'L').join(''),          // newest first
                     career: { matches: cg('matches_won') + cg('matches_lost'), won: cg('matches_won'),
                               parries: cg('parries_successful'), fav },
+                    loadout: window.PickleKit ? PickleKit.loadLoadout() : null,          // the versus portrait
                 };
             }
             // A peer's profile is UNTRUSTED input: clamp every field (rendered via textContent only).
@@ -2192,6 +2193,9 @@
                     peak: p.peak == null ? null : num(p.peak, 0, 5000),
                     recent: String(p.recent || '').replace(/[^WL]/g, '').slice(0, RANK.HISTORY),
                     career: { matches: num(c.matches, 0, 1e7), won: num(c.won, 0, 1e7), parries: num(c.parries, 0, 1e8), fav: favOk ? c.fav : null },
+                    // ids only; buildPickle2 maps unknown / wrong-slot ids to defaults
+                    loadout: (p.loadout && typeof p.loadout === 'object' && !Array.isArray(p.loadout))
+                        ? Object.fromEntries(Object.entries(p.loadout).slice(0, 16).map(([k, v]) => [String(k).slice(0, 24), String(v).slice(0, 40)])) : null,
                 };
             }
             function setOpponentProfile(p) {
@@ -14511,6 +14515,92 @@
                         return cv.toDataURL('image/png');
                     } finally { disposePickle2(ch); }
                 };
+                // ---- versus-screen portraits (2026-10-02): the whole pickle in a loadout, team colours, combat-ready
+                // pose, 3/4 view turned toward the VS. Rendered small into its own render target (pixel-crisp when
+                // the page scales it up), read back to a data URL, cached per loadout + side. ----
+                const PORT_W = 300, PORT_H = 380;
+                let portRig = null;
+                const portraitCache = {};
+                const getPortRig = () => {
+                    if (portRig) return portRig;
+                    const cam = new BABYLON.ArcRotateCamera('vsPortraitCam', Math.PI / 2, 1.38, 4, BABYLON.Vector3.Zero(), scene);
+                    cam.minZ = 0.05;
+                    cam.layerMask = 0x10000000;
+                    const eng = scene.getEngine();
+                    const persp = scene.useRightHandedSystem ? BABYLON.Matrix.PerspectiveFovRH : BABYLON.Matrix.PerspectiveFovLH;
+                    cam.freezeProjectionMatrix(persp(cam.fov, PORT_W / PORT_H, cam.minZ, cam.maxZ, eng.isNDCHalfZRange));
+                    const rtt = new BABYLON.RenderTargetTexture('vsPortraitRTT', { width: PORT_W, height: PORT_H }, scene, false);
+                    rtt.activeCamera = cam;
+                    rtt.clearColor = new BABYLON.Color4(0, 0, 0, 0);
+                    rtt.renderParticles = false; rtt.renderSprites = false;
+                    const cv = document.createElement('canvas');
+                    cv.width = PORT_W; cv.height = PORT_H;
+                    portRig = { cam, rtt, cv, g: cv.getContext('2d') };
+                    return portRig;
+                };
+                const renderPortrait = async (loadout, side) => {
+                    const ch = await buildPickle2('portrait', side, loadout || DEFAULT_LOADOUT);
+                    try {
+                        const meshes = ch.modelRoot.getChildMeshes().filter(m => m.getTotalVertices && m.getTotalVertices() > 0);
+                        meshes.forEach(m => { m.layerMask = 0x10000000; });
+                        const pose = ch.animations.ready || ch.animations.idle;
+                        if (pose) { pose.play(false); pose.goToFrame(pose.from + 3); pose.pause(); }
+                        await nextFrame();
+                        await Promise.all(meshes.map(m => (m.material && m.material.forceCompilationAsync) ? m.material.forceCompilationAsync(m).catch(() => {}) : null));
+                        if (ch.skeleton) ch.skeleton.prepare(true);
+                        let mn = new BABYLON.Vector3(Infinity, Infinity, Infinity), mx = mn.scale(-1);
+                        meshes.forEach(m => {
+                            m.refreshBoundingInfo({ applySkeleton: true });
+                            const bb = m.getBoundingInfo().boundingBox;
+                            mn = BABYLON.Vector3.Minimize(mn, bb.minimumWorld); mx = BABYLON.Vector3.Maximize(mx, bb.maximumWorld);
+                        });
+                        const { cam, rtt, cv, g } = getPortRig();
+                        const height = mx.y - mn.y;
+                        // turned toward the middle of the screen: Blue (left card) looks right, Red looks left
+                        cam.alpha = Math.PI / 2 + (side === 'left' ? -0.55 : 0.55);
+                        cam.beta = 1.42;
+                        cam.radius = (height * 0.62) / Math.tan(cam.fov / 2);
+                        cam.target.set((mn.x + mx.x) / 2, mn.y + height * 0.5, (mn.z + mx.z) / 2);
+                        rtt.renderList = meshes;
+                        // A fresh target / first-time shaders can draw partially (the body missing, only the parts) or
+                        // not at all: wait until every material is ready (max 2s), warm up with one render + a frame,
+                        // then render for real - and still retry if it came back empty.
+                        await new Promise((res) => {
+                            const t0 = performance.now();
+                            const chk = () => (meshes.every(m => !m.material || m.material.isReady(m)) || performance.now() - t0 > 2000)
+                                ? res() : requestAnimationFrame(chk);
+                            chk();
+                        });
+                        rtt.render(true);
+                        await nextFrame();
+                        let px = null;
+                        for (let tryN = 0; tryN < 3; tryN++) {
+                            rtt.render(true);
+                            px = await rtt.readPixels();
+                            let drawn = false;
+                            for (let i = 3; i < px.length; i += 16) if (px[i] > 0) { drawn = true; break; }
+                            if (drawn) break;
+                            await nextFrame();
+                        }
+                        const id = g.createImageData(PORT_W, PORT_H);
+                        const row = PORT_W * 4;
+                        for (let y = 0; y < PORT_H; y++) id.data.set(px.subarray((PORT_H - 1 - y) * row, (PORT_H - y) * row), y * row);
+                        g.putImageData(id, 0, 0);
+                        return cv.toDataURL('image/png');
+                    } finally { disposePickle2(ch); }
+                };
+                window.renderPicklePortrait = (loadout, side) => {
+                    const key = side + '|' + JSON.stringify(sanitizeLoadout(loadout || DEFAULT_LOADOUT));
+                    if (!portraitCache[key]) {
+                        portraitCache[key] = thumbQueue = thumbQueue.then(() => renderPortrait(loadout, side)).catch((e) => {
+                            console.warn('[versus] portrait failed', e);
+                            delete portraitCache[key];
+                            return null;
+                        });
+                    }
+                    return portraitCache[key];
+                };
+
                 // One at a time (they share the rig); resolves with a data URL, or null if it failed.
                 const thumbFor = (item) => {
                     if (isNone(item)) return Promise.resolve(null);
@@ -29319,32 +29409,50 @@
             function card(p, side) {
                 const R = Rank.RANK;
                 const r = Rank.rankOf(p.mmr, p.isBot ? R.PLACEMENTS : p.games);
-                const c = mk('div', 'vs-card vs-' + side);
-                c.appendChild(mk('div', 'vs-side', side === 'left' ? 'Blue' : 'Red'));
-                const em = mk('div', 'vs-emblem');
-                em.appendChild(window.rankEmblem(r.tierIdx, 176));
-                c.appendChild(em);
-                c.appendChild(mk('div', 'vs-name', p.name));
-                c.appendChild(mk('div', 'vs-rank tier-' + r.tier.toLowerCase(),
-                    p.isBot ? r.label + ' \u00b7 AI' : r.placed ? r.label + ' \u00b7 ' + p.mmr.toLocaleString() + ' MMR' : 'Placement ' + r.placement + '/' + R.PLACEMENTS));
-                if (!p.isBot) {
-                    const games = (p.wins || 0) + (p.losses || 0);
-                    c.appendChild(mk('div', 'vs-line', games ? p.wins + 'W ' + p.losses + 'L \u00b7 ' + Math.round(100 * p.wins / games) + '%' : 'No rated matches yet'));
-                    if (p.recent) {
-                        const pips = mk('div', 'vs-pips');
-                        for (const ch of p.recent.split('').reverse()) pips.appendChild(mk('i', ch === 'W' ? 'is-win' : 'is-loss'));
-                        c.appendChild(pips);
-                    }
+                const c = mk('div', 'vs-half vs-' + side);
+                const art = mk('div', 'vs-art');
+                art.appendChild(mk('div', 'vs-glow'));
+                const img = document.createElement('img');
+                img.className = 'vs-portrait';
+                img.alt = '';
+                art.appendChild(img);
+                c.appendChild(art);
+                if (window.renderPicklePortrait) {
+                    window.renderPicklePortrait(p.loadout || (window.PickleKit ? PickleKit.DEFAULT_LOADOUT : null), side).then((url) => {
+                        if (url) { img.src = url; img.classList.add('is-in'); }
+                    });
                 }
+                const plate = mk('div', 'vs-plate');
+                plate.appendChild(mk('div', 'vs-side', side === 'left' ? 'Blue' : 'Red'));
+                plate.appendChild(mk('div', 'vs-name', p.name));
+                const rk = mk('div', 'vs-rankrow');
+                rk.appendChild(window.rankEmblem(r.tierIdx, 52));
+                const rt = mk('div', 'vs-ranktext');
+                rt.appendChild(mk('div', 'vs-rank tier-' + r.tier.toLowerCase(), p.isBot ? r.label : r.placed ? r.label : 'Placement ' + r.placement + '/' + R.PLACEMENTS));
+                const games = (p.wins || 0) + (p.losses || 0);
+                rt.appendChild(mk('div', 'vs-line', p.isBot ? 'AI opponent'
+                    : (r.placed ? p.mmr.toLocaleString() + ' MMR \u00b7 ' : '') + (games ? p.wins + 'W ' + p.losses + 'L' : 'No rated matches yet')));
+                rk.appendChild(rt);
+                if (!p.isBot && p.recent) {
+                    const pips = mk('div', 'vs-pips');
+                    for (const ch of p.recent.split('').reverse()) pips.appendChild(mk('i', ch === 'W' ? 'is-win' : 'is-loss'));
+                    rk.appendChild(pips);
+                }
+                plate.appendChild(rk);
                 const stt = mk('div', 'vs-status is-loading');
                 stt.append(mk('span', 'vs-spin'), mk('span', 'vs-status-t', 'Loading'));
-                c.appendChild(stt);
+                plate.appendChild(stt);
+                c.appendChild(plate);
                 return c;
             }
             function show(left, right, mode) {
                 const root = ensure();
                 root.innerHTML = '';
-                root.append(mk('div', 'vs-bg'), card(left, 'left'), mk('div', 'vs-vs', 'VS'), card(right, 'right'), mk('div', 'vs-mode', mode || ''));
+                const bar = mk('div', 'vs-loadbar');
+                bar.appendChild(mk('i'));
+                root.append(mk('div', 'vs-bg vs-bg-l'), mk('div', 'vs-bg vs-bg-r'), mk('div', 'vs-seam'),
+                    card(left, 'left'), card(right, 'right'), mk('div', 'vs-flash'), mk('div', 'vs-vs', 'VS'),
+                    mk('div', 'vs-mode', mode || ''), bar);
                 root.classList.remove('is-out');
                 root.classList.add('visible');
                 if (window.ToneSFX && ToneSFX.uiConfirm) ToneSFX.uiConfirm();
@@ -29380,7 +29488,8 @@
             try {
                 const bot = window.Rank ? Rank.previewMatchAI() : null;
                 const me = window.Rank ? Rank.profile() : { name: 'You', mmr: 1000, games: 0 };
-                Versus.show(me, { name: 'AI', mmr: bot ? bot.mmr : 1000, isBot: true }, 'Quick Play \u00b7 Ranked');
+                Versus.show(me, { name: 'AI', mmr: bot ? bot.mmr : 1000, isBot: true,
+                                  loadout: window.PickleKit ? PickleKit.DEFAULT_LOADOUT : null }, 'Quick Play \u00b7 Ranked');
                 const t0 = performance.now();
                 await Promise.race([Promise.all([
                     (window.preloadPickleLoadout ? window.preloadPickleLoadout(window.PickleKit ? PickleKit.loadLoadout() : null) : Promise.resolve()).then(() => Versus.setStatus('left', true)),

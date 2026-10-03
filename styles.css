@@ -3473,56 +3473,113 @@ body.gp-cursor-hidden * {
 .lp-pips > i.is-loss { background: #e2706a; }
 .lp-sub { font-size: 13px; color: #9aa0b3; }
 
-/* ---- Versus / loading screen (2026-10-02): Blue card | VS | Red card ---- */
-#vsScreen { position: absolute; inset: 0; display: none; pointer-events: auto; z-index: 5; font-family: 'Manrope UI', 'Manrope', sans-serif; }
+/* ---- Versus / loading screen (2026-10-02, v2): portrait art per side, a crisp diagonal slash, nameplates ---- */
+#vsScreen { position: absolute; inset: 0; display: none; pointer-events: auto; z-index: 5; overflow: hidden;
+    font-family: 'Manrope UI', 'Manrope', sans-serif; }
 #vsScreen.visible { display: block; }
-#vsScreen .vs-bg {
-    position: absolute; inset: 0;
-    background: linear-gradient(100deg, #10204a 0%, #1a2f6a 46%, #0c0a14 49.6%, #0c0a14 50.4%, #5a1e1e 53.5%, #3a1418 100%);
-    animation: endFade 0.3s ease both;
+/* two halves split by a slanted seam (the left half reaches past centre at the top, the right at the bottom) */
+#vsScreen .vs-bg { position: absolute; inset: 0; }
+#vsScreen .vs-bg-l {
+    background:
+        repeating-linear-gradient(118deg, rgba(255, 255, 255, 0.035) 0 2px, transparent 2px 26px),
+        radial-gradient(70% 80% at 28% 45%, #2c5bd6 0%, #173583 45%, #0b1636 100%);
+    clip-path: polygon(0 0, 56% 0, 44% 100%, 0 100%);
+    animation: vsInL 0.45s cubic-bezier(.2, .9, .2, 1) both;
 }
-#vsScreen .vs-card {
-    position: absolute; top: 170px; width: 560px; display: flex; flex-direction: column; align-items: center; gap: 10px;
-    animation: vsInL 0.5s cubic-bezier(.2, .9, .2, 1) both;
+#vsScreen .vs-bg-r {
+    background:
+        repeating-linear-gradient(118deg, rgba(255, 255, 255, 0.035) 0 2px, transparent 2px 26px),
+        radial-gradient(70% 80% at 72% 45%, #d2452f 0%, #85211c 45%, #300b0c 100%);
+    clip-path: polygon(56% 0, 100% 0, 100% 100%, 44% 100%);
+    animation: vsInR 0.45s cubic-bezier(.2, .9, .2, 1) both;
 }
-#vsScreen .vs-left { left: 190px; }
-#vsScreen .vs-right { right: 190px; animation-name: vsInR; }
-@keyframes vsInL { from { transform: translateX(-160px); opacity: 0; } to { transform: none; opacity: 1; } }
-@keyframes vsInR { from { transform: translateX(160px); opacity: 0; } to { transform: none; opacity: 1; } }
-#vsScreen .vs-side { font-weight: 800; font-size: 20px; letter-spacing: 0.3em; text-transform: uppercase; }
-#vsScreen .vs-left .vs-side { color: #6fb0ff; }
-#vsScreen .vs-right .vs-side { color: #ff8a70; }
-#vsScreen .vs-emblem {
-    width: 240px; height: 240px; display: flex; align-items: center; justify-content: center;
-    background: radial-gradient(closest-side, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 72%);
+#vsScreen .vs-seam {
+    position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(90deg, transparent calc(50% - 4px), #ffe39a calc(50% - 4px), #fff4c2 50%, #ffe39a calc(50% + 4px), transparent calc(50% + 4px));
+    transform: skewX(-12deg);   /* follows the 56% -> 44% slash across the 1080-tall layer */
+    filter: drop-shadow(0 0 14px rgba(255, 214, 107, 0.8));
+    animation: vsSeam 0.5s ease 0.3s both;
 }
-#vsScreen .vs-name { font-family: 'Ferrum', 'FF9UI', serif; font-size: 64px; line-height: 1; color: #fff4c2; text-shadow: 3px 3px 0 #000;
-    max-width: 560px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#vsScreen .vs-rank { font-weight: 800; font-size: 24px; }
-#vsScreen .vs-line { font-size: 18px; color: #e0dcea; }
-#vsScreen .vs-pips { display: flex; gap: 5px; }
-#vsScreen .vs-pips > i { width: 14px; height: 14px; border-radius: 3px; }
+@keyframes vsSeam { from { opacity: 0; transform: skewX(-12deg) scaleY(0); } to { opacity: 1; transform: skewX(-12deg) scaleY(1); } }
+@keyframes vsInL { from { transform: translateX(-30%); } to { transform: none; } }
+@keyframes vsInR { from { transform: translateX(30%); } to { transform: none; } }
+
+#vsScreen .vs-half { position: absolute; top: 0; bottom: 0; width: 50%; }
+#vsScreen .vs-left { left: 0; }
+#vsScreen .vs-right { right: 0; }
+#vsScreen .vs-art { position: absolute; bottom: 150px; width: 600px; height: 760px; }
+#vsScreen .vs-left .vs-art { left: 150px; animation: vsArtL 0.6s cubic-bezier(.2, .9, .2, 1) 0.15s both; }
+#vsScreen .vs-right .vs-art { right: 150px; animation: vsArtR 0.6s cubic-bezier(.2, .9, .2, 1) 0.15s both; }
+@keyframes vsArtL { from { transform: translateX(-120px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes vsArtR { from { transform: translateX(120px); opacity: 0; } to { transform: none; opacity: 1; } }
+#vsScreen .vs-glow { position: absolute; left: 10%; right: 10%; top: 18%; bottom: 0; border-radius: 50%; filter: blur(30px); }
+#vsScreen .vs-left .vs-glow { background: radial-gradient(closest-side, rgba(111, 176, 255, 0.55), transparent); }
+#vsScreen .vs-right .vs-glow { background: radial-gradient(closest-side, rgba(255, 138, 112, 0.5), transparent); }
+#vsScreen .vs-portrait {
+    position: absolute; left: 0; bottom: 0; width: 600px; height: 760px; object-fit: contain;
+    image-rendering: pixelated; opacity: 0; transition: opacity 0.35s ease;
+    filter: drop-shadow(8px 10px 0 rgba(0, 0, 0, 0.35));
+}
+#vsScreen .vs-portrait.is-in { opacity: 1; }
+
+/* nameplates: slanted bars along the bottom */
+#vsScreen .vs-plate {
+    position: absolute; bottom: 70px; width: 720px; box-sizing: border-box; padding: 18px 40px 20px;
+    display: flex; flex-direction: column; gap: 6px;
+    background: linear-gradient(180deg, rgba(14, 16, 28, 0.92), rgba(8, 9, 16, 0.96));
+    border-top: 3px solid currentColor; box-shadow: 0 10px 0 rgba(0, 0, 0, 0.35);
+}
+#vsScreen .vs-left .vs-plate { left: 60px; color: #6fb0ff; transform: skewX(-8deg); animation: vsPlateL 0.5s cubic-bezier(.2, .9, .2, 1) 0.35s both; }
+#vsScreen .vs-right .vs-plate { right: 60px; color: #ff8a70; transform: skewX(-8deg); align-items: flex-end; text-align: right;
+    animation: vsPlateR 0.5s cubic-bezier(.2, .9, .2, 1) 0.35s both; }
+@keyframes vsPlateL { from { transform: skewX(-8deg) translateY(120%); } to { transform: skewX(-8deg); } }
+@keyframes vsPlateR { from { transform: skewX(-8deg) translateY(120%); } to { transform: skewX(-8deg); } }
+#vsScreen .vs-plate > * { transform: skewX(8deg); }   /* un-skew the contents */
+#vsScreen .vs-side { font-weight: 800; font-size: 18px; letter-spacing: 0.35em; text-transform: uppercase; }
+#vsScreen .vs-name { font-family: 'Ferrum', 'FF9UI', serif; font-size: 76px; line-height: 0.95; color: #fff4c2; text-shadow: 4px 4px 0 #000;
+    max-width: 640px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#vsScreen .vs-rankrow { display: flex; align-items: center; gap: 14px; }
+#vsScreen .vs-right .vs-rankrow { flex-direction: row-reverse; }
+#vsScreen .vs-ranktext { display: flex; flex-direction: column; gap: 1px; }
+#vsScreen .vs-rank { font-weight: 800; font-size: 26px; line-height: 1.1; }
+#vsScreen .vs-line { font-size: 17px; color: #c8c3d8; }
+#vsScreen .vs-pips { display: flex; gap: 4px; margin: 0 6px; }
+#vsScreen .vs-pips > i { width: 12px; height: 12px; border-radius: 3px; }
 #vsScreen .vs-pips > i.is-win { background: #8fd06a; }
 #vsScreen .vs-pips > i.is-loss { background: #e2706a; }
 #vsScreen .vs-status {
-    margin-top: 18px; display: flex; align-items: center; gap: 10px; padding: 8px 22px; border-radius: 999px;
-    font-weight: 800; font-size: 18px; letter-spacing: 0.14em; text-transform: uppercase;
-    background: rgba(10, 10, 20, 0.55); border: 2px solid rgba(224, 230, 240, 0.4); color: #c8c3d8;
+    position: absolute; top: -22px; display: flex; align-items: center; gap: 8px; padding: 6px 16px; border-radius: 6px;
+    font-weight: 800; font-size: 15px; letter-spacing: 0.16em; text-transform: uppercase;
+    background: #1a1d2c; border: 2px solid rgba(224, 230, 240, 0.4); color: #c8c3d8;
 }
+#vsScreen .vs-left .vs-status { right: 40px; }
+#vsScreen .vs-right .vs-status { left: 40px; }
 #vsScreen .vs-status.is-ready { color: #10141e; background: #8fd06a; border-color: #c8f0a8; }
-#vsScreen .vs-spin { width: 14px; height: 14px; border-radius: 50%; border: 3px solid rgba(224, 230, 240, 0.35); border-top-color: #fff4c2;
+#vsScreen .vs-spin { width: 12px; height: 12px; border-radius: 50%; border: 3px solid rgba(224, 230, 240, 0.35); border-top-color: #fff4c2;
     animation: vsSpin 0.8s linear infinite; }
 #vsScreen .vs-status.is-ready .vs-spin { border: none; width: auto; height: auto; animation: none; }
-#vsScreen .vs-status.is-ready .vs-spin::before { content: '\2713'; font-size: 18px; }
+#vsScreen .vs-status.is-ready .vs-spin::before { content: '\2713'; font-size: 16px; }
 @keyframes vsSpin { to { transform: rotate(360deg); } }
+
+/* VS: slams in over the seam with a white flash */
 #vsScreen .vs-vs {
-    position: absolute; left: 50%; top: 380px; transform: translateX(-50%);
-    font-family: 'Ferrum', 'FF9UI', serif; font-size: 150px; color: #ffe39a; text-shadow: 5px 5px 0 #000;
-    animation: vsPunch 0.5s cubic-bezier(.3, 1.6, .5, 1) 0.25s both;
+    position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%);
+    font-family: 'Ferrum', 'FF9UI', serif; font-size: 230px; line-height: 1;
+    background: linear-gradient(180deg, #fff8d8 0%, #ffd66b 55%, #c98a2a 100%); -webkit-background-clip: text; background-clip: text;
+    color: transparent; -webkit-text-stroke: 4px #1a1420; paint-order: stroke fill;
+    filter: drop-shadow(0 0 22px rgba(255, 214, 107, 0.65)) drop-shadow(6px 8px 0 rgba(0, 0, 0, 0.6));
+    animation: vsPunch 0.42s cubic-bezier(.3, 1.5, .5, 1) 0.45s both;
 }
-@keyframes vsPunch { from { transform: translateX(-50%) scale(2.2); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
-#vsScreen .vs-mode { position: absolute; left: 0; right: 0; bottom: 70px; text-align: center; font-weight: 800; font-size: 20px;
-    letter-spacing: 0.22em; text-transform: uppercase; color: #c9a8ff; }
+@keyframes vsPunch { from { transform: translate(-50%, -50%) scale(3); opacity: 0; } to { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
+#vsScreen .vs-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; animation: vsFlash 0.5s ease 0.62s both; }
+@keyframes vsFlash { 0% { opacity: 0; } 15% { opacity: 0.55; } 100% { opacity: 0; } }
+
+#vsScreen .vs-mode { position: absolute; left: 0; right: 0; top: 46px; text-align: center; font-weight: 800; font-size: 20px;
+    letter-spacing: 0.3em; text-transform: uppercase; color: #fff4c2; text-shadow: 2px 2px 0 #000; }
+#vsScreen .vs-loadbar { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; background: rgba(0, 0, 0, 0.5); }
+#vsScreen .vs-loadbar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #6fb0ff, #fff4c2, #ff8a70);
+    animation: vsLoad 2.6s linear both; }
+@keyframes vsLoad { to { width: 100%; } }
 #vsScreen.is-out { animation: vsOut 0.45s ease both; }
 @keyframes vsOut { to { opacity: 0; } }
 
